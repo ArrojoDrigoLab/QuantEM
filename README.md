@@ -8,6 +8,10 @@ microscopy (EM) data across imaging modalities, tissues, and species. It provide
 models for **mitochondria, endoplasmic reticulum, nuclei, and lipid droplets**, together with
 interactive proofreading, guided fine-tuning, and downstream quantitative analysis.
 
+Browse the intracellular EM data directory [here](https://arrojodrigolab.github.io/QuantEM/dataset_directory/). 
+
+To run QuantEM, either use the [`napari plugin`](napari-quantem/) or [`standalone app`](quantem_app/) for Windows and Mac. 
+
 This repository is the code and data resource accompanying the QuantEM manuscript, available at
 https://www.biorxiv.org/content/10.64898/2026.08.06.743293v1
 

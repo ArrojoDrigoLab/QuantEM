@@ -45,12 +45,15 @@ jobs:
           pip install -e ./napari-quantem[testing]
 
       - name: quantem-core tests
-        # -p no:qt because `napari-quantem[testing]` puts pytest-qt in the same environment
-        # and it instantiates a Qt binding at configure time. quantem-core has no Qt
-        # dependency, and on a headless Linux runner that import fails on libEGL.so.1 and
-        # takes the whole session down with an INTERNALERROR before any test runs. The
-        # napari widget tests below get a real display from headless-gui.
-        run: pytest quantem-core/tests -q -p no:qt
+        # `napari-quantem[testing]` puts pytest-qt in the same environment, and it
+        # instantiates a Qt binding at configure time. quantem-core has no Qt dependency,
+        # and on a headless Linux runner that import fails on libEGL.so.1 and takes the
+        # whole session down with an INTERNALERROR before any test runs. The napari widget
+        # tests below get a real display from headless-gui.
+        #
+        # The plugin's pytest11 entry point is named `pytest-qt`, not `qt`; `-p no:qt`
+        # is silently accepted and disables nothing.
+        run: pytest quantem-core/tests -q -p no:pytest-qt
 
       - name: Validate the npe2 manifest
         run: |
