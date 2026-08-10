@@ -1,8 +1,8 @@
 name: dataset directory — checks
 
 # Runs on every change to the directory. The gate that matters is `verify`:
-# it re-asserts the corpus invariants and re-scans every published byte for
-# personal data, so a bad export cannot reach the deploy job.
+# it re-checks the export's internal consistency and re-scans every published
+# byte for personal data, so a bad export cannot reach the deploy job.
 
 on:
   pull_request:
@@ -44,9 +44,9 @@ jobs:
           PYTHONPATH: dataset_directory/exporter/src
 
       - name: Verify the published artifacts
-        # Corpus invariants, structural consistency, the privacy scan, and the
-        # exclusion list. Supplementary-table parity is checked when exporting,
-        # not here: the table is not part of the public repository.
+        # Structural consistency, the privacy scan, and the exclusion list.
+        # Counts are deliberately not pinned: the corpus grows, and the export
+        # reports whatever it actually holds.
         run: |
           python -m quantem_directory verify \
             --data dataset_directory/data \
