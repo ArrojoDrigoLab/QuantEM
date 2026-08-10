@@ -54,8 +54,11 @@ def load_registry() -> dict:
 
 
 def offline() -> bool:
-    return os.environ.get("QUANTEM_OFFLINE", "").strip().lower() in {"1", "true", "yes"} or \
-        os.environ.get("HF_HUB_OFFLINE", "").strip().lower() in {"1", "true", "yes"}
+    return os.environ.get("QUANTEM_OFFLINE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    } or os.environ.get("HF_HUB_OFFLINE", "").strip().lower() in {"1", "true", "yes"}
 
 
 def local_dir() -> Path | None:
@@ -209,9 +212,7 @@ def ensure(names, *, progress=None, allow_network: bool = True) -> dict[str, Pat
     if missing:
         raise WeightsUnavailableError(
             "Required model files are not available locally and downloading is disabled.\n"
-            + "\n".join(
-                f"  {m['filename']}  ({_fmt(m['bytes'])})  {m['url']}" for m in missing
-            )
+            + "\n".join(f"  {m['filename']}  ({_fmt(m['bytes'])})  {m['url']}" for m in missing)
             + "\n\nPlace these files in a directory and set QUANTEM_MODEL_DIR to it.",
             missing,
         )

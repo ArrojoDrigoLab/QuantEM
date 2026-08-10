@@ -30,8 +30,8 @@ def main(argv=None) -> int:
         "--to",
         metavar="DIR",
         help="also write plainly-named copies into DIR, ready for QUANTEM_MODEL_DIR. The hub "
-             "cache stores blobs under content hashes, so copying it to an offline machine does "
-             "not work; this is what does.",
+        "cache stores blobs under content hashes, so copying it to an offline machine does "
+        "not work; this is what does.",
     )
     p_dl.set_defaults(func=_download)
 
@@ -56,10 +56,14 @@ def _list(args) -> int:
     plan = fetch.download_plan(list(REGISTRY.values()))
     print(f"{'artifact':24s} {'cached':7s} {'size':>10s}  file")
     for a in plan["artifacts"]:
-        print(f"{a['name']:24s} {'yes' if a['cached'] else 'no':7s} "
-              f"{fetch.format_bytes(a['bytes']):>10s}  {a['filename']}")
-    print(f"\nnot cached: {len(plan['missing'])} artifact(s), "
-          f"{fetch.format_bytes(plan['download_bytes'])}")
+        print(
+            f"{a['name']:24s} {'yes' if a['cached'] else 'no':7s} "
+            f"{fetch.format_bytes(a['bytes']):>10s}  {a['filename']}"
+        )
+    print(
+        f"\nnot cached: {len(plan['missing'])} artifact(s), "
+        f"{fetch.format_bytes(plan['download_bytes'])}"
+    )
     return 0
 
 

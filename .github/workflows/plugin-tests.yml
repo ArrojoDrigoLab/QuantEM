@@ -25,9 +25,19 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # CPU-only torch: CI never needs CUDA, and the CUDA wheels are ~2.5 GB.
+      # CPU-only torch: CI never needs CUDA, and the CUDA wheels are ~2.5 GB. Only Linux
+      # defaults to a CUDA build, so only Linux needs the CPU index. The Windows and macOS
+      # wheels on PyPI are already CPU-only, and the CPU index's Windows wheel is missing
+      # the Intel runtime its c10.dll links against — importing torch then dies with
+      # "WinError 1114: a DLL initialization routine failed".
       - name: Install torch (CPU)
-        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            pip install torch --index-url https://download.pytorch.org/whl/cpu
+          else
+            pip install torch
+          fi
 
       - name: Install packages
         run: |
@@ -35,7 +45,12 @@ jobs:
           pip install -e ./napari-quantem[testing]
 
       - name: quantem-core tests
-        run: pytest quantem-core/tests -q
+        # -p no:qt because `napari-quantem[testing]` puts pytest-qt in the same environment
+        # and it instantiates a Qt binding at configure time. quantem-core has no Qt
+        # dependency, and on a headless Linux runner that import fails on libEGL.so.1 and
+        # takes the whole session down with an INTERNALERROR before any test runs. The
+        # napari widget tests below get a real display from headless-gui.
+        run: pytest quantem-core/tests -q -p no:qt
 
       - name: Validate the npe2 manifest
         run: |

@@ -29,8 +29,6 @@ import hashlib
 import json
 from pathlib import Path
 
-import torch
-
 from ..registry import REGISTRY
 from ..spec import ModelSpec
 
@@ -81,9 +79,9 @@ def build_model_artifact(spec: ModelSpec, head_state: dict, encoder_state: dict 
         enc = {}
         for k, v in remapped.items():
             if k.startswith("backbone."):
-                enc[k[len("backbone."):]] = v
+                enc[k[len("backbone.") :]] = v
             elif k.startswith("_conv_lora."):
-                out[f"adapters.{k[len('_conv_lora.'):]}"] = v.contiguous()
+                out[f"adapters.{k[len('_conv_lora.') :]}"] = v.contiguous()
         if spec.adapt == "full":
             # Self-contained: carry the rope periods too, since no trunk ships with it.
             if encoder_state is not None and "__rope_periods__" in encoder_state:
@@ -131,24 +129,39 @@ def convert_all(
     omni_enc = omniem_vit.load_reference_checkpoint(omniem_ckpt, REGISTRY["omniem/mito"].encoder)
 
     results["quantem-vitb-trunk"] = write_artifact(
-        build_quantem_trunk(qem_enc), out_dir / "quantem-vitb-trunk.safetensors",
-        {"kind": "encoder_trunk", "family": "quantem", "blocks": "0-7",
-         "source": "m1_teacher_674999"},
+        build_quantem_trunk(qem_enc),
+        out_dir / "quantem-vitb-trunk.safetensors",
+        {
+            "kind": "encoder_trunk",
+            "family": "quantem",
+            "blocks": "0-7",
+            "source": "m1_teacher_674999",
+        },
     )
     results["omniem-vitl"] = write_artifact(
-        build_omniem_trunk(omni_enc), out_dir / "omniem-vitl.safetensors",
+        build_omniem_trunk(omni_enc),
+        out_dir / "omniem-vitl.safetensors",
         {"kind": "encoder_trunk", "family": "omniem", "source": "backbone_emdino_v1"},
     )
 
     for mid, spec in REGISTRY.items():
-        head = load_reference_head(heads_root / f"{spec.organelle}_{_HEAD_SUBDIR[spec.family]}" / "head.pt")
+        head = load_reference_head(
+            heads_root / f"{spec.organelle}_{_HEAD_SUBDIR[spec.family]}" / "head.pt"
+        )
         base = qem_enc if spec.family == "quantem" else omni_enc
         tensors = build_model_artifact(spec, head, base)
         results[spec.model_artifact] = write_artifact(
-            tensors, out_dir / f"{spec.model_artifact}.safetensors",
-            {"kind": "model", "model_id": mid, "arm_name": spec.arm_name,
-             "organelle": spec.organelle, "adapt": spec.adapt,
-             "canonical_nm": spec.canonical_nm, "task": spec.task},
+            tensors,
+            out_dir / f"{spec.model_artifact}.safetensors",
+            {
+                "kind": "model",
+                "model_id": mid,
+                "arm_name": spec.arm_name,
+                "organelle": spec.organelle,
+                "adapt": spec.adapt,
+                "canonical_nm": spec.canonical_nm,
+                "task": spec.task,
+            },
         )
         # model card next to the artifact
         (out_dir / f"{spec.model_artifact}.json").write_text(
@@ -208,18 +221,23 @@ def _license_of(artifact: str) -> str:
 def main(argv=None) -> int:
     import argparse
 
-    ap = argparse.ArgumentParser(description="Convert reference checkpoints to published artifacts.")
+    ap = argparse.ArgumentParser(
+        description="Convert reference checkpoints to published artifacts."
+    )
     ap.add_argument("--out", required=True)
-    ap.add_argument("--heads", required=True, help="dino_organelle root with <org>_<family>/head.pt")
+    ap.add_argument(
+        "--heads", required=True, help="dino_organelle root with <org>_<family>/head.pt"
+    )
     ap.add_argument("--quantem-ckpt", required=True)
     ap.add_argument("--omniem-ckpt", required=True)
     a = ap.parse_args(argv)
-    res = convert_all(a.out, heads_root=a.heads, quantem_ckpt=a.quantem_ckpt,
-                      omniem_ckpt=a.omniem_ckpt)
+    res = convert_all(
+        a.out, heads_root=a.heads, quantem_ckpt=a.quantem_ckpt, omniem_ckpt=a.omniem_ckpt
+    )
     total = sum(v["bytes"] for v in res.values())
     for k, v in res.items():
-        print(f"{k:24s} {v['bytes']/1e6:9.1f} MB  {v['sha256'][:16]}...")
-    print(f"{'TOTAL':24s} {total/1e6:9.1f} MB")
+        print(f"{k:24s} {v['bytes'] / 1e6:9.1f} MB  {v['sha256'][:16]}...")
+    print(f"{'TOTAL':24s} {total / 1e6:9.1f} MB")
     return 0
 
 
