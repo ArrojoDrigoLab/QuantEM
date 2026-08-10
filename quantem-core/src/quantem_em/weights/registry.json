@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "note": "Artifact registry. sha256/bytes are filled by weights/convert.py at packaging time and must be present before publication -- fetch.py refuses to download an artifact whose digest is unknown.",
+  "hf_repo": "ArrojoeDrigoLab/quantem",
+  "hf_revision": "f76dd9743a51a095191d27fc18724152dfd30c5a",
+  "revision_note": "Pinned to the commit holding the v1 artifacts, NOT to main. The digests below are verified on every load, so if a later release overwrote a filename on main, every already-installed copy would start failing verification on a file it had been reading for months. Pinning makes a new release additive: old wheels keep resolving this commit. Bump this together with the digests, never separately.",
+  "zenodo_doi": null,
+  "artifacts": {
+    "quantem-vitb-trunk": {
+      "filename": "quantem-vitb-trunk.safetensors",
+      "kind": "encoder_trunk",
+      "description": "QuantEM ViT-B/16 blocks 0-7 + embeddings + final norm. Shared by the mitochondria, nucleus and lipid-droplet heads, whose own artifacts carry the fine-tuned blocks 8-11.",
+      "sha256": "637a8c321a7b2172d3707c49f39fe17bf029265d46ba78d28038a3bee156fd82",
+      "bytes": 227685512,
+      "license": "CC BY 4.0"
+    },
+    "omniem-vitl": {
+      "filename": "omniem-vitl.safetensors",
+      "kind": "encoder_trunk",
+      "description": "OmniEM (EM-DINO) ViT-L/14 encoder. Untouched by LoRA, so genuinely shared by all four OmniEM heads.",
+      "sha256": "d7f2dffe2ec23138add04c5ff66d5bd246bb117f98a164e41eb30ec860395df4",
+      "bytes": 1217509768,
+      "license": "CC BY 4.0 (QuantEM release); derived from the published OmniEM encoder"
+    },
+    "quantem-mito": {
+      "filename": "quantem-mito.safetensors",
+      "kind": "model",
+      "model_id": "quantem/mito",
+      "sha256": "a897bf322872d1aece8716a4a75e0353ed5688e4c39502a4347655dc24151500",
+      "bytes": 136541856,
+      "license": "CC BY 4.0"
+    },
+    "quantem-nucleus": {
+      "filename": "quantem-nucleus.safetensors",
+      "kind": "model",
+      "model_id": "quantem/nucleus",
+      "sha256": "d5152b6c2b5ccdbf824da1b31ae6f8e40670d8d975915ca2b2f4fab8d15f49f4",
+      "bytes": 136541864,
+      "license": "CC BY 4.0"
+    },
+    "quantem-ld": {
+      "filename": "quantem-ld.safetensors",
+      "kind": "model",
+      "model_id": "quantem/ld",
+      "sha256": "765d1a8e281edf7e62952e83cdd0ce3bf4597dc32375dc0ed4a798f2f2140207",
+      "bytes": 136541848,
+      "license": "CC BY 4.0"
+    },
+    "quantem-er": {
+      "filename": "quantem-er.safetensors",
+      "kind": "model",
+      "model_id": "quantem/er",
+      "sha256": "50bcdfedc497041fcd78292175f3d11b50c397db271e441d9ad91a5bb50072a1",
+      "bytes": 465028184,
+      "description": "Self-contained: adapt=full replaces the entire encoder, so this needs no trunk.",
+      "license": "CC BY 4.0"
+    },
+    "omniem-mito": {
+      "filename": "omniem-mito.safetensors",
+      "kind": "model",
+      "model_id": "omniem/mito",
+      "sha256": "7e5c2c8b6ffede262cc69727683982d1f5d5ac4d46a6fd304d19f92900c988dc",
+      "bytes": 25730696,
+      "license": "CC BY 4.0"
+    },
+    "omniem-nucleus": {
+      "filename": "omniem-nucleus.safetensors",
+      "kind": "model",
+      "model_id": "omniem/nucleus",
+      "sha256": "3142057d3b36b4822f57f2a48028c1f0cbbe1be478a9a8dc94059b7b1e15e1dc",
+      "bytes": 25730704,
+      "license": "CC BY 4.0"
+    },
+    "omniem-ld": {
+      "filename": "omniem-ld.safetensors",
+      "kind": "model",
+      "model_id": "omniem/ld",
+      "sha256": "ae5b0c356e0fb48dc7b27dd080907c83fbf2e670a1042b268779d6504e5baf36",
+      "bytes": 25730688,
+      "license": "CC BY 4.0"
+    },
+    "omniem-er": {
+      "filename": "omniem-er.safetensors",
+      "kind": "model",
+      "model_id": "omniem/er",
+      "sha256": "3e3a693ea757d500b23f70e4e5d3d07633f5ba1247c9cd41f37bbb8ca92ffd99",
+      "bytes": 135200976,
+      "license": "CC BY 4.0"
+    }
+  }
+}

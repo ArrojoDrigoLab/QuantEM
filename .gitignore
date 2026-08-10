@@ -134,6 +134,11 @@ electron-builder-output/
 checkpoints/
 weights/
 foundation_weights/
+# ...but `quantem_em.weights` is a source package, not a bag of checkpoints: it is
+# the registry and fetcher that decide *where* weights come from. The rule above
+# matches the directory, and git cannot re-include a file whose parent directory is
+# excluded, so the directory itself has to be un-ignored here.
+!quantem-core/src/quantem_em/weights/
 
 # -----------------------------------------------------------------------------
 # Image / EM data
