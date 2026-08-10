@@ -1,0 +1,9 @@
+organelle,arm,dice,pq,seed
+er,"inferred support, uncertainty gating",0.2518,,0
+er,"inferred support, residual gating",0.2533,,0
+er,"ground-truth support, uncertainty gating",0.2933,,0
+er,"reference, no adaptation",0.2733,,0
+mito,"inferred support, uncertainty gating",0.6655,,0
+mito,"inferred support, residual gating",0.6702,,0
+mito,"ground-truth support, uncertainty gating",0.6690,,0
+mito,"reference, no adaptation",0.7174,0.19003,0

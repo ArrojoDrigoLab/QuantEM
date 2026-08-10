@@ -1,0 +1,47 @@
+# Test-time-support arm: mitochondria on OmniEM; resnet34_detail, affinity_mws head; LoRA rank 8; dice_bce loss; 10,000 steps; encoder lr 0.001; pooled-global FiLM at inference, support from first-pass predictions.
+amp: true
+cond:
+  arm: baseline
+  enabled: true
+  style_source: confident_feature
+  tta: b4_b2film
+  support_source: inferred
+data:
+  bucket: canonical
+  min_fg_frac_keep: 0.1
+  organelle: mito
+  task: instance
+decoder:
+  type: affinity_mws
+device: cuda
+encoder:
+  run_dir: <OmniEM ViT-L encoder run directory>
+  adapt: lora
+  adapt_params:
+    conv: false
+    rank: 8
+  apply_encoder_norm: true
+  feature_layers: last4
+  tile_size: 512
+eval:
+  bootstrap_n: 1000
+  fg_threshold: 0.5
+  instance_min_size: 16
+  overlap: 0.25
+loss:
+  terms:
+  - type: dice_bce
+    weight: 1.0
+name: mito_omniem_pooled_global_film_inferred
+neck:
+  type: resnet34_detail
+notes: 'Test-time-support arm: mitochondria on OmniEM; resnet34_detail, affinity_mws head; LoRA rank 8; dice_bce loss; 10,000 steps; encoder lr 0.001; pooled-global FiLM at inference, support from first-pass predictions.'
+num_workers: 8
+optim:
+  adapter_lr: 0.001
+  batch_size: 8
+  lr: 0.001
+  max_steps: 10000
+  seed: 0
+  warmup_steps: 625
+  weight_decay: 0.0001

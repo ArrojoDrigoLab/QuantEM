@@ -1,0 +1,52 @@
+{
+  "id": "emdata123",
+  "doi": {
+    "id": "10.17632/emdata123.2"
+  },
+  "name": "Serial block face EM dataset of mouse liver mitochondria",
+  "description": "SBF-SEM volume data documenting intracellular ultrastructure, mitochondria, ER, and nucleus.",
+  "version": 2,
+  "files": [
+    {
+      "filename": "volume_001.mrc",
+      "size": 2048,
+      "content_details": {
+        "content_type": "application/octet-stream",
+        "download_url": "https://data.mendeley.com/public-files/datasets/emdata123/files/1/file_downloaded"
+      },
+      "status": "COMPLETED"
+    },
+    {
+      "filename": "slice_001.tif",
+      "size": 1024,
+      "content_details": {
+        "content_type": "image/tiff",
+        "download_url": "https://data.mendeley.com/public-files/datasets/emdata123/files/2/file_downloaded"
+      },
+      "status": "COMPLETED"
+    },
+    {
+      "filename": "readme.txt",
+      "size": 1024,
+      "content_details": {
+        "content_type": "text/plain"
+      },
+      "status": "COMPLETED"
+    }
+  ],
+  "size": 4096,
+  "categories": [
+    {"label": "Cell Biology"}
+  ],
+  "data_licence": {
+    "short_name": "CC BY 4.0",
+    "url": "http://creativecommons.org/licenses/by/4.0"
+  },
+  "articles": [
+    {"doi": "10.1016/j.example.2025.1"}
+  ],
+  "links": {
+    "view": "https://data.mendeley.com/datasets/emdata123"
+  },
+  "publish_date": "2025-09-10T12:00:00Z"
+}

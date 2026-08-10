@@ -1,0 +1,31 @@
+{
+  "dataset": "GK ImmunoEM 6hr-fast (3 images M1/M2/M3, 2 confirmed-area crops each; 8nm)",
+  "split_user": {"test": ["5efb1b60_1 (M1)", "d0ccc5eb_1 (M3)"], "train": ["5efb1b60_0 (M1)", "d3c86c65_0 (M2)", "d3c86c65_1 (M2)", "d0ccc5eb_0 (M3)"],
+                 "caveat": "test crops share images with train crops -> within-image leakage; LOIO below is the honest number"},
+  "base_eval_test_dice": {
+    "mitonet_v1_mini": {"thr0.5": 0.23, "note": "fails on M3 -> 0.00 both M3 crops"},
+    "omni_cem_vitL": {"thr0.5": 0.586, "calibrated": 0.719},
+    "qem_cem_vitB": {"thr0.5": 0.721, "calibrated": 0.800, "note": "best base + smaller/faster"}
+  },
+  "training_free_qem_cem_test_cal": {
+    "threshold_calibration": 0.800,
+    "support_query_match_only": 0.762,
+    "support_query_mean_or_residual": 0.804,
+    "support_query_uncertainty_gated": 0.800,
+    "verdict": "support-query ~= threshold calibration on a strong base; adds ~nothing (+0.004)"
+  },
+  "light_training_user_split_test_cal": {
+    "qem_cem_head_only": {"dice": 0.916, "params_M": 5.78, "sec": 46},
+    "omni_cem_head_only": {"dice": 0.914, "params_M": 6.04, "sec": 46},
+    "omni_cem_lora": {"dice": 0.931, "params_M": 6.43, "sec": 107},
+    "qem_cem_lastN4": {"dice": 0.932, "params_M": 34.13},
+    "omni_cem_lastN4": {"dice": 0.920, "params_M": 56.43}
+  },
+  "loio_honest_cross_image_omni_cem_head_only": {
+    "heldout_M1": {"base": 0.769, "adapted": 0.838},
+    "heldout_M2": {"base": 0.920, "adapted": 0.948},
+    "heldout_M3": {"base": 0.643, "adapted": 0.872},
+    "mean": {"base": 0.777, "adapted": 0.886, "delta": 0.109}
+  },
+  "headline": "Base (best ViT, qem_cem) >> MitoNet. Threshold calib (free) recovers to ~0.80. Support-query adds ~nothing. Light training (head-only, 46s, 6M params, weak-GPU-friendly) -> ~0.89 cross-image / ~0.92 within-dataset (+0.11). LoRA/last-N add only ~+0.015."
+}

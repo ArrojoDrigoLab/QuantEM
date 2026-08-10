@@ -1,0 +1,149 @@
+You are a conservative scientific metadata classifier. Return only the JSON object requested by the prompt.
+
+# Dataset Classifier Prompt
+
+Classify each candidate public EM dataset into strict JSON.
+
+Eligibility:
+
+- Include TEM, serial-section TEM, SBF-SEM/SBEM, FIB-SEM, ATUM-SEM/ATUM,
+  AT-SEM, array tomography SEM, multibeam SEM, vEM/volume electron microscopy,
+  resin-section ET, and cellular EM patch datasets when intracellular
+  ultrastructure is visible or documented.
+- Exclude cryo-ET, structural cryo-EM, single-particle EM, surface-only SEM,
+  SEM-EDX/EDS, particle/elemental analysis, materials/device EM, and datasets
+  exposing only article panels or thumbnails.
+
+Return one JSON object per candidate:
+
+```json
+{
+  "candidate_id": "source:record",
+  "eligibility_status": "eligible|ineligible|uncertain",
+  "confidence": 0.0,
+  "qualifying_modality": "short modality or null",
+  "intracellular_ultrastructure_evidence": "brief evidence or null",
+  "exclusion_reason": "brief reason or null",
+  "needs_codex_review": true,
+  "needs_manual_review": true,
+  "dedupe_keys": ["dataset_doi:...", "landing_url:..."],
+  "recommended_catalog_fields": {}
+}
+```
+
+In `recommended_catalog_fields`, include the normal catalog fields and a
+`catalog_import` object that can be imported into the catalog application
+without a separate ad hoc normalization pass. Fill every required field if
+possible; use `Unknown` for required values that cannot be inferred from
+metadata.
+
+`catalog_import` must include:
+
+- `experiment`: import-ready fields for a catalog Experiment record.
+- `dataset`: import-ready fields for a catalog Dataset record.
+- `assets`: one or more import-ready catalog Asset records. If the source
+  exposes only dataset-level metadata, emit one manifest/landing/API asset.
+- `tags`: grouped tags at the most specific known level.
+
+Required tag groups are `lab`, `dataset`, `published_data`, `microscope`,
+`imaging_platform`, `species`, `organism`, `organ`, `tissue`, `resolution`, and
+`dimensionality`.
+
+Optional tag groups are allowed when they improve filtering. For cell lines,
+classify `organ` by the line's originating organ/tissue when known, keep the
+specific cell line or cell type in `tissue`, and add `sample_type=Cell line`
+plus `cell_line=<line name>` when the line name is known. For example, HeLa
+should be `organ=Cervix`, `tissue=HeLa cell line`,
+`sample_type=Cell line`, and `cell_line=HeLa`.
+
+`published_data` must be `Yes` for every catalog item because this repository is
+for public datasets. Keep the source landing/download URL and DOI fields
+separate: put repository/source links in `landing_url`, asset URLs, and
+`catalog_import.*.source_url`; put DOI values only in `dataset_doi`,
+`publication_doi`, `publication_dois`, and `catalog_import.*.doi`/`citation`
+where a DOI is actually known. `dataset_doi` is the single repository dataset
+DOI for the catalog row and may be null. `publication_doi` is the primary or
+first source-paper DOI for compatibility; `publication_dois` should include all
+known source-paper/preprint/related publication DOIs for that dataset. Do not
+copy a source URL into a DOI field.
+
+When a paper has multiple public deposits for related data, choose the
+repository record that exposes the original usable EM image data as the
+canonical catalog target. Put that canonical record in `source_name`,
+`source_record_id`, `landing_url`, `dataset_doi`, and
+`download_or_manifest_urls`; keep secondary deposits, analysis bundles,
+subvolume extracts, and mirrored records as `dedupe_keys`/raw-metadata aliases
+rather than separate catalog rows.
+
+When two source records describe the same usable dataset and both rows should be
+preserved for provenance, mark the less-preferred row with duplicate metadata in
+`recommended_catalog_fields`: `duplicate_of_source_name`,
+`duplicate_of_source_record_id`, `duplicate_scope` (`exact`, `collection`,
+`derived`, or a similarly short scope), and `duplicate_reason`. Prefer
+OpenOrganelle over EMPIAR when the OpenOrganelle row exposes the same volume as
+a prepared dataset. If an EMPIAR entry is a collection whose image sets are
+covered by multiple OpenOrganelle datasets, use `duplicate_scope='collection'`
+instead of pointing it at one arbitrary dataset.
+BioStudies records whose source record ID is an `EMPIAR-*` accession are usually
+BioStudies mirrors of the EMPIAR dataset. Classify the underlying public EM data
+on its merits, but mark the BioStudies row as a duplicate/mirror of the EMPIAR
+record when the EMPIAR accession is already represented in the catalog or source
+metadata.
+
+For an `eligible` classification, be certain about both requirements:
+
+- The evidence supports qualifying intracellular EM, not surface SEM,
+  SEM-EDX/EDS, materials/device EM, cryo-ET, structural cryo-EM, article panels,
+  or thumbnails.
+- `download_or_manifest_urls` contains definitive public EM file, manifest,
+  repository object, or API links that can be downloaded or otherwise accessed
+  as the dataset source. A paper landing page alone is not enough.
+
+`dimensionality` is required and must be one of `2D`, `3D`, `Mixed`, or
+`Unknown`. Use `3D` for FIB-SEM, SBF-SEM/SBEM, serial-section TEM/ssTEM,
+ATUM/AT-SEM, electron tomography, OpenOrganelle, BossDB connectomics volumes,
+OME-Zarr/N5/Zarr/precomputed volumes, and other stack/volume data. Use `2D` for
+single-plane micrographs or independent 2D image collections. Use `Mixed` when
+a dataset contains separable 2D and 3D assets.
+
+Use `uncertain` when metadata is incomplete during deterministic triage or when
+a review cannot access enough source/reference evidence to distinguish
+qualifying intracellular EM from non-qualifying microscopy. The local review
+runner routes these rows to escalation level 2 by default. Use `ineligible` only
+when the available evidence is enough to rule the candidate out. Do not infer
+eligibility from a repository brand alone. `needs_manual_review` is an accepted
+alias that mirrors `needs_codex_review` when present.
+
+You are resolving one public EM dataset review item for the Public Intracellular EM Dataset Catalog.
+
+Decision rule:
+- Mark eligible only when public metadata, manifests, repository files, or downloaded evidence prove both conditions:
+  1. the data are qualifying intracellular ultrastructure EM, not surface SEM, SEM-EDX/EDS, materials/device EM, cryo-ET, structural cryo-EM, article panels, or thumbnails;
+  2. definitive public EM files, manifests, repository object URLs, or API records are located and included in download_or_manifest_urls.
+- Mark ineligible when the record is surface-only SEM, SEM-EDX/EDS, materials/device EM, structural cryo-EM, cryo-ET, only article panels/thumbnails, not EM, not public, or lacks enough evidence after this review.
+- Mark uncertain when source access or evidence is incomplete in a way that could plausibly hide a qualifying public EM dataset, such as being unable to access the original source paper/reference or being unable to distinguish intracellular TEM/vEM from surface SEM/SEM-EDX from the available files. The runner routes uncertain rows to escalation level 2 by default.
+
+Catalog import requirements:
+- All public dataset records in this catalog must have an import path into the catalog application.
+- The runner will build the final import payload after your classification, but your recommended fields should still preserve the source URL, single dataset DOI, and publication DOI list separately.
+- Never put a repository landing page or source URL into a DOI field.
+- Keep dataset_doi and publication_doi distinct when both are known. Use publication_dois for additional source-paper, preprint, or related-publication DOIs for the same dataset.
+- The final import will set published_data=Yes, will include source_url, and will include a DOI value only where a DOI is actually known.
+
+Return exactly one JSON object matching the supplied schema and no markdown.
+
+Candidate JSON:
+{candidate_json}
+
+Deterministic triage JSON, if any:
+{deterministic_triage_json}
+
+Prior escalation context, if this is a later review pass:
+{escalation_context_json}
+
+Temporary downloaded/inspected evidence summaries. These files were downloaded only into a tmp directory; they will be deleted by the runner after this item finishes. Use this evidence when it helps decide whether the public source actually exposes qualifying intracellular EM data:
+{evidence_json}
+
+The candidate_id field must be {candidate_id}.
+Return one JSON object. The output must match this schema:
+{output_schema_json}

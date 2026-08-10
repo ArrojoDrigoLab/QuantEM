@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>QuantEM</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body {
+        margin: 0; height: 100%;
+        background: #10141a; color: #cdd6e0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        display: grid; place-items: center;
+      }
+      .box { text-align: center; }
+      .spinner {
+        width: 44px; height: 44px; margin: 0 auto 18px;
+        border: 3px solid #2a3442; border-top-color: #5aa9e6;
+        border-radius: 50%; animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; letter-spacing: 0.4px; }
+      p  { font-size: 13px; margin: 0; color: #8394a8; }
+      #err { color: #e07a7a; white-space: pre-wrap; max-width: 560px; display: none; margin-top: 14px; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <div class="spinner" id="spinner"></div>
+      <h1>QuantEM</h1>
+      <p id="status">Starting the local server&hellip; first launch can take a minute.</p>
+      <p id="err"></p>
+    </div>
+    <script>
+      /* The Rust shell drives this page:
+         - window.__quantemStatus(text)  updates the status line
+         - window.__quantemFailed(text)  shows a fatal error
+         - on success it replaces location with the server URL. */
+      window.__quantemStatus = function (t) {
+        document.getElementById("status").textContent = t;
+      };
+      window.__quantemFailed = function (t) {
+        document.getElementById("spinner").style.display = "none";
+        document.getElementById("status").textContent = "QuantEM could not start.";
+        var e = document.getElementById("err");
+        e.style.display = "block";
+        e.textContent = t;
+      };
+    </script>
+  </body>
+</html>

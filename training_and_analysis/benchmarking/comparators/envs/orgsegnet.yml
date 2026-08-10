@@ -1,0 +1,20 @@
+name: orgsegnet
+channels:
+  - conda-forge
+dependencies:
+  - python=3.8
+  - tifffile
+  - scikit-image
+  - pip
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu116
+      - torch==1.13.1+cu116
+      # prebuilt mmcv wheel index (cu116 / torch1.13)
+      - --find-links https://download.openmmlab.com/mmcv/dist/cu116/torch1.13/index.html
+      - mmcv==2.0.0rc4
+      - mmengine==0.10.7
+      - opencv-python==5.0.0.93
+      - matplotlib==3.7.5
+      - scipy==1.10.1
+      - prettytable==3.11.0
+      # mmsegmentation itself is provided by the OrgSegNet clone (--orgsegnet-repo)

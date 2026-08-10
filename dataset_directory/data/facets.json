@@ -1,0 +1,3955 @@
+{
+  "schema_version": "1.0.0",
+  "dictionaries": {
+    "kingdom": [
+      "Animalia",
+      "Plantae",
+      "Bacteria",
+      "Protista",
+      "Chromista",
+      "Fungi",
+      "Unknown"
+    ],
+    "species": [
+      "Rattus norvegicus",
+      "Homo sapiens",
+      "Mus musculus",
+      "Arabidopsis thaliana",
+      "Oryza sativa",
+      "Unknown Mammalia",
+      "Escherichia coli",
+      "Chlorocebus sabaeus",
+      "Nicotiana clevelandii",
+      "Potato virus Y",
+      "Solanum lycopersicum",
+      "Medicago sativa",
+      "SARS-CoV-2",
+      "Brassica rapa",
+      "Cucumis melo",
+      "Triticum aestivum",
+      "Mesocricetus auratus",
+      "Taeniopygia guttata",
+      "Danio rerio",
+      "Drosophila melanogaster",
+      "Peromyscus maniculatus",
+      "Brassica napus",
+      "Amphiprion frenatus",
+      "Asystasia gangetica",
+      "Plasmodium falciparum",
+      "Plasmodium berghei",
+      "Caenorhabditis elegans",
+      "Cucumis sativus",
+      "Glycine max",
+      "Arapaima gigas",
+      "Unknown Malacosporea",
+      "Brassica oleracea",
+      "Phaeocystis antarctica",
+      "Unknown Dinophyceae",
+      "Elsholtzia haichowensis",
+      "Platynereis dumerilii",
+      "Cavia porcellus",
+      "Cytomitobacter primus",
+      "Diplonema japonicum",
+      "Ixodes ricinus",
+      "Midichloria mitochondrii",
+      "Nesciobacter abundans",
+      "Rhynchopus asiaticus",
+      "Unknown Gossypium",
+      "Rhynchopus granulatus",
+      "Candida albicans",
+      "Rhynchopus valaseki",
+      "Borrelia burgdorferi",
+      "Giardia lamblia",
+      "Lacrimia aflagellata",
+      "Lacrymaria olor",
+      "Encephalitozoon intestinalis",
+      "Gallus gallus",
+      "Paeonia lactiflora",
+      "Unknown Lilium",
+      "Unknown Pyrus",
+      "Leishmania mexicana",
+      "Macleaya cordata",
+      "Phaeocystis cordata",
+      "Toxoplasma gondii",
+      "Unknown Acantharia",
+      "Engraulis encrasicolus",
+      "Unknown Collodaria",
+      "Unknown Crustacea",
+      "Candidatus Endonucleobacter",
+      "Macaca mulatta",
+      "Anncaliia algerae",
+      "Unknown Galiteuthis",
+      "Nicotiana benthamiana",
+      "Physcomitrium patens",
+      "Pristionchus pacificus",
+      "Candidatus Profftella armatura",
+      "Chlamydomonas reinhardtii",
+      "Cicer arietinum",
+      "Diaphorina citri",
+      "Oikopleura dioica",
+      "Sanguina nivaloides",
+      "Sitophilus oryzae",
+      "Sodalis pierantonius",
+      "Trichuris muris",
+      "Tuwongella immobilis",
+      "Unknown",
+      "Aedes aegypti",
+      "Cricetulus griseus",
+      "Ensiculifera tyrrhenica",
+      "Eucalyptus camaldulensis",
+      "Eucalyptus grandis",
+      "Eucalyptus occidentalis",
+      "Eucalyptus parramattensis",
+      "Gemmata obscuriglobus",
+      "Human cytomegalovirus",
+      "Hydra vulgaris",
+      "Locusta migratoria",
+      "Mnemiopsis leidyi",
+      "Nematostella vectensis",
+      "Oryctolagus cuniculus",
+      "Paramecium multimicronucleatum",
+      "Shigella flexneri",
+      "Trypanosoma cruzi",
+      "Unknown Chlamydomonas",
+      "Unknown Embioptera"
+    ],
+    "organ": [
+      "Lung",
+      "Mammary gland",
+      "Muscles",
+      "Kidneys",
+      "Immune system",
+      "Leaf",
+      "Pancreas",
+      "Brain",
+      "Liver",
+      "Hypocotyl",
+      "Mixed",
+      "Whole organism",
+      "Heart",
+      "Intestine",
+      "Eye",
+      "Adipose tissue",
+      "Other",
+      "Spleen",
+      "Cervix",
+      "Skin",
+      "Central nervous system",
+      "Testis",
+      "Peripheral nervous system",
+      "Bones",
+      "Embryo",
+      "Ear",
+      "Ovary",
+      "Tongue",
+      "Pharynx",
+      "Spinal cord",
+      "Aboral organ",
+      "Epididymis",
+      "Thymus",
+      "Unknown"
+    ],
+    "Tissue Region": [
+      "Alveolar septum",
+      "Adherent culture",
+      "PDX tumor",
+      "Triple-negative breast cancer",
+      "Alveolar stem cell culture",
+      "Organoid",
+      "Outer epidermis",
+      "Cell wall",
+      "Multiple myeloma plasma cell",
+      "COS-7 cell line",
+      "Seminiferous tubule",
+      "TM4 Sertoli cell line",
+      "U-2 OS cell line",
+      "Mouse skeletal muscle",
+      "Capillaries / blood-brain barrier",
+      "Engineered heart tissue",
+      "Bacterial cell",
+      "Vero E6 cell line",
+      "PVY-infected",
+      "HeLa cell line",
+      "Photoreceptor outer segments",
+      "Extracellular matrix",
+      "PAV-1 cell line",
+      "Adipose progenitor / transdifferentiating adipocyte",
+      "GRX cell line",
+      "Primary culture",
+      "Beta cell",
+      "Medial entorhinal cortex",
+      "MIN6 cell line",
+      "CAV1 knockout",
+      "Lung cryobiopsy",
+      "MCF-7 cell line",
+      "Test specimen (250 nm section)",
+      "Diplonemid cell",
+      "Protozoan/helminth parasite cell",
+      "Fetal kidney",
+      "Organelle segmentation benchmark",
+      "Iridophore",
+      "Perinatal cardiac maturation",
+      "Glomerular basement membrane",
+      "CAV1 Y14F mutant",
+      "Hindbrain",
+      "Centriole",
+      "Neurovascular unit capillary",
+      "Ookinete",
+      "Notochord organoid (notoroid)",
+      "Myxozoan infection",
+      "Spermatozoa",
+      "Extensor digitorum longus (EDL) muscle",
+      "Microbial cells (Phaeocystis prey + dinoflagellate host)",
+      "Venous puncture wound thrombus",
+      "DT40 cell line",
+      "Mitotic chromosome",
+      "Wild-type",
+      "Basolateral amygdala",
+      "Respiratory ciliated epithelium",
+      "Early postnatal",
+      "Glia",
+      "Newborn",
+      "Endosymbiont (intramitochondrial bacteria; in Diplonema/Ixodes host)",
+      "Mossy fiber synapse",
+      "Nucleus accumbens & ventral tegmental area",
+      "Organotypic slice",
+      "Schaffer collateral synapse",
+      "Breast cancer cells",
+      "Instance segmentation",
+      "Mammary gland",
+      "Mouse lung tumor",
+      "Nucleus",
+      "Vero cell line",
+      "Candida albicans cell (epithelial invasion model)",
+      "Cardiac microvascular endothelial cell",
+      "Intracellular microsporidian parasite/spores (Encephalitozoon intestinalis)",
+      "Ischemia/reperfusion",
+      "Microsporidia-infected (Encephalitozoon intestinalis)",
+      "Term placenta",
+      "Yeast/hyphal cell",
+      "A431 cell line",
+      "Barrel cortex",
+      "BHK-21 cell line",
+      "Dorsal skin microvasculature",
+      "Ear lymphatic capillary endothelium",
+      "External sensilla",
+      "Lacrymaria olor cell",
+      "Primary visual cortex (V1) layer 2/3",
+      "SARS-CoV-2 infected",
+      "Superior temporal gyrus layer 2/3",
+      "Trophozoite",
+      "Calu-3 cell line",
+      "CellMap challenge composite",
+      "Chronic cerebral hypoperfusion model",
+      "Isolated cardiomyocyte",
+      "Postnatal day 4",
+      "Primary visual cortex (V1) layer 4",
+      "U2-OS cell line",
+      "Adipose tissue capillary",
+      "Barrel cortex layer 4",
+      "Myelinated axons",
+      "Photosymbiosis sample (Phaeocystis symbiont in acantharian host)",
+      "Small intestine",
+      "Ventral ganglion neuropil",
+      "Whole animal",
+      "Axillary lymphoid organ",
+      "CA1 neuropil",
+      "Cal51 cell line",
+      "Horizontal cell",
+      "Photosymbiosis sample (Collodaria)",
+      "Primary human macrophage",
+      "Primary neuron alpha-synuclein aggregation model",
+      "Alveolar epithelium",
+      "Anterior cingulate cortex",
+      "Endosymbiont/intranuclear parasite (in deep-sea mussel gill cell nucleus)",
+      "Endosymbiont/intranuclear parasite (in mussel gill nucleus)",
+      "Fetal day 55-59",
+      "GT1-7 cell line",
+      "Hemostatic plug",
+      "Jugular vein and carotid artery",
+      "Jugular vein or carotid artery",
+      "Motor neuron synapse",
+      "Obese (LacZ control)",
+      "Periaqueductal gray",
+      "Periaqueductal gray long-range synaptic inputs",
+      "Pericentral zone",
+      "Psoas muscle",
+      "Renal biopsy",
+      "Somatosensory cortex layer 1",
+      "Somatosensory cortex layer 1 neuropil",
+      "Tracheal terminal cell",
+      "Traumatic brain injury",
+      "Visual cortex",
+      "Anterior motor circuit / body",
+      "Body",
+      "Dentate gyrus molecular layer",
+      "ID8 ovarian carcinoma + OT-I CTL co-culture",
+      "Mouse embryonic fibroblast (MEF)",
+      "Postnatal day 7",
+      "Spore",
+      "SUM-149 cell line",
+      "Ventral eye photophore",
+      "Visual cortex layer 2/3",
+      "BT-474 breast spheroid",
+      "Double-innervated",
+      "Embryonic heart",
+      "Forepaw glabrous skin",
+      "Haptomonad (attached form)",
+      "ID8 cell line",
+      "iPSC-derived",
+      "Lens organoid",
+      "Lentoid body",
+      "Leptin-deficient ob/ob (obese)",
+      "Lung tumor",
+      "NAFLD",
+      "Nucleus accumbens",
+      "OT-I cytotoxic T lymphocyte",
+      "P. falciparum-infected red blood cell",
+      "Patient-derived colorectal cancer organoid",
+      "Phloem",
+      "Phloem pole unloading zone",
+      "Promastigote",
+      "Somatosensory cortex",
+      "Somatosensory cortex layer 4",
+      "Virus-particle regions",
+      "White matter",
+      "ALI culture",
+      "Basal body",
+      "CA1",
+      "Cells with intracellular Toxoplasma tachyzoites",
+      "Chaeta/bristle-forming cells",
+      "Cultured cerebellar granule neurons",
+      "Dorsal cochlear nucleus",
+      "Fan-shaped body",
+      "Hindbrain macrophage",
+      "Inner hair cell / spiral ganglion neuron synapses",
+      "Larval CNS",
+      "Left ventricle",
+      "Macrophage with intracellular Toxoplasma tachyzoites",
+      "Nasal airway epithelium",
+      "NIH-3T3 cell line",
+      "Oligodendrocyte precursor cells",
+      "Primary visual cortex (V1)",
+      "Spermatid",
+      "Spermatozoid",
+      "Striated muscle",
+      "2-cell-like cells (2CLC)",
+      "3D brain microvessel model",
+      "Acinus",
+      "Adhered to plastic substrate",
+      "Adult cortex",
+      "Bacterial cell (Planctomycetes)",
+      "Barrel cortex layer 2/3",
+      "C2C12 cell line",
+      "CA1 stratum radiatum microglia",
+      "Cerebellar cortex",
+      "Chlamydomonas reinhardtii cell",
+      "Circumvallate papilla",
+      "Cyst",
+      "Dauer larva",
+      "Deep cerebellar nuclei",
+      "Dentate gyrus",
+      "Dorsal corticospinal tract",
+      "Dorsal lateral geniculate nucleus (dLGN)",
+      "Dorsal striatum",
+      "Endosymbiont",
+      "Endosymbiont (Candidatus Profftella armatura; in Diaphorina citri bacteriome)",
+      "Enterocyte",
+      "Exposed to P. falciparum egress products",
+      "Fam134b KO/WT",
+      "Glabrous digit skin",
+      "Glabrous digit skin; Meissner corpuscle",
+      "Haptomonad-like (attached form)",
+      "Inner spiral bundle",
+      "Larval",
+      "Lateral geniculate nucleus (LGN)",
+      "Low glucose treatment",
+      "Male gamete (microgamete)",
+      "MDA-MB-231 cell line",
+      "Medulla",
+      "mESC",
+      "Microglia",
+      "Mitochondria",
+      "Mixed human cell lines (Nthy-ori 3-1, HepG2, LX-2, A375, HCT116, HMEC, MDA-MB-231)",
+      "Myotube",
+      "Neuron",
+      "Outer plexiform layer",
+      "Parasitophorous vacuole",
+      "Primary somatosensory cortex (S1)",
+      "Primary somatosensory cortex (S1) layer 2/3",
+      "Primary somatosensory cortex layer 4",
+      "Psoas",
+      "Sodalis pierantonius in Sitophilus oryzae bacteriocyte",
+      "Stichosome (anterior organ of whipworm)",
+      "SUM-159 cell line",
+      "Tachyzoite",
+      "4T1 cell line",
+      "5-day-old aboral organ",
+      "7 dpf",
+      "Aboral pole / apical organ",
+      "Accessory calyx",
+      "Adult/aged",
+      "Alpha and alpha-prime lobes",
+      "Alpha lobe",
+      "Anterior pharynx",
+      "Back skin",
+      "Bacterial cell (Gemmata obscuriglobus)",
+      "Bone protocol sample",
+      "Brain and ventral nerve cord",
+      "Cardiac mitochondria",
+      "Central brain",
+      "Chlamydomonas cell",
+      "Chloroplast-rich region",
+      "CHO cell line",
+      "Cochlear nerve fibers",
+      "Collecting tubule basement membrane",
+      "Corpus callosum anterior midbody",
+      "Cremaster muscle microvasculature",
+      "Developing retina 55 hpf",
+      "Dinoflagellate cell",
+      "Dorsal skin hypodermis microvasculature",
+      "Dorsal skin lymphatic capillary endothelium",
+      "Duodenum",
+      "e1370 mutant",
+      "Ear dermis blood capillary",
+      "Ear skin collagen bundle",
+      "Ear skin lymphatic capillary endothelium",
+      "Ellipsoid body",
+      "Embryonic",
+      "Endodermal nerve net",
+      "Euglena gracilis cell",
+      "Fascicle",
+      "Fibular periosteum",
+      "Gastrocnemius muscle",
+      "Glia and parenchyma",
+      "Guard hair follicle",
+      "HCMV-infected",
+      "Hemibrain",
+      "HFF-1 cell line",
+      "High glucose treatment",
+      "Huh-7 cell line",
+      "HVC (song nucleus)",
+      "ID8 ovarian carcinoma + CTL co-culture",
+      "ID8 ovarian carcinoma + cytotoxic T lymphocyte co-culture",
+      "Inferior frontal gyrus layer 2/3",
+      "Inner hair cell",
+      "Jurkat cell line",
+      "L1 stage",
+      "Lacuno-canalicular network",
+      "Larva trunk",
+      "Larval heart",
+      "Lateral parietal association area (LPtA)",
+      "Layer 2/3",
+      "Lobule V",
+      "Lung parenchyma",
+      "Male gamete (microgamete) fraction",
+      "Medial prefrontal cortex",
+      "MEF cell line",
+      "Molecular layer",
+      "Nerve root",
+      "Neuropil",
+      "Neutrophil",
+      "Obese",
+      "P7 kidney",
+      "P7 mouse heart",
+      "Pancreatic duct",
+      "PMA-differentiated",
+      "Posterior antennal lobe (insect)",
+      "Posterior parietal cortex",
+      "Posterior parietal cortex layer 2/3",
+      "Posterior parietal cortex layers 1-5",
+      "Postnatal day 14",
+      "Primary cilia",
+      "Promastigote whole cell",
+      "Protocerebral bridge",
+      "Proximal convoluted tubule basement membrane",
+      "Renal cell carcinoma",
+      "Sagittal section",
+      "Secondary visual cortex (V2)",
+      "Secondary visual cortex (V2) layer 2/3",
+      "Shigella flexneri invasion of HeLa cells (CLEM)",
+      "Single-innervated",
+      "Soleus muscle",
+      "Spermatotubule",
+      "Sternal cartilage",
+      "Superior temporal gyrus layers 1-6",
+      "Synaptic boutons",
+      "Temporal lobe",
+      "THP-1 cell line",
+      "Trophozoite (adherent)",
+      "Tubular basement membrane",
+      "Tubular epithelium",
+      "Ventral cochlear nucleus",
+      "Visual column",
+      "Whole brain",
+      "Whole cell (Paramecium)",
+      "Whole CNS",
+      "Whole embryo",
+      "Whole larva",
+      "Whole larva (6 dpf)",
+      "Young adult"
+    ],
+    "modality": [
+      "TEM",
+      "SEM",
+      "FIB-SEM",
+      "Electron tomography",
+      "SBF-SEM",
+      "STEM"
+    ],
+    "repository": [
+      "Zenodo",
+      "BioImage Archive",
+      "EMPIAR",
+      "Science Data Bank",
+      "Institutional repository",
+      "figshare",
+      "Dryad",
+      "BossDB",
+      "OpenOrganelle",
+      "WEBKNOSSOS",
+      "Quilt",
+      "Mendeley Data",
+      "IDR",
+      "SPARC"
+    ],
+    "resolution": [
+      "< 1 nm/px",
+      "1 – 4 nm/px",
+      "4 – 8 nm/px",
+      "8 – 32 nm/px",
+      "≥ 32 nm/px",
+      "Unknown"
+    ],
+    "dimensionality": [
+      "2D image",
+      "3D acquisition"
+    ]
+  },
+  "facets": [
+    {
+      "key": "taxonomy",
+      "label": "Kingdom and species",
+      "kind": "tree",
+      "ranks": [
+        "kingdom",
+        "species"
+      ],
+      "parentDictionary": "kingdom",
+      "childDictionary": "species",
+      "roots": [
+        {
+          "id": 0,
+          "label": "Animalia",
+          "n": 15965,
+          "children": [
+            {
+              "id": 82,
+              "label": "Aedes aegypti",
+              "n": 1
+            },
+            {
+              "id": 22,
+              "label": "Amphiprion frenatus",
+              "n": 31
+            },
+            {
+              "id": 29,
+              "label": "Arapaima gigas",
+              "n": 20
+            },
+            {
+              "id": 47,
+              "label": "Borrelia burgdorferi",
+              "n": 10
+            },
+            {
+              "id": 26,
+              "label": "Caenorhabditis elegans",
+              "n": 24
+            },
+            {
+              "id": 71,
+              "label": "Candidatus Profftella armatura",
+              "n": 2
+            },
+            {
+              "id": 36,
+              "label": "Cavia porcellus",
+              "n": 15
+            },
+            {
+              "id": 7,
+              "label": "Chlorocebus sabaeus",
+              "n": 137
+            },
+            {
+              "id": 83,
+              "label": "Cricetulus griseus",
+              "n": 1
+            },
+            {
+              "id": 37,
+              "label": "Cytomitobacter primus",
+              "n": 13
+            },
+            {
+              "id": 18,
+              "label": "Danio rerio",
+              "n": 49
+            },
+            {
+              "id": 74,
+              "label": "Diaphorina citri",
+              "n": 2
+            },
+            {
+              "id": 38,
+              "label": "Diplonema japonicum",
+              "n": 13
+            },
+            {
+              "id": 19,
+              "label": "Drosophila melanogaster",
+              "n": 39
+            },
+            {
+              "id": 51,
+              "label": "Encephalitozoon intestinalis",
+              "n": 7
+            },
+            {
+              "id": 61,
+              "label": "Engraulis encrasicolus",
+              "n": 7
+            },
+            {
+              "id": 52,
+              "label": "Gallus gallus",
+              "n": 9
+            },
+            {
+              "id": 48,
+              "label": "Giardia lamblia",
+              "n": 10
+            },
+            {
+              "id": 1,
+              "label": "Homo sapiens",
+              "n": 6075
+            },
+            {
+              "id": 90,
+              "label": "Human cytomegalovirus",
+              "n": 1
+            },
+            {
+              "id": 91,
+              "label": "Hydra vulgaris",
+              "n": 1
+            },
+            {
+              "id": 39,
+              "label": "Ixodes ricinus",
+              "n": 13
+            },
+            {
+              "id": 92,
+              "label": "Locusta migratoria",
+              "n": 1
+            },
+            {
+              "id": 65,
+              "label": "Macaca mulatta",
+              "n": 6
+            },
+            {
+              "id": 16,
+              "label": "Mesocricetus auratus",
+              "n": 55
+            },
+            {
+              "id": 40,
+              "label": "Midichloria mitochondrii",
+              "n": 13
+            },
+            {
+              "id": 93,
+              "label": "Mnemiopsis leidyi",
+              "n": 1
+            },
+            {
+              "id": 2,
+              "label": "Mus musculus",
+              "n": 2906
+            },
+            {
+              "id": 94,
+              "label": "Nematostella vectensis",
+              "n": 1
+            },
+            {
+              "id": 41,
+              "label": "Nesciobacter abundans",
+              "n": 13
+            },
+            {
+              "id": 75,
+              "label": "Oikopleura dioica",
+              "n": 2
+            },
+            {
+              "id": 95,
+              "label": "Oryctolagus cuniculus",
+              "n": 1
+            },
+            {
+              "id": 20,
+              "label": "Peromyscus maniculatus",
+              "n": 39
+            },
+            {
+              "id": 24,
+              "label": "Plasmodium falciparum",
+              "n": 6
+            },
+            {
+              "id": 35,
+              "label": "Platynereis dumerilii",
+              "n": 17
+            },
+            {
+              "id": 70,
+              "label": "Pristionchus pacificus",
+              "n": 3
+            },
+            {
+              "id": 0,
+              "label": "Rattus norvegicus",
+              "n": 6121
+            },
+            {
+              "id": 12,
+              "label": "SARS-CoV-2",
+              "n": 69
+            },
+            {
+              "id": 97,
+              "label": "Shigella flexneri",
+              "n": 1
+            },
+            {
+              "id": 77,
+              "label": "Sitophilus oryzae",
+              "n": 2
+            },
+            {
+              "id": 78,
+              "label": "Sodalis pierantonius",
+              "n": 2
+            },
+            {
+              "id": 17,
+              "label": "Taeniopygia guttata",
+              "n": 50
+            },
+            {
+              "id": 59,
+              "label": "Toxoplasma gondii",
+              "n": 6
+            },
+            {
+              "id": 79,
+              "label": "Trichuris muris",
+              "n": 2
+            },
+            {
+              "id": 63,
+              "label": "Unknown Crustacea",
+              "n": 7
+            },
+            {
+              "id": 100,
+              "label": "Unknown Embioptera",
+              "n": 1
+            },
+            {
+              "id": 67,
+              "label": "Unknown Galiteuthis",
+              "n": 5
+            },
+            {
+              "id": 30,
+              "label": "Unknown Malacosporea",
+              "n": 20
+            },
+            {
+              "id": 5,
+              "label": "Unknown Mammalia",
+              "n": 302
+            }
+          ]
+        },
+        {
+          "id": 1,
+          "label": "Plantae",
+          "n": 1526,
+          "children": [
+            {
+              "id": 3,
+              "label": "Arabidopsis thaliana",
+              "n": 551
+            },
+            {
+              "id": 23,
+              "label": "Asystasia gangetica",
+              "n": 30
+            },
+            {
+              "id": 21,
+              "label": "Brassica napus",
+              "n": 35
+            },
+            {
+              "id": 31,
+              "label": "Brassica oleracea",
+              "n": 18
+            },
+            {
+              "id": 13,
+              "label": "Brassica rapa",
+              "n": 66
+            },
+            {
+              "id": 72,
+              "label": "Chlamydomonas reinhardtii",
+              "n": 2
+            },
+            {
+              "id": 73,
+              "label": "Cicer arietinum",
+              "n": 2
+            },
+            {
+              "id": 14,
+              "label": "Cucumis melo",
+              "n": 63
+            },
+            {
+              "id": 27,
+              "label": "Cucumis sativus",
+              "n": 24
+            },
+            {
+              "id": 34,
+              "label": "Elsholtzia haichowensis",
+              "n": 17
+            },
+            {
+              "id": 85,
+              "label": "Eucalyptus camaldulensis",
+              "n": 1
+            },
+            {
+              "id": 86,
+              "label": "Eucalyptus grandis",
+              "n": 1
+            },
+            {
+              "id": 87,
+              "label": "Eucalyptus occidentalis",
+              "n": 1
+            },
+            {
+              "id": 88,
+              "label": "Eucalyptus parramattensis",
+              "n": 1
+            },
+            {
+              "id": 28,
+              "label": "Glycine max",
+              "n": 22
+            },
+            {
+              "id": 57,
+              "label": "Macleaya cordata",
+              "n": 8
+            },
+            {
+              "id": 11,
+              "label": "Medicago sativa",
+              "n": 77
+            },
+            {
+              "id": 68,
+              "label": "Nicotiana benthamiana",
+              "n": 3
+            },
+            {
+              "id": 8,
+              "label": "Nicotiana clevelandii",
+              "n": 100
+            },
+            {
+              "id": 4,
+              "label": "Oryza sativa",
+              "n": 320
+            },
+            {
+              "id": 53,
+              "label": "Paeonia lactiflora",
+              "n": 9
+            },
+            {
+              "id": 69,
+              "label": "Physcomitrium patens",
+              "n": 3
+            },
+            {
+              "id": 9,
+              "label": "Potato virus Y",
+              "n": 100
+            },
+            {
+              "id": 76,
+              "label": "Sanguina nivaloides",
+              "n": 2
+            },
+            {
+              "id": 10,
+              "label": "Solanum lycopersicum",
+              "n": 78
+            },
+            {
+              "id": 15,
+              "label": "Triticum aestivum",
+              "n": 60
+            },
+            {
+              "id": 99,
+              "label": "Unknown Chlamydomonas",
+              "n": 1
+            },
+            {
+              "id": 43,
+              "label": "Unknown Gossypium",
+              "n": 13
+            },
+            {
+              "id": 54,
+              "label": "Unknown Lilium",
+              "n": 9
+            },
+            {
+              "id": 55,
+              "label": "Unknown Pyrus",
+              "n": 9
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "label": "Bacteria",
+          "n": 193,
+          "children": [
+            {
+              "id": 47,
+              "label": "Borrelia burgdorferi",
+              "n": 10
+            },
+            {
+              "id": 64,
+              "label": "Candidatus Endonucleobacter",
+              "n": 6
+            },
+            {
+              "id": 71,
+              "label": "Candidatus Profftella armatura",
+              "n": 2
+            },
+            {
+              "id": 37,
+              "label": "Cytomitobacter primus",
+              "n": 13
+            },
+            {
+              "id": 74,
+              "label": "Diaphorina citri",
+              "n": 2
+            },
+            {
+              "id": 38,
+              "label": "Diplonema japonicum",
+              "n": 13
+            },
+            {
+              "id": 6,
+              "label": "Escherichia coli",
+              "n": 157
+            },
+            {
+              "id": 89,
+              "label": "Gemmata obscuriglobus",
+              "n": 1
+            },
+            {
+              "id": 1,
+              "label": "Homo sapiens",
+              "n": 1
+            },
+            {
+              "id": 39,
+              "label": "Ixodes ricinus",
+              "n": 13
+            },
+            {
+              "id": 40,
+              "label": "Midichloria mitochondrii",
+              "n": 13
+            },
+            {
+              "id": 2,
+              "label": "Mus musculus",
+              "n": 10
+            },
+            {
+              "id": 41,
+              "label": "Nesciobacter abundans",
+              "n": 13
+            },
+            {
+              "id": 97,
+              "label": "Shigella flexneri",
+              "n": 1
+            },
+            {
+              "id": 77,
+              "label": "Sitophilus oryzae",
+              "n": 2
+            },
+            {
+              "id": 78,
+              "label": "Sodalis pierantonius",
+              "n": 2
+            },
+            {
+              "id": 80,
+              "label": "Tuwongella immobilis",
+              "n": 2
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "label": "Protista",
+          "n": 187,
+          "children": [
+            {
+              "id": 37,
+              "label": "Cytomitobacter primus",
+              "n": 13
+            },
+            {
+              "id": 18,
+              "label": "Danio rerio",
+              "n": 6
+            },
+            {
+              "id": 38,
+              "label": "Diplonema japonicum",
+              "n": 13
+            },
+            {
+              "id": 84,
+              "label": "Ensiculifera tyrrhenica",
+              "n": 1
+            },
+            {
+              "id": 48,
+              "label": "Giardia lamblia",
+              "n": 10
+            },
+            {
+              "id": 1,
+              "label": "Homo sapiens",
+              "n": 16
+            },
+            {
+              "id": 39,
+              "label": "Ixodes ricinus",
+              "n": 13
+            },
+            {
+              "id": 49,
+              "label": "Lacrimia aflagellata",
+              "n": 10
+            },
+            {
+              "id": 50,
+              "label": "Lacrymaria olor",
+              "n": 10
+            },
+            {
+              "id": 56,
+              "label": "Leishmania mexicana",
+              "n": 8
+            },
+            {
+              "id": 40,
+              "label": "Midichloria mitochondrii",
+              "n": 13
+            },
+            {
+              "id": 41,
+              "label": "Nesciobacter abundans",
+              "n": 13
+            },
+            {
+              "id": 96,
+              "label": "Paramecium multimicronucleatum",
+              "n": 1
+            },
+            {
+              "id": 32,
+              "label": "Phaeocystis antarctica",
+              "n": 18
+            },
+            {
+              "id": 58,
+              "label": "Phaeocystis cordata",
+              "n": 8
+            },
+            {
+              "id": 25,
+              "label": "Plasmodium berghei",
+              "n": 26
+            },
+            {
+              "id": 24,
+              "label": "Plasmodium falciparum",
+              "n": 30
+            },
+            {
+              "id": 42,
+              "label": "Rhynchopus asiaticus",
+              "n": 13
+            },
+            {
+              "id": 44,
+              "label": "Rhynchopus granulatus",
+              "n": 12
+            },
+            {
+              "id": 46,
+              "label": "Rhynchopus valaseki",
+              "n": 11
+            },
+            {
+              "id": 59,
+              "label": "Toxoplasma gondii",
+              "n": 8
+            },
+            {
+              "id": 98,
+              "label": "Trypanosoma cruzi",
+              "n": 1
+            },
+            {
+              "id": 60,
+              "label": "Unknown Acantharia",
+              "n": 8
+            },
+            {
+              "id": 62,
+              "label": "Unknown Collodaria",
+              "n": 7
+            },
+            {
+              "id": 33,
+              "label": "Unknown Dinophyceae",
+              "n": 18
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "label": "Chromista",
+          "n": 26,
+          "children": [
+            {
+              "id": 32,
+              "label": "Phaeocystis antarctica",
+              "n": 18
+            },
+            {
+              "id": 58,
+              "label": "Phaeocystis cordata",
+              "n": 8
+            },
+            {
+              "id": 60,
+              "label": "Unknown Acantharia",
+              "n": 8
+            },
+            {
+              "id": 33,
+              "label": "Unknown Dinophyceae",
+              "n": 18
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "label": "Fungi",
+          "n": 25,
+          "children": [
+            {
+              "id": 66,
+              "label": "Anncaliia algerae",
+              "n": 5
+            },
+            {
+              "id": 45,
+              "label": "Candida albicans",
+              "n": 11
+            },
+            {
+              "id": 7,
+              "label": "Chlorocebus sabaeus",
+              "n": 7
+            },
+            {
+              "id": 51,
+              "label": "Encephalitozoon intestinalis",
+              "n": 9
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "label": "Unknown",
+          "n": 2,
+          "children": [
+            {
+              "id": 81,
+              "label": "Unknown",
+              "n": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "anatomy",
+      "label": "Organ and tissue context",
+      "kind": "tree",
+      "ranks": [
+        "organ",
+        "tissue context"
+      ],
+      "parentDictionary": "organ",
+      "childDictionary": "Tissue Region",
+      "roots": [
+        {
+          "id": 0,
+          "label": "Lung",
+          "n": 6203,
+          "children": [
+            {
+              "id": 109,
+              "label": "Alveolar epithelium",
+              "n": 6
+            },
+            {
+              "id": 0,
+              "label": "Alveolar septum",
+              "n": 5196
+            },
+            {
+              "id": 4,
+              "label": "Alveolar stem cell culture",
+              "n": 780
+            },
+            {
+              "id": 64,
+              "label": "Breast cancer cells",
+              "n": 4
+            },
+            {
+              "id": 88,
+              "label": "Calu-3 cell line",
+              "n": 9
+            },
+            {
+              "id": 65,
+              "label": "Instance segmentation",
+              "n": 4
+            },
+            {
+              "id": 30,
+              "label": "Lung cryobiopsy",
+              "n": 60
+            },
+            {
+              "id": 291,
+              "label": "Lung parenchyma",
+              "n": 1
+            },
+            {
+              "id": 150,
+              "label": "Lung tumor",
+              "n": 4
+            },
+            {
+              "id": 66,
+              "label": "Mammary gland",
+              "n": 4
+            },
+            {
+              "id": 67,
+              "label": "Mouse lung tumor",
+              "n": 4
+            },
+            {
+              "id": 68,
+              "label": "Nucleus",
+              "n": 4
+            },
+            {
+              "id": 5,
+              "label": "Organoid",
+              "n": 780
+            },
+            {
+              "id": 85,
+              "label": "SARS-CoV-2 infected",
+              "n": 9
+            },
+            {
+              "id": 161,
+              "label": "Virus-particle regions",
+              "n": 4
+            }
+          ]
+        },
+        {
+          "id": 1,
+          "label": "Mammary gland",
+          "n": 2029,
+          "children": [
+            {
+              "id": 233,
+              "label": "4T1 cell line",
+              "n": 1
+            },
+            {
+              "id": 1,
+              "label": "Adherent culture",
+              "n": 1951
+            },
+            {
+              "id": 64,
+              "label": "Breast cancer cells",
+              "n": 8
+            },
+            {
+              "id": 140,
+              "label": "BT-474 breast spheroid",
+              "n": 4
+            },
+            {
+              "id": 104,
+              "label": "Cal51 cell line",
+              "n": 7
+            },
+            {
+              "id": 19,
+              "label": "HeLa cell line",
+              "n": 1
+            },
+            {
+              "id": 65,
+              "label": "Instance segmentation",
+              "n": 8
+            },
+            {
+              "id": 66,
+              "label": "Mammary gland",
+              "n": 8
+            },
+            {
+              "id": 31,
+              "label": "MCF-7 cell line",
+              "n": 55
+            },
+            {
+              "id": 215,
+              "label": "MDA-MB-231 cell line",
+              "n": 2
+            },
+            {
+              "id": 67,
+              "label": "Mouse lung tumor",
+              "n": 8
+            },
+            {
+              "id": 13,
+              "label": "Mouse skeletal muscle",
+              "n": 209
+            },
+            {
+              "id": 68,
+              "label": "Nucleus",
+              "n": 8
+            },
+            {
+              "id": 155,
+              "label": "Patient-derived colorectal cancer organoid",
+              "n": 4
+            },
+            {
+              "id": 2,
+              "label": "PDX tumor",
+              "n": 1951
+            },
+            {
+              "id": 25,
+              "label": "Primary culture",
+              "n": 64
+            },
+            {
+              "id": 137,
+              "label": "SUM-149 cell line",
+              "n": 5
+            },
+            {
+              "id": 231,
+              "label": "SUM-159 cell line",
+              "n": 2
+            },
+            {
+              "id": 3,
+              "label": "Triple-negative breast cancer",
+              "n": 1951
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "label": "Muscles",
+          "n": 1421,
+          "children": [
+            {
+              "id": 1,
+              "label": "Adherent culture",
+              "n": 247
+            },
+            {
+              "id": 190,
+              "label": "C2C12 cell line",
+              "n": 2
+            },
+            {
+              "id": 254,
+              "label": "Cremaster muscle microvasculature",
+              "n": 1
+            },
+            {
+              "id": 48,
+              "label": "Extensor digitorum longus (EDL) muscle",
+              "n": 19
+            },
+            {
+              "id": 206,
+              "label": "Fam134b KO/WT",
+              "n": 2
+            },
+            {
+              "id": 113,
+              "label": "Fetal day 55-59",
+              "n": 6
+            },
+            {
+              "id": 270,
+              "label": "Gastrocnemius muscle",
+              "n": 1
+            },
+            {
+              "id": 13,
+              "label": "Mouse skeletal muscle",
+              "n": 209
+            },
+            {
+              "id": 221,
+              "label": "Myotube",
+              "n": 2
+            },
+            {
+              "id": 2,
+              "label": "PDX tumor",
+              "n": 247
+            },
+            {
+              "id": 25,
+              "label": "Primary culture",
+              "n": 64
+            },
+            {
+              "id": 228,
+              "label": "Psoas",
+              "n": 2
+            },
+            {
+              "id": 123,
+              "label": "Psoas muscle",
+              "n": 6
+            },
+            {
+              "id": 319,
+              "label": "Soleus muscle",
+              "n": 1
+            },
+            {
+              "id": 182,
+              "label": "Striated muscle",
+              "n": 3
+            },
+            {
+              "id": 3,
+              "label": "Triple-negative breast cancer",
+              "n": 247
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "label": "Kidneys",
+          "n": 1267,
+          "children": [
+            {
+              "id": 79,
+              "label": "BHK-21 cell line",
+              "n": 10
+            },
+            {
+              "id": 89,
+              "label": "CellMap challenge composite",
+              "n": 4
+            },
+            {
+              "id": 250,
+              "label": "CHO cell line",
+              "n": 1
+            },
+            {
+              "id": 252,
+              "label": "Collecting tubule basement membrane",
+              "n": 1
+            },
+            {
+              "id": 9,
+              "label": "COS-7 cell line",
+              "n": 4
+            },
+            {
+              "id": 21,
+              "label": "Extracellular matrix",
+              "n": 83
+            },
+            {
+              "id": 35,
+              "label": "Fetal kidney",
+              "n": 35
+            },
+            {
+              "id": 39,
+              "label": "Glomerular basement membrane",
+              "n": 28
+            },
+            {
+              "id": 72,
+              "label": "Intracellular microsporidian parasite/spores (Encephalitozoon intestinalis)",
+              "n": 11
+            },
+            {
+              "id": 74,
+              "label": "Microsporidia-infected (Encephalitozoon intestinalis)",
+              "n": 11
+            },
+            {
+              "id": 46,
+              "label": "Myxozoan infection",
+              "n": 20
+            },
+            {
+              "id": 6,
+              "label": "Outer epidermis",
+              "n": 2
+            },
+            {
+              "id": 300,
+              "label": "P7 kidney",
+              "n": 1
+            },
+            {
+              "id": 34,
+              "label": "Protozoan/helminth parasite cell",
+              "n": 1
+            },
+            {
+              "id": 312,
+              "label": "Proximal convoluted tubule basement membrane",
+              "n": 1
+            },
+            {
+              "id": 124,
+              "label": "Renal biopsy",
+              "n": 6
+            },
+            {
+              "id": 313,
+              "label": "Renal cell carcinoma",
+              "n": 1
+            },
+            {
+              "id": 85,
+              "label": "SARS-CoV-2 infected",
+              "n": 1
+            },
+            {
+              "id": 327,
+              "label": "Tubular basement membrane",
+              "n": 1
+            },
+            {
+              "id": 328,
+              "label": "Tubular epithelium",
+              "n": 1
+            },
+            {
+              "id": 69,
+              "label": "Vero cell line",
+              "n": 12
+            },
+            {
+              "id": 17,
+              "label": "Vero E6 cell line",
+              "n": 117
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "label": "Immune system",
+          "n": 1239,
+          "children": [
+            {
+              "id": 77,
+              "label": "A431 cell line",
+              "n": 7
+            },
+            {
+              "id": 42,
+              "label": "Centriole",
+              "n": 24
+            },
+            {
+              "id": 51,
+              "label": "DT40 cell line",
+              "n": 17
+            },
+            {
+              "id": 19,
+              "label": "HeLa cell line",
+              "n": 13
+            },
+            {
+              "id": 145,
+              "label": "ID8 cell line",
+              "n": 4
+            },
+            {
+              "id": 133,
+              "label": "ID8 ovarian carcinoma + OT-I CTL co-culture",
+              "n": 4
+            },
+            {
+              "id": 283,
+              "label": "Jurkat cell line",
+              "n": 1
+            },
+            {
+              "id": 52,
+              "label": "Mitotic chromosome",
+              "n": 17
+            },
+            {
+              "id": 8,
+              "label": "Multiple myeloma plasma cell",
+              "n": 358
+            },
+            {
+              "id": 153,
+              "label": "OT-I cytotoxic T lymphocyte",
+              "n": 4
+            },
+            {
+              "id": 303,
+              "label": "PMA-differentiated",
+              "n": 1
+            },
+            {
+              "id": 107,
+              "label": "Primary human macrophage",
+              "n": 7
+            },
+            {
+              "id": 325,
+              "label": "THP-1 cell line",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "label": "Leaf",
+          "n": 1038,
+          "children": [
+            {
+              "id": 249,
+              "label": "Chloroplast-rich region",
+              "n": 1
+            },
+            {
+              "id": 6,
+              "label": "Outer epidermis",
+              "n": 2
+            },
+            {
+              "id": 18,
+              "label": "PVY-infected",
+              "n": 100
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "label": "Pancreas",
+          "n": 1010,
+          "children": [
+            {
+              "id": 26,
+              "label": "Beta cell",
+              "n": 63
+            },
+            {
+              "id": 276,
+              "label": "High glucose treatment",
+              "n": 1
+            },
+            {
+              "id": 213,
+              "label": "Low glucose treatment",
+              "n": 2
+            },
+            {
+              "id": 28,
+              "label": "MIN6 cell line",
+              "n": 62
+            },
+            {
+              "id": 302,
+              "label": "Pancreatic duct",
+              "n": 1
+            },
+            {
+              "id": 135,
+              "label": "Postnatal day 7",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "label": "Brain",
+          "n": 780,
+          "children": [
+            {
+              "id": 184,
+              "label": "3D brain microvessel model",
+              "n": 2
+            },
+            {
+              "id": 187,
+              "label": "Adult cortex",
+              "n": 2
+            },
+            {
+              "id": 110,
+              "label": "Anterior cingulate cortex",
+              "n": 6
+            },
+            {
+              "id": 78,
+              "label": "Barrel cortex",
+              "n": 10
+            },
+            {
+              "id": 189,
+              "label": "Barrel cortex layer 2/3",
+              "n": 2
+            },
+            {
+              "id": 96,
+              "label": "Barrel cortex layer 4",
+              "n": 8
+            },
+            {
+              "id": 54,
+              "label": "Basolateral amygdala",
+              "n": 16
+            },
+            {
+              "id": 165,
+              "label": "CA1",
+              "n": 3
+            },
+            {
+              "id": 103,
+              "label": "CA1 neuropil",
+              "n": 7
+            },
+            {
+              "id": 191,
+              "label": "CA1 stratum radiatum microglia",
+              "n": 2
+            },
+            {
+              "id": 14,
+              "label": "Capillaries / blood-brain barrier",
+              "n": 174
+            },
+            {
+              "id": 166,
+              "label": "Cells with intracellular Toxoplasma tachyzoites",
+              "n": 3
+            },
+            {
+              "id": 192,
+              "label": "Cerebellar cortex",
+              "n": 2
+            },
+            {
+              "id": 90,
+              "label": "Chronic cerebral hypoperfusion model",
+              "n": 9
+            },
+            {
+              "id": 253,
+              "label": "Corpus callosum anterior midbody",
+              "n": 1
+            },
+            {
+              "id": 168,
+              "label": "Cultured cerebellar granule neurons",
+              "n": 3
+            },
+            {
+              "id": 197,
+              "label": "Deep cerebellar nuclei",
+              "n": 2
+            },
+            {
+              "id": 198,
+              "label": "Dentate gyrus",
+              "n": 2
+            },
+            {
+              "id": 132,
+              "label": "Dentate gyrus molecular layer",
+              "n": 5
+            },
+            {
+              "id": 169,
+              "label": "Dorsal cochlear nucleus",
+              "n": 3
+            },
+            {
+              "id": 200,
+              "label": "Dorsal lateral geniculate nucleus (dLGN)",
+              "n": 2
+            },
+            {
+              "id": 201,
+              "label": "Dorsal striatum",
+              "n": 2
+            },
+            {
+              "id": 267,
+              "label": "Euglena gracilis cell",
+              "n": 1
+            },
+            {
+              "id": 205,
+              "label": "Exposed to P. falciparum egress products",
+              "n": 2
+            },
+            {
+              "id": 271,
+              "label": "Glia and parenchyma",
+              "n": 1
+            },
+            {
+              "id": 114,
+              "label": "GT1-7 cell line",
+              "n": 6
+            },
+            {
+              "id": 41,
+              "label": "Hindbrain",
+              "n": 25
+            },
+            {
+              "id": 171,
+              "label": "Hindbrain macrophage",
+              "n": 3
+            },
+            {
+              "id": 278,
+              "label": "HVC (song nucleus)",
+              "n": 1
+            },
+            {
+              "id": 281,
+              "label": "Inferior frontal gyrus layer 2/3",
+              "n": 1
+            },
+            {
+              "id": 211,
+              "label": "Larval",
+              "n": 2
+            },
+            {
+              "id": 212,
+              "label": "Lateral geniculate nucleus (LGN)",
+              "n": 2
+            },
+            {
+              "id": 288,
+              "label": "Lateral parietal association area (LPtA)",
+              "n": 1
+            },
+            {
+              "id": 289,
+              "label": "Layer 2/3",
+              "n": 1
+            },
+            {
+              "id": 290,
+              "label": "Lobule V",
+              "n": 1
+            },
+            {
+              "id": 175,
+              "label": "Macrophage with intracellular Toxoplasma tachyzoites",
+              "n": 3
+            },
+            {
+              "id": 27,
+              "label": "Medial entorhinal cortex",
+              "n": 62
+            },
+            {
+              "id": 293,
+              "label": "Medial prefrontal cortex",
+              "n": 1
+            },
+            {
+              "id": 218,
+              "label": "Microglia",
+              "n": 2
+            },
+            {
+              "id": 219,
+              "label": "Mitochondria",
+              "n": 2
+            },
+            {
+              "id": 295,
+              "label": "Molecular layer",
+              "n": 1
+            },
+            {
+              "id": 60,
+              "label": "Mossy fiber synapse",
+              "n": 13
+            },
+            {
+              "id": 296,
+              "label": "Nerve root",
+              "n": 1
+            },
+            {
+              "id": 222,
+              "label": "Neuron",
+              "n": 2
+            },
+            {
+              "id": 152,
+              "label": "Nucleus accumbens",
+              "n": 4
+            },
+            {
+              "id": 61,
+              "label": "Nucleus accumbens & ventral tegmental area",
+              "n": 13
+            },
+            {
+              "id": 62,
+              "label": "Organotypic slice",
+              "n": 13
+            },
+            {
+              "id": 120,
+              "label": "Periaqueductal gray",
+              "n": 6
+            },
+            {
+              "id": 121,
+              "label": "Periaqueductal gray long-range synaptic inputs",
+              "n": 6
+            },
+            {
+              "id": 304,
+              "label": "Posterior antennal lobe (insect)",
+              "n": 1
+            },
+            {
+              "id": 305,
+              "label": "Posterior parietal cortex",
+              "n": 1
+            },
+            {
+              "id": 306,
+              "label": "Posterior parietal cortex layer 2/3",
+              "n": 1
+            },
+            {
+              "id": 307,
+              "label": "Posterior parietal cortex layers 1-5",
+              "n": 1
+            },
+            {
+              "id": 308,
+              "label": "Postnatal day 14",
+              "n": 1
+            },
+            {
+              "id": 135,
+              "label": "Postnatal day 7",
+              "n": 1
+            },
+            {
+              "id": 108,
+              "label": "Primary neuron alpha-synuclein aggregation model",
+              "n": 7
+            },
+            {
+              "id": 225,
+              "label": "Primary somatosensory cortex (S1)",
+              "n": 2
+            },
+            {
+              "id": 226,
+              "label": "Primary somatosensory cortex (S1) layer 2/3",
+              "n": 2
+            },
+            {
+              "id": 227,
+              "label": "Primary somatosensory cortex layer 4",
+              "n": 2
+            },
+            {
+              "id": 179,
+              "label": "Primary visual cortex (V1)",
+              "n": 3
+            },
+            {
+              "id": 84,
+              "label": "Primary visual cortex (V1) layer 2/3",
+              "n": 10
+            },
+            {
+              "id": 93,
+              "label": "Primary visual cortex (V1) layer 4",
+              "n": 9
+            },
+            {
+              "id": 63,
+              "label": "Schaffer collateral synapse",
+              "n": 13
+            },
+            {
+              "id": 315,
+              "label": "Secondary visual cortex (V2)",
+              "n": 1
+            },
+            {
+              "id": 316,
+              "label": "Secondary visual cortex (V2) layer 2/3",
+              "n": 1
+            },
+            {
+              "id": 159,
+              "label": "Somatosensory cortex",
+              "n": 4
+            },
+            {
+              "id": 125,
+              "label": "Somatosensory cortex layer 1",
+              "n": 6
+            },
+            {
+              "id": 126,
+              "label": "Somatosensory cortex layer 1 neuropil",
+              "n": 6
+            },
+            {
+              "id": 160,
+              "label": "Somatosensory cortex layer 4",
+              "n": 4
+            },
+            {
+              "id": 86,
+              "label": "Superior temporal gyrus layer 2/3",
+              "n": 10
+            },
+            {
+              "id": 322,
+              "label": "Superior temporal gyrus layers 1-6",
+              "n": 1
+            },
+            {
+              "id": 323,
+              "label": "Synaptic boutons",
+              "n": 1
+            },
+            {
+              "id": 324,
+              "label": "Temporal lobe",
+              "n": 1
+            },
+            {
+              "id": 32,
+              "label": "Test specimen (250 nm section)",
+              "n": 47
+            },
+            {
+              "id": 128,
+              "label": "Traumatic brain injury",
+              "n": 6
+            },
+            {
+              "id": 329,
+              "label": "Ventral cochlear nucleus",
+              "n": 1
+            },
+            {
+              "id": 129,
+              "label": "Visual cortex",
+              "n": 6
+            },
+            {
+              "id": 139,
+              "label": "Visual cortex layer 2/3",
+              "n": 5
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "label": "Liver",
+          "n": 639,
+          "children": [
+            {
+              "id": 185,
+              "label": "Acinus",
+              "n": 2
+            },
+            {
+              "id": 89,
+              "label": "CellMap challenge composite",
+              "n": 2
+            },
+            {
+              "id": 24,
+              "label": "GRX cell line",
+              "n": 64
+            },
+            {
+              "id": 277,
+              "label": "Huh-7 cell line",
+              "n": 1
+            },
+            {
+              "id": 149,
+              "label": "Leptin-deficient ob/ob (obese)",
+              "n": 4
+            },
+            {
+              "id": 151,
+              "label": "NAFLD",
+              "n": 4
+            },
+            {
+              "id": 299,
+              "label": "Obese",
+              "n": 1
+            },
+            {
+              "id": 119,
+              "label": "Obese (LacZ control)",
+              "n": 6
+            },
+            {
+              "id": 22,
+              "label": "PAV-1 cell line",
+              "n": 78
+            },
+            {
+              "id": 122,
+              "label": "Pericentral zone",
+              "n": 6
+            },
+            {
+              "id": 135,
+              "label": "Postnatal day 7",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "label": "Hypocotyl",
+          "n": 478,
+          "children": [
+            {
+              "id": 7,
+              "label": "Cell wall",
+              "n": 476
+            },
+            {
+              "id": 6,
+              "label": "Outer epidermis",
+              "n": 478
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "label": "Mixed",
+          "n": 468,
+          "children": [
+            {
+              "id": 233,
+              "label": "4T1 cell line",
+              "n": 1
+            },
+            {
+              "id": 240,
+              "label": "Alpha lobe",
+              "n": 1
+            },
+            {
+              "id": 78,
+              "label": "Barrel cortex",
+              "n": 10
+            },
+            {
+              "id": 189,
+              "label": "Barrel cortex layer 2/3",
+              "n": 2
+            },
+            {
+              "id": 96,
+              "label": "Barrel cortex layer 4",
+              "n": 8
+            },
+            {
+              "id": 64,
+              "label": "Breast cancer cells",
+              "n": 12
+            },
+            {
+              "id": 165,
+              "label": "CA1",
+              "n": 1
+            },
+            {
+              "id": 89,
+              "label": "CellMap challenge composite",
+              "n": 9
+            },
+            {
+              "id": 247,
+              "label": "Central brain",
+              "n": 1
+            },
+            {
+              "id": 253,
+              "label": "Corpus callosum anterior midbody",
+              "n": 1
+            },
+            {
+              "id": 9,
+              "label": "COS-7 cell line",
+              "n": 270
+            },
+            {
+              "id": 132,
+              "label": "Dentate gyrus molecular layer",
+              "n": 5
+            },
+            {
+              "id": 200,
+              "label": "Dorsal lateral geniculate nucleus (dLGN)",
+              "n": 1
+            },
+            {
+              "id": 82,
+              "label": "External sensilla",
+              "n": 10
+            },
+            {
+              "id": 170,
+              "label": "Fan-shaped body",
+              "n": 1
+            },
+            {
+              "id": 274,
+              "label": "Hemibrain",
+              "n": 1
+            },
+            {
+              "id": 278,
+              "label": "HVC (song nucleus)",
+              "n": 1
+            },
+            {
+              "id": 279,
+              "label": "ID8 ovarian carcinoma + CTL co-culture",
+              "n": 1
+            },
+            {
+              "id": 280,
+              "label": "ID8 ovarian carcinoma + cytotoxic T lymphocyte co-culture",
+              "n": 1
+            },
+            {
+              "id": 133,
+              "label": "ID8 ovarian carcinoma + OT-I CTL co-culture",
+              "n": 1
+            },
+            {
+              "id": 281,
+              "label": "Inferior frontal gyrus layer 2/3",
+              "n": 1
+            },
+            {
+              "id": 65,
+              "label": "Instance segmentation",
+              "n": 12
+            },
+            {
+              "id": 284,
+              "label": "L1 stage",
+              "n": 1
+            },
+            {
+              "id": 212,
+              "label": "Lateral geniculate nucleus (LGN)",
+              "n": 2
+            },
+            {
+              "id": 289,
+              "label": "Layer 2/3",
+              "n": 1
+            },
+            {
+              "id": 290,
+              "label": "Lobule V",
+              "n": 1
+            },
+            {
+              "id": 150,
+              "label": "Lung tumor",
+              "n": 4
+            },
+            {
+              "id": 66,
+              "label": "Mammary gland",
+              "n": 12
+            },
+            {
+              "id": 215,
+              "label": "MDA-MB-231 cell line",
+              "n": 2
+            },
+            {
+              "id": 27,
+              "label": "Medial entorhinal cortex",
+              "n": 1
+            },
+            {
+              "id": 216,
+              "label": "Medulla",
+              "n": 1
+            },
+            {
+              "id": 220,
+              "label": "Mixed human cell lines (Nthy-ori 3-1, HepG2, LX-2, A375, HCT116, HMEC, MDA-MB-231)",
+              "n": 2
+            },
+            {
+              "id": 295,
+              "label": "Molecular layer",
+              "n": 1
+            },
+            {
+              "id": 67,
+              "label": "Mouse lung tumor",
+              "n": 12
+            },
+            {
+              "id": 297,
+              "label": "Neuropil",
+              "n": 1
+            },
+            {
+              "id": 68,
+              "label": "Nucleus",
+              "n": 12
+            },
+            {
+              "id": 61,
+              "label": "Nucleus accumbens & ventral tegmental area",
+              "n": 13
+            },
+            {
+              "id": 36,
+              "label": "Organelle segmentation benchmark",
+              "n": 34
+            },
+            {
+              "id": 300,
+              "label": "P7 kidney",
+              "n": 1
+            },
+            {
+              "id": 301,
+              "label": "P7 mouse heart",
+              "n": 1
+            },
+            {
+              "id": 306,
+              "label": "Posterior parietal cortex layer 2/3",
+              "n": 1
+            },
+            {
+              "id": 135,
+              "label": "Postnatal day 7",
+              "n": 1
+            },
+            {
+              "id": 226,
+              "label": "Primary somatosensory cortex (S1) layer 2/3",
+              "n": 2
+            },
+            {
+              "id": 179,
+              "label": "Primary visual cortex (V1)",
+              "n": 1
+            },
+            {
+              "id": 84,
+              "label": "Primary visual cortex (V1) layer 2/3",
+              "n": 10
+            },
+            {
+              "id": 93,
+              "label": "Primary visual cortex (V1) layer 4",
+              "n": 9
+            },
+            {
+              "id": 316,
+              "label": "Secondary visual cortex (V2) layer 2/3",
+              "n": 1
+            },
+            {
+              "id": 10,
+              "label": "Seminiferous tubule",
+              "n": 269
+            },
+            {
+              "id": 159,
+              "label": "Somatosensory cortex",
+              "n": 1
+            },
+            {
+              "id": 137,
+              "label": "SUM-149 cell line",
+              "n": 5
+            },
+            {
+              "id": 86,
+              "label": "Superior temporal gyrus layer 2/3",
+              "n": 10
+            },
+            {
+              "id": 322,
+              "label": "Superior temporal gyrus layers 1-6",
+              "n": 1
+            },
+            {
+              "id": 324,
+              "label": "Temporal lobe",
+              "n": 1
+            },
+            {
+              "id": 11,
+              "label": "TM4 Sertoli cell line",
+              "n": 269
+            },
+            {
+              "id": 12,
+              "label": "U-2 OS cell line",
+              "n": 269
+            },
+            {
+              "id": 100,
+              "label": "Ventral ganglion neuropil",
+              "n": 8
+            },
+            {
+              "id": 337,
+              "label": "Young adult",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "label": "Whole organism",
+          "n": 385,
+          "children": [
+            {
+              "id": 236,
+              "label": "Aboral pole / apical organ",
+              "n": 1
+            },
+            {
+              "id": 186,
+              "label": "Adhered to plastic substrate",
+              "n": 2
+            },
+            {
+              "id": 187,
+              "label": "Adult cortex",
+              "n": 1
+            },
+            {
+              "id": 130,
+              "label": "Anterior motor circuit / body",
+              "n": 5
+            },
+            {
+              "id": 16,
+              "label": "Bacterial cell",
+              "n": 157
+            },
+            {
+              "id": 243,
+              "label": "Bacterial cell (Gemmata obscuriglobus)",
+              "n": 1
+            },
+            {
+              "id": 188,
+              "label": "Bacterial cell (Planctomycetes)",
+              "n": 2
+            },
+            {
+              "id": 131,
+              "label": "Body",
+              "n": 5
+            },
+            {
+              "id": 70,
+              "label": "Candida albicans cell (epithelial invasion model)",
+              "n": 11
+            },
+            {
+              "id": 248,
+              "label": "Chlamydomonas cell",
+              "n": 1
+            },
+            {
+              "id": 193,
+              "label": "Chlamydomonas reinhardtii cell",
+              "n": 2
+            },
+            {
+              "id": 195,
+              "label": "Cyst",
+              "n": 2
+            },
+            {
+              "id": 196,
+              "label": "Dauer larva",
+              "n": 1
+            },
+            {
+              "id": 256,
+              "label": "Dinoflagellate cell",
+              "n": 1
+            },
+            {
+              "id": 33,
+              "label": "Diplonemid cell",
+              "n": 46
+            },
+            {
+              "id": 260,
+              "label": "e1370 mutant",
+              "n": 1
+            },
+            {
+              "id": 202,
+              "label": "Endosymbiont",
+              "n": 2
+            },
+            {
+              "id": 203,
+              "label": "Endosymbiont (Candidatus Profftella armatura; in Diaphorina citri bacteriome)",
+              "n": 2
+            },
+            {
+              "id": 59,
+              "label": "Endosymbiont (intramitochondrial bacteria; in Diplonema/Ixodes host)",
+              "n": 13
+            },
+            {
+              "id": 111,
+              "label": "Endosymbiont/intranuclear parasite (in deep-sea mussel gill cell nucleus)",
+              "n": 6
+            },
+            {
+              "id": 112,
+              "label": "Endosymbiont/intranuclear parasite (in mussel gill nucleus)",
+              "n": 6
+            },
+            {
+              "id": 267,
+              "label": "Euglena gracilis cell",
+              "n": 1
+            },
+            {
+              "id": 144,
+              "label": "Haptomonad (attached form)",
+              "n": 4
+            },
+            {
+              "id": 209,
+              "label": "Haptomonad-like (attached form)",
+              "n": 2
+            },
+            {
+              "id": 19,
+              "label": "HeLa cell line",
+              "n": 8
+            },
+            {
+              "id": 83,
+              "label": "Lacrymaria olor cell",
+              "n": 10
+            },
+            {
+              "id": 286,
+              "label": "Larva trunk",
+              "n": 1
+            },
+            {
+              "id": 214,
+              "label": "Male gamete (microgamete)",
+              "n": 2
+            },
+            {
+              "id": 292,
+              "label": "Male gamete (microgamete) fraction",
+              "n": 1
+            },
+            {
+              "id": 49,
+              "label": "Microbial cells (Phaeocystis prey + dinoflagellate host)",
+              "n": 18
+            },
+            {
+              "id": 44,
+              "label": "Ookinete",
+              "n": 24
+            },
+            {
+              "id": 154,
+              "label": "P. falciparum-infected red blood cell",
+              "n": 4
+            },
+            {
+              "id": 224,
+              "label": "Parasitophorous vacuole",
+              "n": 2
+            },
+            {
+              "id": 106,
+              "label": "Photosymbiosis sample (Collodaria)",
+              "n": 7
+            },
+            {
+              "id": 98,
+              "label": "Photosymbiosis sample (Phaeocystis symbiont in acantharian host)",
+              "n": 8
+            },
+            {
+              "id": 158,
+              "label": "Promastigote",
+              "n": 4
+            },
+            {
+              "id": 310,
+              "label": "Promastigote whole cell",
+              "n": 1
+            },
+            {
+              "id": 34,
+              "label": "Protozoan/helminth parasite cell",
+              "n": 46
+            },
+            {
+              "id": 314,
+              "label": "Sagittal section",
+              "n": 1
+            },
+            {
+              "id": 317,
+              "label": "Shigella flexneri invasion of HeLa cells (CLEM)",
+              "n": 1
+            },
+            {
+              "id": 229,
+              "label": "Sodalis pierantonius in Sitophilus oryzae bacteriocyte",
+              "n": 2
+            },
+            {
+              "id": 136,
+              "label": "Spore",
+              "n": 5
+            },
+            {
+              "id": 230,
+              "label": "Stichosome (anterior organ of whipworm)",
+              "n": 2
+            },
+            {
+              "id": 232,
+              "label": "Tachyzoite",
+              "n": 2
+            },
+            {
+              "id": 87,
+              "label": "Trophozoite",
+              "n": 10
+            },
+            {
+              "id": 326,
+              "label": "Trophozoite (adherent)",
+              "n": 1
+            },
+            {
+              "id": 101,
+              "label": "Whole animal",
+              "n": 8
+            },
+            {
+              "id": 332,
+              "label": "Whole cell (Paramecium)",
+              "n": 1
+            },
+            {
+              "id": 334,
+              "label": "Whole embryo",
+              "n": 1
+            },
+            {
+              "id": 335,
+              "label": "Whole larva",
+              "n": 1
+            },
+            {
+              "id": 336,
+              "label": "Whole larva (6 dpf)",
+              "n": 1
+            },
+            {
+              "id": 76,
+              "label": "Yeast/hyphal cell",
+              "n": 11
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "label": "Heart",
+          "n": 233,
+          "children": [
+            {
+              "id": 235,
+              "label": "7 dpf",
+              "n": 1
+            },
+            {
+              "id": 238,
+              "label": "Adult/aged",
+              "n": 1
+            },
+            {
+              "id": 71,
+              "label": "Cardiac microvascular endothelial cell",
+              "n": 11
+            },
+            {
+              "id": 246,
+              "label": "Cardiac mitochondria",
+              "n": 1
+            },
+            {
+              "id": 89,
+              "label": "CellMap challenge composite",
+              "n": 1
+            },
+            {
+              "id": 142,
+              "label": "Embryonic heart",
+              "n": 4
+            },
+            {
+              "id": 15,
+              "label": "Engineered heart tissue",
+              "n": 168
+            },
+            {
+              "id": 270,
+              "label": "Gastrocnemius muscle",
+              "n": 1
+            },
+            {
+              "id": 73,
+              "label": "Ischemia/reperfusion",
+              "n": 11
+            },
+            {
+              "id": 91,
+              "label": "Isolated cardiomyocyte",
+              "n": 9
+            },
+            {
+              "id": 287,
+              "label": "Larval heart",
+              "n": 1
+            },
+            {
+              "id": 174,
+              "label": "Left ventricle",
+              "n": 3
+            },
+            {
+              "id": 301,
+              "label": "P7 mouse heart",
+              "n": 1
+            },
+            {
+              "id": 38,
+              "label": "Perinatal cardiac maturation",
+              "n": 31
+            },
+            {
+              "id": 319,
+              "label": "Soleus muscle",
+              "n": 1
+            },
+            {
+              "id": 182,
+              "label": "Striated muscle",
+              "n": 3
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "label": "Intestine",
+          "n": 213,
+          "children": [
+            {
+              "id": 140,
+              "label": "BT-474 breast spheroid",
+              "n": 4
+            },
+            {
+              "id": 169,
+              "label": "Dorsal cochlear nucleus",
+              "n": 3
+            },
+            {
+              "id": 259,
+              "label": "Duodenum",
+              "n": 1
+            },
+            {
+              "id": 204,
+              "label": "Enterocyte",
+              "n": 2
+            },
+            {
+              "id": 155,
+              "label": "Patient-derived colorectal cancer organoid",
+              "n": 4
+            },
+            {
+              "id": 99,
+              "label": "Small intestine",
+              "n": 8
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "label": "Eye",
+          "n": 147,
+          "children": [
+            {
+              "id": 255,
+              "label": "Developing retina 55 hpf",
+              "n": 1
+            },
+            {
+              "id": 51,
+              "label": "DT40 cell line",
+              "n": 13
+            },
+            {
+              "id": 19,
+              "label": "HeLa cell line",
+              "n": 13
+            },
+            {
+              "id": 105,
+              "label": "Horizontal cell",
+              "n": 7
+            },
+            {
+              "id": 146,
+              "label": "iPSC-derived",
+              "n": 4
+            },
+            {
+              "id": 147,
+              "label": "Lens organoid",
+              "n": 4
+            },
+            {
+              "id": 148,
+              "label": "Lentoid body",
+              "n": 4
+            },
+            {
+              "id": 52,
+              "label": "Mitotic chromosome",
+              "n": 13
+            },
+            {
+              "id": 43,
+              "label": "Neurovascular unit capillary",
+              "n": 24
+            },
+            {
+              "id": 223,
+              "label": "Outer plexiform layer",
+              "n": 2
+            },
+            {
+              "id": 20,
+              "label": "Photoreceptor outer segments",
+              "n": 87
+            },
+            {
+              "id": 138,
+              "label": "Ventral eye photophore",
+              "n": 5
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "label": "Adipose tissue",
+          "n": 137,
+          "children": [
+            {
+              "id": 23,
+              "label": "Adipose progenitor / transdifferentiating adipocyte",
+              "n": 71
+            },
+            {
+              "id": 29,
+              "label": "CAV1 knockout",
+              "n": 61
+            },
+            {
+              "id": 40,
+              "label": "CAV1 Y14F mutant",
+              "n": 27
+            },
+            {
+              "id": 53,
+              "label": "Wild-type",
+              "n": 17
+            }
+          ]
+        },
+        {
+          "id": 16,
+          "label": "Other",
+          "n": 129,
+          "children": [
+            {
+              "id": 95,
+              "label": "Adipose tissue capillary",
+              "n": 8
+            },
+            {
+              "id": 163,
+              "label": "ALI culture",
+              "n": 3
+            },
+            {
+              "id": 102,
+              "label": "Axillary lymphoid organ",
+              "n": 7
+            },
+            {
+              "id": 164,
+              "label": "Basal body",
+              "n": 3
+            },
+            {
+              "id": 167,
+              "label": "Chaeta/bristle-forming cells",
+              "n": 3
+            },
+            {
+              "id": 266,
+              "label": "Endodermal nerve net",
+              "n": 1
+            },
+            {
+              "id": 115,
+              "label": "Hemostatic plug",
+              "n": 6
+            },
+            {
+              "id": 116,
+              "label": "Jugular vein and carotid artery",
+              "n": 6
+            },
+            {
+              "id": 117,
+              "label": "Jugular vein or carotid artery",
+              "n": 6
+            },
+            {
+              "id": 176,
+              "label": "Nasal airway epithelium",
+              "n": 3
+            },
+            {
+              "id": 45,
+              "label": "Notochord organoid (notoroid)",
+              "n": 23
+            },
+            {
+              "id": 156,
+              "label": "Phloem",
+              "n": 4
+            },
+            {
+              "id": 157,
+              "label": "Phloem pole unloading zone",
+              "n": 4
+            },
+            {
+              "id": 55,
+              "label": "Respiratory ciliated epithelium",
+              "n": 16
+            },
+            {
+              "id": 180,
+              "label": "Spermatid",
+              "n": 3
+            },
+            {
+              "id": 181,
+              "label": "Spermatozoid",
+              "n": 3
+            },
+            {
+              "id": 75,
+              "label": "Term placenta",
+              "n": 11
+            },
+            {
+              "id": 127,
+              "label": "Tracheal terminal cell",
+              "n": 6
+            },
+            {
+              "id": 50,
+              "label": "Venous puncture wound thrombus",
+              "n": 18
+            }
+          ]
+        },
+        {
+          "id": 17,
+          "label": "Spleen",
+          "n": 103,
+          "children": []
+        },
+        {
+          "id": 18,
+          "label": "Cervix",
+          "n": 94,
+          "children": [
+            {
+              "id": 186,
+              "label": "Adhered to plastic substrate",
+              "n": 2
+            },
+            {
+              "id": 104,
+              "label": "Cal51 cell line",
+              "n": 1
+            },
+            {
+              "id": 51,
+              "label": "DT40 cell line",
+              "n": 13
+            },
+            {
+              "id": 19,
+              "label": "HeLa cell line",
+              "n": 94
+            },
+            {
+              "id": 52,
+              "label": "Mitotic chromosome",
+              "n": 13
+            },
+            {
+              "id": 34,
+              "label": "Protozoan/helminth parasite cell",
+              "n": 8
+            },
+            {
+              "id": 87,
+              "label": "Trophozoite",
+              "n": 8
+            }
+          ]
+        },
+        {
+          "id": 19,
+          "label": "Skin",
+          "n": 87,
+          "children": [
+            {
+              "id": 77,
+              "label": "A431 cell line",
+              "n": 10
+            },
+            {
+              "id": 242,
+              "label": "Back skin",
+              "n": 1
+            },
+            {
+              "id": 257,
+              "label": "Dorsal skin hypodermis microvasculature",
+              "n": 1
+            },
+            {
+              "id": 258,
+              "label": "Dorsal skin lymphatic capillary endothelium",
+              "n": 1
+            },
+            {
+              "id": 80,
+              "label": "Dorsal skin microvasculature",
+              "n": 10
+            },
+            {
+              "id": 141,
+              "label": "Double-innervated",
+              "n": 4
+            },
+            {
+              "id": 261,
+              "label": "Ear dermis blood capillary",
+              "n": 1
+            },
+            {
+              "id": 81,
+              "label": "Ear lymphatic capillary endothelium",
+              "n": 10
+            },
+            {
+              "id": 262,
+              "label": "Ear skin collagen bundle",
+              "n": 1
+            },
+            {
+              "id": 263,
+              "label": "Ear skin lymphatic capillary endothelium",
+              "n": 1
+            },
+            {
+              "id": 269,
+              "label": "Fibular periosteum",
+              "n": 1
+            },
+            {
+              "id": 143,
+              "label": "Forepaw glabrous skin",
+              "n": 4
+            },
+            {
+              "id": 207,
+              "label": "Glabrous digit skin",
+              "n": 2
+            },
+            {
+              "id": 208,
+              "label": "Glabrous digit skin; Meissner corpuscle",
+              "n": 2
+            },
+            {
+              "id": 272,
+              "label": "Guard hair follicle",
+              "n": 1
+            },
+            {
+              "id": 273,
+              "label": "HCMV-infected",
+              "n": 1
+            },
+            {
+              "id": 275,
+              "label": "HFF-1 cell line",
+              "n": 1
+            },
+            {
+              "id": 37,
+              "label": "Iridophore",
+              "n": 31
+            },
+            {
+              "id": 298,
+              "label": "Neutrophil",
+              "n": 1
+            },
+            {
+              "id": 135,
+              "label": "Postnatal day 7",
+              "n": 1
+            },
+            {
+              "id": 107,
+              "label": "Primary human macrophage",
+              "n": 7
+            },
+            {
+              "id": 318,
+              "label": "Single-innervated",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 20,
+          "label": "Central nervous system",
+          "n": 71,
+          "children": [
+            {
+              "id": 237,
+              "label": "Accessory calyx",
+              "n": 1
+            },
+            {
+              "id": 239,
+              "label": "Alpha and alpha-prime lobes",
+              "n": 1
+            },
+            {
+              "id": 240,
+              "label": "Alpha lobe",
+              "n": 1
+            },
+            {
+              "id": 245,
+              "label": "Brain and ventral nerve cord",
+              "n": 1
+            },
+            {
+              "id": 89,
+              "label": "CellMap challenge composite",
+              "n": 2
+            },
+            {
+              "id": 247,
+              "label": "Central brain",
+              "n": 1
+            },
+            {
+              "id": 196,
+              "label": "Dauer larva",
+              "n": 1
+            },
+            {
+              "id": 56,
+              "label": "Early postnatal",
+              "n": 14
+            },
+            {
+              "id": 264,
+              "label": "Ellipsoid body",
+              "n": 1
+            },
+            {
+              "id": 170,
+              "label": "Fan-shaped body",
+              "n": 3
+            },
+            {
+              "id": 57,
+              "label": "Glia",
+              "n": 14
+            },
+            {
+              "id": 274,
+              "label": "Hemibrain",
+              "n": 1
+            },
+            {
+              "id": 279,
+              "label": "ID8 ovarian carcinoma + CTL co-culture",
+              "n": 1
+            },
+            {
+              "id": 280,
+              "label": "ID8 ovarian carcinoma + cytotoxic T lymphocyte co-culture",
+              "n": 1
+            },
+            {
+              "id": 133,
+              "label": "ID8 ovarian carcinoma + OT-I CTL co-culture",
+              "n": 1
+            },
+            {
+              "id": 284,
+              "label": "L1 stage",
+              "n": 1
+            },
+            {
+              "id": 173,
+              "label": "Larval CNS",
+              "n": 3
+            },
+            {
+              "id": 216,
+              "label": "Medulla",
+              "n": 2
+            },
+            {
+              "id": 219,
+              "label": "Mitochondria",
+              "n": 2
+            },
+            {
+              "id": 97,
+              "label": "Myelinated axons",
+              "n": 8
+            },
+            {
+              "id": 297,
+              "label": "Neuropil",
+              "n": 1
+            },
+            {
+              "id": 58,
+              "label": "Newborn",
+              "n": 14
+            },
+            {
+              "id": 178,
+              "label": "Oligodendrocyte precursor cells",
+              "n": 3
+            },
+            {
+              "id": 92,
+              "label": "Postnatal day 4",
+              "n": 9
+            },
+            {
+              "id": 311,
+              "label": "Protocerebral bridge",
+              "n": 1
+            },
+            {
+              "id": 228,
+              "label": "Psoas",
+              "n": 2
+            },
+            {
+              "id": 323,
+              "label": "Synaptic boutons",
+              "n": 1
+            },
+            {
+              "id": 100,
+              "label": "Ventral ganglion neuropil",
+              "n": 8
+            },
+            {
+              "id": 330,
+              "label": "Visual column",
+              "n": 1
+            },
+            {
+              "id": 162,
+              "label": "White matter",
+              "n": 4
+            },
+            {
+              "id": 331,
+              "label": "Whole brain",
+              "n": 1
+            },
+            {
+              "id": 333,
+              "label": "Whole CNS",
+              "n": 1
+            },
+            {
+              "id": 337,
+              "label": "Young adult",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 21,
+          "label": "Testis",
+          "n": 25,
+          "children": [
+            {
+              "id": 169,
+              "label": "Dorsal cochlear nucleus",
+              "n": 3
+            },
+            {
+              "id": 320,
+              "label": "Spermatotubule",
+              "n": 1
+            },
+            {
+              "id": 47,
+              "label": "Spermatozoa",
+              "n": 20
+            }
+          ]
+        },
+        {
+          "id": 22,
+          "label": "Peripheral nervous system",
+          "n": 21,
+          "children": [
+            {
+              "id": 242,
+              "label": "Back skin",
+              "n": 1
+            },
+            {
+              "id": 141,
+              "label": "Double-innervated",
+              "n": 4
+            },
+            {
+              "id": 82,
+              "label": "External sensilla",
+              "n": 10
+            },
+            {
+              "id": 268,
+              "label": "Fascicle",
+              "n": 1
+            },
+            {
+              "id": 269,
+              "label": "Fibular periosteum",
+              "n": 1
+            },
+            {
+              "id": 143,
+              "label": "Forepaw glabrous skin",
+              "n": 4
+            },
+            {
+              "id": 272,
+              "label": "Guard hair follicle",
+              "n": 1
+            },
+            {
+              "id": 118,
+              "label": "Motor neuron synapse",
+              "n": 6
+            },
+            {
+              "id": 318,
+              "label": "Single-innervated",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 23,
+          "label": "Bones",
+          "n": 11,
+          "children": [
+            {
+              "id": 244,
+              "label": "Bone protocol sample",
+              "n": 1
+            },
+            {
+              "id": 265,
+              "label": "Embryonic",
+              "n": 1
+            },
+            {
+              "id": 285,
+              "label": "Lacuno-canalicular network",
+              "n": 1
+            },
+            {
+              "id": 309,
+              "label": "Primary cilia",
+              "n": 1
+            },
+            {
+              "id": 321,
+              "label": "Sternal cartilage",
+              "n": 1
+            },
+            {
+              "id": 94,
+              "label": "U2-OS cell line",
+              "n": 9
+            }
+          ]
+        },
+        {
+          "id": 24,
+          "label": "Embryo",
+          "n": 11,
+          "children": [
+            {
+              "id": 183,
+              "label": "2-cell-like cells (2CLC)",
+              "n": 2
+            },
+            {
+              "id": 294,
+              "label": "MEF cell line",
+              "n": 1
+            },
+            {
+              "id": 217,
+              "label": "mESC",
+              "n": 2
+            },
+            {
+              "id": 134,
+              "label": "Mouse embryonic fibroblast (MEF)",
+              "n": 5
+            },
+            {
+              "id": 177,
+              "label": "NIH-3T3 cell line",
+              "n": 3
+            }
+          ]
+        },
+        {
+          "id": 25,
+          "label": "Ear",
+          "n": 8,
+          "children": [
+            {
+              "id": 251,
+              "label": "Cochlear nerve fibers",
+              "n": 1
+            },
+            {
+              "id": 282,
+              "label": "Inner hair cell",
+              "n": 1
+            },
+            {
+              "id": 172,
+              "label": "Inner hair cell / spiral ganglion neuron synapses",
+              "n": 3
+            },
+            {
+              "id": 210,
+              "label": "Inner spiral bundle",
+              "n": 2
+            },
+            {
+              "id": 296,
+              "label": "Nerve root",
+              "n": 1
+            },
+            {
+              "id": 329,
+              "label": "Ventral cochlear nucleus",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 26,
+          "label": "Ovary",
+          "n": 6,
+          "children": [
+            {
+              "id": 89,
+              "label": "CellMap challenge composite",
+              "n": 1
+            },
+            {
+              "id": 250,
+              "label": "CHO cell line",
+              "n": 1
+            },
+            {
+              "id": 170,
+              "label": "Fan-shaped body",
+              "n": 1
+            },
+            {
+              "id": 145,
+              "label": "ID8 cell line",
+              "n": 4
+            },
+            {
+              "id": 279,
+              "label": "ID8 ovarian carcinoma + CTL co-culture",
+              "n": 1
+            },
+            {
+              "id": 280,
+              "label": "ID8 ovarian carcinoma + cytotoxic T lymphocyte co-culture",
+              "n": 1
+            },
+            {
+              "id": 133,
+              "label": "ID8 ovarian carcinoma + OT-I CTL co-culture",
+              "n": 5
+            },
+            {
+              "id": 153,
+              "label": "OT-I cytotoxic T lymphocyte",
+              "n": 4
+            }
+          ]
+        },
+        {
+          "id": 27,
+          "label": "Tongue",
+          "n": 5,
+          "children": [
+            {
+              "id": 194,
+              "label": "Circumvallate papilla",
+              "n": 2
+            }
+          ]
+        },
+        {
+          "id": 28,
+          "label": "Pharynx",
+          "n": 4,
+          "children": [
+            {
+              "id": 241,
+              "label": "Anterior pharynx",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 29,
+          "label": "Spinal cord",
+          "n": 3,
+          "children": [
+            {
+              "id": 199,
+              "label": "Dorsal corticospinal tract",
+              "n": 2
+            }
+          ]
+        },
+        {
+          "id": 30,
+          "label": "Aboral organ",
+          "n": 2,
+          "children": [
+            {
+              "id": 234,
+              "label": "5-day-old aboral organ",
+              "n": 1
+            },
+            {
+              "id": 236,
+              "label": "Aboral pole / apical organ",
+              "n": 1
+            },
+            {
+              "id": 101,
+              "label": "Whole animal",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 31,
+          "label": "Epididymis",
+          "n": 2,
+          "children": []
+        },
+        {
+          "id": 32,
+          "label": "Thymus",
+          "n": 2,
+          "children": [
+            {
+              "id": 135,
+              "label": "Postnatal day 7",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "id": 33,
+          "label": "Unknown",
+          "n": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "key": "modality",
+      "label": "Imaging modality",
+      "kind": "flat",
+      "dictionary": "modality",
+      "values": [
+        {
+          "id": 0,
+          "label": "TEM",
+          "n": 15711
+        },
+        {
+          "id": 1,
+          "label": "SEM",
+          "n": 485
+        },
+        {
+          "id": 2,
+          "label": "FIB-SEM",
+          "n": 455
+        },
+        {
+          "id": 3,
+          "label": "Electron tomography",
+          "n": 424
+        },
+        {
+          "id": 4,
+          "label": "SBF-SEM",
+          "n": 400
+        },
+        {
+          "id": 5,
+          "label": "STEM",
+          "n": 234
+        }
+      ],
+      "noValue": {
+        "label": "Not recorded",
+        "n": 119
+      }
+    },
+    {
+      "key": "resolution",
+      "label": "In-plane resolution",
+      "kind": "flat",
+      "dictionary": "resolution",
+      "values": [
+        {
+          "id": 0,
+          "label": "< 1 nm/px",
+          "n": 2012
+        },
+        {
+          "id": 1,
+          "label": "1 – 4 nm/px",
+          "n": 4244
+        },
+        {
+          "id": 2,
+          "label": "4 – 8 nm/px",
+          "n": 3401
+        },
+        {
+          "id": 3,
+          "label": "8 – 32 nm/px",
+          "n": 1901
+        },
+        {
+          "id": 4,
+          "label": "≥ 32 nm/px",
+          "n": 152
+        },
+        {
+          "id": 5,
+          "label": "Unknown",
+          "n": 6118
+        }
+      ],
+      "noValue": null
+    },
+    {
+      "key": "dim",
+      "label": "Dimensionality",
+      "kind": "flat",
+      "dictionary": "dimensionality",
+      "values": [
+        {
+          "id": 0,
+          "label": "2D image",
+          "n": 16107
+        },
+        {
+          "id": 1,
+          "label": "3D acquisition",
+          "n": 1721
+        }
+      ],
+      "noValue": null
+    },
+    {
+      "key": "repository",
+      "label": "Source repository",
+      "kind": "flat",
+      "dictionary": "repository",
+      "values": [
+        {
+          "id": 0,
+          "label": "Zenodo",
+          "n": 9912
+        },
+        {
+          "id": 1,
+          "label": "BioImage Archive",
+          "n": 3471
+        },
+        {
+          "id": 2,
+          "label": "EMPIAR",
+          "n": 1794
+        },
+        {
+          "id": 3,
+          "label": "Science Data Bank",
+          "n": 929
+        },
+        {
+          "id": 4,
+          "label": "Institutional repository",
+          "n": 816
+        },
+        {
+          "id": 5,
+          "label": "figshare",
+          "n": 285
+        },
+        {
+          "id": 6,
+          "label": "Dryad",
+          "n": 244
+        },
+        {
+          "id": 7,
+          "label": "BossDB",
+          "n": 159
+        },
+        {
+          "id": 8,
+          "label": "OpenOrganelle",
+          "n": 85
+        },
+        {
+          "id": 9,
+          "label": "WEBKNOSSOS",
+          "n": 71
+        },
+        {
+          "id": 10,
+          "label": "Quilt",
+          "n": 35
+        },
+        {
+          "id": 11,
+          "label": "Mendeley Data",
+          "n": 14
+        },
+        {
+          "id": 12,
+          "label": "IDR",
+          "n": 12
+        },
+        {
+          "id": 13,
+          "label": "SPARC",
+          "n": 1
+        }
+      ],
+      "noValue": null
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+mechanism,cell,dice,baseline,delta
+pixel matching,ER GT k4,0.567,0.334,0.233
+pixel matching,ER inferred k4,0.342,0.334,0.008
+pixel matching,mito GT k4,0.698,0.732,-0.034
+pixel matching,mito inferred k4,0.633,0.732,-0.099
+pooled global,ER GT,0.536,0.334,0.202
+pooled global,ER inferred,0.058,0.334,-0.276
+pooled global,mito GT,0.751,0.732,0.019
+pooled global,mito inferred,0.001,0.732,-0.731

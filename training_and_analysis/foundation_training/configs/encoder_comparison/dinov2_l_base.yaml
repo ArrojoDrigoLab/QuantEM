@@ -1,0 +1,17 @@
+# Natural-image DINOv2 at ViT-L — the architecture OmniEM was built from. Against OmniEM this
+# isolates the pretraining corpus at a fixed recipe.
+# Oquab, M. et al. DINOv2: learning robust visual features without supervision. TMLR (2024).
+name: dinov2_l_base
+timm_model: vit_large_patch14_dinov2.lvd142m
+weight_file: model.pt
+objective: dinov2
+arch: vit_large
+patch_size: 14
+embed_dim: 1024
+depth: 24
+in_chans: 3
+base_tile: 512
+img_size_build: 518
+norm_mean: [0.485, 0.456, 0.406]
+norm_std: [0.229, 0.224, 0.225]
+context_sweepable: false

@@ -1,0 +1,30 @@
+# Final comparison, UNet variant: the same fixed-decoder-across-encoders design as the UPerNet config,
+# with a UNet head instead. Running both shows whether the decoder choice changes the encoder ranking.
+# Everything else is identical: frozen encoder, decoder-only training, common scored region.
+#
+# Run: encoder_evaluation/run_final_comparison.py --config encoder_evaluation/configs/final_comparison_unet.yaml
+decoder: unet
+tile_size: 512      # baseline context window (per-encoder --context-tile overrides for RoPE encoders)
+compare_tile: 512  # common comparison region: decoder output and scored pixels, identical for all
+feature_layers: last4
+apply_encoder_norm: true
+num_classes: 2
+
+max_steps: 4000
+warmup_steps: 200
+batch_size: 32
+lr: 0.001
+weight_decay: 0.0001
+dice_weight: 1.0
+ce_weight: 1.0
+seed: 0
+
+label_fractions: [1.0]
+
+flip: true
+rot90: true
+intensity_jitter: 0.1
+
+eval_overlap: 0.25
+bootstrap_n: 1000
+eval_workers: 8

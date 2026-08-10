@@ -1,0 +1,37 @@
+# UPerNet decoder probe with frozen-feature caching, sized for a 48 GB GPU.
+# Same head/eval as encoder_evaluation/configs/final_comparison_upernet.yaml, plus frozen-feature caching
+# (the key speedup: forward the encoder over the train set once per (ckpt,organelle) instead of every
+# train step) and memory caps that fit 48 GB. Half precision is selected at launch on GPUs without bfloat16, not set here.
+decoder: upernet
+tile_size: 512
+compare_tile: 512
+feature_layers: last4
+apply_encoder_norm: true
+num_classes: 2
+
+max_steps: 4000
+warmup_steps: 200
+batch_size: 32
+lr: 0.001
+weight_decay: 0.0001
+dice_weight: 1.0
+ce_weight: 1.0
+seed: 0
+
+label_fractions: [1.0]
+flip: true
+rot90: true
+intensity_jitter: 0.1
+
+eval_overlap: 0.25
+eval_batch_windows: 16     # 512-tile windows per encoder forward; modest, sized for 48 GB of VRAM
+bootstrap_n: 300           # 300 resamples give stable macro CIs at ~3x lower cost than 1000
+eval_workers: 4            # per-crop metric ProcessPool (torch-free scipy; Windows-spawn-safe)
+num_workers: 0             # data is in RAM; 0 avoids the Windows fork-after-CUDA DataLoader hazard
+
+# --- frozen-feature cache (the speedup) + memory caps that fit 48 GB of VRAM ---
+cache_train_features: true
+cache_on_gpu: true         # keep the cache in VRAM (no per-step CPU->GPU copy); auto-falls back to CPU
+cache_max_gb: 18.0         # conservative for 48 GB (leaves ample room for encoder + upernet training)
+cache_max_tiles: 6000      # capped by cache_max_gb in practice
+amp: true                  # autocast; falls back to fp16 on GPUs without bf16 tensor cores

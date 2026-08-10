@@ -1,0 +1,6 @@
+{
+  "test": ["5efb1b60_1", "d0ccc5eb_1"],
+  "train": ["5efb1b60_0", "d3c86c65_0", "d3c86c65_1", "d0ccc5eb_0"],
+  "note": "test = 2 confirmed areas from separate images (M1 R12 + M3 R11); train = 4 (M1, M2x2, M3). Each of M1/M3 also has a train crop -> mild within-image leakage; train spans all 3 6hr images.",
+  "images": {"5efb1b60": "6hr fast M1 R12", "d3c86c65": "6hr fast M2 R11", "d0ccc5eb": "6hr fast M3 R11"}
+}

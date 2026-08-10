@@ -1,0 +1,10 @@
+name: microsam
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  # pulls torch, torch-em, segment-anything and elf
+  - micro_sam=1.8.4
+  - tifffile
+  - scikit-image
+  - scipy

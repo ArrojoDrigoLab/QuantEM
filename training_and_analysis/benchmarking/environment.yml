@@ -1,0 +1,16 @@
+# Benchmark aggregation environment: the tile-to-harness transcode, per-crop metric
+# aggregation, and the combined tables. CPU only. Each external comparator runs in its
+# own environment, defined in comparators/envs/; the internal QuantEM and OmniEM runs
+# use ../segmentation_training/environment.yml.
+name: quantem-benchmarking
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - tifffile
+  - scikit-image     # boundary and topology metrics
+  - opencv           # resampling and mask handling
+  - pillow           # PNG output in the tile transcode
+  - pandas
+  - pyyaml

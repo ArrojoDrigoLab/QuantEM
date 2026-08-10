@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "Dataset links to apply at export time.",
+    "",
+    "A dataset with no link in the corpus extract is shown as 'deposition pending'.",
+    "As a deposition completes, add the dataset name and the resulting URL here and",
+    "re-run the build — no code change and no fresh corpus export is needed.",
+    "",
+    "Map: exact dataset name -> public URL. Entries here take precedence over the",
+    "link derived from the corpus extract."
+  ],
+  "datasets": {}
+}

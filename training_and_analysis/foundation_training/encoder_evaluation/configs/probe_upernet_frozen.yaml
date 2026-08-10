@@ -1,0 +1,33 @@
+# UPerNet decoder probe on a frozen encoder, uncached, so every step sees fresh augmentation. This is
+# the standardised setting: the per-checkpoint and per-pretraining-recipe results all run under it.
+# Identical to probe_upernet_frozen_cached.yaml except cache_train_features.
+decoder: upernet
+tile_size: 512
+compare_tile: 512
+feature_layers: last4
+apply_encoder_norm: true
+num_classes: 2
+
+max_steps: 4000
+warmup_steps: 200
+batch_size: 32
+lr: 0.001
+weight_decay: 0.0001
+dice_weight: 1.0
+ce_weight: 1.0
+seed: 0
+
+label_fractions: [1.0]
+flip: true
+rot90: true
+intensity_jitter: 0.1
+
+eval_overlap: 0.25
+eval_batch_windows: 16
+bootstrap_n: 300
+eval_workers: 4
+num_workers: 0
+
+# --- no feature cache: the encoder is forwarded every train step (full augmentation), matching the curve ---
+cache_train_features: false
+amp: true

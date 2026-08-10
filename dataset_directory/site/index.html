@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuantEM dataset directory</title>
+<meta name="description" content="A browsable, filterable directory of the QuantEM electron microscopy corpus: 2D images and 3D acquisitions across many species, filterable by organ, kingdom, species, resolution and imaging modality.">
+<meta property="og:title" content="QuantEM dataset directory">
+<meta property="og:description" content="EM datasets — images and volumes — browsable by organ, kingdom, species, resolution and modality.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23111'/><circle cx='16' cy='16' r='7' fill='none' stroke='%23d9b57a' stroke-width='2.5'/><circle cx='16' cy='16' r='2' fill='%23d9b57a'/></svg>">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="is-loading">
+
+<a class="skip" href="#results">Skip to results</a>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="brand">
+      <h1>QuantEM dataset directory</h1>
+    </div>
+    <div class="search-box">
+      <label class="visually-hidden" for="search">Search datasets and images</label>
+      <input id="search" type="search" placeholder="Search datasets, experiments and image names" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar" aria-label="Filters">
+    <div class="sidebar-head">
+      <h2>Filters</h2>
+      <button id="clear" class="link-button" type="button" hidden>Clear filters</button>
+    </div>
+    <div id="rail"></div>
+  </aside>
+
+  <section class="content">
+    <div class="toolbar">
+      <div id="view-toggle" class="segmented" role="group" aria-label="View">
+        <button type="button" data-view="datasets" aria-pressed="true">Datasets</button>
+        <button type="button" data-view="images" aria-pressed="false">Images</button>
+      </div>
+      <p id="result-head" class="result-head" role="status" aria-live="polite"></p>
+      <label class="sort">
+        <span class="visually-hidden">Sort by</span>
+        <select id="sort">
+          <option value="assets">Most assets</option>
+          <option value="name">Dataset name</option>
+        </select>
+      </label>
+    </div>
+    <div id="results"></div>
+  </section>
+</main>
+
+<div id="detail" class="detail" hidden></div>
+
+<footer class="footer">
+  <p>
+    A browsable directory of the electron microscopy corpus assembled for
+    <strong>QuantEM</strong>. Image data is served by the original repositories, not from here;
+    thumbnails are low-resolution crops shown for identification.
+    Reuse terms are set by each depositor — check the source repository.
+  </p>
+  <p>
+    <a href="about.html">About this directory</a> ·
+    <a href="data/datasets.csv" download>Download the dataset inventory (CSV)</a>
+  </p>
+</footer>
+
+<script type="module" src="assets/app.js"></script>
+</body>
+</html>

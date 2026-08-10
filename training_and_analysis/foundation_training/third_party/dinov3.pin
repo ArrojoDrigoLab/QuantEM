@@ -1,0 +1,20 @@
+# Pinned upstream DINOv3 reference. QuantEM adds only a thin adapter layer
+# (em_ssl/integration) applied as runtime patches — never a fork — so the recipe is
+# reproducible from this pin plus those patches.
+#
+# The pinned commit is on the fino branch, not on main, and supplies the pieces the EM
+# adaptation depends on: expand_patch_embed (single-channel patch embedding),
+# GuidedSSLMetaArch and dinov3/train/metadata_utils/ (the metadata-guided heads used by
+# the metadata-conditioning ablation), SIGReg, and the two-stage freeze/finetune
+# machinery. The single-channel adaptation needs this branch whether or not metadata
+# conditioning is enabled.
+#
+# Obtain DINOv3 from Meta on their terms, then install it into the environment:
+#
+#     ./fetch_dinov3.sh <dest>    &&    pip install <dest>
+#
+# Cite it as: Simeoni, O. et al. DINOv3. arXiv:2508.10104 (2025).
+DINOV3_REPO_URL=https://github.com/facebookresearch/dinov3
+DINOV3_BRANCH=fino
+DINOV3_COMMIT=81aae9ad87be9a5e19f5043ac38957449af44b15
+# commit date: 2026-06-12

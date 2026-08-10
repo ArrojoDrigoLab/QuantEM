@@ -1,0 +1,18 @@
+name: quantem-immunoem
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - scikit-image>=0.24
+  - opencv
+  - tifffile
+  - pillow
+  - pyyaml
+  - pip
+  - pip:
+      # Cameca .im reader (step 01)
+      - sims==2.0.2
+      # Frame-to-frame drift correction of MIMS plane stacks (step 01)
+      - pystackreg==0.2.8

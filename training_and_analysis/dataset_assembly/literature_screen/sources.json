@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "description": "Metadata-only literature discovery settings for public intracellular EM dataset leads.",
+  "source_journal_groups": [
+    {
+      "name": "cell_biology_and_ultrastructure",
+      "description": "High-value cell biology journals where source-data links for intracellular EM are common.",
+      "journals": [
+        {"title": "Journal of Cell Biology", "issn": ["0021-9525", "1540-8140"]},
+        {"title": "Journal of Cell Science", "issn": ["0021-9533", "1477-9137"]},
+        {"title": "eLife", "issn": ["2050-084X"]},
+        {"title": "Nature Cell Biology", "issn": ["1465-7392", "1476-4679"]},
+        {"title": "EMBO Journal", "issn": ["0261-4189", "1460-2075"]},
+        {"title": "PLOS Biology", "issn": ["1544-9173", "1545-7885"]}
+      ]
+    },
+    {
+      "name": "methods_and_broad_science",
+      "description": "Methods and broad-scope journals that often publish volume EM datasets and public source data.",
+      "journals": [
+        {"title": "Nature Methods", "issn": ["1548-7091", "1548-7105"]},
+        {"title": "Nature", "issn": ["0028-0836", "1476-4687"]},
+        {"title": "Science", "issn": ["0036-8075", "1095-9203"]},
+        {"title": "Cell", "issn": ["0092-8674", "1097-4172"]},
+        {"title": "Microscopy and Microanalysis", "issn": ["1431-9276", "1435-8115"]},
+        {"title": "Methods in Cell Biology", "issn": ["0091-679X", "1557-7988"]}
+      ]
+    }
+  ],
+  "query_terms": {
+    "tem": ["TEM", "transmission electron microscopy", "serial section TEM"],
+    "sbf_sem": ["SBF-SEM", "serial block face", "serial block-face scanning electron microscopy"],
+    "fib_sem": ["FIB-SEM", "focused ion beam scanning electron microscopy"],
+    "volume_em": ["volume EM", "volume electron microscopy", "connectomics"],
+    "ultrastructure": ["ultrastructure", "intracellular ultrastructure"],
+    "organelle": ["organelle", "mitochondria", "endoplasmic reticulum", "ER", "nucleus", "membrane"],
+    "source_data": ["source data", "data availability", "supplementary data"],
+    "repository": ["repository", "EMPIAR", "BioStudies", "OpenOrganelle", "BossDB", "webKnossos", "Figshare", "Zenodo", "Dryad", "Mendeley Data"],
+    "dataset": ["dataset", "image stack", "segmentation", "annotation", "tomogram", "volume"]
+  },
+  "query_groups": [
+    {
+      "name": "volume_em_source_data",
+      "query": "(\"volume electron microscopy\" OR \"FIB-SEM\" OR \"SBF-SEM\" OR \"serial block face\") AND (\"source data\" OR dataset OR repository OR \"data availability\")",
+      "crossref_query": "volume electron microscopy FIB-SEM SBF-SEM serial block face source data dataset repository data availability"
+    },
+    {
+      "name": "tem_organelle_repository",
+      "query": "(TEM OR \"transmission electron microscopy\" OR ultrastructure) AND (organelle OR mitochondria OR \"endoplasmic reticulum\" OR nucleus) AND (dataset OR repository OR \"source data\")",
+      "crossref_query": "transmission electron microscopy TEM ultrastructure organelle mitochondria endoplasmic reticulum nucleus dataset repository source data"
+    },
+    {
+      "name": "em_repository_names",
+      "query": "(\"electron microscopy\" OR ultrastructure OR \"volume EM\") AND (EMPIAR OR BioStudies OR OpenOrganelle OR BossDB OR webKnossos OR Figshare OR Zenodo OR Dryad)",
+      "crossref_query": "electron microscopy ultrastructure volume EM EMPIAR BioStudies OpenOrganelle BossDB webKnossos Figshare Zenodo Dryad"
+    }
+  ],
+  "per_source": {
+    "openalex": {
+      "limit": 75,
+      "date_window_days": 3650,
+      "max_query_groups": 2
+    },
+    "crossref": {
+      "limit": 75,
+      "date_window_days": 3650,
+      "max_query_groups": 2
+    },
+    "europepmc": {
+      "limit": 75,
+      "date_window_days": 3650,
+      "max_query_groups": 2
+    },
+    "pubmed": {
+      "limit": 75,
+      "date_window_days": 3650,
+      "max_query_groups": 1
+    }
+  }
+}

@@ -1,0 +1,48 @@
+# Copy this file to paths.yaml and edit for the local machine. paths.yaml is gitignored.
+# Every path here can also be overridden per run on the command line.
+
+paths:
+  # --- inputs ---------------------------------------------------------------
+  # Raw Cameca .im acquisitions (step 01).
+  mims_im_dir: /path/to/mims/im_files
+
+  # Landmark correspondence files, one JSON per MIMS field, named <field>.json
+  # to match the .im stem. Selected externally in Fiji, napari, or equivalent.
+  landmarks_dir: /path/to/landmarks
+
+  # Full-resolution EM canvas images, one per sample (step 02).
+  em_canvas_dir: /path/to/em_canvases
+
+  # Tissue and organelle masks (steps 05-06). Expected layout:
+  #   <masks_dir>/<canvas>/tissue.{npy,tif,png}
+  #   <masks_dir>/<canvas>/nucleus.{npy,tif,png}
+  #   <masks_dir>/<canvas>/mitochondria.{npy,tif,png}
+  # Anything > 0 is foreground. Organelle masks come from QuantEM; the tissue
+  # mask is a manual delineation. These are released with the image data.
+  masks_dir: /path/to/masks
+
+  # --- outputs --------------------------------------------------------------
+  accumulated_dir: ./out/accumulated   # step 01: per-isotope count images
+  warped_dir: ./out/warped             # step 02: registered fields + bounding boxes
+  mosaic_dir: ./out/mosaics            # step 03: canvas-sized per-isotope mosaics
+  results_dir: ./out/results           # steps 04-06: particles and analysis
+
+scales:
+  # Pixel size of the EM canvases, the registered mosaics, and the masks, which
+  # all share one pixel grid. Used to report distances in nanometres.
+  nm_per_px: 5.0
+
+# One entry per sample. `width`/`height` are the EM canvas dimensions in pixels
+# and define the mosaic size built by step 03. `group` is the experimental arm
+# that per-animal roll-ups average within. `em_image` is optional and defaults
+# to the canvas name — set it when the EM file is named differently.
+canvases:
+  73_6hrfast_M1: {group: 6hr_fast,   width: 64640, height: 32629}
+  75_6hrfast_M2: {group: 6hr_fast,   width: 33565, height: 35375}
+  77_6hrfast_M3: {group: 6hr_fast,   width: 21810, height: 54124}
+  79_1hr13C_M1:  {group: ON_1hr_13C, width: 24079, height: 67298}
+  81_1hr13C_M2:  {group: ON_1hr_13C, width: 32515, height: 26702}
+  83_1hr_13C_M3: {group: ON_1hr_13C, width: 49972, height: 42486}
+  85_ONfast_M1:  {group: ON_fast,    width: 47416, height: 31866}
+  87_ONfast_M2:  {group: ON_fast,    width: 38633, height: 72488}
+  89_ONfast_M3:  {group: ON_fast,    width: 39248, height: 53185}

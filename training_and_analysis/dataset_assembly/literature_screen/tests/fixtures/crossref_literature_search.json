@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "message": {
+    "items": [
+      {
+        "DOI": "10.1234/jcb.2026.001",
+        "title": ["FIB-SEM source data for mitochondrial ultrastructure"],
+        "container-title": ["Journal of Cell Biology"],
+        "published-print": {"date-parts": [[2026, 2, 1]]},
+        "URL": "https://doi.org/10.1234/jcb.2026.001",
+        "abstract": "<jats:p>We collected FIB-SEM volume EM data and deposited source data for mitochondria.</jats:p>",
+        "ISSN": ["0021-9525", "1540-8140"],
+        "link": [
+          {
+            "URL": "https://figshare.com/articles/dataset/fibsem_source_data/12345",
+            "content-type": "application/json",
+            "intended-application": "text-mining"
+          },
+          {
+            "URL": "https://publisher.example.org/article.pdf",
+            "content-type": "application/pdf"
+          }
+        ],
+        "relation": {
+          "is-supplemented-by": [
+            {"id-type": "doi", "id": "10.6084/m9.figshare.12345"}
+          ]
+        }
+      }
+    ]
+  }
+}

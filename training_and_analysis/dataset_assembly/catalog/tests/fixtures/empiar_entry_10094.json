@@ -1,0 +1,22 @@
+{
+  "EMPIAR-10094": {
+    "title": "Serial Block Face SEM of HeLa cell pellet with 10 nm pixels and 50 nm slices (benchmark dataset)",
+    "imagesets": [
+      {
+        "name": "SBF-SEM from Gatan 3View. HeLa cell benchmark data at 10x10x50 nm voxel size. Raw DM4 format.",
+        "data_format": "DM4",
+        "num_images_or_tilt_series": 518,
+        "details": "HeLa cell pellet SBF-SEM benchmark data",
+        "image_width": "8192",
+        "image_height": "8192"
+      }
+    ],
+    "release_date": "2019-05-21",
+    "update_date": "2019-10-25",
+    "dataset_size": "129.8 GB",
+    "experiment_type": "SBF-SEM",
+    "entry_doi": "10.6019/EMPIAR-10094",
+    "scale": "cell",
+    "citation": []
+  }
+}

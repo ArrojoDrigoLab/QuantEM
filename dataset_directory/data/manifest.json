@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "source_snapshot": "2026-08-07",
+  "export_id": "9f378c957162",
+  "counts": {
+    "datasets": 657,
+    "assets": 17828,
+    "images_2d": 16107,
+    "volumes_3d": 1721,
+    "kingdoms": 7,
+    "species": 101,
+    "organs": 34,
+    "tissue_contexts": 338,
+    "modalities": 6,
+    "repositories": 14
+  },
+  "thumbnails": {
+    "px": 256,
+    "format": "webp",
+    "quality": 75,
+    "count": 17828,
+    "bytes": 238049612,
+    "archive": "thumbs-256-v1.tar.gz",
+    "sha256": "e3d7c3cac770128f59de6aa81383f67592e35ba3d319635b585a2e358fb0abc6",
+    "release_tag": "directory-thumbs-v1",
+    "archive_bytes": 240596120
+  }
+}

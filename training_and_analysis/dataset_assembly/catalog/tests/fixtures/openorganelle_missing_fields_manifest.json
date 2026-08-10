@@ -1,0 +1,17 @@
+{
+  "name": "jrc_missing-fields",
+  "metadata": {
+    "sample": {
+      "organism": [
+        "Mouse"
+      ]
+    }
+  },
+  "sources": {
+    "raw": {
+      "name": "raw",
+      "contentType": "em"
+    },
+    "broken": "not an object"
+  }
+}

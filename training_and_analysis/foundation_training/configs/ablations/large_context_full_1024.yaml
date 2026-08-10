@@ -1,0 +1,64 @@
+name: large_context_full_1024
+framework: dinov3
+notes: 'Large context, full: a single stage at 1024 px, small batch with activation checkpointing.'
+model:
+  arch: vit_base
+  patch_size: 16
+  in_chans: 1
+  rope_rescale_coords: null
+crops:
+  schedule:
+  - global_crops_size: 1024
+    local_crops_size: 112
+    max_steps: 80000
+  local_crops_number: 8
+  global_crops_scale:
+  - 0.32
+  - 1.0
+  local_crops_scale:
+  - 0.05
+  - 0.32
+data:
+  shard_prefix: em_tiles_v0
+augmentation:
+  brightness: 0.2
+  contrast: 0.2
+  color_jitter_p: 0.8
+  gamma: 0.2
+  gamma_p: 0.2
+  noise_sigma_max: 0.04
+  noise_p: 0.2
+  blur_sigma_min: 0.1
+  blur_sigma_max: 1.5
+  global1_blur_p: 1.0
+  global2_blur_p: 0.1
+  local_blur_p: 0.5
+  dihedral: true
+  horizontal_flips: true
+  vertical_flips: true
+  rotations: true
+optim:
+  lr: 0.0005
+  weight_decay: 0.04
+  weight_decay_end: 0.4
+  warmup_steps: 1000
+  min_lr: 1.0e-06
+  clip_grad: 3.0
+train:
+  batch_size_per_gpu: 8
+  num_workers: 10
+  prefetch_factor: 4
+  official_epoch_length: 1250
+  compile: true
+  activation_checkpointing: true
+  param_dtype: bf16
+  seed: 0
+logging:
+  tensorboard: true
+  wandb: false
+  log_every: 20
+checkpointing:
+  period_steps: 2000
+  keep_last: 3
+  keep_every_steps: 20000
+  teacher_export_every_steps: 2000

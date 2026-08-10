@@ -1,0 +1,43 @@
+# Neck-ablation arm: mitochondria on QuantEM; naive_1x1, affinity_mws head; last 4 encoder blocks unfrozen; dice_bce loss; 10,000 steps; encoder lr 0.0001.
+name: mito_quantem_affinity_mws_naive_1x1
+notes: 'Neck-ablation arm: mitochondria on QuantEM; naive_1x1, affinity_mws head; last 4 encoder blocks unfrozen; dice_bce loss; 10,000 steps; encoder lr 0.0001.'
+device: cuda
+amp: true
+num_workers: 8
+encoder:
+  run_dir: <QuantEM ViT-B encoder run directory>
+  tile_size: 512
+  feature_layers: last4
+  apply_encoder_norm: true
+  adapt: last_n
+  adapt_params:
+    n: 4
+neck:
+  type: naive_1x1
+decoder:
+  type: affinity_mws
+  params: {}
+loss:
+  terms:
+  - type: dice_bce
+    weight: 1.0
+data:
+  bucket: canonical
+  organelle: mito
+  task: instance
+  min_fg_frac_keep: 0.1
+optim:
+  max_steps: 10000
+  warmup_steps: 625
+  batch_size: 4
+  lr: 0.001
+  weight_decay: 0.0001
+  seed: 0
+  adapter_lr: 0.0001
+  grad_accum: 2
+eval:
+  overlap: 0.25
+  fg_threshold: 0.5
+  instance_min_size: 16
+  bootstrap_n: 1000
+  max_eval_crops: 300

@@ -1,0 +1,22 @@
+# Ground-truth corpus assembly environment: per-source ingest, metadata, splits,
+# and the benchmark tile build. CPU only.
+name: quantem-segmentation-dataset
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - tifffile
+  - imagecodecs      # compressed source TIFFs
+  - pillow
+  - opencv           # resampling and polygon rasterisation
+  - h5py             # zenodo_3675220 HDF5 blocks
+  - zarr             # asem_incasem (s3://asem-project)
+  - s3fs
+  - requests
+  - pandas           # CEM-MitoLab metadata sheet
+  - openpyxl
+  - pip
+  - pip:
+      # OME-Zarr streaming for webKnossos and OpenOrganelle
+      - tensorstore

@@ -1,0 +1,11 @@
+export const RASTER_BORDER_OPACITY = 0.95;
+export const CONFIRMED_FILL_COLOR = "#33cc66";
+export const CONFIRMED_BORDER_COLOR = "#237a47";
+export const LABELED_FILL_COLOR = "#38bdf8";
+export const LABELED_BORDER_COLOR = "#0f6f94";
+export const REFINED_FILL_COLOR = "#3b82f6";
+export const REFINED_BORDER_COLOR = "#1d4ed8";
+export const CANDIDATE_FILL_COLOR = "#ff0000";
+export const CANDIDATE_BORDER_COLOR = "#991b1b";
+export const CELLS_INTERNAL_NAME = "quantem_internal_cells";
+export const TISSUE_INTERNAL_NAME = "quantem_internal_tissue";

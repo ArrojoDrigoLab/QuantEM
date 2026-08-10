@@ -1,0 +1,4 @@
+model,AIVE,EMPIAR-10994,DeepContact,EMPIAR-13156,islet/liver-ER,DatasetAvg
+deepcontact_er,0.0189,0.3043,0.353,0.0011,0.1099,0.1575
+incasem,0.4142,0.3666,0.1544,0.0642,0.1543,0.2307
+microsam_vit_l_em_organelles,0.0063,0.0026,0.0014,0.0005,0.0041,0.003

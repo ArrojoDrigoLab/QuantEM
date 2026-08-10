@@ -1,0 +1,44 @@
+name: napari-quantem
+display_name: QuantEM
+visibility: public
+categories: ["Segmentation", "Image Processing"]
+contributions:
+  commands:
+    - id: napari-quantem.segment
+      title: "Segment organelles"
+      python_name: napari_quantem._widget_segment:SegmentWidget
+    - id: napari-quantem.finetune
+      title: "Fine-tune on your annotations"
+      python_name: napari_quantem._widget_finetune:FineTuneWidget
+    - id: napari-quantem.proofread
+      title: "Proofreading tools"
+      python_name: napari_quantem._widget_proofread:ProofreadWidget
+    - id: napari-quantem.measure
+      title: "Measure objects"
+      python_name: napari_quantem._widget_measure:MeasureWidget
+    - id: napari-quantem.batch
+      title: "Batch process a folder"
+      python_name: napari_quantem._widget_batch:BatchWidget
+    - id: napari-quantem.models
+      title: "Manage models"
+      python_name: napari_quantem._widget_models:ModelManagerWidget
+    - id: napari-quantem.sample_em
+      title: "Example EM image"
+      python_name: napari_quantem._sample_data:load_sample_em
+  widgets:
+    - command: napari-quantem.segment
+      display_name: "QuantEM: Segment"
+    - command: napari-quantem.finetune
+      display_name: "QuantEM: Fine-tune"
+    - command: napari-quantem.proofread
+      display_name: "QuantEM: Proofread"
+    - command: napari-quantem.measure
+      display_name: "QuantEM: Measure"
+    - command: napari-quantem.batch
+      display_name: "QuantEM: Batch"
+    - command: napari-quantem.models
+      display_name: "QuantEM: Models"
+  sample_data:
+    - command: napari-quantem.sample_em
+      display_name: "Mouse pancreatic islet (SEM, 5 nm/px)"
+      key: quantem_islet_em

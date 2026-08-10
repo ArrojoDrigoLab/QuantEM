@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engine tests — QuantEM dataset directory</title>
+<style>
+  body { font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 24px; max-width: 110ch; }
+  h1 { font-size: 18px; }
+  .pass { color: #17692f; }
+  .fail { color: #a11414; font-weight: 700; }
+  .summary { margin: 16px 0; padding: 12px 16px; border-radius: 8px; font-size: 15px; }
+  .summary.ok { background: #e6f5ea; color: #17692f; }
+  .summary.bad { background: #fbe8e8; color: #a11414; }
+  li { margin: 2px 0; }
+</style>
+</head>
+<body>
+<h1>Filter engine tests</h1>
+<p>Run against the real exported corpus, so these check the engine <em>and</em> the data.
+   The same suite runs headlessly in CI — see <code>tests/run.mjs</code>.</p>
+<div id="summary" class="summary">Running…</div>
+<ul id="results"></ul>
+
+<script type="module">
+import { runSuite } from './tests/suite.js';
+
+const load = (name) => fetch(`data/${name}`).then((response) => response.json());
+const [manifest, facetsJson, datasetsJson, assetsJson] = await Promise.all(
+  ['manifest.json', 'facets.json', 'datasets.json', 'assets.json'].map(load),
+);
+
+const { passed, failed, results } = runSuite({ manifest, facetsJson, datasetsJson, assetsJson });
+
+const list = document.getElementById('results');
+for (const result of results) {
+  const item = document.createElement('li');
+  item.className = result.ok ? 'pass' : 'fail';
+  item.textContent = `${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.detail ? ` — ${result.detail}` : ''}`;
+  list.append(item);
+}
+
+const summary = document.getElementById('summary');
+summary.className = `summary ${failed ? 'bad' : 'ok'}`;
+summary.textContent = failed ? `${failed} failed, ${passed} passed` : `All ${passed} tests passed`;
+document.title = `${failed ? `${failed} FAILED` : 'PASS'} — engine tests`;
+</script>
+</body>
+</html>

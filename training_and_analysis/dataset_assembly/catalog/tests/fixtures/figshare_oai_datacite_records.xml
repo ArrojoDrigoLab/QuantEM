@@ -1,0 +1,83 @@
+<?xml version='1.0' encoding='utf-8'?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <responseDate>2026-06-08T15:00:00Z</responseDate>
+  <request verb="ListRecords" metadataPrefix="oai_datacite">https://api.figshare.com/v2/oai</request>
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:figshare.com:article/24502954</identifier>
+        <datestamp>2026-05-15T00:00:00Z</datestamp>
+        <setSpec>portal_63</setSpec>
+        <setSpec>item_type_3</setSpec>
+      </header>
+      <metadata>
+        <resource xmlns="http://datacite.org/schema/kernel-4">
+          <identifier identifierType="DOI">10.6084/m9.figshare.24502954.v1</identifier>
+          <alternateIdentifiers>
+            <alternateIdentifier alternateIdentifierType="URL">https://janelia.figshare.com/articles/dataset/Raw_FIB-SEM_mitochondria_volume/24502954</alternateIdentifier>
+          </alternateIdentifiers>
+          <relatedIdentifiers>
+            <relatedIdentifier relatedIdentifierType="DOI" relationType="IsSupplementTo">10.1038/s41586-example</relatedIdentifier>
+            <relatedIdentifier relatedIdentifierType="URL" relationType="HasPart">https://ndownloader.figshare.com/files/43057867</relatedIdentifier>
+          </relatedIdentifiers>
+          <creators>
+            <creator>
+              <creatorName>Example Lab</creatorName>
+            </creator>
+          </creators>
+          <titles>
+            <title>Raw FIB-SEM mitochondria volume</title>
+          </titles>
+          <subjects>
+            <subject>electron microscopy</subject>
+            <subject>intracellular ultrastructure</subject>
+            <subject>mitochondria</subject>
+          </subjects>
+          <dates>
+            <date dateType="Created">2026-05-15</date>
+            <date dateType="Updated">2026-05-16</date>
+          </dates>
+          <resourceType resourceTypeGeneral="Dataset">Dataset</resourceType>
+          <formats>
+            <format>TIFF</format>
+            <format>application/zip</format>
+          </formats>
+          <publicationYear>2026</publicationYear>
+          <publisher>Figshare</publisher>
+          <rightsList>
+            <rights rightsURI="https://creativecommons.org/licenses/by/4.0/" rightsIdentifier="CC BY 4.0">Creative Commons Attribution 4.0</rights>
+          </rightsList>
+          <descriptions>
+            <description descriptionType="Abstract">Public serial FIB-SEM image volume of cellular mitochondria and ER ultrastructure.</description>
+          </descriptions>
+        </resource>
+      </metadata>
+    </record>
+    <record>
+      <header>
+        <identifier>oai:figshare.com:article/32605136</identifier>
+        <datestamp>2026-06-08T00:00:00Z</datestamp>
+        <setSpec>item_type_6</setSpec>
+      </header>
+      <metadata>
+        <resource xmlns="http://datacite.org/schema/kernel-4">
+          <identifier identifierType="DOI">10.1021/acs.organomet.6c00142.s001</identifier>
+          <alternateIdentifiers>
+            <alternateIdentifier alternateIdentifierType="URL">https://figshare.com/articles/journal_contribution/Organometallic_supporting_information/32605136</alternateIdentifier>
+          </alternateIdentifiers>
+          <titles>
+            <title>Speciation of bulky cobalt complexes</title>
+          </titles>
+          <subjects>
+            <subject>organometallic chemistry</subject>
+          </subjects>
+          <resourceType resourceTypeGeneral="JournalArticle">Journal contribution</resourceType>
+          <descriptions>
+            <description descriptionType="Abstract">Chemical synthesis data with electron donor ligands.</description>
+          </descriptions>
+        </resource>
+      </metadata>
+    </record>
+    <resumptionToken expirationDate="2026-06-08T16:00:00Z" cursor="0">abc-token</resumptionToken>
+  </ListRecords>
+</OAI-PMH>

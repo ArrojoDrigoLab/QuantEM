@@ -1,0 +1,72 @@
+# Decoder-contest arm: ER on OmniEM; resnet34_detail, unet head; LoRA rank 8 (convolutional); dice_bce loss; 5,000 steps; encoder lr 0.001.
+name: er_omniem_unet
+notes: 'Decoder-contest arm: ER on OmniEM; resnet34_detail, unet head; LoRA rank 8 (convolutional); dice_bce loss; 5,000 steps; encoder lr 0.001.'
+device: cuda
+amp: true
+num_workers: 8
+encoder:
+  run_dir: <OmniEM ViT-L encoder run directory>
+  checkpoint_step: null
+  tile_size: 512
+  feature_layers: last4
+  apply_encoder_norm: true
+  adapt: lora
+  adapt_params:
+    rank: 8
+    conv: true
+neck:
+  type: resnet34_detail
+  params: {}
+decoder:
+  type: unet
+  params: {}
+loss:
+  terms:
+  - type: dice_bce
+    weight: 1.0
+    params: {}
+  ignore_index: 255
+data:
+  organelle: er
+  canonical_nm: null
+  group: null
+  bucket: canonical
+  train_split: train
+  val_split: val
+  test_split: test
+  num_classes: 2
+  task: semantic
+  min_fg_frac_keep: 0.1
+  manifest_name: manifest.jsonl
+  aug_flip: true
+  aug_rot90: true
+  aug_elastic: true
+  aug_elastic_alpha: 20.0
+  aug_elastic_sigma: 6.0
+  aug_brightness: 0.15
+  aug_contrast: 0.15
+  aug_gamma: 0.2
+  aug_noise_std: 0.02
+optim:
+  max_steps: 5000
+  warmup_steps: 625
+  batch_size: 8
+  lr: 0.001
+  weight_decay: 0.0001
+  decoder_lr_mult: 1.0
+  adapter_lr: 0.001
+  grad_checkpoint: false
+  grad_clip: 0.0
+  grad_accum: 1
+  seed: 0
+eval:
+  overlap: 0.25
+  boundary_theta_frac: 0.0075
+  boundary_dilation_ratio: 0.02
+  fg_threshold: 0.5
+  auprc_bins: 256
+  hd95_pct: 95.0
+  instance_min_size: 16
+  max_region_px: 4000000
+  bootstrap_n: 1000
+  bootstrap_ci: 95.0

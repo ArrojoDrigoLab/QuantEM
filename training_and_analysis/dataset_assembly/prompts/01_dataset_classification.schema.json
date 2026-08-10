@@ -1,0 +1,219 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "candidate_id": {
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "type": "number"
+    },
+    "dedupe_keys": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "eligibility_status": {
+      "enum": [
+        "eligible",
+        "ineligible",
+        "uncertain"
+      ],
+      "type": "string"
+    },
+    "exclusion_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "intracellular_ultrastructure_evidence": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "needs_codex_review": {
+      "type": "boolean"
+    },
+    "needs_manual_review": {
+      "type": "boolean"
+    },
+    "qualifying_modality": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "recommended_catalog_fields": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset_doi": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dimensions_or_image_count": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "discovered_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "download_or_manifest_urls": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "duplicate_of_source_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duplicate_of_source_record_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duplicate_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duplicate_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file_formats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "landing_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "license": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "organism": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "publication_doi": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "publication_dois": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "raw_metadata": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "source_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_record_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tissue_or_sample": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "title",
+        "landing_url",
+        "download_or_manifest_urls",
+        "publication_doi",
+        "publication_dois",
+        "dataset_doi",
+        "modality",
+        "organism",
+        "tissue_or_sample",
+        "dimensions_or_image_count",
+        "file_formats",
+        "license",
+        "source_name",
+        "source_record_id",
+        "duplicate_of_source_name",
+        "duplicate_of_source_record_id",
+        "duplicate_scope",
+        "duplicate_reason",
+        "evidence_text",
+        "raw_metadata",
+        "discovered_at"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "eligibility_status",
+    "confidence",
+    "qualifying_modality",
+    "intracellular_ultrastructure_evidence",
+    "exclusion_reason",
+    "needs_codex_review",
+    "needs_manual_review",
+    "dedupe_keys",
+    "recommended_catalog_fields"
+  ],
+  "type": "object"
+}

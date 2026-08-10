@@ -1,0 +1,10 @@
+{
+  "_comment": [
+    "Corpus entries deliberately kept out of the published directory.",
+    "'dataset_names' drops datasets by exact name at load time.",
+    "'url_substrings' are asserted absent from every published dataset link, so an",
+    "entry that is already outside the extract cannot reappear silently."
+  ],
+  "dataset_names": [],
+  "url_substrings": ["S-BIAD3716"]
+}

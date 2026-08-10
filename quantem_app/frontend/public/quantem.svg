@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#0f172a" />
+  <!-- Stylised EM micrograph: a segmented organelle outline over a scan grid. -->
+  <g stroke="#22d3ee" stroke-width="2.5" fill="none" stroke-linejoin="round">
+    <path d="M20 40c-6-4-6-14 0-18s16-6 22 0 6 16-2 20-14 2-20-2z" />
+  </g>
+  <path
+    d="M26 32c3-5 9-5 12 0s-2 9-6 9-9-4-6-9z"
+    fill="#22d3ee"
+    fill-opacity="0.35"
+    stroke="#67e8f9"
+    stroke-width="1.5"
+  />
+  <g stroke="#334155" stroke-width="1">
+    <path d="M8 16h48M8 32h48M8 48h48" />
+  </g>
+</svg>

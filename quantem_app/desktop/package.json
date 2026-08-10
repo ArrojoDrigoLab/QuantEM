@@ -1,0 +1,15 @@
+{
+  "name": "quantem-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "QuantEM desktop shell (Tauri): launches the quantem-server sidecar and hosts the UI",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:exe": "tauri build --no-bundle"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

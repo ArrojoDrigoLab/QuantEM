@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-06-08T15:02:00Z</responseDate>
+  <request verb="ListRecords" metadataPrefix="oai_datacite" from="2026-05-01">https://api.figshare.com/v2/oai</request>
+  <error code="noRecordsMatch">No matching records</error>
+</OAI-PMH>

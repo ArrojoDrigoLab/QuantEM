@@ -1,0 +1,36 @@
+.app {
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Used only by the pre-header loading state, where it is the only thing on
+   screen. It is deliberately NOT fixed-positioned any more: as a fixed overlay
+   at (16, 16) it sat on top of the viewer header's title and filename. */
+.loading-with-back {
+  padding: 1rem;
+}
+
+.back-button {
+  height: 2.5rem;
+  padding: 0 0.9rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.375rem;
+  background: rgba(255, 255, 255, 0.96);
+  color: #334155;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.back-button:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.loading {
+  padding: 2rem;
+  color: #64748b;
+  text-align: center;
+}

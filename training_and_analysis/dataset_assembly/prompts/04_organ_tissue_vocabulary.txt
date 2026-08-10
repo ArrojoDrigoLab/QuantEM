@@ -1,0 +1,92 @@
+You are standardizing **tissue** tags (and confirming **organ**) for a curated electron-microscopy
+(EM) image database. Each "value" below is a raw free-text tissue string currently attached to N
+active assets. Your job: map each raw tissue value to a **coarse standardized tissue** term, an
+optional finer **tissue_region**, and the correct **organ(s)**.
+
+## Inputs you get
+- `cluster_<NAME>.json`: `{ raw_tissue_value: {n, organs{}, experiments{}, tag_dois{}, exp_dois{}, species{}, cell_lines{}} }`
+  - `organs` = organ tags currently co-occurring on those assets (hints, may be wrong/messy).
+  - `experiments` = experiment names (often the paper title — very informative).
+  - `exp_dois`/`tag_dois` = DOIs you may look up on the web if a value is genuinely unclear.
+  - `species`, `cell_lines` = co-tags.
+
+## Decisions per value → output
+For each raw value produce:
+- `tissue`: list of 1+ **coarse** canonical tissue terms (see vocab). Usually exactly 1.
+- `tissue_region`: list (0+) of finer detail (layer/nucleus/subregion/cell-line name/life-stage). Optional.
+- `organ`: list of 1+ canonical organ terms (see ORGAN list). This OVERRIDES the messy current organ.
+- `unsure`: true if you could not confidently determine it (still give best guess).
+- `note`: short reason / what the sample is (esp. if you looked it up).
+
+## Policy (CRITICAL)
+1. **Coarse tissue, fine region.** `tissue` is the major histological/anatomical structure
+   (~controlled vocab of <100 terms total). Push specific layers / nuclei / subregions / exact
+   cell-line names / developmental stages into `tissue_region` (optional). Example:
+   "Medial entorhinal cortex layer 2/3" → tissue `["Cerebral cortex"]`, region `["Medial entorhinal cortex layer 2/3"]`, organ `["Brain"]`.
+2. **Strip noise.** Remove species, age, genotype, prep, "tissue"/"sample" filler, microscope, and
+   descriptive sentences. "Mouse brain tissue" → tissue `["Brain"]` is WRONG only if a finer coarse
+   structure is known; if it's just bulk brain, use tissue `["Brain"]` (mirroring organ is allowed
+   when no finer structure is identifiable). "Wild-type, 8 week old mouse … ; Tissue ; Liver" →
+   tissue `["Liver"]` organ `["Liver"]`.
+3. **Cell lines** (cultured): organ = the line's **originating organ**; tissue = coarse origin type
+   (`Epithelium` / `Carcinoma` / `Fibroblast` / `Lymphoma` / `Osteosarcoma` etc.); region =
+   `"<Line> cell line"`. Known lines: HeLa→Cervix/Carcinoma; Vero/Vero E6/CCL-81→Kidneys/Epithelium
+   (Chlorocebus); COS-7→Kidneys/Fibroblast; CHO→Ovary/Epithelium (Cricetulus); U2-OS/U2OS→Bones/Osteosarcoma;
+   MCF-7/SUM159/SUM-149/Cal51/BT-474/MDA-MB-231/4T1→Breast/Carcinoma; A431→Skin/Carcinoma (epidermoid);
+   RPE1 (hTERT)→Eye/Epithelium (retinal pigment); DT40→Immune system/Lymphoma (chicken B cell);
+   HEK293→Kidneys/Epithelium; NIH-3T3/MEF→Embryo/Fibroblast; Huh-7/HepG2→Liver/Carcinoma;
+   Jurkat→Blood/Lymphoma (T cell); THP-1→Blood/Monocyte; GT1-7→Brain/Neuron; Calu-3→Lung/Carcinoma;
+   BSC-1→Kidneys/Epithelium; Nthy-ori 3-1→Thyroid?(use Mixed if multi-line); BHK-21→Kidneys/Fibroblast (hamster).
+4. **Unicellular organisms** (bacteria, protozoan parasites, diatoms, algae, yeast, diplonemids,
+   ciliates, microsporidia, free-living protists): organ `["Whole organism"]`, tissue
+   `["Whole organism"]`, region = cell type / life stage (e.g. "Ookinete", "Trophozoite",
+   "Promastigote", "Spore", "Diatom cell"). Endosymbionts inside a host: still organ
+   `["Whole organism"]` (the microbe), region = "Endosymbiont" + host note.
+5. **Nervous system.** Keep **Brain**, **Spinal cord**, **Eye** as organs.
+   Brain subregions (hippocampus, any cortex, cerebellum, thalamus, striatum, amygdala, olfactory
+   bulb, etc.) → organ `["Brain"]`, tissue = the coarse structure (e.g. `Cerebral cortex`,
+   `Hippocampus`, `Cerebellum`), region = exact area/layer. Structures NOT inside a named organ
+   (optic nerve, peripheral nerves, ganglia, nerve cords, nerve ring, sensilla, NMJ) → organ
+   `["Central nervous system"]` or `["Peripheral nervous system"]` (optic nerve = CNS; peripheral
+   nerves/ganglia/sensilla = PNS; insect/worm CNS connectomes = CNS), tissue = the structure
+   (e.g. `Optic nerve`, `Peripheral nerve`, `Ventral nerve cord`). Invertebrate diffuse nervous
+   tissue with no CNS/PNS split → organ `["Nervous system"]`.
+6. **Whole organism** is valid at organ AND tissue level (whole small animals/embryos/larvae,
+   unicellular organisms). "Whole animal"/"Whole embryo"/"Whole larva" → `Whole organism`.
+7. Every value must get organ + tissue. Use `Unknown` ONLY if truly underivable even after web
+   lookup (set unsure=true). Try hard: the experiment title + species usually settle it.
+
+## Canonical ORGAN list (use these spellings; pick the best fit)
+Adipose tissue, Airway, Blood, Blood vessel, Bones, Brain, Breast, Central nervous system, Cervix,
+Cochlea, Digestive gland, Embryo, Eye, Heart, Hypocotyl, Immune system, Intestine, Kidneys, Leaf,
+Lateral line, Liver, Lung, Lymphoid organ, Mammary gland, Muscles, Nervous system, Notochord,
+Ovary, Pancreas, Peripheral nervous system, Pharynx, Placenta, Reproductive system, Root,
+Salivary gland, Skin, Spinal cord, Spleen, Stem, Testis, Thymus, Tongue, Trachea, Whole organism,
+Aboral organ, Appendage, Bristle, Spinning apparatus, Mixed, Unknown.
+(Use `Mixed` only for genuinely multi-organ-per-image benchmark sets you cannot split.)
+
+## Seed COARSE TISSUE vocab (prefer these; propose new coarse terms only if needed, mark in note)
+- Brain: Cerebral cortex, Hippocampus, Cerebellum, Thalamus, Hypothalamus, Striatum, Amygdala,
+  Midbrain, Brainstem, Olfactory bulb, White matter, Choroid plexus, Neuropil, Brain.
+- CNS/PNS: Optic nerve, Spinal cord, Ventral nerve cord, Nerve ring, Peripheral nerve, Ganglion,
+  Sensillum, Neuromuscular junction, Myelinated axon tract.
+- Kidney: Glomerulus, Renal tubule, Renal cortex, Renal medulla, Renal interstitium, Kidney.
+- Liver: Hepatocyte, Hepatic stellate cell, Bile duct, Liver.
+- Pancreas: Pancreatic islet, Acinar tissue, Pancreas.
+- Lung/Airway: Alveolus, Airway epithelium, Respiratory cilia, Lung.
+- Muscle/Heart: Skeletal muscle, Cardiac muscle, Smooth muscle, Myocardium.
+- Breast: Mammary epithelium, Carcinoma, Breast.
+- Blood/Immune: Peripheral blood mononuclear cell, Plasma cell, Lymphocyte, Macrophage, Mast cell,
+  Erythrocyte, Thrombus, Lymphoid tissue.
+- Skin: Epidermis, Dermis, Hair follicle, Meissner corpuscle, Skin.
+- Eye: Retina, Photoreceptor, Retinal pigment epithelium, Lens, Cornea.
+- Intestine: Intestinal epithelium, Enterocyte, Intestinal organoid, Intestine.
+- Generic histology: Epithelium, Carcinoma, Fibroblast, Endothelium, Adipocyte, Chondrocyte,
+  Osteocyte, Connective tissue, Whole organism.
+- Plant: Epidermis, Mesophyll, Cortex (plant), Vascular tissue, Chloroplast-rich cell, Cell wall.
+
+## Output
+Write strict JSON to `map_<CLUSTER>.json`:
+`{ "<raw value>": {"tissue":[...], "tissue_region":[...], "organ":[...], "unsure":false, "note":"..."}, ... }`
+Cover EVERY key in your cluster file. Use web search on the DOIs ONLY for values you can't
+resolve from the title/species. Then reply with a 3-line summary: #values, #unsure, #new-coarse-terms-proposed.

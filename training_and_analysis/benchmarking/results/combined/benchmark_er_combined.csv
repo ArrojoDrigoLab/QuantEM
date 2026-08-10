@@ -1,0 +1,6 @@
+model,AIVE,EMPIAR-10994,DeepContact-TEM,EMPIAR-13156,islet/liver-ER,Mean(dataset_avg)
+er_omniem,0.656,0.407,0.567,0.252,0.385,0.453
+er_quantem,0.553,0.375,0.492,0.076,0.315,0.362
+incasem,0.414,0.367,0.154,0.064,0.154,0.231
+deepcontact_er,0.019,0.304,0.353,0.001,0.110,0.157
+microsam_vit_l_em_organelles,0.006,0.003,0.001,0.000,0.004,0.003

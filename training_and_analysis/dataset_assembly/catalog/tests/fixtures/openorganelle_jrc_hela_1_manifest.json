@@ -1,0 +1,97 @@
+{
+  "name": "jrc_hela-1",
+  "metadata": {
+    "title": "Interphase HeLa cell",
+    "id": "jrc_hela-1",
+    "thumbnailURL": "https://janelia-cosem-datasets.s3.amazonaws.com/jrc_hela-1/thumbnail.jpg",
+    "imaging": {
+      "id": "Aubrey_17-7_17_Cell1",
+      "institution": "Janelia",
+      "gridSpacing": {
+        "unit": "nm",
+        "values": {
+          "x": 8.0,
+          "y": 8.0,
+          "z": 8.0
+        }
+      },
+      "dimensions": {
+        "unit": "um",
+        "values": {
+          "x": 75.0,
+          "y": 8.0,
+          "z": 60.0
+        }
+      }
+    },
+    "sample": {
+      "description": "Wild-type, interphase HeLa cell (ATCC CCL-2)",
+      "protocol": "High pressure freezing, freeze-substitution resin embedding.",
+      "organism": [
+        "Human"
+      ],
+      "type": [
+        "Cell culture"
+      ],
+      "subtype": [
+        "HeLa"
+      ],
+      "treatment": [
+        "Wild-type"
+      ]
+    },
+    "institution": [
+      "HHMI/Janelia"
+    ],
+    "softwareAvailability": "open",
+    "DOI": [
+      {
+        "href": "https://doi.org/10.25378/janelia.13123415",
+        "title": "EM"
+      },
+      {
+        "href": "https://doi.org/10.25378/janelia.13120280",
+        "title": "Segmentations"
+      }
+    ],
+    "publications": [
+      {
+        "href": "https://doi.org/10.1038/s41586-021-03977-3",
+        "title": "Heinrich et al., 2021"
+      }
+    ]
+  },
+  "sources": {
+    "fibsem-uint8": {
+      "name": "fibsem-uint8",
+      "description": "FIB-SEM Data (compressed)",
+      "url": "s3://janelia-cosem-datasets/jrc_hela-1/neuroglancer/em/fibsem-uint8.precomputed",
+      "format": "precomputed",
+      "contentType": "em",
+      "subsources": []
+    },
+    "er_seg": {
+      "name": "er_seg",
+      "description": "Endoplasmic Reticulum",
+      "url": "s3://janelia-cosem-datasets/jrc_hela-1/jrc_hela-1.n5/labels/er_seg",
+      "format": "n5",
+      "contentType": "segmentation",
+      "subsources": [
+        {
+          "name": "er_seg",
+          "description": "",
+          "url": "s3://janelia-cosem-datasets/jrc_hela-1/neuroglancer/mesh/er_seg",
+          "format": "neuroglancer_multilod_draco"
+        }
+      ]
+    }
+  },
+  "views": [
+    {
+      "name": "Default view",
+      "sources": [
+        "fibsem-uint8"
+      ]
+    }
+  ]
+}

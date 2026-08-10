@@ -1,0 +1,32 @@
+[project]
+name = "quantem-directory"
+version = "1.0.0"
+description = "Export the QuantEM EM corpus into the static artifacts the dataset directory serves"
+requires-python = ">=3.12"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+dependencies = ["pillow>=10", "openpyxl>=3.1"]
+
+[build-system]
+# 77 is the floor for PEP 639 (`license` as an SPDX string + `license-files`). The older
+# `license = {text = ...}` table is deprecated and warns on every build.
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",    # long lines are caught by the formatter, not worth failing a build over
+    "SIM108",  # a ternary is not always clearer than an if/else
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

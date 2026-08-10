@@ -1,0 +1,31 @@
+# Label-efficiency variant: trains the decoder on 1/10/50/100% of the train split (nested, stratified)
+# and reports the full metric set at each fraction. Everything else matches probe_linear.yaml.
+
+tile_size: 512
+feature_layers: last4
+apply_encoder_norm: true
+decoder: linear
+num_classes: 2
+
+max_steps: 4000
+warmup_steps: 250
+batch_size: 16
+lr: 0.001
+weight_decay: 0.0001
+ce_weight: 1.0
+dice_weight: 1.0
+seed: 0
+
+num_workers: 4
+flip: true
+rot90: true
+intensity_jitter: 0.1
+
+eval_overlap: 0.25
+boundary_theta_frac: 0.0075
+boundary_dilation_ratio: 0.02
+
+label_fractions: [0.01, 0.1, 0.5, 1.0]
+
+device: cuda
+amp: true

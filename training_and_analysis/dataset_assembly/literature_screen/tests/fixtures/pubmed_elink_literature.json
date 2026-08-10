@@ -1,0 +1,24 @@
+{
+  "linksets": [
+    {
+      "ids": ["40600001"],
+      "idurls": [
+        {
+          "id": "40600001",
+          "objurls": [
+            {
+              "url": {"value": "https://zenodo.org/records/12345"},
+              "attributes": ["dataset", "source data"],
+              "provider": {"name": "Zenodo"}
+            },
+            {
+              "url": {"value": "https://publisher.example.org/fulltext.pdf"},
+              "attributes": ["full text"],
+              "provider": {"name": "Publisher"}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

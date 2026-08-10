@@ -1,0 +1,137 @@
+# Encoder-adaptation arm: ER on QuantEM; resnet34_detail, dpt head; frozen encoder; dice_bce loss; 10,000 steps; seed 2.
+amp: true
+cond:
+  adv_hidden: 128
+  adv_targets:
+  - dataset
+  arm: baseline
+  bank_granularity: source
+  bank_k: 3
+  bank_key: style
+  bank_mode: borrow_code
+  condition_decoder: true
+  condition_neck: true
+  confident_thresh: 0.7
+  enabled: false
+  fda_beta: 0.01
+  film: true
+  film_gate: false
+  film_scope: per_block
+  grad_reversal: 0.0
+  interactive_clicks: 3
+  interactive_radius: 6
+  metadata_dropout: 0.0
+  mixstyle: 'off'
+  mixstyle_alpha: 0.1
+  mixstyle_mix: random
+  mixstyle_p: 0.5
+  mixstyle_points: neck
+  n_prototypes: 1
+  n_shots: 0
+  n_support: 1
+  norm_method: 'off'
+  proto_gate: false
+  proto_min_frac: 0.05
+  seed_drop_frac: 0.0
+  seed_false_frac: 0.0
+  style_dim: 64
+  style_from_features: false
+  style_hidden: 64
+  style_scope: tile
+  style_source: inferred
+  style_stats: true
+  support_alpha: 0.5
+  support_combine: replace
+  support_conf: 0.9
+  support_min_size: 32
+  support_open: 1
+  support_seed: 0
+  support_source: inferred
+  support_uncertain_margin: 0.2
+  tta: 'off'
+  tta_debias_svd: 64
+  tta_fg_band:
+  - 0.25
+  - 4.0
+  tta_field: 1
+  tta_lr: 0.001
+  tta_passes: 2
+  tta_recurrent: true
+  tta_steps: 1
+config_path: <supplied at launch>
+data:
+  aug_brightness: 0.15
+  aug_contrast: 0.15
+  aug_elastic: true
+  aug_elastic_alpha: 20.0
+  aug_elastic_sigma: 6.0
+  aug_flip: true
+  aug_gamma: 0.2
+  aug_noise_std: 0.02
+  aug_rot90: true
+  bucket: canonical
+  canonical_nm: null
+  data_root: null
+  group: null
+  holdout_sources: []
+  label_fractions:
+  - 1.0
+  manifest_name: manifest.jsonl
+  min_fg_frac_keep: 0.1
+  num_classes: 2
+  organelle: er
+  source_frac: 1.0
+  subset_frac: 1.0
+  subset_seed: 0
+  task: semantic
+  test_split: test
+  train_split: train
+  val_split: val
+decoder:
+  params: {}
+  type: dpt
+device: cuda
+encoder:
+  adapt: frozen
+  adapt_params: {}
+  apply_encoder_norm: true
+  checkpoint_step: 674999
+  feature_layers: last4
+  run_dir: <QuantEM ViT-B encoder run directory>
+  tile_size: 512
+eval:
+  auprc_bins: 256
+  bootstrap_ci: 95.0
+  bootstrap_n: 1000
+  boundary_dilation_ratio: 0.02
+  boundary_theta_frac: 0.0075
+  fg_threshold: 0.5
+  hd95_pct: 95.0
+  instance_min_size: 16
+  max_eval_crops: 300
+  max_region_px: 0
+  overlap: 0.25
+loss:
+  ignore_index: 255
+  terms:
+  - params: {}
+    type: dice_bce
+    weight: 1.0
+name: er_quantem_frozen_seed2
+neck:
+  params: {}
+  type: resnet34_detail
+notes: 'Encoder-adaptation arm: ER on QuantEM; resnet34_detail, dpt head; frozen encoder; dice_bce loss; 10,000 steps; seed 2.'
+num_workers: 8
+optim:
+  adapter_lr: 0.001
+  batch_size: 8
+  decoder_lr_mult: 1.0
+  grad_accum: 1
+  grad_checkpoint: false
+  grad_clip: 0.0
+  lr: 0.001
+  max_steps: 10000
+  seed: 2
+  warmup_steps: 625
+  weight_decay: 0.0001

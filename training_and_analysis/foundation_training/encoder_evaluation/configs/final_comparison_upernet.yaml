@@ -1,0 +1,36 @@
+# Final comparison: one fixed UPerNet decoder across QuantEM and the public foundation encoders.
+#
+# Compares the released encoder against the publicly available foundation encoders: a single decoder
+# (UPerNet by default) trained on each frozen encoder, so the metric reflects the encoder's EM feature
+# quality. Encoders (each a run_dir with checkpoint_index.json): QuantEM plus the external baselines
+# EMCF MAE ViT-B, DINOv3 ViT-B and OmniEM ViT-L (registered under foundation_weights/). Run via
+# encoder_evaluation/run_final_comparison.py (or run_probe --run-dir <each> --config <this> --n-checkpoints 1).
+#
+# OmniEM is patch-14, so its tile is auto-set to 518 (from its manifest); the others use 512.
+decoder: upernet
+tile_size: 512      # baseline context window (per-encoder --context-tile overrides for RoPE encoders)
+compare_tile: 512  # common comparison region: decoder output and scored pixels, identical for all
+feature_layers: last4
+apply_encoder_norm: true
+num_classes: 2
+
+# UPerNet is a heavier head than the linear probe, so it gets a fuller (but still modest) budget.
+max_steps: 4000
+warmup_steps: 200
+batch_size: 32
+lr: 0.001
+weight_decay: 0.0001
+dice_weight: 1.0
+ce_weight: 1.0
+seed: 0
+
+# Final comparison at full labels (the label-efficiency sweep is the encoder-comparison probe's separate experiment).
+label_fractions: [1.0]
+
+flip: true
+rot90: true
+intensity_jitter: 0.1
+
+eval_overlap: 0.25
+bootstrap_n: 1000
+eval_workers: 8

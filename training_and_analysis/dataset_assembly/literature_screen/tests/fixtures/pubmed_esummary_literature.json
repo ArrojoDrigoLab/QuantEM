@@ -1,0 +1,19 @@
+{
+  "result": {
+    "uids": ["40600001"],
+    "40600001": {
+      "uid": "40600001",
+      "title": "SBF-SEM source data reveals ER ultrastructure",
+      "source": "J Cell Biol",
+      "fulljournalname": "Journal of Cell Biology",
+      "pubdate": "2026 Feb",
+      "sortpubdate": "2026/02/01 00:00",
+      "elocationid": "doi: 10.5555/jcb.2026.2",
+      "articleids": [
+        {"idtype": "pubmed", "value": "40600001"},
+        {"idtype": "doi", "value": "10.5555/jcb.2026.2"},
+        {"idtype": "pmc", "value": "PMC7654321"}
+      ]
+    }
+  }
+}

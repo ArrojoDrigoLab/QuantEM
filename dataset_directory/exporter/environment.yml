@@ -1,0 +1,9 @@
+name: quantem-dataset-directory
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pillow>=10           # thumbs: decode source rasters, encode WebP
+  - openpyxl>=3.1        # verify: parity against the published dataset inventory
+  - pytest>=8
+  - ruff>=0.6

@@ -1,0 +1,5 @@
+model,ME2-Mossy,MitoNet-bench,Mean_PQ,SQ,RQ
+micro-sam,0.417,0.495,0.456,0.769,0.532
+MitoNet (native),0.410,0.478,0.444,0.778,0.520
+MitoNet (rescaled),0.410,0.316,0.363,0.721,0.438
+DeepContact,0.255,0.079,0.167,0.552,0.204

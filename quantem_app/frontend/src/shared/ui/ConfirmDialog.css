@@ -1,0 +1,152 @@
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-dialog {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.confirm-dialog-title {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.confirm-dialog-message {
+  margin: 0 0 1rem 0;
+  color: #5a5a5a;
+  line-height: 1.5;
+}
+
+/* The destructive half of "mark done", as its own opt-in decision rather than
+   something the confirm button does on your behalf. Given weight -- a border, a
+   background, a larger hit target -- because ticking it is the only way to
+   delete a run's output, and leaving it alone has to be the obvious default. */
+.segmentation-discard-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 0.5rem 0;
+  padding: 8px 10px;
+  border: 1px solid #d7dde4;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2937;
+  cursor: pointer;
+}
+
+.segmentation-discard-choice input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0 0;
+  flex: none;
+  cursor: pointer;
+}
+
+.segmentation-discard-choice:has(input:checked) {
+  border-color: #ea8a5a;
+  background: #fff7ed;
+}
+
+/* The server refused: usually the count moved while the dialog was open, and
+   nothing was deleted. */
+.segmentation-discard-refusal {
+  margin: 0 0 0.5rem 0;
+  padding: 8px 10px;
+  border: 1px solid #ea8a5a;
+  border-radius: 6px;
+  background: #ffedd5;
+  color: #7c2d12;
+}
+
+/* The consequence of this particular confirmation, in numbers. Visually
+   separated from the generic message because it is the part that changes
+   between invocations, and the part a user should read before clicking. */
+.confirm-dialog-details {
+  margin: 0 0 1.5rem 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #94a3b8;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #1e293b;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.confirm-dialog-details p {
+  margin: 0;
+}
+
+.confirm-dialog-details p + p {
+  margin-top: 0.5rem;
+}
+
+.confirm-dialog-details strong {
+  font-weight: 600;
+}
+
+/* Non-zero counts are the case worth noticing. */
+.confirm-dialog-details.is-warning {
+  border-color: #fcd9b0;
+  border-left-color: #c2410c;
+  background: #fff7ed;
+  color: #7c2d12;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.confirm-dialog-button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.confirm-dialog-button-cancel {
+  background: white;
+  color: #333;
+}
+
+.confirm-dialog-button-cancel:hover {
+  background: #f5f5f5;
+  border-color: #999;
+}
+
+.confirm-dialog-button-confirm {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+}
+
+.confirm-dialog-button-confirm:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.confirm-dialog-button:active {
+  transform: scale(0.98);
+}
+

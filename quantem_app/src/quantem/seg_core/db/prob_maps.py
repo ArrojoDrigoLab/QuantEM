@@ -1,0 +1,299 @@
+"""
+Generic Probability Map Persistence
+=====================================
+
+Save, load, and check probability maps using Django models.
+Parameterized by prefix (e.g. "er", "mito") and generated_flag.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from quantem.assets.asset_openable import get_asset_openable
+from quantem.assets.models import ImageROI
+from quantem.core.config import PROB_MAPS_DIR, STORAGE_DIR, TMP_DIR
+from quantem.segmentation.models import ImageSegmentation, ProbabilityMap
+from quantem.segmentation.prob_maps.io import resolve_probability_map_path
+
+logger = logging.getLogger(__name__)
+
+
+def _probability_map_name(prefix: str, model_name: str) -> str:
+    return f"{prefix.upper()}_{model_name}"
+
+
+def get_prob_map_file_path(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prefix: str,
+    roi_id: str | None = None,
+) -> Path:
+    """Get the file path for a probability map.
+
+    Args:
+        segmentation: The ImageSegmentation instance.
+        model_name: Name of the model (e.g. "ResNet34", "MitoNet").
+        prefix: Filename prefix (e.g. "er", "mito").
+        roi_id: Optional ROI ID for ROI-scoped maps.
+    """
+    if roi_id:
+        storage_dir = TMP_DIR / "prob_maps" / str(segmentation.id) / str(roi_id)
+    else:
+        storage_dir = PROB_MAPS_DIR / str(segmentation.id)
+    filename = f"{prefix}_{model_name.lower()}_prob.png"
+    return storage_dir / filename
+
+
+def get_composite_prob_map_file_path(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prefix: str,
+) -> Path:
+    """Get the path for ROI-composited full-view probability maps.
+
+    Composite maps are visualization artifacts and must not be treated as
+    canonical full-image inference caches.
+    """
+    storage_dir = PROB_MAPS_DIR / str(segmentation.id) / "composite"
+    filename = f"{prefix}_{model_name.lower()}_prob.png"
+    return storage_dir / filename
+
+
+def _latest_map_for_file_path(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prefix: str,
+    relative_path: str,
+) -> ProbabilityMap | None:
+    return (
+        ProbabilityMap.objects.filter(
+            segmentation=segmentation,
+            name=_probability_map_name(prefix, model_name),
+            file_path=relative_path,
+        )
+        .order_by("-updated_at")
+        .first()
+    )
+
+
+def _is_stale_composite_full_cache(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prefix: str,
+    file_path: Path,
+) -> bool:
+    """True when the canonical full-image path currently points to a composite map."""
+    relative_path = str(file_path.relative_to(STORAGE_DIR)).replace("\\", "/")
+    latest = _latest_map_for_file_path(segmentation, model_name, prefix, relative_path)
+    if latest is None:
+        return False
+    metadata = latest.metadata if isinstance(latest.metadata, dict) else {}
+    if metadata.get("composite") is True:
+        logger.info(
+            "Ignoring stale composite probability-map cache for full-image inference "
+            "(segmentation=%s, model=%s, path=%s)",
+            segmentation.id,
+            model_name,
+            relative_path,
+        )
+        return True
+    return False
+
+
+def prob_map_file_exists(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prefix: str,
+    roi_id: str | None = None,
+) -> bool:
+    """Check if a probability map file exists on disk."""
+    file_path = get_prob_map_file_path(segmentation, model_name, prefix, roi_id)
+    if not file_path.exists():
+        return False
+    return not (
+        roi_id is None
+        and _is_stale_composite_full_cache(
+            segmentation, model_name, prefix, file_path
+        )
+    )
+
+
+def save_probability_map(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prob_data: np.ndarray,
+    prefix: str,
+    generated_flag: str,
+    roi_id: str | None = None,
+    extra_metadata: dict[str, object] | None = None,
+) -> ProbabilityMap:
+    """Save a probability map to disk and create a ProbabilityMap record.
+
+    Args:
+        segmentation: The ImageSegmentation instance.
+        model_name: Name of the model (e.g. "ResNet34", "Ensemble").
+        prob_data: Probability map array, values in [0, 1].
+        prefix: Filename prefix (e.g. "er", "mito").
+        generated_flag: Metadata flag key (e.g. "er_generated").
+        roi_id: Optional ROI ID.
+
+    Returns:
+        Created ProbabilityMap instance.
+    """
+    file_path = get_prob_map_file_path(segmentation, model_name, prefix, roi_id)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Convert to uint8 for PNG storage (0-255)
+    prob_uint8 = (np.clip(prob_data, 0, 1) * 255).astype(np.uint8)
+    img = Image.fromarray(prob_uint8, mode="L")
+    img.save(file_path)
+
+    relative_path = str(file_path.relative_to(STORAGE_DIR)).replace("\\", "/")
+    metadata: dict[str, object] = {
+        "model_type": model_name,
+        generated_flag: True,
+    }
+    if extra_metadata:
+        metadata.update(extra_metadata)
+
+    prob_map = ProbabilityMap.objects.create(
+        segmentation=segmentation,
+        name=_probability_map_name(prefix, model_name),
+        file_path=relative_path,
+        metadata=metadata,
+    )
+
+    # Composite ROI prob map into a full-image version for viewing
+    if roi_id:
+        _composite_roi_into_full_image_prob_map(
+            segmentation=segmentation,
+            model_name=model_name,
+            prob_uint8=prob_uint8,
+            prefix=prefix,
+            generated_flag=generated_flag,
+            roi_id=roi_id,
+        )
+
+    return prob_map
+
+
+def load_prob_map_from_file(prob_map: ProbabilityMap) -> np.ndarray:
+    """Load a probability map from its file path.
+
+    Returns:
+        Probability map as float32 array in [0, 1].
+    """
+    file_path = resolve_probability_map_path(prob_map)
+    if not file_path.exists():
+        raise FileNotFoundError(f"Probability map file not found: {file_path}")
+
+    img = Image.open(file_path)
+    return np.array(img, dtype=np.float32) / 255.0
+
+
+def _composite_roi_into_full_image_prob_map(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prob_uint8: np.ndarray,
+    prefix: str,
+    generated_flag: str,
+    roi_id: str,
+) -> None:
+    """Composite an ROI probability map into a full-image version.
+
+    Creates or updates a full-image probability map by inserting the ROI
+    crop at its correct position within a canvas of the parent image size.
+    """
+    try:
+        roi = ImageROI.objects.select_related("asset").get(id=roi_id)
+    except ImageROI.DoesNotExist:
+        logger.warning("Cannot composite prob map: ImageROI %s not found", roi_id)
+        return
+
+    if roi.asset_id is None:
+        logger.warning("Cannot composite prob map: ImageROI %s has no asset", roi_id)
+        return
+    parent = get_asset_openable(roi.asset)
+    full_h, full_w = parent.height, parent.width
+
+    # Composite path is separate from canonical full-image cache path.
+    composite_path = get_composite_prob_map_file_path(segmentation, model_name, prefix)
+    composite_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load existing full-image canvas or create black
+    if composite_path.exists():
+        canvas = np.array(Image.open(composite_path), dtype=np.uint8)
+    else:
+        canvas = np.zeros((full_h, full_w), dtype=np.uint8)
+
+    # Insert ROI data
+    y1, y2 = roi.y, roi.y + roi.height
+    x1, x2 = roi.x, roi.x + roi.width
+    # Clip to canvas bounds
+    cy1 = max(y1, 0)
+    cy2 = min(y2, full_h)
+    cx1 = max(x1, 0)
+    cx2 = min(x2, full_w)
+    ry1 = cy1 - roi.y
+    ry2 = ry1 + (cy2 - cy1)
+    rx1 = cx1 - roi.x
+    rx2 = rx1 + (cx2 - cx1)
+    canvas[cy1:cy2, cx1:cx2] = prob_uint8[ry1:ry2, rx1:rx2]
+
+    # Save composited image
+    Image.fromarray(canvas, mode="L").save(composite_path)
+
+    # Create or update DB record for the full-image prob map
+    full_name = _probability_map_name(prefix, model_name)
+    relative_path = str(composite_path.relative_to(STORAGE_DIR)).replace("\\", "/")
+
+    # SQLite does not support JSONField `contains` lookups; use key transforms.
+    lookup_kwargs = {
+        "segmentation": segmentation,
+        "name": full_name,
+        "metadata__composite": True,
+        f"metadata__{generated_flag}": True,
+    }
+    ProbabilityMap.objects.update_or_create(
+        **lookup_kwargs,
+        defaults={
+            "file_path": relative_path,
+            "metadata": {
+                "model_type": model_name,
+                generated_flag: True,
+                "composite": True,
+            },
+        },
+    )
+    logger.info(
+        "Composited ROI prob map into full image: %s for segmentation %s",
+        full_name,
+        segmentation.id,
+    )
+
+
+def load_prob_map_from_path(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prefix: str,
+    roi_id: str | None = None,
+) -> np.ndarray | None:
+    """Load a probability map from the expected file path.
+
+    Returns None if the file does not exist.
+    """
+    file_path = get_prob_map_file_path(segmentation, model_name, prefix, roi_id)
+    if not file_path.exists():
+        return None
+    if roi_id is None and _is_stale_composite_full_cache(
+        segmentation, model_name, prefix, file_path
+    ):
+        return None
+
+    img = Image.open(file_path)
+    return np.array(img, dtype=np.float32) / 255.0

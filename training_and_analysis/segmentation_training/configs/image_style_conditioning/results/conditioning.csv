@@ -1,0 +1,9 @@
+model,arm,mito_dice,mito_pq,er_dice
+OmniEM,baseline (no conditioning),0.732,0.491,0.334
+OmniEM,inferred style,0.718,0.446,0.332
+OmniEM,MixStyle,0.727,0.466,0.320
+OmniEM,DSU,0.734,0.498,0.235
+QuantEM,baseline (no conditioning),0.596,0.227,0.265
+QuantEM,inferred style,0.562,0.292,0.210
+QuantEM,MixStyle,0.601,0.313,0.230
+QuantEM,DSU,0.602,0.251,0.228

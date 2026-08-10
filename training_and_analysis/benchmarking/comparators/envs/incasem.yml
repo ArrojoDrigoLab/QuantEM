@@ -1,0 +1,14 @@
+name: incasem
+channels:
+  - conda-forge
+dependencies:
+  # incasem does not publish a python/torch pin; any python with a CUDA torch works
+  - python
+  - numpy
+  - tifffile
+  - scikit-image
+  - scipy
+  - pip
+  - pip:
+      - torch
+      - git+https://github.com/kirchhausenlab/incasem.git

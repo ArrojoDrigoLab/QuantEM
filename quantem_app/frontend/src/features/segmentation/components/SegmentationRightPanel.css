@@ -1,0 +1,71 @@
+.remove-tools-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.remove-mode-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 0.83rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+}
+
+.remove-mode-button.active {
+  background: #dcfce7;
+  border-color: #16a34a;
+  color: #166534;
+}
+
+.remove-area-controls {
+  padding: 0.55rem 1rem 0.4rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.remove-area-controls label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #334155;
+  font-weight: 600;
+}
+
+.remove-area-controls input[type="range"] {
+  width: 100%;
+  margin-top: 0.45rem;
+}
+
+.remove-area-apply-row {
+  justify-content: space-between;
+}
+
+.remove-area-apply-button {
+  border: 1px solid #d97706;
+  background: #f97316;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.remove-area-apply-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.remove-area-hint {
+  padding: 0.35rem 1rem;
+  font-size: 0.78rem;
+  color: #475569;
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": [
+    "Corrections applied to facet vocabularies at export time.",
+    "",
+    "These are curation fixes for values that should not appear in a public facet.",
+    "They are applied here, not upstream, so the export stays reproducible from an",
+    "unmodified extract and every correction is visible in one reviewable file.",
+    "",
+    "Map: tag group -> { original value -> replacement, or null to drop the value }.",
+    "Dropping a value removes it from that asset only; the asset keeps its other",
+    "values for the same group, and is never removed from the corpus.",
+    "",
+    "Values that are unfit to be a facet label by their shape rather than by their",
+    "identity are handled generically in allowlist.py, so they do not need an entry",
+    "here and do not have to be written down to be suppressed."
+  ]
+}

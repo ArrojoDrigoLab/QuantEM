@@ -1,0 +1,7 @@
+model,ME2-Mossy,MitoNet,PlantHunter,DeepPI,DeepContact,DatasetAvg
+deepcontact_mito,0.4993,0.1763,0.0894,0.1426,0.4859,0.2787
+incasem,0.3826,0.3005,0.0607,0.1461,0.3562,0.2492
+microsam_vit_l_em_organelles,0.6093,0.6462,0.4686,0.8412,0.5985,0.6328
+mitonet,0.6029,0.6482,0.1446,0.1447,0.5758,0.4232
+mitonet_scaled,0.6029,0.5222,0.2822,0.7965,0.5903,0.5588
+orgsegnet,0.4014,0.2071,0.706,0.458,0.4884,0.4522

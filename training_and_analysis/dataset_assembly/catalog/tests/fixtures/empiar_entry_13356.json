@@ -1,0 +1,71 @@
+{
+  "EMPIAR-13356": {
+    "title": "Multiscale human liver tissue sample volume electron microscopy",
+    "imagesets": [
+      {
+        "category": "reconstructed volumes",
+        "data_format": "TIFF",
+        "details": "",
+        "directory": "data/humanliver_raw_images",
+        "header_format": "TIFF",
+        "name": "Reconstructed human liver tissue raw images",
+        "num_images_or_tilt_series": 597,
+        "segmentations": [
+          {
+            "description": "Bile duct mask",
+            "file": "data/humanliver_bileduct_mask"
+          },
+          {
+            "description": "Cell boundary mask",
+            "file": "data/humanliver_cellboundary_mask"
+          },
+          {
+            "description": "Cholangiocyte mask",
+            "file": "data/humanliver_cholangiocyte_mask"
+          },
+          {
+            "description": "Endothelial cell mask",
+            "file": "data/humanliver_endothelial_mask"
+          },
+          {
+            "description": "ER mask",
+            "file": "data/humanliver_er_mask"
+          },
+          {
+            "description": "Hepatocyte mask",
+            "file": "data/humanliver_hepatocyte_mask"
+          },
+          {
+            "description": "Mitochondrial mask",
+            "file": "data/humanliver_mito_mask"
+          },
+          {
+            "description": "Nucleus mask",
+            "file": "data/humanliver_nucleus_mask"
+          },
+          {
+            "description": "Portal vein mask",
+            "file": "data/humanliver_portalvein_mask"
+          },
+          {
+            "description": "Sinusoidal capillary mask",
+            "file": "data/humanliver_sinusoid_mask"
+          }
+        ],
+        "voxel_type": "UNSIGNED 16 BIT INTEGER"
+      }
+    ],
+    "release_date": "2026-03-16",
+    "update_date": "2026-03-16",
+    "dataset_size": "497.1 GB",
+    "experiment_type": "SBF-SEM",
+    "entry_doi": "10.6019/EMPIAR-13356",
+    "scale": "tissue",
+    "citation": [
+      {
+        "doi": null,
+        "title": "Multiscale human liver tissue sample volume electron microscopy"
+      }
+    ]
+  }
+}

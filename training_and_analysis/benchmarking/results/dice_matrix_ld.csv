@@ -1,0 +1,4 @@
+model,MacrophageSEM,DeepContact,AIVE,DatasetAvg
+lipidnet,0.7141,0.5871,0.4624,0.5879
+lipidnet_scaled,0.0289,0.1407,0.016,0.0618
+microsam_vit_l_em_organelles,0.0041,0.012,0.0444,0.0201

@@ -1,0 +1,658 @@
+Dataset,Experiment,Repository,URL,2D images,3D acquisitions,Assets
+2D and 3D instance segmentation of nuclei from volume electron microscopy data,Mouse & Human Nuclei Instance Segmentation vEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/studies/S-BIAD2822,10,2,12
+2D Transmission Electron Microscopy Images,Human Brain Immersion-Fixation Brain-Banking Preservation,Zenodo,https://doi.org/10.5281/zenodo.13887923,0,131,131
+3D FIB/SEM Imaging of the Molecular Layer of the Mouse Dentate Gyrus,Mouse Dentate Gyrus Astrocyte Leaflet FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12557,0,5,5
+"3D imaging and quantitative analysis of digestive glands morphogenesis during crustacean development: application of micro-CT, light and electron microscopy",Crustacean Digestive Gland Morphogenesis TEM,Zenodo,https://doi.org/10.5281/zenodo.19369446,7,0,7
+3D reconstruction of structures of hatched larva and young juvenile of the larvacean Oikopleura dioica using SBF-SEM. - Juvenile,Oikopleura dioica SBF-SEM,Dryad,https://doi.org/10.5061/dryad.d51c5b012,0,1,1
+"3D reconstruction of the tubular system of preterm G55/57, mid term G58/60 and term G66/68 of guinea pig left ventricles",Guinea Pig Left Ventricle SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10147,0,3,3
+3D serial block-face scanning electron microscopy (SBF-SEM) imaging of a rat pelvic nerve - Volume 1 (Version 2),Rat Pelvic Nerve SBF-SEM,SPARC,https://doi.org/10.26275/8bbl-fzip,0,1,1
+7 day post fertilization larval zebrafish cardiac tissue,Zebrafish Larval Heart FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.22630519,0,1,1
+A detailed ultrastructural examination of lung cryobiopsy samples from a COVID-19 patient case series — Data set 08,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5682693,3,0,3
+A detailed ultrastructural examination of lung cryobiopsy samples from a COVID-19 patient case series — Data set 09,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5682744,3,0,3
+A detailed ultrastructural examination of lung cryobiopsy samples from a COVID-19 patient case series — Data set 10,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5682815,4,0,4
+A high-throughput electron tomography workflow reveals over-elongated centrioles in relapsed-refractory multiple myeloma,Human Multiple Myeloma Plasma Cell ET,EMPIAR,https://doi.org/10.6019/EMPIAR-11243,0,358,358
+A large-scale transmission electron microscopy dataset of an adult mouse cerebellum,Mouse Cerebellum ssTEM,BossDB,https://doi.org/10.60533/BOSS-2022-9RSJ,0,1,1
+A novel Argonaute 2-Niche at the midzone is essential for Cell-division integrity,Human Cytokinetic Protrusion TEM,Zenodo,https://doi.org/10.5281/zenodo.4270681,2,0,2
+Adaptive traits of cysts of the snow alga Sanguina nivaloides unveiled by 3D subcellular imaging,Sanguina nivaloides Snow Alga Cyst FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11694,0,2,2
+Adipose organ plasticity - TEM,Mouse Mammary Gland Adipose Plasticity TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3710,1,0,1
+Adipose organ transdifferentiation - TEM (2009),Mouse Adipose Organ Transdifferentiation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3710,1,0,1
+Adipose organ transdifferentiation triangle - TEM (2025),Mouse Adipose Organ Transdifferentiation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3710,3,0,3
+Adipose Progenitors Differentiated to Adipocytes,Mouse Adipose Progenitor Differentiation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3728,16,0,16
+"Adipose Progenitors Differentiated to Adipocytes, MIZ-treated",Mouse Adipose Progenitor Differentiation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3728,21,0,21
+Adipose-to-mammary transdifferentiation TEM,Mouse Adipose-to-Mammary Transdifferentiation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3710,1,0,1
+"Aged mouse pancreatic islet, cerebral cortex and liver",Aged Mouse Multi-Organ SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,15,0,15
+Alport model - 16 weeks,Mouse Kidney Aging and Alport Disease Matrix TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3708,37,0,37
+Alport model - 8 weeks,Mouse Kidney Aging and Alport Disease Matrix TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3708,36,0,36
+An Aedes aegypti mosquito antennal lobe EM dataset,Aedes aegypti Antennal Lobe ssTEM,BossDB,https://doi.org/10.60533/boss-2025-gcyr,0,1,1
+An intranuclear bacterial parasite of deep-sea mussels expresses apoptosis inhibitors acquired from its host,Endonucleobacter Intranuclear Parasite in Deep-Sea Mussel TEM,Zenodo,https://doi.org/10.5281/zenodo.13144501,6,0,6
+Arabidopsis Root Phloem SBF-SEM Volumes,Arabidopsis Root Phloem SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10442,0,4,4
+"Array Tomography of zebrafish axillary lymphoid organ - an external, experimentally accessible immune organ in the zebrafish",Zebrafish Axillary Lymphoid Organ SEM,EMPIAR,https://www.ebi.ac.uk/empiar/EMPIAR-12377/,0,7,7
+ASEM/incasem FIB-SEM Cell Volumes,Mammalian Cell Organelle Segmentation FIB-SEM,Quilt,https://open.quiltdata.com/b/asem-project/tree/datasets/,0,34,34
+ATUM-Tomo: A multi-scale approach to cellular ultrastructure by combined volume scanning electron microscopy and electron tomography,Mouse Traumatic Brain Injury Cortex Correlative ATUM-Tomo,BioImage Archive,https://doi.org/10.6019/S-BIAD1274,0,6,6
+Automated quantification of photoreceptor outer segments in developing and degenerating retinas on microscopy images across scales,Mouse Retinal Photoreceptor Outer Segment TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD1078,87,0,87
+BANC Adult Drosophila CNS EM Volume,BANC Adult Drosophila CNS Connectome ssTEM,BossDB,https://doi.org/10.60533/boss-2025-941r,0,1,1
+Basolateral Amygdala Synapse Serial-Section TEM,Mouse Basolateral Amygdala Alpha-Synuclein Aggregation TEM,BossDB,https://doi.org/10.60533/boss-2024-3x51,0,16,16
+Benchmark FIB SEM data of HeLa cells previously imaged by Zeiss LSM900 Airyscan microscopy,HeLa Cell FIB-SEM Benchmark,EMPIAR,https://doi.org/10.6019/EMPIAR-10819,0,1,1
+Benchmark TEM data of mouse brain previously imaged by Nikon confocal microscopy,Mouse Brain vCLEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12850,6,3,9
+Benchmarking Anisotropic vEM Evaluation for Axial Super-Resolution (BRAVE-ASR),Mouse Brain Axial Super-Resolution Benchmark FIB-SEM,Zenodo,https://doi.org/10.5281/zenodo.17299282,0,2,2
+BFA-treated HeLa Cell FIB-SEM Volume,HeLa Cell Early Secretory Pathway FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13469814,0,1,1
+BHK-21 HCV core lipid droplets,BHK-21 Cell HCV Core Protein Steatosis TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3712,10,0,10
+Bloss 2018 Mouse CA1 ssTEM,Mouse CA1 Hippocampus ssTEM,BossDB,https://doi.org/10.60533/BOSS-2018-EFTV,0,1,1
+Bock 2011 Mouse Visual Cortex ssTEM,Mouse Primary Visual Cortex ssTEM,BossDB,https://doi.org/10.60533/BOSS-2011-K12H,0,1,1
+Borrelia burgdorferi between neighbouring endothelial cells in a lymphatic capillary,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30043093.v1,0,1,1
+Borrelia burgdorferi engulfed by a neutrophil,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30042721.v1,0,1,1
+Borrelia burgdorferi in contact with the pericyte projection and the fibroblast,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30042805.v1,0,1,1
+Borrelia burgdorferi partially enclosed within a lymphatic capillary of an endothelial cell,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30042739.v1,0,1,1
+Borrelia burgdorferi under a pericyte in dorsal skin,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30041983.v2,0,1,1
+Borrelia burgdorferi within a collagen bundle in mouse ear,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30042088.v1,0,1,1
+"Brown Adipose Tissue EM — Thermogenesis & Peridroplet Mitochondria (Winn 2019, Acin-Perez 2021)",Islet and Adipose EM,BioImage Archive,https://doi.org/10.6019/S-BIAD3699,87,0,87
+C. elegans Anterior Pharynx ssTEM,C. elegans Anterior Pharynx ssTEM,BossDB,https://doi.org/10.60533/BOSS-2015-FBTX,0,1,1
+C. elegans motor circuit serial-section EM volumes,Caenorhabditis elegans Motor Circuit SEM,BossDB,https://doi.org/10.60533/BOSS-2022-1JI1,0,5,5
+Cali 2018 aging mouse cortex FIB-SEM volumes,Aging Mouse Cortex FIB-SEM,Dryad,https://doi.org/10.5061/dryad.bh78sn5,0,6,6
+Cardiac Microvascular Injury I/R & H/R Validation TEM,Mouse Cardiac Microvascular Ischemia/Reperfusion TEM,Zenodo,https://doi.org/10.5281/zenodo.17137494,11,0,11
+CDX1 knockout - 857-cdx1ko,Mouse Intestine Cdx Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3707,34,0,34
+CDX1/CDX2 double knockout - 855-dblko,Mouse Intestine Cdx Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3707,43,0,43
+CDX1/CDX2 double knockout - F18-DBLKO,Mouse Intestine Cdx Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3707,30,0,30
+CDX2 knockout - 207,Mouse Intestine Cdx Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3707,21,0,21
+CDX2 knockout - 213,Mouse Intestine Cdx Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3707,15,0,15
+CDX2 knockout - 537_547,Mouse Intestine Cdx Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3707,30,0,30
+Cellular Hallmarks from Volume Electron Microscopy reveals Developmental Progression of Plasmodium Ookinetes,Plasmodium berghei Ookinete SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12951,0,23,23
+Chicken Embryonic Heart Multiscale Imaging,Chicken Embryonic Heart SBF-SEM,Dryad,https://doi.org/10.5061/dryad.hdr7sqvg5,0,4,4
+Chlamydomonas Cryo-Slice and View on Thermo Scientific Helios 5 Hydra PFIB,Chlamydomonas Cryo FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11275,0,1,1
+CLEMSite COPB1 Knockdown FIB-SEM Cell Volumes,HeLa Cell COPB1 Knockdown FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11314,0,25,25
+Comparative 3D ultrastructure of Plasmodium falciparum gametocytes,Plasmodium falciparum Gametocyte 3D Ultrastructure FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12160,0,24,24
+Conjugate electron microscopy and array tomography,Mouse Cortex Conjugate Array Tomography,BossDB,https://doi.org/10.60533/BOSS-2015-EJSN,0,3,3
+Control - 16 weeks,Mouse Kidney Aging and Alport Disease Matrix TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3708,49,0,49
+Control - 537_547,Mouse Intestine Cdx Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3707,21,0,21
+Control - 8 weeks,Mouse Kidney Aging and Alport Disease Matrix TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3708,34,0,34
+Correlative 3D SBFSEM data from: Intermittent bulk release of human cytomegalovirus,HCMV-Infected Human Fibroblast SBF-SEM,Dryad,https://doi.org/10.5061/dryad.5dv41ns7z,0,1,1
+COS-7 Cell FIB-SEM Volume,COS-7 Cell FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24943716,0,1,1
+COS-7 cell overexpressing ER and mitochondria markers for CLEM,COS-7 Cell ER & Mitochondria FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13123385,0,1,1
+COVID-19 Lung Cryobiopsy — Data Set 07: Alveolar organisation,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5682656,3,0,3
+COVID-19 Lung Cryobiopsy — Data Set 11: patient C05,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5682850,1,0,1
+COVID-19 Lung Cryobiopsy — Data Set 12: patient C04 C07,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5682881,2,0,2
+COVID-19 Lung Cryobiopsy — Data Set 13: patient C03,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5682980,7,0,7
+COVID-19 Lung Cryobiopsy — Data Set 14: patient C04,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5683073,9,0,9
+COVID-19 Lung Cryobiopsy — Data Set 15: patient C05,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5683122,7,0,7
+COVID-19 Lung Cryobiopsy — Data Set 16: patient C06,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5702444,8,0,8
+COVID-19 Lung Cryobiopsy — Data Set 17: patient C07,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5702550,8,0,8
+COVID-19 Lung Cryobiopsy — Data Set 18: patient C08,Human COVID-19 Lung Cryobiopsy Ultrastructure,Zenodo,https://doi.org/10.5281/zenodo.5702609,5,0,5
+Cropped regions from Serial Block Face SEM of HeLa cell pellet with 10 nm pixels and 50 nm slices (benchmark dataset),HeLa Cell SBF-SEM ROI Benchmark,EMPIAR,https://doi.org/10.6019/EMPIAR-10478,0,18,18
+Cryo-FIB-SEM data on Chlamydomonas reinhardtii cells,Chlamydomonas reinhardtii Cryo-FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10870,0,2,2
+Cryo-FIB-SEM volume (ROI6),U2OS Cell Mitochondrial Pearling Cryo-FIB-SEM,Zenodo,https://doi.org/10.5281/zenodo.17769238,0,1,1
+Cultured Mouse Cerebellar Granule Neurons,Mouse Cerebellar Granule Neuron FIB-SEM (jrc_mus-granule-neurons-1),OpenOrganelle,https://doi.org/10.25378/janelia.24222844,0,1,1
+Cultured mouse cerebellar granule neurons (jrc_mus-granule-neurons-2),Cultured Mouse Cerebellar Granule Neuron FIB-SEM (jrc_mus-granule-neurons-2),OpenOrganelle,https://doi.org/10.25378/janelia.24222868,0,1,1
+Cultured mouse cerebellar granule neurons (jrc_mus-granule-neurons-3),Cultured Mouse Cerebellar Granule Neuron FIB-SEM (jrc_mus-granule-neurons-3),OpenOrganelle,https://doi.org/10.25378/janelia.24222892,0,1,1
+Curved crease origami at cellular scales enables hyper-extensibility of Lacrymaria olor,Lacrymaria olor Cell Hyperextensibility TEM,Dryad,https://doi.org/10.5061/dryad.4xgxd25g0,4,6,10
+Cytoklepty in the plankton: a host strategy to optimize the bioenergetic machinery of endosymbiotic algae,Phaeocystis-Acantharia Photosymbiosis FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10672,0,8,8
+Cytotoxic T Lymphocyte Attacking ID8 Ovarian Cancer Cell - jrc_ctl-id8-2,Mouse Cytotoxic T Lymphocyte Attacking Ovarian Cancer Cell FIB-SEM,figshare,https://doi.org/10.6084/m9.figshare.14447541,0,1,1
+Cytotoxic T Lymphocyte Attacking ID8 Ovarian Cancer Cell - jrc_ctl-id8-3,Mouse Cytotoxic T Lymphocyte Attacking Ovarian Cancer Cell FIB-SEM,figshare,https://doi.org/10.6084/m9.figshare.14447562,0,1,1
+Cytotoxic T Lymphocyte Attacking ID8 Ovarian Cancer Cell - jrc_ctl-id8-4,Mouse Cytotoxic T Lymphocyte Attacking Ovarian Cancer Cell FIB-SEM,figshare,https://doi.org/10.6084/m9.figshare.14447565,0,1,1
+Cytotoxic T Lymphocyte Attacking ID8 Ovarian Cancer Cell - jrc_ctl-id8-5,Mouse Cytotoxic T Lymphocyte Attacking Ovarian Cancer Cell FIB-SEM,figshare,https://doi.org/10.6084/m9.figshare.14447568,0,1,1
+D. melanogaster whole larva ('igor'),Drosophila melanogaster Whole Larva FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.26426824,0,1,1
+Data for: Axonal Structure-Function relationships across experimental modalities,Rat Corpus Callosum Axon TEM,Zenodo,https://doi.org/10.5281/zenodo.17476529,1,0,1
+Data from: A serial multiplex immunogold labeling method for identifying peptidergic neurons in connectomes,Platynereis dumerilii Nerve Cord siGOLD Immunogold TEM,Dryad,https://doi.org/10.5061/dryad.c7366,12,0,12
+Data from: Hepatic steatosis induced by nicotine plus Coca-Cola™ is prevented by nicotinamide riboside (NR),Mouse Liver Nicotine & Coca-Cola Steatosis TEM,Dryad,https://doi.org/10.5061/dryad.g1jwstqx7,15,0,15
+Data from: Homeostasis of metabolites in Escherichia coli on transition from anaerobic to aerobic conditions and the transient secretion of pyruvate,E. coli PykF Immunogold TEM,Dryad,https://doi.org/10.5061/dryad.1n542,153,0,153
+Data from: Open water camouflage via 'leaky' light guides in the midwater squid Galiteuthis,Galiteuthis Squid Eye Photophore TEM,Dryad,https://doi.org/10.5061/dryad.g703s,5,0,5
+Data from: Phylogenetic distribution and expression pattern analyses identified a divergent basal body assembly protein involved in land plant spermatogenesis,Physcomitrium patens Spermatid TEM,Zenodo,https://doi.org/10.5281/zenodo.6546077,0,3,3
+Data from: Three-dimensional reconstruction on cell level: case study elucidates the ultrastructure of the spinning apparatus of Embia sp. (Insecta: Embioptera),Embia Spinning Apparatus SBF-SEM,Dryad,https://doi.org/10.5061/dryad.vk3fg,0,1,1
+Data set 01 - Giardia lamblia adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11196419,0,1,1
+Data set 02 - Giardia lamblia adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11197168,0,1,1
+Data set 04 - HeLa adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11198586,0,1,1
+Data set 05 - HeLa adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11198691,0,1,1
+Data set 06 - HeLa adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11199320,0,1,1
+Data set 07 - HeLa adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11199433,0,1,1
+Data set 08 - HeLa adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11202406,0,1,1
+Data set 09 - HeLa adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11203027,0,2,2
+Data set 10 - HeLa adherent SBF-SEM series,Adherent Cell SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.11203782,0,1,1
+Dataset of microscopy (Confocal and electron) - Outer epidermal edges mediate cell-cell adhesion for tissue integrity in plants,Arabidopsis Hypocotyl Epidermis Cell Adhesion TEM,Zenodo,https://doi.org/10.5281/zenodo.15125559,476,0,476
+Dataset- Creating a Virtual Leaf,Chickpea Leaf SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.7943403,0,2,2
+DeepContact training data,Membrane Contact Site EM Training Data,figshare,https://doi.org/10.6084/m9.figshare.19898404.v3,269,0,269
+DeepFocus Dataset 1.0,DeepFocus SEM Focus and Astigmatism Benchmark,Zenodo,https://doi.org/10.5281/zenodo.8416524,47,0,47
+Denk and Horstmann 2004 rat cortex SBF-SEM,Rat Cerebral Cortex SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/denk2004-5bfd0b1c0100003f3574cc8e,0,1,1
+Desmosomes in A431 Cells - aic_desmosome-2 (FIB-SEM),A431 Cell Desmosome-ER FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.22670176,0,1,1
+Desmosomes in A431 Cells - aic_desmosome-3 (FIB-SEM),A431 Cell Desmosome-ER FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.22675078,0,1,1
+Desmosomes in A431 Cells FIB-SEM Volume,A431 Cell Desmosome FIB-SEM,OpenOrganelle,https://openorganelle.janelia.org/datasets/aic_desmosome-1,0,1,1
+Developing retina in zebrafish 55 hpf larval eye,Developing Zebrafish Retina SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11759,0,1,1
+Development of protocols for the first serial block-face scanning electron microscopy (SBF SEM) studies of bone tissue,Mammalian Bone Osteocyte SBF-SEM,Institutional repository,https://doi.org/10.5258/SOTON/D1089,0,1,1
+Diabetic Human Capillary 1,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164577,0,1,1
+Diabetic Human Capillary 2,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164581,0,1,1
+Diabetic Human Capillary 3,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164589,0,1,1
+Diabetic Mouse 1 Capillary 1,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164369,0,1,1
+Diabetic Mouse 1 Capillary 2,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164375,0,1,1
+Diabetic Mouse 1 Capillary 3,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164386,0,1,1
+Diabetic Mouse 2 Capillary 1,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164392,0,1,1
+Diabetic Mouse 2 Capillary 2,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164395,0,1,1
+Diabetic Mouse 2 Capillary 3,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164403,0,1,1
+Diabetic Mouse 3 Capillary 1,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164465,0,1,1
+Diabetic Mouse 3 Capillary 2,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164473,0,1,1
+Diabetic Mouse 3 Capillary 3,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164479,0,1,1
+Diplonemid Protist TEM Images,Diplonemid Protist TEM,Zenodo,https://doi.org/10.5281/zenodo.16882378,46,0,46
+Dividing HeLa Cell FIB-SEM at 11.2 min after anaphase onset,Dividing HeLa Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10109,0,1,1
+Dividing HeLa Cell FIB-SEM at 3.1 min after anaphase onset,Dividing HeLa Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10100,0,1,1
+Dividing HeLa Cell FIB-SEM at 3.9 min after anaphase onset,Dividing HeLa Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10102,0,1,1
+Dividing HeLa Cell FIB-SEM at 4.3 min after anaphase onset,Dividing HeLa Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10103,0,1,1
+Dividing HeLa Cell FIB-SEM at 6.3 min after anaphase onset,Dividing HeLa Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10101,0,1,1
+Dl-3-n-butylphthalide alleviates cognitive impairment induced by chronic cerebral hypoperfusion via inhibiting the mitochondrial permeability transition pore opening and excessive mitophagy,Rat Hippocampus Chronic Cerebral Hypoperfusion TEM,Zenodo,https://doi.org/10.5281/zenodo.14253010,9,0,9
+"Dopamine Axon Connectome Volumes (NAc/VTA, saline and cocaine)",Mouse Nucleus Accumbens Dopamine Axon Cocaine SEM,BossDB,https://doi.org/10.60533/BOSS-2021-YA04,0,13,13
+Drosophila brain: Accessory calyx,Drosophila melanogaster Brain Accessory Calyx FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114514,0,1,1
+Drosophila brain: Entire alpha and alpha' lobes of a mushroom body,Drosophila Mushroom Body Alpha Lobes FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.16638268,0,1,1
+Drosophila brain: Fan-shaped body,Drosophila Brain Fan-Shaped Body FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24222598,0,1,1
+Drosophila brain: Fan-shaped body,Drosophila melanogaster Brain Fan-Shaped Body FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114529,0,1,1
+Drosophila brain: protocerebral bridge,Drosophila Brain Protocerebral Bridge FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24222652,0,1,1
+Drosophila ellipsoid body,Drosophila Ellipsoid Body FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24221404,0,1,1
+Drosophila gut,Drosophila Gut TEM,Zenodo,https://doi.org/10.5281/zenodo.6567258,1,0,1
+Drosophila Hemibrain FIB-SEM Volume,Drosophila Central Brain Hemibrain FIB-SEM,WEBKNOSSOS,https://webknossos.org/datasets/flyem_hemibrain-6128c212010000a100ca0fd6/view,0,1,1
+Drosophila Larval Abdominal ssTEM (acardona_abd1_5),Drosophila Larval CNS ssTEM,BossDB,https://doi.org/10.60533/BOSS-2015-WYEW,0,1,1
+Drosophila Medulla Seven-Column FIB-SEM Volume,Drosophila Medulla Seven-Column FIB-SEM,WEBKNOSSOS,https://webknossos.org/datasets/FIB-25_wkw-5bd881bc010000f22e3db5fb/view,0,1,1
+Drosophila muscle,Drosophila Muscle TEM,Zenodo,https://doi.org/10.5281/zenodo.6569281,1,0,1
+Drosophila mushroom body,Drosophila Mushroom Body Alpha Lobe FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.27075448,0,1,1
+Drosophila Optic Medulla Serial-Section TEM Volume,Drosophila Optic Medulla Connectome TEM,BossDB,https://doi.org/10.60533/BOSS-2013-49GZ,0,1,1
+Drosophila Third Instar Larva EM Volume,Drosophila Larva Nociceptive Circuit TEM,BossDB,https://doi.org/10.60533/BOSS-2017-0DCV,0,1,1
+Drosophila ventral nerve cord (VNC),Drosophila Ventral Nerve Cord FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24944649,0,1,1
+Drosophila Whole Larval CNS ssTEM (acardona_0111_8),Drosophila Larval CNS ssTEM,BossDB,https://doi.org/10.60533/BOSS-2015-WYEW,0,1,1
+Dynamic loading of human engineered heart tissue enhances contractile function and drives a desmosome-linked disease phenotype (TEM data),Human Engineered Heart Tissue Dynamic Loading TEM,Zenodo,https://doi.org/10.5281/zenodo.5056166,168,0,168
+Efficient cell-wide mapping of mitochondria in electron microscopic volumes using webKnossos,Mouse Multi-Organ mito-SegEM SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12535,0,3,3
+Electron microscopy images of thalamus from acutely hydrogen sulfide poisoned mice,Hydrogen Sulfide Poisoned Mouse Thalamus TEM,Dryad,https://doi.org/10.5061/dryad.k3j9kd5ds,13,0,13
+Electron tomography - Myotubes:Fam134bKO and WT,Mouse Myotube FAM134B ER Electron Tomography,EMPIAR,https://doi.org/10.6019/EMPIAR-12473,0,2,2
+Electron tomography of endosymbiotic bacteria inside a bacteriocyte of the cereal weevil Sitophilus oryzae - EMPIAR-12198,Weevil Bacteriocyte Endosymbiont Tubular Networks ET,EMPIAR,https://doi.org/10.6019/EMPIAR-12198,0,1,1
+Electron tomography of endosymbiotic bacteria inside a bacteriocyte of the cereal weevil Sitophilus oryzae - EMPIAR-12602,Weevil Bacteriocyte Endosymbiont Tubular Networks ET,EMPIAR,https://doi.org/10.6019/EMPIAR-12602,0,1,1
+Electron tomography of mitochondria from adult and aged mice hearts,Mouse Heart Mitochondria ET,EMPIAR,https://doi.org/10.6019/EMPIAR-13004,0,1,1
+Enigmatic tubular ultrastructure in the bacterial defensive symbiont of the Asian citrus psyllid Diaphorina citri,Candidatus Profftella armatura Tubular Ultrastructure SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.29371466.v2,0,2,2
+Entire C. elegans dauer larva (e1370) volume,C. elegans Dauer Larva FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.20376591,0,1,1
+Exploring the 3D structure of chromosomes in mitotic cells,Human Mitotic Chromosome SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11953,0,13,13
+FAST-EM array tomography data of rat pancreas prepared with rOTO protocol and stained with neodymium acetate - EMPIAR-12174 (4x4 mosaics),Rat Pancreas FAST-EM Array Tomography,EMPIAR,https://doi.org/10.6019/EMPIAR-12174,0,43,43
+FAST-EM array tomography data of rat pancreas prepared with rOTO protocol and stained with neodymium acetate - EMPIAR-12193 (10x10 mosaics),Rat Pancreas FAST-EM Array Tomography,EMPIAR,https://doi.org/10.6019/EMPIAR-12193,0,72,72
+FAST-EM array tomography data of wild-type MCF-7 cells prepared with the rOTO protocol and stained with uranyl acetate,MCF-7 Cell FAST-EM Array Tomography,EMPIAR,https://doi.org/10.6019/EMPIAR-12190,0,55,55
+FIB-SEM Chinese Hamster Ovary cell line sample dataset,Contextual High-throughput vEM Acquisition FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12660,0,1,1
+"FIB-SEM Dataset (Obara + Nixon-Abell et al., 2023)",COS-7 Cell ER-Mitochondria Contact Site FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24502954.v1,0,1,1
+FIB-SEM dataset of a human bone osteosarcoma epithelial cell (U2-OS),U2-OS Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11746,0,1,1
+FIB-SEM dataset showing localization of a Golgi matrix protein GM130 in human hepatocellular carcinoma cell (Huh-7),Huh-7 GM130 FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11849,0,1,1
+FIB-SEM datasets of hippocampal neurons from WT and FAM92A1 knockout mice,Mouse Hippocampus FAM92A1 Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12041,0,2,2
+"FIB-SEM imaging of control HeLa cells, cells expressing WT STARD3, and cells expressing the STARD3 FA/YA mutant",HeLa STARD3 ER-Lysosome Contact FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-13156,0,3,3
+FIB-SEM Mouse kidney tissue samples,Contextual High-throughput vEM Acquisition FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12674,0,1,1
+FIB-SEM Nicotiana benthamiana epidermal cell,Contextual High-throughput vEM Acquisition FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12659,0,1,1
+FIB-SEM Nicotiana benthamiana epidermal cell - conventional acquisition,Contextual High-throughput vEM Acquisition FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12662,0,1,1
+FIB-SEM of 2-cell-stage like cells (2CLC) in mouse embryonic stem cells (mESC),Mouse ESC-Derived 2-Cell-Like Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-13260,0,2,2
+FIB-SEM of a dividing cell at 5.3 min after anaphase onset,Dividing HeLa Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10104,0,1,1
+FIB-SEM of a dividing cell at 5.7 min after anaphase onset,Dividing HeLa Cell FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10105,0,1,1
+FIB-SEM of a HeLa cell,HeLa Cell FIB-SEM AMST Alignment,EMPIAR,https://doi.org/10.6019/EMPIAR-10311,0,1,1
+FIB-SEM of an Mbp-deficient shiverer mouse optic nerve,Mouse Optic Nerve Mbp Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10907,0,1,1
+FIB-SEM of Gemmata obscuriglobus - a species of the Planctomycetes phylum,Planctomycetes Bacteria FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10553,0,1,1
+FIB-SEM of mouse optic nerve of an inducible conditional Mbp knock-out 16 weeks after induction,Mouse Optic Nerve Mbp Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10906,0,1,1
+FIB-SEM of mouse optic nerve of an inducible conditional Mbp knock-out 26 weeks after induction,Mouse Optic Nerve Mbp Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10908,0,1,1
+FIB-SEM of parapodia from Platynereis dumerilii,Platynereis dumerilii Parapodia FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10310,0,1,1
+"FIB-SEM of U2OS cell at leading edge of a wound assay, LPA stimulated, polarized",U2-OS Cell Wound Assay Leading Edge FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11002,0,1,1
+"FIB-SEM of U2OS cell at leading edge of a wound assay, non-LPA stimulated, non-polarized",U2-OS Cell Wound-Assay Leading Edge FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11003,0,1,1
+FIB-SEM Rat brain tissue samples,Contextual High-throughput vEM Acquisition FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12675,0,1,1
+Fib-SEM stacks for Prey (Phaeocystis antarctica) and Host (Ross Sea Dinoflagellate; RSD),Polar Plankton Organelle Hijacking FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12627,0,18,18
+FIB-SEM Trypanosoma cruzi cell samples,Contextual High-throughput vEM Acquisition FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12661,0,1,1
+FIB/SEM sample dataset MCB-CLEM IV Weiner,Shigella flexneri HeLa Cell Invasion FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10479,0,1,1
+FIBSEM Run2 Feb 2026 pt1,Unprovenanced FIB-SEM Volume (Run2 Feb 2026 pt1),WEBKNOSSOS,https://webknossos.org/datasets/FIBSEM_Run2_Feb2026_pt1-69814e310100009701047c11,0,1,1
+FluoEM mouse cortex SBEM volume,Mouse Cerebral Cortex SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/FluoEM_2016-05-26_FD0144-2_v2s2s-5abb89f348d7a73cea448019/view,0,1,1
+FlyWire FAFBv14 EM Volume,Drosophila Whole-Brain Connectome (FlyWire FAFB) TEM,BossDB,https://doi.org/10.60533/BOSS-2020-F81C,0,1,1
+Focused Ion Beam - Scanning Electron Microscopy volume of the aboral pole of a Nematostella Vectensis polyp,Nematostella vectensis Aboral Pole FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-13099,0,1,1
+Focused Ion Beam-Scanning Electron Microscopy of mitochondrial reticulum in murine skeletal muscle,Mouse Skeletal Muscle Mitochondrial Reticulum FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10070,0,1,1
+Giant mitochondria in NAFLD liver - array tomography volumes (4 patients),Human Liver Giant Mitochondria NAFLD SEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3713,0,4,4
+GLAM Rat Hippocampus Demo Bundle,Rat Hippocampus FIB-SEM,Dryad,https://doi.org/10.5061/dryad.808k4r0,0,1,1
+GRX Cell Line,GRX Murine Hepatic Stellate Cell Line TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3727,50,0,50
+GRX Cell Line - Viral Particles,GRX Murine Hepatic Stellate Cell Line TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3727,14,0,14
+GT1-7 FIB-SEM Treatment Series,Mouse GT1-7 Neuron Spermidine Autophagy FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10946,0,6,6
+"Guinea pig brain, skeletal muscle and skin",Guinea Pig Multi-Organ SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,5,0,5
+H89-treated HeLa Cell FIB-SEM Volume - cell 1,HeLa Cell Early Secretory Pathway FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13469964,0,1,1
+H89-treated HeLa Cell FIB-SEM Volume - cell 2,HeLa Cell Early Secretory Pathway FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13469970,0,1,1
+Harris 2015 Hippocampal Neuropil 3DEM - Apical Dendrite,Rat Hippocampal CA1 Neuropil TEM,WEBKNOSSOS,https://webknossos.org/datasets/kharris15_apical-5c7e907c010000160cc8d8d0/view,0,1,1
+Harris 2015 Hippocampal Neuropil 3DEM - Oblique Dendrite,Rat Hippocampal CA1 Neuropil TEM,WEBKNOSSOS,https://webknossos.org/datasets/kharris15_oblique-5c7e907c010000790cc8d8cf/view,0,1,1
+Harris 2015 Hippocampal Neuropil 3DEM - Spine,Rat Hippocampal CA1 Neuropil TEM,WEBKNOSSOS,https://webknossos.org/datasets/kharris15_spine-5c7e907c010000c60bc8d8ce/view,0,1,1
+Harris 2015 Rat Hippocampal CA1 Neuropil,Rat Hippocampal CA1 Neuropil TEM,BossDB,https://doi.org/10.60533/BOSS-2015-GYEN,0,3,3
+HeLa cell miniLM CLEM SBF-SEM stack,HeLa Cell CLEM SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.192470,0,1,1
+HeLa Cell with RUSH Cargo FIB-SEM Volume - jrc_hela-21,HeLa Cell Early Secretory Pathway FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13469550,0,1,1
+HeLa Cell with RUSH Cargo FIB-SEM Volume - jrc_hela-22,HeLa Cell Early Secretory Pathway FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13469901,0,1,1
+Hildebrand 2017 Larval Zebrafish ssEM,Larval Zebrafish Brain SEM,BossDB,https://doi.org/10.60533/BOSS-2017-VAW4,0,2,2
+Horizontal cell connectivity in the anchovy retina - a 3D electron microscopic study - Scan 1,Anchovy Retina Horizontal Cell Connectivity,EMPIAR,https://doi.org/10.6019/EMPIAR-12585,0,1,1
+Horizontal cell connectivity in the anchovy retina - a 3D electron microscopic study - Scan 2,Anchovy Retina Horizontal Cell Connectivity,EMPIAR,https://doi.org/10.6019/EMPIAR-12586,0,1,1
+Horizontal cell connectivity in the anchovy retina - a 3D electron microscopic study - Scan 3,Anchovy Retina Horizontal Cell Connectivity,EMPIAR,https://doi.org/10.6019/EMPIAR-12587,0,1,1
+Horizontal cell connectivity in the anchovy retina - a 3D electron microscopic study - Scan 4b,Anchovy Retina Horizontal Cell Connectivity,EMPIAR,https://doi.org/10.6019/EMPIAR-12591,0,1,1
+Horizontal cell connectivity in the anchovy retina - a 3D electron microscopic study - Scan 5 part 1,Anchovy Retina Horizontal Cell Connectivity,EMPIAR,https://doi.org/10.6019/EMPIAR-12592,0,1,1
+Horizontal cell connectivity in the anchovy retina - a 3D electron microscopic study - Scan 5 part 2,Anchovy Retina Horizontal Cell Connectivity,EMPIAR,https://doi.org/10.6019/EMPIAR-12610,0,1,1
+Horizontal cell connectivity in the anchovy retina - a 3D electron microscopic study - Scan 6,Anchovy Retina Horizontal Cell Connectivity,EMPIAR,https://doi.org/10.6019/EMPIAR-12609,0,1,1
+HuaLab Mouse Testis Tissue,Mouse Testis SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12535,0,1,1
+Human Airway Epithelium ALI Culture FIB-SEM,Human Airway Epithelium ALI Culture FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.26039314,0,1,1
+Human Airway Epithelium ALI FIB-SEM,Human Airway Epithelium ALI FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.26035168,0,1,1
+Human Airway Epithelium FIB-SEM Volume,Human Airway Epithelium FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.25625346,0,1,1
+Human Fetal Kidney TEM Tilescans,Human Fetal Kidney Nephrogenesis TEM,BioImage Archive,https://doi.org/10.17867/10000192,40,0,40
+Human H5 L2/3 STG multiSEM Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/H5_10_270um_L23_NH_NJ_extended_Aug22_2021_v2-62b17edd010000f70075d7ba/view,0,1,1
+Human H5-10 Superior Temporal Gyrus Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/H5_10_270um_final_v1-62b17f91010000ef0075d7bf/view,0,1,1
+Human HCV liver steatosis,Human Liver Hepatitis C Steatosis TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3712,102,0,102
+Human iPSC-Derived Lens Organoids Recapitulate Lens Development and Morphogenesis In Vitro,Human iPSC-Derived Lens Organoid SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12990,0,4,4
+Human L2/3 IFG H6 4S Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/H6_4S_FCx_VG_synapses_v1_typ_soma_exclusion_v2-62b17fcd010000eb0075d7c0/view,0,1,1
+Human L2/3 STG SBEM Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/H5_5_AMK_2021-st700_segmentation_v1_typ_soma_excl_v1-62b17f19010000aa0075d7bc/view,0,1,1
+Human Liver SEM,Human Liver SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,5,0,5
+Human Medial Entorhinal Cortex FIB-SEM Volumes,Human Medial Entorhinal Cortex FIB-SEM,BossDB,https://doi.org/10.60533/boss-2024-ekc7,0,61,61
+Human Pancreatic Islet Organoid SEM,Human Pancreatic Islet Organoid SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,17,0,17
+Human Pancreatic Islet SEM,Human Pancreatic Islet SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,37,0,37
+"Human Pancreatic Islet SEM, glucose-infused",Human Pancreatic Islet SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,21,0,21
+"Human pancreatic islet, condition 1",Human Pancreatic Islet SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,7,0,7
+"Human pancreatic islet, condition 2",Human Pancreatic Islet SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,5,0,5
+Human renal carcinoma cell,Human Renal Carcinoma FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.27075529,0,1,1
+Human Skin & Mucosa STEM Nanotomy Maps,Human Skin & Mucosa Blistering Disease Nanotomy TEM,IDR,https://idr.openmicroscopy.org/study/idr0141/,10,0,10
+Human Temporal Cortex H01,Human Temporal Cortex H01 SEM,WEBKNOSSOS,https://webknossos.org/datasets/h01_20210601-6128c212010000a100ca0fd7/view,0,1,1
+Hydra Endodermal Nerve Net Volume EM,Hydra vulgaris Endodermal Nerve Net SEM,BossDB,https://doi.org/10.60533/BOSS-2025-08G4,0,1,1
+Identifying long-range synaptic inputs using genetically encoded labels and volume electron microscopy,Mouse Periaqueductal Gray dAPEX2 Synaptic-Input FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10883,0,6,6
+Images and annotations for training and testing of Glycogen-segmenter,Human Skeletal Muscle Glycogen Segmentation TEM,Zenodo,https://doi.org/10.5281/zenodo.18390286,1135,0,1135
+Immortalized breast cancer cell (SUM159) - jrc_sum159-1,SUM159 Breast Cancer Cell FIB-SEM (jrc_sum159-1),OpenOrganelle,https://doi.org/10.25378/janelia.13114352,0,1,1
+Immortalized breast cancer cell (SUM159) - jrc_sum159-4,SUM159 Breast Cancer Cell FIB-SEM (jrc_sum159-4),OpenOrganelle,https://doi.org/10.25378/janelia.20134103,0,1,1
+Immortalized T-Cells (Jurkat) FIB-SEM volume,Jurkat T-Cell FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114259,0,1,1
+Immune cells migrating from the vein in dorsal skin,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30042151.v1,0,1,1
+Integrative imaging reveals SARS-CoV-2 induced reshaping of subcellular morphology,Human Lung Cell SARS-CoV-2 Subcellular Morphology,EMPIAR,https://doi.org/10.6019/EMPIAR-10490,0,9,9
+Interleaved scanning electron microscopy: exploring native samples at the mesoscale. Adult mouse brain,Interleaved FIB-SEM of Native Cryogenic Samples,EMPIAR,https://doi.org/10.6019/EMPIAR-12244,0,1,1
+Interleaved scanning electron microscopy: exploring native samples at the mesoscale. E. gracilis,Interleaved FIB-SEM of Native Cryogenic Samples,EMPIAR,https://doi.org/10.6019/EMPIAR-12239,0,1,1
+Interphase COS-7 Cell FIB-SEM Volume,COS-7 Cell FIB-SEM (Xu 2021),OpenOrganelle,https://doi.org/10.25378/janelia.24944559,0,1,1
+Interphase HeLa cell (jrc_hela-1) FIB-SEM volume,Interphase HeLa Cell jrc_hela-1 FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13123415,0,1,1
+Interphase HeLa cell (jrc_hela-2) FIB-SEM volume,Interphase HeLa Cell jrc_hela-2 FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114211,0,1,1
+Interphase HeLa cell (jrc_hela-3) FIB-SEM volume,Interphase HeLa Cell jrc_hela-3 FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114244,0,1,1
+Islet EM — Weight Cycling & Insulin Secretion (Winn 2022),Islet and Adipose EM,BioImage Archive,https://doi.org/10.6019/S-BIAD3700,5,0,5
+Isolated cardiomyocyte TEM images and segmentation masks,Isolated Rat Cardiomyocyte TEM,Zenodo,https://doi.org/10.5281/zenodo.17068504,9,0,9
+Isolated Human Islets,Isolated Human Islets,BioImage Archive,https://doi.org/10.6019/S-BIAD3896,4,0,4
+Isolated murine pancreatic islets,Mouse Pancreatic Islet FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114499,0,1,1
+Isolated murine pancreatic islets - jrc_mus-pancreas-2,Mouse Pancreatic Islet FIB-SEM Low Glucose,OpenOrganelle,https://doi.org/10.25378/janelia.19196540,0,1,1
+Isolated murine pancreatic islets - jrc_mus-pancreas-3,Mouse Pancreatic Islet FIB-SEM Low Glucose,OpenOrganelle,https://doi.org/10.25378/janelia.19196585,0,1,1
+K0068_05 Mouse mPFC SBEM Volume,Mouse Medial Prefrontal Cortex SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/K0068_05-6037e03401000099003877e4/view,0,1,1
+Kasthuri Mouse Neocortex Volume,Mouse Neocortex SEM,WEBKNOSSOS,https://webknossos.org/datasets/kasthuri2011-5c42004001000096156f49d8/view,0,1,1
+KB-E0010 juvenile rat cortical glia SBF-SEM volume,Juvenile Rat Cortical Glia SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/KB-E0010-685bf5a2010000db05b3b6dd/view,0,1,1
+Killer T-Cell Attacking Ovarian Cancer Cell,Mouse Cytotoxic T Lymphocyte Attacking Ovarian Carcinoma FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114454,0,1,1
+Kinesin-1 activity recorded in living cells with a precipitating dye FIB-SEM data 1,HeLa Cell Kinesin-1 FIB-SEM,Zenodo,https://doi.org/10.5281/zenodo.4477917,0,1,1
+L4 Mouse Cortex SBEM Volume - L4MouseCortex,Mouse Somatosensory Cortex Layer 4 SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/L4MouseCortex-63f72eb20100000f029408c0/view,0,1,1
+L4 Mouse Cortex SBEM Volume - sample cutout,Mouse Somatosensory Cortex Layer 4 SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/l4_sample-5fa015dc0100007c004f80cc/view,0,1,1
+L4 Mouse Somatosensory Cortex SBEM Volume - ROI2017,Mouse Somatosensory Cortex Layer 4 SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2012-09-28_ex145_07x2_ROI2017-5da84e9401000018006d210b/view,0,1,1
+L4 Mouse Somatosensory Cortex SBEM Volume - ROI2017 connectome,Mouse Somatosensory Cortex Layer 4 SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2012-09-28_ex145_07x2_ROI2017_connectome-5de003880100001b0086553b/view,0,1,1
+Larval Zebrafish Olfactory Bulb SBEM Volume,Zebrafish Larval Olfactory Bulb SBF-SEM,BossDB,https://doi.org/10.60533/BOSS-2016-U6PR,0,1,1
+Leishmania mexicana Cell Cycle SBF-SEM,Leishmania mexicana Cell Cycle SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11826,0,1,1
+Leishmania mexicana whole cell electron tomography,Leishmania mexicana Whole-Cell ET,Zenodo,https://doi.org/10.5281/zenodo.10652021,0,3,3
+Light and electron microscopy continuum-resolution imaging of 3D cell cultures,Human 3D Cell Culture FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11380,0,4,4
+Light and transmission electron microscopic images for quantitative lung morphology of mechanically ventilated rat lungs.,Mechanically Ventilated Rat Lung TEM,Zenodo,https://doi.org/10.5281/zenodo.3738928,5196,0,5196
+Light-activated molecular machines display broad spectrum antibacterial action,E. coli Light-Activated Molecular Machine Antibacterial TEM,Zenodo,https://doi.org/10.5281/zenodo.5888177,4,0,4
+LimeSeg Test Datasets,LimeSeg HeLa Cell FIB-SEM Test Dataset,Zenodo,https://doi.org/10.5281/zenodo.1472859,0,1,1
+Lipedema adipose tissue capillaries - TEM,Human Lipedema Adipose Capillary TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3710,8,0,8
+Liver - ADH-neg Control,Deer Mouse Alcohol-Induced Liver & Pancreas Injury TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3723,2,0,2
+Liver - ADH-neg Ethanol-fed,Deer Mouse Alcohol-Induced Liver & Pancreas Injury TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3723,8,0,8
+Liver - ADH-pos Control,Deer Mouse Alcohol-Induced Liver & Pancreas Injury TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3723,2,0,2
+Liver - ADH-pos Ethanol-fed,Deer Mouse Alcohol-Induced Liver & Pancreas Injury TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3723,7,0,7
+"M1 - 12 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,7,0,7
+"M10 - 12 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,6,0,6
+"M11 - 12 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,6,0,6
+"M12 - 12 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,5,0,5
+"M2 - 12 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,10,0,10
+"M21 - 6 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,3,0,3
+"M22 - 6 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,4,0,4
+"M24 - 6 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,5,0,5
+"M3 - 12 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,7,0,7
+"M6 - 12 months, WT, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,6,0,6
+"M7 - 12 months, WT, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,5,0,5
+Macaque L2/3 (S1) SBF-SEM Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/Mk1_F6_L23_JS_segmentation_v2_typ_soma_excl-62b17f19010000aa0075d7bb/view,0,1,1
+Macaque L2/3 STG SBF-SEM Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/Mk1_T2_STG_VG_segmentation_v1_typ_soma_exclusion_v1-62b17f55010000eb0075d7be/view,0,1,1
+Macrophage cell,THP-1 Macrophage FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114343,0,1,1
+Malacosporean ultrastructure (figure panels),Malacosporean Myxozoan Fish Kidney TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3704,20,0,20
+Mammary gland adipocytes - TEM,Mouse Mammary Gland Adipocyte TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3710,1,0,1
+Mast Cell Degranulation TEM,Mouse Mast Cell Degranulation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3721,14,0,14
+ME/CFS PBMC TEM images,Human PBMC ME/CFS TEM,Institutional repository,https://doi.org/10.25740/zm622tr7008,813,0,813
+Meissner Nerve-Injury Digit Skin Volume,Mouse Digit Skin Meissner Corpuscle Nerve Injury SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Meissner_SNI_1_VG-2021-10-15-sni1-align2-621e2194010000a1005dcdc9/view,0,1,1
+Meissner Sham Digit Skin Volume,Mouse Digit Skin Meissner Corpuscle Nerve Injury SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Meissner_Sham_1_VG-2021-10-15-sham1-align2-621e215801000011015dcdc8/view,0,1,1
+MICrONS Basil Mouse Visual Cortex,MICrONS Mouse Visual Cortex TEM,BossDB,https://doi.org/10.60533/BOSS-2019-QF8A,0,1,1
+MICrONS Interneuron Mouse Visual Cortex,MICrONS Mouse Visual Cortex TEM,BossDB,https://doi.org/10.60533/BOSS-2022-LGIZ,0,1,1
+MICrONS Minnie Mouse Visual Cortex,MICrONS Mouse Visual Cortex TEM,BossDB,https://doi.org/10.60533/BOSS-2021-T0SY,0,2,2
+MICrONS Pinky100 Mouse Visual Cortex,MICrONS Mouse Visual Cortex TEM,BossDB,https://doi.org/10.60533/BOSS-2021-GTXY,0,1,1
+miR-146a-5p inhibitor,Mouse MIN6 Beta Cell miR-146a-5p Inflammation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3719,11,0,11
+miR-146a-5p inhibitor - cytokine-treated,Mouse MIN6 Beta Cell miR-146a-5p Inflammation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3719,10,0,10
+miR-146a-5p overexpression,Mouse MIN6 Beta Cell miR-146a-5p Inflammation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3719,13,0,13
+miR-146a-5p overexpression - cytokine-treated,Mouse MIN6 Beta Cell miR-146a-5p Inflammation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3719,12,0,12
+MitoEM 2.0: A Benchmark for Challenging 3D Mitochondria Instance Segmentation from EM Images,MitoEM 2.0 3D Mitochondria Benchmark,Zenodo,https://doi.org/10.5281/zenodo.17613832,0,45,45
+Mitotic HeLa cell,Mitotic HeLa Cell FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.13114472,0,1,1
+Morphology and ultrastructure of external sense organs of Drosophila larvae,Drosophila Larval External Sense Organ Ultrastructure,Dryad,https://doi.org/10.5061/dryad.1vhhmgr1z,0,10,10
+"Mouse 1 - 6 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,12,0,12
+"Mouse 13 - 6 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,5,0,5
+"Mouse 14 - 6 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,6,0,6
+"Mouse 17 - 6 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,12,0,12
+"Mouse 198 - Nox5pod+ transgenic, untreated",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,9,0,9
+"Mouse 2 - 6 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,10,0,10
+"Mouse 207 - Nox5pod+ transgenic, untreated",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,8,0,8
+"Mouse 229 - Nox5pod+ transgenic, untreated",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,9,0,9
+"Mouse 238 - Nox5pod+ transgenic, STZ diabetic",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,8,0,8
+"Mouse 244 - Wild-type, STZ diabetic",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,11,0,11
+"Mouse 247 - Wild-type, STZ diabetic",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,13,0,13
+"Mouse 255 - Wild-type, untreated",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,8,0,8
+"Mouse 256 - Wild-type, untreated",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,7,0,7
+"Mouse 3 - 6 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,12,0,12
+"Mouse 4 - 6 months, mutant, 4-PBA",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,7,0,7
+"Mouse 5 - 6 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,12,0,12
+Mouse 592 - IRE1α KO doxorubicin,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,19,0,19
+"Mouse 6 - 6 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,4,0,4
+Mouse 607 - Control untreated,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,16,0,16
+Mouse 614 - Control doxorubicin,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,23,0,23
+Mouse 623 - IRE1α KO untreated,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,14,0,14
+Mouse 624 - IRE1α KO doxorubicin,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,26,0,26
+Mouse 629 - Control untreated,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,13,0,13
+Mouse 630 - Control doxorubicin,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,17,0,17
+Mouse 636 - IRE1α KO untreated,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,19,0,19
+Mouse 647 - IRE1α KO untreated,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,15,0,15
+Mouse 648 - IRE1α KO doxorubicin,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,16,0,16
+Mouse 650 - Control untreated,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,14,0,14
+Mouse 651 - Control doxorubicin,Mouse Kidney Podocyte IRE1α Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3703,16,0,16
+"Mouse 7 - 6 months, mutant, PBS (vehicle)",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,8,0,8
+"Mouse 766 - Nox5pod+ transgenic, STZ diabetic",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,8,0,8
+"Mouse 8 - 6 months, WT, Untreated",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,4,0,4
+"Mouse 833 - Wild-type, STZ diabetic",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,12,0,12
+"Mouse 834 - Nox5pod+ transgenic, STZ diabetic",Mouse Kidney Podocyte NOX5 TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3720,15,0,15
+"Mouse 9 - 6 months, WT, Untreated",Mouse Kidney Alport Syndrome 4-PBA TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3714,1,0,1
+Mouse A2 L2/3 SBF-SEM Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/Mouse_A2_L23_AMK_rotated-62b17edd010000f20075d7b9/view,0,1,1
+Mouse Anterior Cingulate Cortex (ACC) SBEM Volume,Mouse Cortical Areas SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/JO_ACC_Z_straightenedPosthoc-5c1cd43801000026708c2783/view,0,1,1
+"Mouse Brain, Liver and Pancreas SEM","Mouse Brain, Liver and Pancreas SEM",BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,40,0,40
+Mouse Brown Adipose Tissue WT & Smc5 K371/K371 SBF-SEM,SMC5 Mutant Mouse Brown Adipose Tissue SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-13505,0,2,2
+"Mouse brown adipose tissue, glucose-infused",Mouse Brown Adipose Tissue SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,3,0,3
+Mouse C550 (Control),Mouse Pancreatic Islet Clec16a Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3893,34,0,34
+Mouse C551 (Clec16a knockout),Mouse Pancreatic Islet Clec16a Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3893,39,0,39
+Mouse CA1 Hippocampus FIB-SEM Volume,Mouse CA1 Hippocampus FIB-SEM,Institutional repository,https://www.epfl.ch/labs/cvlab/data/data-em/,0,1,1
+Mouse Cerebellum SBF-SEM,Mouse Cerebellum SBF-SEM,BossDB,https://doi.org/10.60533/BOSS-2023-3DLD,0,1,1
+Mouse cerebral cortex (jrc_mus-cortex-3),Mouse Cerebral Cortex FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.28754702,0,1,1
+Mouse choroid plexus (jrc_choroid-plexus-2),Mouse Choroid Plexus FIB-SEM (jrc_choroid-plexus-2),OpenOrganelle,https://doi.org/10.25378/janelia.13123427,0,1,1
+Mouse choroid plexus (jrc_mus-choroid-plexus-3),Mouse Choroid Plexus FIB-SEM (jrc_mus-choroid-plexus-3),OpenOrganelle,https://doi.org/10.25378/janelia.29114576,0,1,1
+Mouse Cochlea SBF-SEM Neural Circuitry Volume,Mouse Cochlea SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/HuaLab-CBA-mice-cochlea-mid-7w-5ff2feb90100001800af8d3c/view,0,1,1
+Mouse Cochlea Unexposed M1 SBEM Volume,Mouse Cochlea Mitochondria SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/HuaLab-CBA_Ca-mouse-unexposed-M1-652d442501000053049c0270/view,0,1,1
+Mouse Cochlea Unexposed M2 SBEM Volume,Mouse Cochlea Mitochondria SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/HuaLab-CBA_Ca-mouse-unexposed-M2-652d563301000068049c066e/view,0,1,1
+Mouse Cortex SBEM Volume (2012-11-23_ex144_st08x2),Mouse Cerebral Cortex SBF-SEM (ex144),WEBKNOSSOS,https://webknossos.org/datasets/2012-11-23_ex144_st08x2-5fce1a690100007c00cfaff3/view,0,1,1
+Mouse Cremaster Endothelial Cell CLXEM,Mouse Cremaster Endothelial Cell SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11958,0,1,1
+Mouse D40 (Clec16a knockout),Mouse Pancreatic Islet Clec16a Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3893,24,0,24
+Mouse D54 (Control),Mouse Pancreatic Islet Clec16a Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3893,25,0,25
+Mouse deep nuclei (jrc_mus-cerebellum-4),Mouse Deep Cerebellar Nuclei FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.28754318,0,1,1
+Mouse deep nuclei (jrc_mus-cerebellum-5),Mouse Deep Cerebellar Nuclei FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.28754696,0,1,1
+Mouse dLGN ATUM-SEM Volume - WEBKNOSSOS,Mouse Visual Thalamus (dLGN) Serial-Section SEM,WEBKNOSSOS,https://webknossos.org/datasets/morgan2020-6373490b01000026011a53f7/view,0,1,1
+Mouse dLGN Serial-Section EM Volume - BossDB,Mouse Visual Thalamus (dLGN) Serial-Section SEM,BossDB,https://doi.org/10.60533/BOSS-2020-OMCN,0,1,1
+Mouse dorsal striatum (jrc_mus-dorsal-striatum),Mouse Dorsal Striatum FIB-SEM (jrc_mus-dorsal-striatum),OpenOrganelle,https://doi.org/10.25378/janelia.24222688,0,1,1
+Mouse dorsal striatum (jrc_mus-dorsal-striatum-2),Mouse Dorsal Striatum FIB-SEM (jrc_mus-dorsal-striatum-2),OpenOrganelle,https://doi.org/10.25378/janelia.28754705,0,1,1
+Mouse Duodenum FIB-SEM Volume,Mouse Duodenum FIB-SEM,OpenOrganelle,https://openorganelle.janelia.org/datasets/jrc_mus-duodenum-1a,0,1,1
+Mouse Embryonic Fibroblast (cryo-TEM),Mouse & Zebrafish Virtual Nanoscopy Gigapixel TEM,IDR,https://idr.openmicroscopy.org/study/idr0053/,1,0,1
+Mouse Epididymis FIB-SEM Volume - jrc_mus-epididymis-1,Mouse Epididymis FIB-SEM (jrc_mus-epididymis-1),OpenOrganelle,https://doi.org/10.25378/janelia.22190377,0,1,1
+Mouse Epididymis FIB-SEM Volume - jrc_mus-epididymis-2,Mouse Epididymis FIB-SEM (jrc_mus-epididymis-2),OpenOrganelle,https://doi.org/10.25378/janelia.23407907,0,1,1
+Mouse Guard Hair Follicle FIB-SEM,Mouse Mechanosensory End Organs FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.23969061,0,1,1
+Mouse Hemostatic Plug SBF-SEM Volumes,Mouse Hemostatic Plug SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-13192,0,6,6
+Mouse hepatocyte nucleolus YB-1 / RNA polymerase I immunogold TEM,Mouse Hepatocyte YB-1 Immunogold TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3701,1,0,1
+Mouse Hippocampus CA1 eFIB-SEM Volume - jrc_mus-hippocampus-2,Mouse Hippocampus CA1 FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.28894697,0,1,1
+Mouse Hippocampus CA1 eFIB-SEM Volume - jrc_mus-hippocampus-3,Mouse Hippocampus CA1 FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.28895000,0,1,1
+Mouse Kidney FIB-SEM Volume,Mouse Kidney FIB-SEM (jrc_mus-kidney),OpenOrganelle,https://doi.org/10.25378/janelia.16913035,0,1,1
+Mouse Kidney FIB-SEM Volume,Mouse Kidney FIB-SEM (jrc_mus-kidney-2),OpenOrganelle,https://doi.org/10.25378/janelia.23411009,0,1,1
+Mouse Kidney Glomerulus FIB-SEM Volume,Mouse Kidney Glomerulus FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24164004,0,1,1
+"Mouse kidney, 6-month-old",Mouse Multi-Organ SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,3,0,3
+Mouse L2/3 PPC SBEM Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/ppcAK99_76x79_segmentation_v1_typ_soma_excl_v1-62b18045010000020175d7c2/view,0,1,1
+Mouse L2/3 S1 SBEM Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/ex144_st08x2_l23_segmentation_v6_typ_soma_excl_v1-62b19325010000860033e7c9/view,0,1,1
+Mouse Lateral Geniculate Nucleus SBEM Stacks,Mouse Lateral Geniculate Nucleus SBF-SEM,BossDB,https://doi.org/10.60533/BOSS-2023-3TJJ,0,2,2
+Mouse Lateral Parietal Association (LPtA) SBEM Volume,Mouse Cortical Areas SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2016-05-26_FD0144-2_v2s2s_full-5c1ede340100007c838c3579/view,0,1,1
+Mouse Liver Acinus FIB-SEM Volume - jrc_mus-liver-zon-2,Mouse Liver Acinus FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24135486,0,1,1
+Mouse Liver Acinus Zone 1 FIB-SEM Volume - jrc_mus-liver-zon-1,Mouse Liver Acinus FIB-SEM (Zone 1),OpenOrganelle,https://doi.org/10.25378/janelia.24128700,0,1,1
+Mouse Liver and Pancreas SEM,Mouse Liver and Pancreas SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,7,0,7
+"Mouse Liver and Pancreatic Islet SEM, weight cycling",Mouse Liver and Pancreatic Islet SEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3922,28,0,28
+Mouse Liver FIB-SEM Volume,Mouse Liver FIB-SEM (jrc_mus-liver),OpenOrganelle,https://doi.org/10.25378/janelia.16913047,0,1,1
+Mouse Liver FIB-SEM Volume - jrc_mus-liver-2,Mouse Liver FIB-SEM (jrc_mus-liver-2),OpenOrganelle,https://doi.org/10.25378/janelia.23411426,0,1,1
+Mouse Liver Glucokinase Immuno-EM,Mouse Liver Glucokinase Immuno-EM,BioImage Archive,https://doi.org/10.6019/S-BIAD3920,15,0,15
+"Mouse liver hepatocyte, glucose-infused",Mouse Liver Hepatocyte SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,6,0,6
+"Mouse Liver SEM, control diet vs calorie restriction",Mouse Liver SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,18,0,18
+"Mouse liver, control diet vs calorie restriction",Mouse Liver SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,12,0,12
+"Mouse liver, ctrl","Mouse Liver and Pancreatic Islet SEM, glucose-infused",BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,6,0,6
+"Mouse liver, treatment1","Mouse Liver and Pancreatic Islet SEM, glucose-infused",BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,5,0,5
+"Mouse liver, treatment2","Mouse Liver and Pancreatic Islet SEM, glucose-infused",BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,5,0,5
+Mouse Lung FIB-SEM Volume,Mouse Lung FIB-SEM,OpenOrganelle,https://openorganelle.janelia.org/datasets/jrc_mus-lung-2a,0,1,1
+Mouse Meissner Corpuscle FIB-SEM - Double-innervated,Mouse Mechanosensory End Organs FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.23969109,0,1,1
+Mouse Meissner Corpuscle FIB-SEM - Single-innervated,Mouse Mechanosensory End Organs FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.23969076,0,1,1
+Mouse nucleus accumbens,Mouse Nucleus Accumbens FIB-SEM (jrc_mus-nacc-4),OpenOrganelle,https://doi.org/10.25378/janelia.24222988,0,1,1
+Mouse nucleus accumbens,Mouse Nucleus Accumbens FIB-SEM (jrc_mus-nacc-1),OpenOrganelle,https://doi.org/10.25378/janelia.27075514,0,1,1
+Mouse Nucleus Accumbens FIB-SEM Volume - jrc_mus-nacc-2,Mouse Nucleus Accumbens FIB-SEM (jrc_mus-nacc-2),OpenOrganelle,https://doi.org/10.25378/janelia.24222898,0,1,1
+Mouse Nucleus Accumbens FIB-SEM Volume - jrc_mus-nacc-3,Mouse Nucleus Accumbens FIB-SEM (jrc_mus-nacc-3),OpenOrganelle,https://doi.org/10.25378/janelia.24222913,0,1,1
+Mouse Optic Nerve FIB-SEM - Mag knockout (EMPIAR-11219),Mouse Optic Nerve Plp1/Mag Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11219,0,1,1
+Mouse Optic Nerve FIB-SEM - Mag knockout (EMPIAR-11220),Mouse Optic Nerve Plp1/Mag Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11220,0,1,1
+Mouse Optic Nerve FIB-SEM - Mag knockout (EMPIAR-11237),Mouse Optic Nerve Plp1/Mag Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11237,0,1,1
+Mouse Optic Nerve FIB-SEM - Plp1-null (EMPIAR-11214),Mouse Optic Nerve Plp1/Mag Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11214,0,1,1
+Mouse Optic Nerve FIB-SEM - Plp1-null (EMPIAR-11215),Mouse Optic Nerve Plp1/Mag Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11215,0,1,1
+Mouse Optic Nerve FIB-SEM - Plp1-null (EMPIAR-11216),Mouse Optic Nerve Plp1/Mag Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11216,0,1,1
+Mouse Optic Nerve FIB-SEM - Wild-type control (EMPIAR-11238),Mouse Optic Nerve Plp1/Mag Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11238,0,1,1
+Mouse Optic Nerve FIB-SEM - Wild-type control (EMPIAR-11240),Mouse Optic Nerve Plp1/Mag Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11240,0,1,1
+Mouse Optic Nerve OPC SBF-SEM Series,Mouse Optic Nerve SBF-SEM,Mendeley Data,https://doi.org/10.17632/smkd8cd8mk,0,9,9
+Mouse Organ of Corti Cochlea SBF-SEM - 200um Subvolume,Mouse Cochlea SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/HuaLab-CBA-mice-cochlea-mid-7w-200um-603df5810100001a0045ca5e/view,0,1,1
+Mouse Pacinian Corpuscle FIB-SEM,Mouse Mechanosensory End Organs FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.23969112,0,1,1
+"Mouse pancreas and liver, high-fat vs control diet",Mouse Pancreas and Liver SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,15,0,15
+Mouse Pancreas Lobe 3D EM Volume,Mouse Pancreas Tuft Cell Serial-Section EM,BioImage Archive,https://doi.org/10.6019/S-BIAD3895,0,1,1
+Mouse Pancreas Pancreatitis TEM,Mouse Pancreas Pancreatitis and Tumour TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3894,108,0,108
+"Mouse pancreas, liver and small intestine, high-fat vs control diet","Mouse Pancreas, Liver and Intestine SEM",BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,11,0,11
+Mouse Pancreatic Islet Beta-Cell Aging TEM,Mouse Pancreatic Islet Beta-Cell Aging TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3726,60,0,60
+Mouse Pancreatic Islet SEM,Mouse Pancreatic Islet SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,11,0,11
+Mouse Pancreatic Islet TEM,Mouse Pancreatic Islet TEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,40,0,40
+"Mouse pancreatic islet, 18-month-old",Mouse Multi-Organ SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,1,0,1
+"Mouse pancreatic islet, control diet vs calorie restriction",Mouse Pancreatic Islet SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,8,0,8
+"Mouse pancreatic islet, ctrl","Mouse Liver and Pancreatic Islet SEM, glucose-infused",BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,6,0,6
+"Mouse pancreatic islet, treatment1","Mouse Liver and Pancreatic Islet SEM, glucose-infused",BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,5,0,5
+"Mouse pancreatic islet, treatment2","Mouse Liver and Pancreatic Islet SEM, glucose-infused",BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,6,0,6
+Mouse Pancreatic Tumour TEM,Mouse Pancreas Pancreatitis and Tumour TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3894,117,0,117
+Mouse Posterior Parietal Cortex (PPC) SBEM Volume,Mouse Cortical Areas SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2017-04-03_ppcAK99_76x79-5c1cd439010000e66f8c2786/view,0,1,1
+Mouse Posterior Parietal Cortex (PPC-2) SBEM Volume,Mouse Cortical Areas SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/AK_CorrelativeExperiment06469_P57_st003_st004-5c1cd4380100004f6f8c2784/view,0,1,1
+Mouse Primary Somatosensory Cortex (S1) SBEM Volume,Mouse Cortical Areas SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2012-11-23_ex144_st08x2New-5c1cd439010000e66f8c2787/view,0,1,1
+Mouse retina 110629_k0725 SBEM volume,Mouse Retina SBF-SEM (Ding 2016),WEBKNOSSOS,https://webknossos.org/datasets/110629_k0725-5c98db84010000b02339b49b/view,0,1,1
+Mouse Retina e2006 SBEM Volume,Mouse Retina SBF-SEM (Helmstaedter 2013),WEBKNOSSOS,https://webknossos.org/datasets/e2006-5a7c737448d7a73cea3c83ae/view,0,1,1
+"Mouse retina outer plexiform layer FIB-SEM volumes (EM1, EM2)",Mouse Retina Outer Plexiform Layer FIB-SEM,BossDB,https://doi.org/10.60533/BOSS-2021-4MZE,0,2,2
+Mouse retina SBEM volume (100527_k0563),Mouse Retina SBF-SEM (Briggman 2011),WEBKNOSSOS,https://webknossos.org/datasets/100527_k0563-5a7c737448d7a73cea3c83aa/view,0,1,1
+Mouse S1 Cortex SBEM Demo Cutout,Mouse S1 Cortex SBF-SEM Demo,WEBKNOSSOS,https://webknossos.org/datasets/2012-09-28_ex145_07x2_demo-5a7c737448d7a73cea3c83a8/view,0,1,1
+Mouse salivary gland FIB-SEM volume (jrc_mus-salivary-1),Mouse Salivary Gland FIB-SEM,Quilt,https://open.quiltdata.com/b/janelia-cosem-datasets/tree/jrc_mus-salivary-1/,0,1,1
+Mouse Secondary Visual Cortex (V2) SBEM Volume,Mouse Cortical Areas SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/V2_102_l23_ak_straightenedPosthoc-5c1cd4380100004f6f8c2785/view,0,1,1
+Mouse skeletal muscle FIB-SEM volume (jrc_mus-skel-muscle-1),Mouse Skeletal Muscle FIB-SEM,OpenOrganelle,https://openorganelle.janelia.org/datasets/jrc_mus-skel-muscle-1,0,1,1
+Mouse Skeletal Muscle SEM,Mouse Skeletal Muscle SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,19,0,19
+Mouse skin FIB-SEM volume (jrc_mus-skin-2a),Mouse Skin FIB-SEM,OpenOrganelle,https://openorganelle.janelia.org/datasets/jrc_mus-skin-2a,0,1,1
+"Mouse small intestine, 6-month-old",Mouse Multi-Organ SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,3,0,3
+Mouse spermatotubule ATUM-SEM serial sections (EMPIAR-12157),Mouse Spermatotubule SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12157,0,1,1
+Mouse Spinal Cord FIB-SEM Volume - Atl1KI/Reep1-KO mutant,Mouse Spinal Cord Hereditary Spastic Paraplegia FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.20134979,0,1,1
+Mouse Spinal Cord FIB-SEM Volume - Wild-type,Mouse Spinal Cord Hereditary Spastic Paraplegia FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.20134574,0,1,1
+Mouse thymus FIB-SEM volume (jrc_mus-thymus-2a),Mouse Thymus FIB-SEM,OpenOrganelle,https://openorganelle.janelia.org/datasets/jrc_mus-thymus-2a,0,1,1
+Mouse V1 Layer 2/3 P105 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Mouse V1 Layer 2/3 P523 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Mouse V1 Layer 4 P105 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Mouse V1 Layer 4 P523 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Mouse V1 Layer 4 P6 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Mouse V1 ssTEM Volume,Mouse Visual Cortex Connectomics TEM,WEBKNOSSOS,https://webknossos.org/datasets/lee16-5c61b71c0100003f3b177de3/view,0,1,1
+Mouse V2 L2/3 SBEM Volume,Mammalian Cortex Connectomics,WEBKNOSSOS,https://webknossos.org/datasets/V2_102_l23_ak_straightenedPosthoc_segmentation_v1_typ_soma_excl_v1-62b18081010000f50075d7c3/view,0,1,1
+Mouse Ventral Cochlear Nucleus SBF-SEM Volume,Mouse Cochlear Nucleus SBF-SEM,BossDB,https://doi.org/10.60533/boss-2023-yw23,0,1,1
+Multi-organ postmortem COVID-19 TEM,Human Multi-Organ COVID-19 Postmortem TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3706,6,0,6
+Multiregional blood-brain barrier phenotyping identifies the prefrontal cortex as the most vulnerable region to ageing in mice - Dataset,Mouse Brain Blood-Brain Barrier Aging TEM,Zenodo,https://doi.org/10.5281/zenodo.18669865,174,0,174
+Multiscale human liver tissue sample volume electron microscopy,Human Liver SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-13356,0,1,1
+Multisite adhesion of Borrelia burgdorferi to the blood capillary surface in dorsal skin,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30042646.v1,0,1,1
+"MuTk2_112 - POLG-mutator, TWNK overexpressor",Mouse Heart mtDNA Replication TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3725,5,0,5
+"MuTk2_113 - POLG-mutator, TWNK overexpressor",Mouse Heart mtDNA Replication TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3725,10,0,10
+MuTk2_116 - Wild-type,Mouse Heart mtDNA Replication TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3725,10,0,10
+"MuTk2_132 - POLG-mutator, TWNK wild-type",Mouse Heart mtDNA Replication TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3725,7,0,7
+Nematode pharyngeal connectome ssTEM (BossDB),Nematode Pharyngeal Connectome TEM,BossDB,https://doi.org/10.60533/BOSS-2013-XKV2,0,2,2
+Newborn Mouse Optic Nerve SBF-SEM ROI 00-1 to 00-3,Mouse Optic Nerve SBF-SEM,Mendeley Data,https://doi.org/10.17632/6pf5fhzgwg,0,3,3
+Newborn Mouse Optic Nerve SBF-SEM ROI 00-3,Mouse Optic Nerve SBF-SEM,Mendeley Data,https://doi.org/10.17632/wbbk78nc7f,0,1,1
+Newborn Mouse Optic Nerve SBF-SEM ROI 01-1,Mouse Optic Nerve SBF-SEM,Mendeley Data,https://doi.org/10.17632/5955942vc3,0,1,1
+NIH-3T3 Control & OPA1-KD FIB-SEM Volumes,NIH-3T3 Mitochondrial Cristae Control & OPA1 Knockdown FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11449,0,3,3
+Nocodazole-Treated HeLa Cell FIB-SEM Volume (jrc_hela-nz-1),Nocodazole-Treated HeLa Cell FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24944784,0,1,1
+Nocodazole-Treated HeLa Cell FIB-SEM Volume (jrc_hela-nz-2),Nocodazole-Treated HeLa Cell FIB-SEM (jrc_hela-nz-2),OpenOrganelle,https://openorganelle.janelia.org/datasets/jrc_hela-nz-2,0,1,1
+Non-diabetic Human Capillary 1,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164516,0,1,1
+Non-diabetic Human Capillary 2,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164547,0,1,1
+Non-diabetic Human Capillary 3,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164557,0,1,1
+Non-diabetic Mouse 1 Capillary 1,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15163921,0,1,1
+Non-diabetic Mouse 1 Capillary 2,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15163977,0,1,1
+Non-diabetic Mouse 1 Capillary 3,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164033,0,1,1
+Non-diabetic Mouse 2 Capillary 1,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164075,0,1,1
+Non-diabetic Mouse 2 Capillary 2,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164081,0,1,1
+Non-diabetic Mouse 2 Capillary 3,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164210,0,1,1
+Non-diabetic Mouse 3 Capillary 1,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164220,0,1,1
+Non-diabetic Mouse 3 Capillary 2,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164263,0,1,1
+Non-diabetic Mouse 3 Capillary 3,Mouse & Human Diabetic Retinal Capillary SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.15164279,0,1,1
+NOX5 transgenic (2020),Podocyte-Specific NOX5 Transgenic Mouse Diabetic Nephropathy TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3715,40,0,40
+NOX5 transgenic (2025),Podocyte-Specific NOX5 Transgenic Mouse Diabetic Nephropathy TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3715,110,0,110
+nPOD autoantibody-positive pancreas nanotomy,Human Pancreatic Islet Type 1 Diabetes STEM,BioImage Archive,https://doi.org/10.17867/10000168,17,0,17
+nPOD control pancreas nanotomy,Human Pancreatic Islet Type 1 Diabetes STEM,BioImage Archive,https://doi.org/10.17867/10000168,21,0,21
+nPOD type 1 diabetes pancreas nanotomy,Human Pancreatic Islet Type 1 Diabetes STEM,BioImage Archive,https://doi.org/10.17867/10000168,24,0,24
+nPOD type 2 diabetes pancreas nanotomy,Human Pancreatic Islet Type 1 Diabetes STEM,BioImage Archive,https://doi.org/10.17867/10000168,2,0,2
+Obese Human Liver SEM,Obese Human Liver SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,4,0,4
+"Opisthorchis-infected, high-fat/high-fructose diet",Hamster Liver Opisthorchis Infection NAFLD TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3711,11,0,11
+"Opisthorchis-infected, normal chow",Hamster Liver Opisthorchis Infection NAFLD TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3711,11,0,11
+Overexpression of an ALS-associated FUS mutation in C. elegans disrupts NMJ morphology and leads to defective neuromuscular transmission,C. elegans Neuromuscular Junction ALS-FUS ET,Dryad,https://doi.org/10.5061/dryad.9ghx3ffg0,0,6,6
+P. pacificus pharynx ssTEM volume (webKnossos),Nematode Pharyngeal Connectome TEM,WEBKNOSSOS,https://webknossos.org/datasets/bumbarger13-5ca4dd07010000a02931d708/view,0,1,1
+P14 (d1) L4 Barrel Cortex,Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/P14_L4_AG_15-09-2015-5fce19f10100007c00cfaff0/view,0,1,1
+P14 (d2) L4 Barrel Cortex,Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/P14_L4_n2_AG_08-12-2016-5fce19f10100007c00cfafef/view,0,1,1
+P14 L2/3 Barrel Cortex,Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/P14_L23_AG_v3_17-03-2016-5fce1a690100007c00cfaff2/view,0,1,1
+P5 L4 Barrel Cortex,Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2020-06-12-p5-align2-600590b70100001900bd2d33/view,0,1,1
+P7 (d1) L4 Barrel Cortex,Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/P7_L4_AG_27-05-2017_v1-5fce18c50100001900cfafec/view,0,1,1
+"P7 (d2, control) L4 Barrel Cortex",Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2020-05-19-st045-align-600590860100008900bd2d31/view,0,1,1
+P7 Mouse Heart FIB-SEM Volume,P7 Mouse Heart FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24020919,0,1,1
+P7 Mouse Hippocampus FIB-SEM Volume,P7 Mouse Hippocampus FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24085176,0,1,1
+P7 Mouse Kidney,P7 Mouse Kidney FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24020799,0,1,1
+P7 Mouse Liver,P7 Mouse Liver FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24051189,0,1,1
+P7 Mouse Pancreas,P7 Mouse Pancreas FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.23411843,0,1,1
+P7 Mouse Skin,P7 Mouse Skin FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24085269,0,1,1
+P7 Mouse Thymus,P7 Mouse Thymus FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.24085287,0,1,1
+P9 (d1) L4 Barrel Cortex,Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/AG_P9_L4_30-06-2016-5fce193d0100006000cfafed/view,0,1,1
+P9 (d2) L4 Barrel Cortex,Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/P9_L4_OldVerios_24-12-2015_v1-5fce19b50100007a00cfafee/view,0,1,1
+"P9 (d3, control) L4 Barrel Cortex",Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2020-06-06-st048-align-600590850100008000bd2d30/view,0,1,1
+P9 L2/3 Barrel Cortex,Developing Mouse Barrel Cortex Interneuron Synaptogenesis SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/2016-07-07_P9_L23_v1-5fce1a2d0100007a00cfaff1/view,0,1,1
+Pancreas - ADH-neg Control,Deer Mouse Alcohol-Induced Liver & Pancreas Injury TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3723,3,0,3
+Pancreas - ADH-neg Ethanol-fed,Deer Mouse Alcohol-Induced Liver & Pancreas Injury TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3723,7,0,7
+Pancreas - ADH-pos Control,Deer Mouse Alcohol-Induced Liver & Pancreas Injury TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3723,2,0,2
+Pancreas - ADH-pos Ethanol-fed,Deer Mouse Alcohol-Induced Liver & Pancreas Injury TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3723,8,0,8
+Paramecium Macronucleus TEM,Paramecium Macronucleus TEM,Institutional repository,https://doi.org/10.6075/j0nz86k4,1,0,1
+Parlakgul 2022 Mouse Liver FIB-SEM,Mouse Liver FIB-SEM (Parlakgul 2022),EMPIAR,https://doi.org/10.6019/EMPIAR-10791,0,4,4
+Parlakgul 2024 Mouse Liver FIB-SEM Volumes,Mouse Liver Hepatic ER and Mitochondria FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12017,0,6,6
+PAV-1 Cell Line,PAV-1 Rat Hepatic Stellate Cell Line TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3724,30,0,30
+PAV-1 Cell Line - Mycoplasma Contamination,PAV-1 Rat Hepatic Stellate Cell Line TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3724,48,0,48
+Pdx1-KO and control islets,Mouse Pancreatic Islet Pdx1 Knockout TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3718,10,0,10
+Performing Correlative Light and Electron Microscopy to reveal the structural organization and location of alpha-synuclein aggregation hotspots inside the neuron.,Mouse Neuron Alpha-Synuclein Aggregation,EMPIAR,https://doi.org/10.6019/EMPIAR-11066,0,7,7
+Pericyte targeting by Borrelia burgdorferi,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30042550.v1,0,1,1
+Phelps et al. 2021 Drosophila Ventral Nerve Cord,Drosophila Ventral Nerve Cord TEM,BossDB,https://doi.org/10.60533/BOSS-2021-T21Z,0,1,1
+Plant SBF-SEM - Tobacco Leaf Chloroplast,Tobacco Leaf Chloroplast SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11831,0,1,1
+Plantorganelle Hunter EM images,Plant Leaf Organelle TEM,Science Data Bank,https://doi.org/10.57760/sciencedb.01335,929,0,929
+Plasma Cell Centriole Electron Tomography,Human Plasma Cell Centriole ET,EMPIAR,https://doi.org/10.6019/EMPIAR-11505,0,24,24
+Plasma membrane remodeling determines adipocyte expansion and mechanical adaptability - CAV1 knockout,Mouse Adipocyte Caveolin-1 KO/WT/Y14F Immunogold TEM,Zenodo,https://doi.org/10.5281/zenodo.13880353,17,0,17
+Plasma membrane remodeling determines adipocyte expansion and mechanical adaptability - Cav1 Y14F,Mouse Adipocyte Caveolin-1 KO/WT/Y14F Immunogold TEM,Zenodo,https://doi.org/10.5281/zenodo.13880329,27,0,27
+Plasma membrane remodeling determines adipocyte expansion and mechanical adaptability - Wild-type,Mouse Adipocyte Caveolin-1 KO/WT/Y14F Immunogold TEM,Zenodo,https://doi.org/10.5281/zenodo.13880307,17,0,17
+Plasmodium berghei Male Gamete SBF-SEM,Plasmodium berghei Male Gamete Formation SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11710,0,2,2
+Plasmodium berghei ookinete,Plasmodium berghei Ookinete FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12956,0,1,1
+Postmortem COVID-19 kidney ultrastructure,Human Kidney COVID-19 Postmortem TEM (2),BioImage Archive,https://doi.org/10.6019/S-BIAD3706,2,0,2
+Postmortem COVID-19 lung and liver ultrastructure,Human Lung & Liver COVID-19 Postmortem TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3706,4,0,4
+Postmortem COVID-19 renal ultrastructure,Human Kidney COVID-19 Postmortem TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3706,6,0,6
+Postmortem COVID-19 ultrastructure,Human COVID-19 Postmortem Multi-Organ TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3706,4,0,4
+Potato virus Y coat protein involvement in viral movement,Plant Leaf Potato Virus Y Movement TEM,Zenodo,https://doi.org/10.5281/zenodo.17643798,100,0,100
+Probing the role of synaptic adhesion molecule RTN4RL2 in setting up cochlear connectivity,Mouse Cochlea RTN4RL2 KO SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-13506,0,3,3
+Processed FIB SEM images of a parasitophorous vacuole containing Toxoplasma gondii ΔCAP parasites,Toxoplasma gondii CAP Parasitophorous Vacuole FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10324,0,1,1
+"Processed FIB SEM images of a parasitophorous vacuole containing Toxoplasma gondii ΔCAP parasites, complemented with CAP",Toxoplasma gondii CAP Parasitophorous Vacuole FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10327,0,1,1
+Quantitative subcellular reconstruction reveals a lipid mediated inter-organelle biogenesis network,Cal51 Cell Organelle Biogenesis Knockout FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11695,0,6,6
+Rabbit Retina e1088 SBEM Volume,Rabbit Retina SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/e1088_large-5c010a3c010000f6145257c8/view,0,1,1
+RAEM random-access electron microscopy for revisitable 3D imaging,RAEM Revisitable 3D Imaging SEM,BossDB,https://doi.org/10.60533/boss-2026-mw96,2,2,4
+Rat Medial Entorhinal Cortex P25 Motortile 1,Rat Medial Entorhinal Cortex SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/HS_st218_MT1-5a7c738a48d7a73cea3c83c2/view,0,1,1
+REEP3 and REEP4 determine the tubular morphology of the endoplasmic reticulum during mitosis,HeLa Cell REEP3/4 Knockdown SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10994,0,2,2
+Renal biopsy TEM - light chain deposition disease,Human Kidney Light Chain Deposition Disease TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3717,6,0,6
+Renal Biopsy TEM - Membranous Glomerulonephritis,Human Membranous Glomerulonephritis Kidney TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3717,6,0,6
+Rhesus Macaque V1 Layer 2/3 P3000 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Rhesus Macaque V1 Layer 2/3 P7 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Rhesus Macaque V1 Layer 2/3 P75 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Rhesus Macaque V1 Layer 4 P3000 EM Volume,Mouse & Macaque Visual Cortex Synapse Development SEM,BossDB,https://doi.org/10.60533/boss-2023-0s41,0,1,1
+Rules of engagement for cohesin and condensin complexes during mitotic chromosome formation,Mitotic Chromosome Condensin-Cohesin SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11919,0,4,4
+Sample preparation and data collection for serial block face scanning electron microscopy of mammalian cell monolayers.,Encephalitozoon intestinalis-Infected Vero Cell SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11683,0,11,11
+SARS-CoV-2 infection in human adult lung alveolar stem cells,Human Alveolar Stem Cell Culture SARS-CoV-2 TEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10533,780,0,780
+SARS-CoV-2-infected Vero Cell FIB-SEM Volume,SARS-CoV-2-Infected Vero Cell FIB-SEM,OpenOrganelle,https://doi.org/10.25378/janelia.16638316,0,1,1
+SBF SEM images of a notoroid in longitudinal orientation containing TNE-ZsGreen+ notochord cells (Fig S26 part 1),Human Notoroid SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12162,0,10,10
+SBF SEM images of a notoroid in longitudinal orientation containing TNE-ZsGreen+ notochord cells (Fig S26 part 2),Human Notoroid SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12163,0,7,7
+SBF SEM images of a notoroid in longitudinal orientation containing TNE-ZsGreen+ notochord cells (Fig S26 part 3),Human Notoroid SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12164,0,3,3
+SBF SEM images of a notoroid in transverse orientation (Fig S24),Human Notoroid SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12161,0,3,3
+SBF SEM images of a Zebrafish hindbrain containing several Toxoplasma gondii tachizoites at different stages of replication,Zebrafish Hindbrain Toxoplasma Infection,EMPIAR,https://doi.org/10.6019/EMPIAR-10463,0,5,5
+SBF SEM images of a Zebrafish hindbrain macrophage containing 2 Toxoplasma gondii tachizoites,Zebrafish Hindbrain Toxoplasma Infection,EMPIAR,https://doi.org/10.6019/EMPIAR-10461,0,3,3
+SBF SEM of Human term placental villi,Human Placental Villi SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10967,0,11,11
+SBF-SEM and FIB-SEM datasets and models of human macrophage and A431 cells,Human Macrophage & A431 Nuclear-Envelope Lipid Droplet EM,EMPIAR,https://doi.org/10.6019/EMPIAR-13420,0,7,7
+"SBF-SEM Dataset of ""Breaking Free from the Acquisition Dogma for Volume Electron Microscopy""",Mouse Brain VEM Denoising SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.17082440,0,5,5
+SBF-SEM Dataset of Guinea Pig Fetal Day 55-59 Psoas Muscle,Guinea Pig Fetal Psoas Muscle SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.1435581,0,6,6
+SBF-SEM datasets of chaetoblasts constructing bristles in Platynereis dumerilii,Platynereis dumerilii Chaetoblast SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11851,0,3,3
+"SBF-SEM datasets related to the manuscript ""Trans-cellular tunnels induced by the fungal pathogen Candida albicans facilitate invasion through successive epithelial cells without host damage"" by Lachat et al, 2022.",Candida albicans Epithelial Invasion SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.5776104,0,11,11
+"SBF-SEM Donor 100, Depth 10um, Representative area 1",Human Brain Immersion-Fixation Brain-Banking Preservation,Zenodo,https://doi.org/10.5281/zenodo.13888106,0,2,2
+"SBF-SEM Donor 100, Depth 10um, Representative Area 2",Human Brain Immersion-Fixation Brain-Banking Preservation,Zenodo,https://doi.org/10.5281/zenodo.13888109,0,1,1
+"SBF-SEM Donor 100, Depth 20um, Representative Area 1",Human Brain Immersion-Fixation Brain-Banking Preservation,Zenodo,https://doi.org/10.5281/zenodo.13888113,0,1,1
+"SBF-SEM Donor 100, Depth 20um, Representative Area 2",Human Brain Immersion-Fixation Brain-Banking Preservation,Zenodo,https://doi.org/10.5281/zenodo.13888116,0,1,1
+"SBF-SEM Donor 57, Depth 25um",Human Brain Immersion-Fixation Brain-Banking Preservation,Zenodo,https://doi.org/10.5281/zenodo.13888085,0,1,1
+"SBF-SEM micrographs of A. algerae microsporidia spores, 45 min germination",Anncaliia algerae Spore Germination SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11368,0,1,1
+"SBF-SEM micrographs of A. algerae microsporidia spores, 5 min germination",Anncaliia algerae Spore Germination SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11367,0,3,3
+"SBF-SEM micrographs of A. algerae spores, Ungerminated",Anncaliia algerae Ungerminated Spores SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11369,0,1,1
+SBF-SEM of early schizont-stage malaria parasite infected red blood cell,Plasmodium falciparum-Infected Red Blood Cell SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10054,0,1,1
+SBF-SEM of late schizont-stage malaria parasite infected red blood cell,Plasmodium falciparum-Infected Red Blood Cell SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10055,0,1,1
+SBF-SEM of ring-stage malaria parasite infected red blood cell,Plasmodium falciparum-Infected Red Blood Cell SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10052,0,1,1
+SBF-SEM of the Trichuris muris Stichosome,Trichuris muris Stichosome SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.3601280,0,2,2
+SBF-SEM of trophozoite-stage malaria parasite infected red blood cell,Plasmodium falciparum-Infected Red Blood Cell SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10053,0,1,1
+SBFSEM imaging of Leishmania haptomonad-like cells attached to plastic,Leishmania mexicana Haptomonad Adhesion,EMPIAR,https://doi.org/10.6019/EMPIAR-11464,0,1,1
+SBFSEM imaging of Leishmania haptomonads on the stomodeal valve in the sand fly,Leishmania mexicana Haptomonad Adhesion,EMPIAR,https://doi.org/10.6019/EMPIAR-11463,0,1,1
+Scramble control,Mouse MIN6 Beta Cell miR-146a-5p Inflammation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3719,8,0,8
+Scramble control - cytokine-treated,Mouse MIN6 Beta Cell miR-146a-5p Inflammation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3719,8,0,8
+SEM images of Mouse brain tissue sample,Mouse Brain FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12581,0,1,1
+Serial Block Face - Scanning Electron Microscopy of brain microvessels with/without P. falciparum egress products,Human Brain Microvessel Model P. falciparum SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-12967,0,2,2
+Serial Block Face Scanning Electron Micrscopy dataset of fetal day 64 guinea pig psoas muscle in transverse,SBF-SEM Reconstruction Guide Example Volumes,EMPIAR,https://doi.org/10.6019/EMPIAR-10092,0,1,1
+Serial Block Face Scanning Electron Micrscopy dataset of the optic lobe from an adult locust,SBF-SEM Reconstruction Guide Example Volumes,EMPIAR,https://doi.org/10.6019/EMPIAR-10152,0,1,1
+Serial Block Face SEM of HeLa cell pellet with 10 nm pixels and 50 nm slices (benchmark dataset),HeLa Cell Pellet SBF-SEM Benchmark,EMPIAR,https://doi.org/10.6019/EMPIAR-10094,0,1,1
+Serial Block Face SEM of HeLa cell pellet with 5 nm pixels and 50 nm slices (benchmark dataset),HeLa Cell Pellet SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10106,0,1,1
+Serial section electron tomography of a Leishmania haptomonad on the stomodeal valve in the sand fly,Leishmania mexicana Haptomonad Adhesion,EMPIAR,https://doi.org/10.6019/EMPIAR-11467,0,1,1
+Serial section electron tomography of a Leishmania haptomonad-like cell attached to plastic,Leishmania mexicana Haptomonad Adhesion,EMPIAR,https://doi.org/10.6019/EMPIAR-11468,0,1,1
+Serial section images of Oikopleura dioica larva using SBF-SEM - Larva,Oikopleura dioica SBF-SEM,Dryad,https://doi.org/10.5061/dryad.dbrv15dzh,0,1,1
+Serial Section Transmission Electron Microscopy,Human Brain Immersion-Fixation Brain-Banking Preservation,Zenodo,https://doi.org/10.5281/zenodo.13887963,0,2,2
+SM WT1 8 nm Lysosome Combined FIB-SEM Volume,SM WT1 Lysosome FIB-SEM,WEBKNOSSOS,https://webknossos.org/datasets/SM_WT1_8nm_lysosome_combined-661d83c20100008c0298c110/view,0,1,1
+SmartEM Mouse Cortex 10x10 Fused EM Volume,Mouse Cortex SEM,BossDB,https://doi.org/10.60533/boss-2023-4w35,0,1,1
+Spatial Intra- and Intercellular Alignment of Respiratory Cilia and its Relation to Function,Human Respiratory Cilia SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10312,0,16,16
+SPIONs-PEG treated and control rat organ TEM micrographs,Rat Multi-Organ Iron Oxide Nanocluster Biodistribution TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3709,701,0,701
+Stitched Human Intestinal Organoid TEM,Human Intestinal Organoid SARS-CoV-2 TEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10404,2,0,2
+Subcellular architecture collodaria photosymbiosis,Collodaria Photosymbiosis FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10738,0,7,7
+Subcellular connectomic analyses of energy networks in striated muscle,Mouse Striated Muscle Mitochondrial Network FIB-SEM,Zenodo,https://zenodo.org/records/3936061,0,3,3
+"Supporting data for ""Socially regulated developmental plasticity in the color pattern of an anemonefish""",Anemonefish Skin TEM,Zenodo,https://doi.org/10.5281/zenodo.16400562,31,0,31
+Synapses in transmission electron micrographs,Mouse Hippocampal Synapse TEM,Zenodo,https://doi.org/10.5281/zenodo.14236382,13,0,13
+Targeted volume Correlative Light and Electron Microscopy of environmental marine microorganisms,Ensiculifera tyrrhenica Dinoflagellate FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-11399,0,1,1
+TEM Image Dataset for Mitochondrial Morphology Analysis in Chemotherapy Response and Cancer Metastasis Studies,TNBC Mitochondrial Chemotherapy-Response TEM,Zenodo,https://doi.org/10.5281/zenodo.15608455,1742,0,1742
+TEM images of a Zebrafish hindbrain cells containing Toxoplasma gondii tachizoites,Zebrafish Hindbrain Toxoplasma Infection,EMPIAR,https://doi.org/10.6019/EMPIAR-10460,0,3,3
+TEM Mitochondria Segmentation Dataset for Triple Negative Breast Cancer Chemotherapy Analysis,TNBC Mitochondrial Chemotherapy-Response TEM,Zenodo,https://doi.org/10.5281/zenodo.15602048,209,0,209
+TEM tomograms of Drosophila tracheal terminal cells during subcellular tube formation,Drosophila Tracheal Terminal Cell ET,EMPIAR,https://doi.org/10.6019/EMPIAR-10434,0,6,6
+Three-dimensional nanostructure of an intact microglia cell,Mouse Hippocampal Microglia SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10201,0,2,2
+Three-Dimensional Reconstructions of Mouse Circumvallate Taste Buds Using Serial Blockface Scanning Electron Microscopy: I. Cell Types and the Apical Region of the Taste Bud,Mouse Circumvallate Taste Bud SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10331,0,2,2
+Transcellular migration of Borrelia burgdorferi through a lymphatic capillary endothelial cell,Borrelia burgdorferi in Mouse Skin Vasculature SBF-SEM,figshare,https://doi.org/10.6084/m9.figshare.30043204.v1,0,1,1
+Transmission Electron Microscopy Tilt Series Data of Chondrocyte Primary Cilia in situ,Chicken Chondrocyte Primary Cilia ET,Zenodo,https://doi.org/10.5281/zenodo.4592614,0,1,1
+Tuwongella immobilis FIB-SEM Volume,Planctomycetes Bacteria FIB-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10554,0,1,1
+U2-OS Cell SEM,U2-OS Cell SEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/bioimages/studies/S-BIAD3923,5,0,5
+"Ultrastructure description of the spermatozoa of the Amazon bonytongue Arapaima gigas (Schinz, 1822)",Arapaima gigas Spermatozoa,Zenodo,https://doi.org/10.5281/zenodo.8359643,20,0,20
+Understanding airspace in leaves: 3D anatomy and directional tortuosity,Eucalyptus Leaf Airspace SBF-SEM,Zenodo,https://doi.org/10.5281/zenodo.4766931,0,4,4
+Undifferentiated Adipose Progenitors,Mouse Adipose Progenitor Differentiation TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3728,29,0,29
+"Uninfected control, high-fat/high-fructose diet",Hamster Liver Opisthorchis Infection NAFLD TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3711,12,0,12
+"Uninfected control, normal chow",Hamster Liver Opisthorchis Infection NAFLD TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3711,11,0,11
+"Venous puncture wound thrombi, 1, 5, 20 min post-puncture, 100 nm XY raw images, 20 nm XY pixels every 20 micons, 3 nm wide area TEM montages at selected depth",Mouse Venous Puncture Thrombus SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10785,0,18,18
+Ventilation-induced changes in pulmonary microarchitecture and gene-expression profiles in SP-B deficient mice,Mouse Lung Alveolar Tight Junction FIB-SEM,Zenodo,https://doi.org/10.5281/zenodo.16782623,0,2,2
+Vero Cell Culture Image Dataset,Vero E6 Cell Culture FBS Variation TEM,Zenodo,https://doi.org/10.5281/zenodo.17928456,117,0,117
+Volume electron microscopy reveals bacterial endosymbiosis within host mitochondria,Bacterial Endosymbiosis in Host Mitochondria vEM,BioImage Archive,https://www.ebi.ac.uk/biostudies/studies/S-BIAD2413,0,13,13
+volume EM dataset of the 5-day-old Mnemiopsis leidyi aboral organ,Mnemiopsis leidyi Aboral Organ ssET,EMPIAR,https://doi.org/10.6019/EMPIAR-13030,0,1,1
+WDR35 Periciliary Vesicle Tomograms (Figure 7 source data),Mouse Fibroblast Wdr35 Periciliary Vesicle ET,Dryad,https://doi.org/10.5061/dryad.m37pvmd33,0,5,5
+White et al. 1986 C. elegans N2U Nerve Ring,C. elegans Nervous System Connectome TEM,BossDB,https://doi.org/10.60533/boss-1986-745j,0,1,1
+Whole-body integration of gene expression and single-cell morphology,Platynereis dumerilii Whole-Body Larva SBF-SEM,EMPIAR,https://doi.org/10.6019/EMPIAR-10365,0,1,1
+Wild-type (2020),Podocyte-Specific NOX5 Transgenic Mouse Diabetic Nephropathy TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3715,38,0,38
+"Wild-type, regular diet (2025)",Podocyte-Specific NOX5 Transgenic Mouse Diabetic Nephropathy TEM,BioImage Archive,https://doi.org/10.6019/S-BIAD3715,43,0,43
+Wilson 2019 Mouse Cerebellum ATUM-SEM Volumes,Mouse Cerebellum Postnatal Development SEM,BossDB,https://doi.org/10.60533/BOSS-2019-KMFO,0,2,2
+Witvliet 2020 Dataset 1 L1 C. elegans Brain,C. elegans Brain Postnatal Development,BossDB,https://doi.org/10.60533/BOSS-2020-FQI7,0,1,1
+Witvliet 2020 Dataset 2 C. elegans Brain,C. elegans Brain Postnatal Development,BossDB,https://doi.org/10.60533/BOSS-2020-FQI7,0,1,1
+Witvliet 2020 Dataset 3 L1 C. elegans Brain,C. elegans Brain Postnatal Development,BossDB,https://doi.org/10.60533/BOSS-2020-FQI7,0,1,1
+Witvliet 2020 Dataset 4 C. elegans Brain,C. elegans Brain Postnatal Development,BossDB,https://doi.org/10.60533/BOSS-2020-FQI7,0,1,1
+Witvliet 2020 Dataset 5 L2 C. elegans Brain,C. elegans Brain Postnatal Development,BossDB,https://doi.org/10.60533/BOSS-2020-FQI7,0,1,1
+Witvliet 2020 Dataset 6 L3 C. elegans Brain,C. elegans Brain Postnatal Development,BossDB,https://doi.org/10.60533/BOSS-2020-FQI7,0,1,1
+Witvliet 2020 Dataset 7 Young Adult C. elegans Brain,C. elegans Brain Postnatal Development,BossDB,https://doi.org/10.60533/BOSS-2020-FQI7,0,1,1
+Witvliet 2020 Dataset 8 Young Adult C. elegans Brain,C. elegans Brain Postnatal Development,BossDB,https://doi.org/10.60533/BOSS-2020-FQI7,0,1,1
+Yim Choe Bae 2024 C. elegans Dauer Nerve Ring TEM,C. elegans Dauer Nerve Ring TEM,BossDB,https://doi.org/10.60533/BOSS-2023-RTPH,0,1,1
+Zebra Finch Brain MagC Correlative Volumes,Zebra Finch Brain MagC Correlative SEM,BossDB,https://doi.org/10.60533/BOSS-2019-B9NV,0,2,2
+Zebra Finch HVC j0256,Zebra Finch HVC SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/j0256-5c051f59010000b538527270/view,0,1,1
+Zebrafish Embryo (sagittal section),Mouse & Zebrafish Virtual Nanoscopy Gigapixel TEM,IDR,https://idr.openmicroscopy.org/study/idr0053/,1,0,1
+Zebrafish Hindbrain Macrophage SBF-SEM,Zebrafish Hindbrain Toxoplasma Infection,EMPIAR,https://doi.org/10.6019/EMPIAR-10462,0,2,2
+Zebrafish Hindbrain ROI01 SBF-SEM,Zebrafish Hindbrain Toxoplasma Infection,EMPIAR,https://doi.org/10.6019/EMPIAR-10464,0,11,11
+Zebrafish lateral-line neuromast SBEM - N1,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_N1-5b4238a61d00004b1d1ab5e2/view,0,1,1
+Zebrafish lateral-line neuromast SBEM - N2,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_N2-5b4238a61d0000c42a1ab5e4/view,0,2,2
+Zebrafish lateral-line neuromast SBEM - T1,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_T1-5b3ce7bb1d0000340240b91b/view,0,1,1
+Zebrafish lateral-line neuromast SBEM - T3,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_T3-5b4238a61d0000c42a1ab5e3/view,0,1,1
+Zebrafish lateral-line neuromast SBEM - T4,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_T4-5b4238a61d0000c42a1ab5e5/view,0,1,1
+Zebrafish lateral-line neuromast SBEM - WT1,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_WT1-5b3ce7bb1d0000340240b921/view,0,1,1
+Zebrafish lateral-line neuromast SBEM - WT2,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_WT2-5b3ce7bb1d0000340240b923/view,0,1,1
+Zebrafish lateral-line neuromast SBEM - WT7,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_WT7-5b3ce7bb1d0000340240b91c/view,0,1,1
+Zebrafish lateral-line neuromast SBEM - WT8,Zebrafish Lateral-Line Neuromast SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/Neuromast_WT8-5b3ce7bb1d0000340240b91f/view,0,1,1
+Zebrafish Macrophage FIB-SEM Volume,Zebrafish Hindbrain Toxoplasma Infection,EMPIAR,https://doi.org/10.6019/EMPIAR-10459,0,1,1
+Zebrafish Spinal Circuit SBF-SEM Volume,Zebrafish Spinal Escape Circuit SBF-SEM,WEBKNOSSOS,https://webknossos.org/datasets/zebrafish_vertebra_250um-6064317a010000740060d95a/view,0,1,1

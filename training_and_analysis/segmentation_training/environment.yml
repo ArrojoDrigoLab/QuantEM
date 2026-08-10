@@ -1,0 +1,42 @@
+# Decoder and adaptation training environment.
+#
+# Reported runs used a single NVIDIA RTX 4090 per arm, with four arms in parallel,
+# 2-5 hours per arm depending on step budget. This is a different torch stack from
+# pretraining; see ../foundation_training/environment.yml.
+name: quantem-segmentation-training
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - scikit-image      # clDice skeletonisation; a scipy fallback exists but differs
+  - pillow
+  - tifffile
+  - imagecodecs
+  - pyyaml
+  - pytest
+  # Mutex-watershed for the affinity decoder. Without it the post-processing falls
+  # back to connected components, which changes instance metrics — conda-forge only,
+  # the PyPI package of the same name is unrelated.
+  - affogato
+  - pip
+  - pip:
+      # Torch comes from PyTorch's own index, not conda: conda-forge has no CUDA 12.4
+      # build of 2.5.1, which is what the reported runs used; conda-forge resolves to
+      # a different CUDA build.
+      - --extra-index-url https://download.pytorch.org/whl/cu124
+      - torch==2.5.1
+      - torchvision
+      # Required by the mask2former_query_hf decoder.
+      - transformers
+      # The external baseline encoders (OmniEM, EMCF-MAE, Meta-DINOv3, DINOv2) are timm ViTs,
+      # rebuilt through foundation_baselines.external_vit before their weights are loaded.
+      - timm
+
+# Encoders are loaded through foundation_training's checkpoint index, so that folder must be
+# importable — add it to PYTHONPATH, or install it into this environment.
+#
+# Rebuilding a QuantEM encoder backbone additionally imports upstream DINOv3
+# (dinov3.models.vision_transformer), which is obtained and installed separately — see
+# ../foundation_training/environment.yml. The external timm baselines need nothing beyond this file.

@@ -1,0 +1,95 @@
+cff-version: 1.2.0
+title: >-
+  QuantEM: An optimized platform of vision transformer-based models for
+  segmentation and analysis of electron microscopy data
+message: >-
+  If you use QuantEM — the software, the released model weights, or the dataset
+  directory — please cite the preprint under `preferred-citation`.
+type: software
+authors:
+  - given-names: Christopher
+    family-names: Acree
+    orcid: https://orcid.org/0000-0002-3958-1055
+    affiliation: >-
+      Department of Molecular Physiology and Biophysics, Vanderbilt University
+  - given-names: Evan
+    family-names: Krystofiak
+    orcid: https://orcid.org/0000-0002-0043-6977
+    affiliation: Vanderbilt University
+  - given-names: Kathryn
+    family-names: Coate
+    orcid: https://orcid.org/0000-0002-6604-3906
+    affiliation: Vanderbilt University
+  - given-names: Kathleen E.
+    family-names: DelGiorno
+    orcid: https://orcid.org/0000-0002-5749-8394
+    affiliation: Vanderbilt University
+  - given-names: Nathan C. E.
+    family-names: Winn
+    orcid: https://orcid.org/0000-0002-5276-0592
+    affiliation: Vanderbilt University
+  - given-names: Sammy Weiser
+    family-names: Novak
+    orcid: https://orcid.org/0000-0002-8344-9772
+    affiliation: University of Victoria
+  - given-names: Elma
+    family-names: Zaganjor
+    orcid: https://orcid.org/0000-0003-0600-7417
+    affiliation: Vanderbilt University
+  - given-names: Mark A.
+    family-names: Magnuson
+    orcid: https://orcid.org/0000-0002-8824-6499
+    affiliation: Vanderbilt University
+  - given-names: Rafael
+    family-names: Arrojo e Drigo
+    orcid: https://orcid.org/0000-0001-7712-013X
+    affiliation: >-
+      Department of Molecular Physiology and Biophysics, Vanderbilt University
+repository-code: https://github.com/ArrojoDrigoLab/QuantEM
+license: BSD-3-Clause
+keywords:
+  - electron microscopy
+  - image segmentation
+  - vision transformer
+  - foundation model
+  - organelle
+  - cell biology
+preferred-citation:
+  type: article
+  title: >-
+    QuantEM: An optimized platform of vision transformer-based models for
+    segmentation and analysis of electron microscopy data
+  authors:
+    - given-names: Christopher
+      family-names: Acree
+      orcid: https://orcid.org/0000-0002-3958-1055
+    - given-names: Evan
+      family-names: Krystofiak
+      orcid: https://orcid.org/0000-0002-0043-6977
+    - given-names: Kathryn
+      family-names: Coate
+      orcid: https://orcid.org/0000-0002-6604-3906
+    - given-names: Kathleen E.
+      family-names: DelGiorno
+      orcid: https://orcid.org/0000-0002-5749-8394
+    - given-names: Nathan C. E.
+      family-names: Winn
+      orcid: https://orcid.org/0000-0002-5276-0592
+    - given-names: Sammy Weiser
+      family-names: Novak
+      orcid: https://orcid.org/0000-0002-8344-9772
+    - given-names: Elma
+      family-names: Zaganjor
+      orcid: https://orcid.org/0000-0003-0600-7417
+    - given-names: Mark A.
+      family-names: Magnuson
+      orcid: https://orcid.org/0000-0002-8824-6499
+    - given-names: Rafael
+      family-names: Arrojo e Drigo
+      orcid: https://orcid.org/0000-0001-7712-013X
+  journal: bioRxiv
+  year: 2026
+  month: 8
+  doi: 10.64898/2026.08.06.743293
+  url: https://www.biorxiv.org/content/10.64898/2026.08.06.743293v1
+  notes: Preprint

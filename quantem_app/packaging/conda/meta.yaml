@@ -1,0 +1,89 @@
+{% set name = "quantem" %}
+{% set version = "0.1.0.dev0" %}
+
+# Conda recipe for the QuantEM application. Built from the *sdist*, which
+# carries the compiled frontend (quantem/_frontend in the wheel), so the conda
+# build needs no node toolchain.
+#
+# Build it (conda-build is not part of the application environment):
+#
+#   conda build packaging/conda -c conda-forge --output-folder <dir>
+#
+# For a release, point `source.url` at the published sdist and fill in the
+# sha256 (`python -m build` prints the artifact path; `sha256sum dist/quantem-<version>.tar.gz`).
+# For a local build from this checkout, comment out `url`/`sha256` and use the
+# `path` line instead — then run `python -m build --sdist` first so
+# frontend/dist exists and is current.
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.org/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  sha256: 0000000000000000000000000000000000000000000000000000000000000000  # fill in at release
+  # path: ../..   # local alternative to url+sha256
+
+build:
+  # Pure Python + shipped static assets; every binary dependency comes from its
+  # own conda package, so one build serves every platform.
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - quantem = quantem.cli:main
+
+requirements:
+  host:
+    - python >=3.12,<3.14
+    - pip
+    - hatchling
+  run:
+    - python >=3.12,<3.14
+    # web/service layer (loopback only; single user)
+    - django >=5.2,<5.3
+    - djangorestframework >=3.16
+    - django-environ >=0.11
+    - django-cors-headers >=4.0
+    - django-filter >=24.0
+    - waitress >=3.0
+    # numerics & imaging
+    - numpy >=2.0
+    - scipy >=1.11
+    - scikit-image >=0.22
+    - py-opencv >=4.8          # conda name for the cv2 bindings (PyPI: opencv-python-headless)
+    - shapely >=2.0
+    - pillow >=10.0
+    - pandas >=2.0
+    # image I/O
+    - tifffile >=2024.0
+    - imagecodecs >=2024.0
+    - zarr >=3.1,<4.0
+    - numcodecs >=0.16
+    # models
+    - pytorch >=2.0            # conda name (PyPI: torch)
+    - torchvision >=0.15
+    - timm >=0.9
+    - huggingface_hub >=0.23
+    - safetensors >=0.4
+    - pyyaml >=6.0
+    - requests >=2.31
+
+test:
+  imports:
+    - quantem
+    - quantem.cli
+  commands:
+    - quantem --help
+
+about:
+  home: https://github.com/ArrojoDrigoLab/QuantEM
+  summary: QuantEM — organelle segmentation, proofreading, and quantitative analysis for electron microscopy
+  license: BSD-3-Clause
+  license_file: LICENSE
+  doc_url: https://github.com/ArrojoDrigoLab/QuantEM
+  dev_url: https://github.com/ArrojoDrigoLab/QuantEM
+
+extra:
+  recipe-maintainers:
+    - ArrojoDrigoLab

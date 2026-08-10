@@ -1,0 +1,7 @@
+model,Platynereis,NucleiNet,IsletSEM,PlantHunter,Mean(dataset_avg)
+NucleoNet (rescaled),0.925,0.876,0.944,0.692,0.859
+NucleoNet,0.925,0.872,0.932,0.534,0.815
+OmniEM ViT-L,0.250,0.798,0.907,0.946,0.725
+QuantEM ViT-B,0.274,0.730,0.787,0.827,0.654
+OrgSegNet,0.000,0.052,0.444,0.919,0.354
+micro-sam,0.950,0.012,0.001,0.007,0.242

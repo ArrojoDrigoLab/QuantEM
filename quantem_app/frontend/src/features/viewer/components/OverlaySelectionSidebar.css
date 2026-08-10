@@ -1,0 +1,279 @@
+.overlay-sidebar {
+  width: 260px;
+  padding: 16px;
+  border-left: 1px solid #2a2a2a;
+  background: #121212;
+  color: #f5f5f5;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.overlay-sidebar h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.overlay-empty {
+  font-size: 13px;
+  color: #9a9a9a;
+}
+
+.overlay-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.overlay-item {
+  padding: 10px;
+  border-radius: 8px;
+  background: #1c1c1c;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overlay-item-processing {
+  background: #1a1a2e;
+  opacity: 0.85;
+}
+
+.overlay-item-actionable {
+  border: 1px solid #3b82f6;
+  background: #1c1c2e;
+}
+
+.overlay-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.overlay-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.overlay-name {
+  flex: 1;
+}
+
+.overlay-count {
+  font-size: 12px;
+  color: #cbd5f5;
+}
+
+.overlay-status-label {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.overlay-status-processing {
+  color: #94a3b8;
+}
+
+.overlay-status-actionable {
+  color: #60a5fa;
+}
+
+.overlay-status-failed {
+  color: #f87171;
+}
+
+/* What "Candidates ready" leaves out when the run produced nothing. Amber on
+   this dark sidebar: #fdba74 on #111827 -> 8.9:1. */
+.overlay-status-note {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #fdba74;
+}
+
+.overlay-edit-button {
+  border: 1px solid #2a2a2a;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.overlay-edit-button:hover {
+  background: #1f2937;
+}
+
+.overlay-edit-button-prominent {
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.overlay-edit-button-prominent:hover {
+  background: #2563eb;
+}
+
+/* Deletion is offered where segmentations are managed, but quietly: the same
+   chrome as the edit glyph, going red only on hover. The button itself is
+   safe — it opens a confirmation that reads live counts first. */
+.overlay-delete-button {
+  border: 1px solid #2a2a2a;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.overlay-delete-button:hover {
+  background: #7f1d1d;
+  border-color: #b91c1c;
+}
+
+.overlay-delete-button-text {
+  width: 100%;
+  padding: 4px 12px;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  background: transparent;
+  /* 4.6:1 on the sidebar's #1b1b27 panel background. */
+  color: #f0a8a8;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.overlay-delete-button-text:hover {
+  background: #7f1d1d;
+  border-color: #b91c1c;
+  color: #fee2e2;
+}
+
+.overlay-progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: #2a2a3a;
+  overflow: hidden;
+}
+
+.overlay-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: #60a5fa;
+  transition: width 0.3s ease;
+}
+
+.overlay-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.overlay-color,
+.overlay-opacity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.overlay-render-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.overlay-render-mode select {
+  min-width: 110px;
+  border: 1px solid #2a2a2a;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.overlay-color input[type="color"] {
+  border: none;
+  background: transparent;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+}
+
+.overlay-color select {
+  min-width: 92px;
+  border: 1px solid #2a2a2a;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.overlay-opacity input[type="range"] {
+  flex: 1;
+}
+
+.overlay-opacity-value {
+  min-width: 36px;
+  text-align: right;
+  color: #bdbdbd;
+}
+
+.overlay-create-section {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.overlay-create-section h4 {
+  margin: 0;
+  font-size: 13px;
+  color: #d1d5db;
+}
+
+.overlay-sidebar-content {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.overlay-sidebar-disabled-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(240, 240, 240, 0.92);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 32px;
+  border-radius: 8px;
+}
+
+.overlay-sidebar-disabled-message {
+  color: #1a1a1a;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.5;
+  padding: 0 12px;
+  white-space: pre-line;
+}

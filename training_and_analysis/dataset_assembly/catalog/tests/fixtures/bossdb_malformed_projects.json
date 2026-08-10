@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "type": "projects",
+      "attributes": {
+        "Title": "Missing project ID",
+        "Public": true,
+        "Status": "live"
+      }
+    },
+    {
+      "type": "projects",
+      "attributes": "not an object"
+    },
+    "not an object"
+  ]
+}

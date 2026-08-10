@@ -1,0 +1,88 @@
+{
+  "data": [
+    {
+      "type": "projects",
+      "id": "38f68633763225e4da5bae77",
+      "attributes": {
+        "ID": "lee2016",
+        "Name": "Lee et al. 2016",
+        "Title": "Electron Microscopy data used in a study of an excitatory network in Mouse V1.",
+        "Description": "The scientists measured receptive-field properties and reconstructed visual cortical neurons.",
+        "BossDBURI": "bossdb://lee",
+        "PublicationDOI": "https://doi.org/10.1038/nature17192",
+        "DOI": "10.60533/BOSS-2016-8MUX",
+        "Keywords": ["NIH", "AIBS", "mouse", "EM", "TEM", "V1"],
+        "Public": true,
+        "Species": ["Mouse"],
+        "Status": "live",
+        "Links": [
+          {
+            "Name": "View at BossDB.io",
+            "URI": "https://api.bossdb.io/v1/mgmt/resources/lee/lee16"
+          }
+        ],
+        "License": {
+          "Rights": "CC-BY 4.0",
+          "Rights_URI": ""
+        },
+        "Locations": [
+          {
+            "protocol": "https",
+            "server": "api.bossdb.io",
+            "uri": "lee/lee16/image",
+            "xs": [81920, 82432],
+            "ys": [81920, 82432],
+            "zs": [411, 421],
+            "res": null
+          }
+        ],
+        "ProjectPageDescription": [
+          "Large-scale electron microscopy was used to study an excitatory network in V1."
+        ],
+        "DateModified": "2016-03-28T00:00:00"
+      }
+    },
+    {
+      "type": "projects",
+      "id": "124f734ffaf75664c0c09348",
+      "attributes": {
+        "ID": "bock2011",
+        "Name": "Bock et al. 2011",
+        "Title": "Beautiful volume of mouse primary visual cortical data",
+        "Description": "Images were collected at approximately 4x4x45 cubic nanometers.",
+        "BossDBURI": "bossdb://bock",
+        "PublicationDOI": "https://doi.org/10.1038/nature09802",
+        "DOI": "10.60533/BOSS-2011-K12H",
+        "Keywords": ["NIH", "mouse", "EM", "primary visual cortex", "TEM"],
+        "Public": true,
+        "Species": ["Mouse"],
+        "Status": "live",
+        "Links": [
+          {
+            "Name": "bossdb.org",
+            "URI": "https://bossdb.org/project/bock2011"
+          }
+        ],
+        "License": {
+          "Rights": "CC-BY 4.0",
+          "Rights_URI": ""
+        },
+        "Locations": [
+          {
+            "protocol": "https",
+            "server": "api.bossdb.io",
+            "uri": "bock/bock11/image",
+            "xs": [67634, 69690],
+            "ys": [60000, 62048],
+            "zs": [3000, 3003],
+            "res": null
+          }
+        ],
+        "ProjectPageDescription": [
+          "In addition to electron microscope data, two-photon microscopy determined functional properties."
+        ],
+        "DateModified": "2011-03-10T00:00:00"
+      }
+    }
+  ]
+}

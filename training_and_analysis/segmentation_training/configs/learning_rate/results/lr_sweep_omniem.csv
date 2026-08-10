@@ -1,0 +1,9 @@
+organelle,method,lr,lr_label,dice
+mito,full-FT,2e-5,2e-5,0.503
+mito,full-FT,1e-4,1e-4,0.164
+mito,full-FT,5e-4,5e-4,0.314
+mito,LoRA,1e-3,1e-3 (ref),0.707
+ER,full-FT,2e-5,2e-5,0.233
+ER,full-FT,1e-4,1e-4,0.165
+ER,full-FT,5e-4,5e-4,0.173
+ER,LoRA,1e-3,1e-3 (ref),0.330

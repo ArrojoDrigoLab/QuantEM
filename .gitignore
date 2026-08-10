@@ -1,0 +1,272 @@
+# =============================================================================
+# QuantEM repository .gitignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Agent docs
+# -----------------------------------------------------------------------------
+AGENTS.md
+CLAUDE.md
+.agents/
+_agent_docs/
+NEXT.md
+MIGRATION.md
+PRERELEASE.md
+PROVENANCE.md
+PROVENANCE.json
+_adaptation_todo.json
+.scratch/
+_scratch/
+scratch/
+
+# Agent tooling state
+.claude/
+.codex/
+.cursor/
+.aider*
+.devcontainer/local*
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.conda/
+.mamba/
+micromamba/
+
+# Package-manager scratch files that can land beside an environment.yml
+mamba[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]*
+*.tmp
+*.bak
+*.orig
+
+
+# Testing / linting caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# -----------------------------------------------------------------------------
+# Node / frontend
+# -----------------------------------------------------------------------------
+node_modules/
+.npm/
+.yarn/
+.pnp.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+.vite/
+.next/
+.turbo/
+.parcel-cache/
+dist-ssr/
+*.local
+
+# -----------------------------------------------------------------------------
+# Desktop packaging / installers
+# -----------------------------------------------------------------------------
+release/
+out/
+*.dmg
+*.exe
+*.msi
+*.pkg
+*.AppImage
+*.deb
+*.rpm
+*.blockmap
+electron-builder-output/
+
+# -----------------------------------------------------------------------------
+# Model weights & checkpoints
+# -----------------------------------------------------------------------------
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.bin
+*.h5
+*.pb
+*.tflite
+checkpoints/
+weights/
+foundation_weights/
+
+# -----------------------------------------------------------------------------
+# Image / EM data
+# -----------------------------------------------------------------------------
+*.tif
+*.tiff
+*.mrc
+*.dm3
+*.dm4
+*.em
+*.rec
+*.nrrd
+*.nii
+*.nii.gz
+*.zarr/
+*.n5/
+*.ome.zarr/
+*.hdf5
+*.h5ad
+*.am
+*.im
+*.ims
+*.czi
+*.lif
+*.nd2
+*.svs
+*.vsi
+
+# Thumbnails / tiles generated at build time (the browsable directory builds these)
+tiles/
+thumbnails/
+_tiles_cache/
+
+# Large tabular dumps
+*.parquet
+*.feather
+*.arrow
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# -----------------------------------------------------------------------------
+# Databases & local service state
+# -----------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+pgdata/
+postgres_data/
+storage/
+media/
+staticfiles/
+
+# -----------------------------------------------------------------------------
+# Local data-root configuration
+# Each training_and_analysis/ subfolder ships a committed paths.example.yaml. 
+# -----------------------------------------------------------------------------
+paths.yaml
+**/paths.yaml
+!**/paths.example.yaml
+
+# -----------------------------------------------------------------------------
+# Secrets & local config
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local.env
+local.env
+local.db.env
+secrets.*
+*.pem
+*.key
+credentials.json
+service_account*.json
+
+# -----------------------------------------------------------------------------
+# Logs, runs, experiment output
+# -----------------------------------------------------------------------------
+*.log
+logs/
+runs/
+wandb/
+mlruns/
+lightning_logs/
+tb_logs/
+outputs/
+experiments/*/output/
+.dev_pids/
+
+# -----------------------------------------------------------------------------
+# OS / editor cruft
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+
+# -----------------------------------------------------------------------------
+# Dataset directory (dataset_directory/)
+# -----------------------------------------------------------------------------
+# Thumbnails are built, not committed: every regeneration would add hundreds of
+# megabytes of permanent blobs to the repository. They ship as a release asset
+# and CI unpacks them into the published site.
+dataset_directory/thumbs/
+dataset_directory/thumbs-*.tar.gz
+dataset_directory/thumbs-*.tar.gz.sha256
+dataset_directory/exporter/raw/
+# The built site is assembled by CI; nothing under dist/ is authored.
+dataset_directory/dist/
+
+# dataset_directory/data/ IS committed on purpose — it is small, text, and the
+# reviewable record of exactly what the site publishes. Re-allow it against the
+# unanchored patterns above.
+!dataset_directory/data/
+!dataset_directory/data/*.json
+!dataset_directory/data/*.csv
+!dataset_directory/data/*.md
+dataset_directory/.serve.log

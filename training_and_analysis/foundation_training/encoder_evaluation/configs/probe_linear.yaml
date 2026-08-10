@@ -1,0 +1,37 @@
+# Linear decoder probe: a capacity-minimal head, so the score reflects the encoder's features.
+# Fixed identically across every compared encoder; only the encoder swaps.
+
+tile_size: 512            # /16 -> 32x32 tokens; matches the 512 px base arms and the DINOv2/v3 eval crop
+feature_layers: last4     # concat the last 4 transformer blocks (DINOv2 "+ms" feature set)
+apply_encoder_norm: true  # encoder's final LayerNorm applied per selected layer (symmetric MAE<->DINOv3)
+
+decoder: linear           # headline probe: BN -> 1x1 conv -> bilinear x16. "light_conv" = secondary.
+num_classes: 2            # background + organelle
+
+# optimisation (held constant across encoders)
+max_steps: 4000
+warmup_steps: 250
+batch_size: 16
+lr: 0.001
+weight_decay: 0.0001
+ce_weight: 1.0
+dice_weight: 1.0
+seed: 0
+
+# data / augmentation (EM-safe, minimal)
+num_workers: 4
+min_fg_frac_keep: 0.0
+flip: true
+rot90: true
+intensity_jitter: 0.1
+
+# evaluation (honest sliding window over the full annotated region)
+eval_overlap: 0.25
+boundary_theta_frac: 0.0075     # Boundary-F1 tolerance (fraction of image diagonal; MATLAB bfscore default)
+boundary_dilation_ratio: 0.02   # Boundary-IoU band width (Cheng 2021 default)
+
+# label-efficiency sweep: set to [0.01, 0.1, 0.5, 1.0] to produce the curve; [1.0] for a single point
+label_fractions: [1.0]
+
+device: cuda
+amp: true

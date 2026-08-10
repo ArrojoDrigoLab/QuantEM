@@ -1,0 +1,344 @@
+.job-queue-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 360px;
+  background: #14161a;
+  color: #f5f7fb;
+  border-left: 1px solid #262a33;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+  padding: 20px;
+  overflow-y: auto;
+  z-index: 40;
+}
+
+.job-queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.job-queue-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.job-queue-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.job-queue-subtitle {
+  color: #9aa4b2;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.job-queue-subtitle.warning {
+  color: #f0b57a;
+}
+
+.job-queue-subtitle.error {
+  color: #f08b8b;
+}
+
+.job-queue-close {
+  background: transparent;
+  color: #f5f7fb;
+  border: 1px solid #3b4150;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.job-queue-close:hover {
+  border-color: #5e6a82;
+}
+
+/* `.job-queue-restart` was removed with the "Restart worker" button. */
+
+.job-queue-state {
+  padding: 12px 0;
+  color: #c7cdd6;
+}
+
+.job-queue-state.error {
+  color: #f08b8b;
+}
+
+.job-queue-section {
+  margin-bottom: 24px;
+}
+
+.job-queue-section h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: #dfe4ec;
+}
+
+.job-queue-empty {
+  color: #9aa4b2;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.job-queue-item {
+  background: #1b1f27;
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.job-queue-item.compact {
+  padding: 10px;
+}
+
+.job-queue-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Which image the queued task belongs to, in the removal confirmation. Three
+   rows can carry the same task_label, so this is the line that says which one
+   is about to be removed. */
+.job-queue-removal-target {
+  font-weight: 600;
+}
+
+.job-queue-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.job-queue-action {
+  border: 1px solid #3b4150;
+  background: transparent;
+  color: #dfe4ec;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.job-queue-action:hover:not(:disabled) {
+  border-color: #5e6a82;
+  color: #ffffff;
+}
+
+.job-queue-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.job-queue-action-cancel {
+  border-color: #b65a5a;
+  color: #f5b0b0;
+}
+
+.job-queue-action-cancel:hover:not(:disabled) {
+  border-color: #e37b7b;
+  color: #ffe0e0;
+}
+
+.job-queue-action-delete {
+  border-color: #8a5dd8;
+  color: #d7c3ff;
+}
+
+.job-queue-action-delete:hover:not(:disabled) {
+  border-color: #b287ff;
+  color: #efe4ff;
+}
+
+.job-queue-action-retry {
+  border-color: #4d8a76;
+  color: #b9eedb;
+}
+
+.job-queue-action-retry:hover:not(:disabled) {
+  border-color: #72b198;
+  color: #e4fff4;
+}
+
+.job-queue-action-clear-done {
+  border-color: #4c7d6b;
+  color: #bde9d8;
+}
+
+.job-queue-action-clear-done:hover:not(:disabled) {
+  border-color: #72b198;
+  color: #e4fff4;
+}
+
+.job-queue-task {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.job-queue-status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #2a2f3a;
+  color: #c7cdd6;
+}
+
+.job-queue-status.running {
+  background: #1d3c63;
+  color: #c8e1ff;
+}
+
+.job-queue-status.pending,
+.job-queue-status.retry {
+  background: #3a2f1b;
+  color: #f6d39a;
+}
+
+.job-queue-status.success {
+  background: #1f4a35;
+  color: #c5f0dc;
+}
+
+.job-queue-status.failed,
+.job-queue-status.cancelled {
+  background: #522626;
+  color: #ffc7c7;
+}
+
+.job-queue-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  color: #b5bdc9;
+  font-size: 12px;
+}
+
+.job-queue-segmentation {
+  background: #2a2f3a;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.job-queue-progress {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #c7cdd6;
+}
+
+.job-queue-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #2c313d;
+  overflow: hidden;
+}
+
+.job-queue-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4f8ad9, #6bb1ff);
+}
+
+.job-queue-message {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9aa4b2;
+}
+
+/* Brighter than .job-queue-message on purpose: the message says what happened
+   and these say what to do about it, and the second is the one people act on. */
+.job-queue-next-steps {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c6d0de;
+}
+
+.job-queue-next-steps li + li {
+  margin-top: 4px;
+}
+
+.job-queue-done-controls {
+  margin: 6px 0 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.job-queue-item.done {
+  border-color: #303745;
+}
+
+.job-queue-time {
+  margin-left: auto;
+  color: #95a2b5;
+}
+
+.job-queue-group {
+  margin-bottom: 16px;
+}
+
+.job-queue-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #dfe4ec;
+  margin-bottom: 8px;
+}
+
+.job-queue-count {
+  background: #2a2f3a;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #c7cdd6;
+}
+
+.job-queue-expand {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.job-queue-expand-button {
+  width: 100%;
+  border: 1px dashed #3b4150;
+  background: #171b22;
+  color: #c7cdd6;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.job-queue-expand-button:hover {
+  border-color: #5e6a82;
+  color: #ffffff;
+}
+
+.job-queue-expand-arrow {
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}

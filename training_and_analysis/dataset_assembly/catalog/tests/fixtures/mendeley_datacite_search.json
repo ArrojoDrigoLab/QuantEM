@@ -1,0 +1,54 @@
+{
+  "data": [
+    {
+      "id": "10.17632/emdata123.2",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.17632/emdata123.2",
+        "titles": [
+          {"title": "Serial block face EM dataset of mouse liver mitochondria"}
+        ],
+        "publisher": "Mendeley Data",
+        "publicationYear": 2025,
+        "subjects": [
+          {"subject": "Cell Biology"},
+          {"subject": "Electron Microscopy"}
+        ],
+        "dates": [
+          {"date": "2025-09-10T12:00:00Z", "dateType": "Issued"}
+        ],
+        "types": {
+          "resourceTypeGeneral": "Dataset",
+          "resourceType": "Dataset"
+        },
+        "formats": ["MRC"],
+        "rightsList": [
+          {
+            "rights": "Creative Commons Attribution 4.0 International",
+            "rightsUri": "https://creativecommons.org/licenses/by/4.0/legalcode",
+            "rightsIdentifier": "cc-by-4.0"
+          }
+        ],
+        "descriptions": [
+          {
+            "description": "SBF-SEM volume data documenting intracellular ultrastructure, mitochondria, ER, and nucleus.",
+            "descriptionType": "Abstract"
+          }
+        ],
+        "relatedIdentifiers": [
+          {
+            "relationType": "IsSupplementTo",
+            "relatedIdentifier": "10.1016/j.example.2025.1",
+            "relatedIdentifierType": "DOI",
+            "resourceTypeGeneral": "Text"
+          }
+        ],
+        "url": "https://data.mendeley.com/datasets/emdata123/2",
+        "xml": "omitted-base64"
+      }
+    }
+  ],
+  "meta": {
+    "total": 1
+  }
+}

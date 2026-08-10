@@ -1,0 +1,140 @@
+name: dataset directory — deploy to Pages
+
+# Assembles the published site and deploys it. The layout it builds is:
+#
+#   /                            the project landing page      (pages/)
+#   /dataset_directory/          the browsable catalog         (dataset_directory/site/)
+#   /dataset_directory/data/     the published corpus JSON     (dataset_directory/data/)
+#   /dataset_directory/thumbs/   256 px thumbnails             (from a release asset)
+#
+# Thumbnails are not in git. They live on a release, are verified against the
+# checksum recorded in the export manifest, and are unpacked here. That keeps
+# hundreds of megabytes of binaries out of every clone while still serving them
+# from the same origin as the page.
+#
+# Before the first run: Settings -> Pages -> Source = GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dataset_directory/**'
+      - 'pages/**'
+      - '.github/workflows/dataset-directory-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a deploy in flight — a half-finished one leaves the Pages
+# deployment lock held and the next run fails on a confusing error.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: python -m pip install --upgrade pip
+
+      - name: Verify before publishing anything
+        run: |
+          python -m quantem_directory verify \
+            --data dataset_directory/data \
+            --excluded dataset_directory/exporter/excluded.json
+        env:
+          PYTHONPATH: dataset_directory/exporter/src
+
+      - name: Assemble the site
+        run: |
+          mkdir -p dist/dataset_directory
+          cp -r pages/. dist/
+          cp -r dataset_directory/site/. dist/dataset_directory/
+          cp -r dataset_directory/data dist/dataset_directory/data
+          rm -rf dist/dataset_directory/tests dist/dataset_directory/tests.html
+
+      - name: Fetch and unpack the thumbnails
+        run: |
+          TAG=$(python -c "import json;print(json.load(open('dataset_directory/data/manifest.json'))['thumbnails']['release_tag'])")
+          NAME=$(python -c "import json;print(json.load(open('dataset_directory/data/manifest.json'))['thumbnails']['archive'])")
+          WANT=$(python -c "import json;print(json.load(open('dataset_directory/data/manifest.json'))['thumbnails']['sha256'])")
+          gh release download "$TAG" --pattern "$NAME" --dir /tmp
+          GOT=$(sha256sum "/tmp/$NAME" | cut -d' ' -f1)
+          if [ "$GOT" != "$WANT" ]; then
+            echo "thumbnail archive checksum mismatch: expected $WANT, got $GOT"
+            exit 1
+          fi
+          mkdir -p dist/dataset_directory/thumbs
+          tar -xzf "/tmp/$NAME" -C dist/dataset_directory/thumbs
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Check what is about to be published
+        run: |
+          BYTES=$(du -sb dist | cut -f1)
+          FILES=$(find dist -type f | wc -l)
+          echo "dist: $FILES files, $(( BYTES / 1000000 )) MB"
+          # GitHub Pages publishes at most 1 GB. Fail well before that rather
+          # than discovering it as a deploy error.
+          if [ "$BYTES" -gt 900000000 ]; then
+            echo "the built site exceeds 900 MB — reduce the thumbnail size before deploying"
+            exit 1
+          fi
+          # upload-pages-artifact rejects symlinks outright.
+          if [ -n "$(find dist -type l)" ]; then
+            echo "symlinks are not allowed in a Pages artifact"; exit 1
+          fi
+          test -f dist/index.html
+          test -f dist/dataset_directory/index.html
+          test -f dist/dataset_directory/data/manifest.json
+          # Every asset flagged as having a thumbnail must actually have one.
+          python -m quantem_directory verify \
+            --data dist/dataset_directory/data \
+            --excluded dataset_directory/exporter/excluded.json \
+            --thumbs dist/dataset_directory/thumbs
+        env:
+          PYTHONPATH: dataset_directory/exporter/src
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          # The default is ten minutes. A few hundred megabytes of thumbnails
+          # can take longer than that to go live on a busy day.
+          timeout: 1200000
+
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: The published site answers
+        run: |
+          URL="${{ needs.deploy.outputs.page_url || 'https://arrojodrigolab.github.io/QuantEM/' }}"
+          curl -sfo /dev/null "$URL"
+          curl -sfo /dev/null "$URL/dataset_directory/"
+          curl -sfo /dev/null "$URL/dataset_directory/data/manifest.json"
+          # Pages compresses JSON on the fly; if that ever stops being true the
+          # corpus payload triples and the page gets noticeably slower.
+          curl -sI -H 'Accept-Encoding: gzip' "$URL/dataset_directory/data/assets.json" \
+            | grep -qi 'content-encoding: gzip' \
+            || echo "::warning::assets.json was not served compressed"

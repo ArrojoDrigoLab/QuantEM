@@ -1,0 +1,85 @@
+{
+  "id": "652d563301000068049c066e",
+  "name": "HuaLab-CBA_Ca-mouse-unexposed-M2",
+  "dataSource": {
+    "id": {
+      "name": "HuaLab-CBA_Ca-mouse-unexposed-M2",
+      "team": "b2275d664e4c2a96"
+    },
+    "dataLayers": [
+      {
+        "name": "color",
+        "elementClass": "uint8",
+        "category": "color",
+        "dataFormat": "zarr3",
+        "resolutions": [[1, 1, 1], [2, 2, 1]],
+        "mags": [
+          {
+            "mag": [1, 1, 1],
+            "path": "s3://example-bucket/b2275d664e4c2a96/HuaLab-CBA_Ca-mouse-unexposed-M2/color/1"
+          }
+        ],
+        "numChannels": 1,
+        "boundingBox": {
+          "topLeft": [0, 0, 0],
+          "width": 10329,
+          "height": 25183,
+          "depth": 2558
+        }
+      },
+      {
+        "name": "mito_650_1849_proof",
+        "elementClass": "uint16",
+        "category": "segmentation",
+        "dataFormat": "zarr3",
+        "resolutions": [[1, 1, 1], [2, 2, 1]],
+        "mags": [
+          {
+            "mag": [1, 1, 1],
+            "path": "s3://example-bucket/b2275d664e4c2a96/HuaLab-CBA_Ca-mouse-unexposed-M2/mito_650_1849_proof/1"
+          }
+        ],
+        "numChannels": 1,
+        "boundingBox": {
+          "topLeft": [0, 0, 0],
+          "width": 10329,
+          "height": 25183,
+          "depth": 2558
+        }
+      }
+    ],
+    "scale": {
+      "factor": [12, 12, 50],
+      "unit": "nanometer"
+    }
+  },
+  "dataStore": {
+    "name": "webknossos.org",
+    "url": "https://data-humerus.webknossos.org"
+  },
+  "owningOrganization": "b2275d664e4c2a96",
+  "isActive": true,
+  "isPublic": true,
+  "description": null,
+  "directoryName": "HuaLab-CBA_Ca-mouse-unexposed-M2",
+  "created": 1697470003812,
+  "metadata": [
+    {
+      "key": "species",
+      "type": "string",
+      "value": "Mouse"
+    },
+    {
+      "key": "brainRegion",
+      "type": "string",
+      "value": "cochlea"
+    },
+    {
+      "key": "acquisition",
+      "type": "string",
+      "value": "SBEM"
+    }
+  ],
+  "tags": [],
+  "isVirtual": true
+}

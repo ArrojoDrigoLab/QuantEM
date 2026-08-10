@@ -1,0 +1,16 @@
+name: deepcontact_mito
+channels:
+  - conda-forge
+dependencies:
+  - python=3.7
+  - pip
+  - pip:
+      # CPU build; the Matterport Mask R-CNN port needs the tf1 / keras 2.1 API
+      - tensorflow==1.15.5
+      - keras==2.1.6
+      - numpy==1.18.5
+      - h5py==2.10.0
+      - opencv-python
+      - scikit-image
+      - scipy
+      - tifffile

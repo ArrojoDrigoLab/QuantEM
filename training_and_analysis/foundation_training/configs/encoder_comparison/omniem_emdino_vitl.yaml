@@ -1,0 +1,19 @@
+# OmniEM / EM-DINO — a DINOv2-recipe ViT-L pretrained on EM.
+# He, L. et al. Unifying the electron microscopy multiverse through a large-scale foundation model.
+# bioRxiv 2025.04.13.648639.
+name: omniem_emdino_vitl
+timm_model: vit_large_patch14_dinov2.lvd142m
+weight_file: backbone_emdino_v1.pt
+objective: dinov2
+arch: vit_large
+patch_size: 14
+embed_dim: 1024
+depth: 24
+in_chans: 3
+base_tile: 512
+img_size_build: 518
+# The published checkpoint is a bare backbone under a `vit.` prefix.
+strip_prefix: "vit."
+norm_mean: [0.595446]
+norm_std: [0.211906]
+context_sweepable: false

@@ -1,0 +1,78 @@
+name: quantem-app
+
+# The lane is deliberately cheap: no GPU, no model weights, no database service.
+# That is possible only because the app dropped PostGIS for plain SQLite.
+
+on:
+  push:
+    branches: [main]
+    paths: ["quantem_app/**", ".github/workflows/quantem-app.yml"]
+  pull_request:
+    paths: ["quantem_app/**", ".github/workflows/quantem-app.yml"]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: quantem_app
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - name: ruff check
+        run: ruff check src
+      - name: ruff format --check
+        run: ruff format --check src
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install (CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
+      - name: Django system checks
+        run: python -m django check --settings quantem.core.settings
+        env:
+          QUANTEM_DATA_DIR: ${{ runner.temp }}/quantem-data
+      - name: Migrations are in sync with the models
+        run: python -m django makemigrations --check --dry-run --settings quantem.core.settings
+        env:
+          QUANTEM_DATA_DIR: ${{ runner.temp }}/quantem-data
+      - name: pytest
+        run: pytest -m "not requires_weights and not requires_gpu and not slow"
+        env:
+          QUANTEM_DATA_DIR: ${{ runner.temp }}/quantem-data
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: quantem_app/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: quantem_app/frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.app.json
+      - run: npm run lint --if-present
+      - run: npm run test --if-present
+      - run: npm run build

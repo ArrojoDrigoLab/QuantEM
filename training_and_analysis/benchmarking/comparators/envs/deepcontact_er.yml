@@ -1,0 +1,15 @@
+name: deepcontact_er
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - opencv
+  - tifffile
+  - scikit-image
+  - scipy
+  - pip
+  - pip:
+      # any recent CUDA build works
+      - torch
+      - segmentation-models-pytorch==0.5.0

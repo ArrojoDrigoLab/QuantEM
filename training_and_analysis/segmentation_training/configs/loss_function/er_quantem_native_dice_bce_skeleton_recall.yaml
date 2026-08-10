@@ -1,0 +1,74 @@
+# Loss-function arm: ER on QuantEM; naive_1x1, nnunet_convnext_unet head; full encoder fine-tuning; dice_bce + skeleton_recall loss; native-resolution input; 10,000 steps; encoder lr 2e-05.
+name: er_quantem_native_dice_bce_skeleton_recall
+notes: 'Loss-function arm: ER on QuantEM; naive_1x1, nnunet_convnext_unet head; full encoder fine-tuning; dice_bce + skeleton_recall loss; native-resolution input; 10,000 steps; encoder lr 2e-05.'
+device: cuda
+amp: true
+num_workers: 8
+encoder:
+  run_dir: <QuantEM ViT-B encoder run directory>
+  checkpoint_step: 674999
+  tile_size: 512
+  feature_layers: last4
+  apply_encoder_norm: true
+  adapt: full
+  adapt_params: {}
+neck:
+  type: naive_1x1
+  params: {}
+decoder:
+  type: nnunet_convnext_unet
+  params: {}
+loss:
+  terms:
+  - type: dice_bce
+    weight: 1.0
+    params: {}
+  - type: skeleton_recall
+    weight: 1.0
+    params: {}
+  ignore_index: 255
+data:
+  organelle: er
+  canonical_nm: null
+  group: null
+  bucket: native
+  train_split: train
+  val_split: val
+  test_split: test
+  num_classes: 2
+  task: semantic
+  min_fg_frac_keep: 0.1
+  manifest_name: manifest.jsonl
+  aug_flip: true
+  aug_rot90: true
+  aug_elastic: true
+  aug_elastic_alpha: 20.0
+  aug_elastic_sigma: 6.0
+  aug_brightness: 0.15
+  aug_contrast: 0.15
+  aug_gamma: 0.2
+  aug_noise_std: 0.02
+optim:
+  max_steps: 10000
+  warmup_steps: 625
+  batch_size: 4
+  lr: 0.001
+  weight_decay: 0.0001
+  decoder_lr_mult: 1.0
+  adapter_lr: 2.0e-05
+  grad_checkpoint: false
+  grad_clip: 0.0
+  grad_accum: 2
+  seed: 0
+eval:
+  overlap: 0.25
+  boundary_theta_frac: 0.0075
+  boundary_dilation_ratio: 0.02
+  fg_threshold: 0.5
+  auprc_bins: 256
+  hd95_pct: 95.0
+  instance_min_size: 16
+  max_region_px: 4000000
+  bootstrap_n: 1000
+  bootstrap_ci: 95.0
+  max_eval_crops: 300

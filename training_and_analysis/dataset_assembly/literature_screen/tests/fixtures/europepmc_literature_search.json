@@ -1,0 +1,31 @@
+{
+  "resultList": {
+    "result": [
+      {
+        "id": "40600001",
+        "source": "MED",
+        "pmid": "40600001",
+        "pmcid": "PMC1234567",
+        "doi": "10.7554/elife.99999",
+        "title": "TEM organelle source data in BioStudies",
+        "journalTitle": "eLife",
+        "pubYear": "2025",
+        "abstractText": "Transmission electron microscopy ultrastructure images and organelle annotations are available as a public dataset.",
+        "fullTextUrlList": {
+          "fullTextUrl": [
+            {
+              "url": "https://www.ebi.ac.uk/biostudies/studies/S-BSST999",
+              "documentStyle": "Data",
+              "availability": "Open access"
+            },
+            {
+              "url": "https://europepmc.org/articles/PMC1234567?pdf=render",
+              "documentStyle": "PDF",
+              "availability": "Open access"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

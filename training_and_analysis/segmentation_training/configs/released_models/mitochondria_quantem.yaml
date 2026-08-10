@@ -1,0 +1,136 @@
+# Released model: mitochondria on QuantEM; naive_1x1, affinity_mws head; last 4 encoder blocks unfrozen; dice_bce loss; 8 nm/px input; 60,000 steps; encoder lr 0.0001.
+name: mitochondria_quantem
+notes: 'Released model: mitochondria on QuantEM; naive_1x1, affinity_mws head; last 4 encoder blocks unfrozen; dice_bce loss; 8 nm/px input; 60,000 steps; encoder lr 0.0001.'
+device: cuda
+amp: true
+num_workers: 8
+encoder:
+  run_dir: <QuantEM ViT-B encoder run directory>
+  checkpoint_step: 674999
+  tile_size: 512
+  feature_layers: last4
+  apply_encoder_norm: true
+  adapt: last_n
+  adapt_params:
+    n: 4
+neck:
+  type: naive_1x1
+  params: {}
+decoder:
+  type: affinity_mws
+  params: {}
+loss:
+  terms:
+  - type: dice_bce
+    weight: 1.0
+    params: {}
+  ignore_index: 255
+data:
+  organelle: mito
+  canonical_nm: 8.0
+  group: null
+  bucket: canonical
+  train_split: train
+  val_split: val
+  test_split: test
+  num_classes: 2
+  task: instance
+  min_fg_frac_keep: 0.1
+  label_fractions:
+  - 1.0
+  subset_frac: 1.0
+  source_frac: 1.0
+  subset_seed: 0
+  manifest_name: manifest.jsonl
+  holdout_sources: []
+  aug_flip: true
+  aug_rot90: true
+  aug_elastic: true
+  aug_elastic_alpha: 20.0
+  aug_elastic_sigma: 6.0
+  aug_brightness: 0.15
+  aug_contrast: 0.15
+  aug_gamma: 0.2
+  aug_noise_std: 0.02
+optim:
+  max_steps: 60000
+  warmup_steps: 3000
+  batch_size: 4
+  lr: 0.001
+  weight_decay: 0.0001
+  decoder_lr_mult: 1.0
+  adapter_lr: 0.0001
+  grad_checkpoint: false
+  grad_clip: 0.0
+  grad_accum: 2
+  seed: 0
+eval:
+  overlap: 0.25
+  boundary_theta_frac: 0.0075
+  boundary_dilation_ratio: 0.02
+  fg_threshold: 0.5
+  auprc_bins: 256
+  hd95_pct: 95.0
+  instance_min_size: 16
+  max_region_px: 0
+  max_eval_crops: 0
+  bootstrap_n: 1000
+  bootstrap_ci: 95.0
+cond:
+  arm: baseline
+  enabled: false
+  style_source: inferred
+  style_dim: 64
+  style_stats: true
+  style_from_features: false
+  style_hidden: 64
+  grad_reversal: 0.0
+  adv_targets:
+  - dataset
+  adv_hidden: 128
+  metadata_dropout: 0.0
+  film: true
+  film_scope: per_block
+  condition_neck: true
+  condition_decoder: true
+  style_scope: tile
+  n_prototypes: 1
+  mixstyle: 'off'
+  mixstyle_p: 0.5
+  mixstyle_alpha: 0.1
+  mixstyle_mix: random
+  mixstyle_points: neck
+  confident_thresh: 0.7
+  tta: 'off'
+  tta_steps: 1
+  tta_lr: 0.001
+  tta_debias_svd: 64
+  support_source: inferred
+  support_conf: 0.9
+  support_min_size: 32
+  support_open: 1
+  interactive_clicks: 3
+  interactive_radius: 6
+  n_shots: 0
+  seed_drop_frac: 0.0
+  seed_false_frac: 0.0
+  support_combine: replace
+  support_alpha: 0.5
+  support_uncertain_margin: 0.2
+  film_gate: false
+  n_support: 1
+  proto_gate: false
+  proto_min_frac: 0.05
+  support_seed: 0
+  tta_fg_band:
+  - 0.25
+  - 4.0
+  tta_passes: 2
+  tta_recurrent: true
+  tta_field: 1
+  bank_key: style
+  bank_granularity: source
+  bank_k: 3
+  bank_mode: borrow_code
+  norm_method: 'off'
+  fda_beta: 0.01

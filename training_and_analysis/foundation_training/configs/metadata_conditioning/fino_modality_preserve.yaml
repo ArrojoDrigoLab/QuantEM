@@ -1,0 +1,88 @@
+name: fino_modality_preserve
+framework: dinov3
+notes: 'FINO modality M+: an auxiliary head predicts the EM modality, keeping it decodable.'
+model:
+  arch: vit_base
+  patch_size: 16
+  in_chans: 1
+  rope_rescale_coords: null
+crops:
+  schedule:
+  - global_crops_size: 512
+    local_crops_size: 112
+    max_steps: 30000
+  local_crops_number: 8
+  global_crops_scale:
+  - 0.32
+  - 1.0
+  local_crops_scale:
+  - 0.05
+  - 0.32
+data:
+  shard_prefix: em_tiles_v0
+optim:
+  lr: 0.0005
+  weight_decay: 0.04
+  weight_decay_end: 0.4
+  warmup_steps: 1000
+  min_lr: 1.0e-06
+  clip_grad: 3.0
+train:
+  batch_size_per_gpu: 64
+  num_workers: 10
+  official_epoch_length: 1250
+  compile: true
+  param_dtype: bf16
+  seed: 0
+checkpointing:
+  period_steps: 2000
+  keep_last: 3
+  teacher_export_every_steps: 2000
+fino:
+  lambda_schedule_type: sigmoid
+  lambda_warmup_steps: 1000
+  min_valid_fraction: 0.02
+metadata_factors:
+- name: modality
+  field: modality
+  type: discrete
+  guidance: positive
+  loss_weight: 0.1
+  include_unknown: false
+  hidden_dim:
+  - 512
+  - 512
+  - 256
+  dropout: 0.5
+dinov3:
+  student:
+    resume_from_teacher_chkpt: <path to the base arm's teacher export>
+  schedules:
+    lr:
+      start: 0.0
+      peak: 0.0005
+      end: 1.0e-06
+      warmup_iterations: 1000
+      cosine_iterations: 29000
+      freeze_student_iterations: 1000
+      backbone_warmup_after_freeze: 1000
+      freeze_patch_embed: false
+      freeze_cls_token: true
+      freeze_mask_token: true
+      unfreeze_last_n_blocks: 0
+      freeze_last_layer_iterations: 450
+    weight_decay:
+      start: 0.04
+      peak: 0.04
+      end: 0.4
+      warmup_epochs: 0
+    momentum:
+      start: 0.994
+      peak: 0.994
+      end: 1.0
+      warmup_epochs: 0
+    teacher_temp:
+      start: 0.04
+      peak: 0.07
+      end: 0.07
+      warmup_epochs: 0

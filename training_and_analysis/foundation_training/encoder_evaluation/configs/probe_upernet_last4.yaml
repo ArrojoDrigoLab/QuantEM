@@ -1,0 +1,38 @@
+# Adapted UPerNet probe: last-4-block fine-tuning. Identical to
+# probe_upernet_frozen.yaml except adapt=last_n (n=4). Same evaluation dataset / decoder / eval / fractions;
+# the encoder now trains its last 4 transformer blocks (rest frozen). Settings taken from the last-4 arm of the encoder-adaptation experiment
+# (adapter_lr 1e-4 — gentler, since full block weights are unfrozen).
+decoder: upernet
+tile_size: 512
+compare_tile: 512
+feature_layers: last4
+apply_encoder_norm: true
+num_classes: 2
+
+max_steps: 4000
+warmup_steps: 200
+batch_size: 32
+lr: 0.001
+weight_decay: 0.0001
+dice_weight: 1.0
+ce_weight: 1.0
+seed: 0
+
+label_fractions: [1.0]
+flip: true
+rot90: true
+intensity_jitter: 0.1
+
+eval_overlap: 0.25
+eval_batch_windows: 16
+bootstrap_n: 300
+eval_workers: 4
+num_workers: 4   # overlap disk loads with GPU compute
+
+cache_train_features: false   # adaptation REQUIRES uncached (cached features are static)
+amp: true
+
+# --- encoder adaptation: last-4 blocks, matching the encoder-adaptation experiment ---
+adapt: last_n
+adapt_params: {n: 4}
+adapter_lr: 0.0001

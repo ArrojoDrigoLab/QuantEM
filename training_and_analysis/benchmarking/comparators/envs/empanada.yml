@@ -1,0 +1,15 @@
+name: empanada
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy=1.22.0
+  - opencv
+  - tifffile
+  - scikit-image
+  - scipy
+  - pip
+  - pip:
+      # CUDA 12.1 build (default Linux wheel for this release)
+      - torch==2.1.2
+      - empanada-dl==0.1.2

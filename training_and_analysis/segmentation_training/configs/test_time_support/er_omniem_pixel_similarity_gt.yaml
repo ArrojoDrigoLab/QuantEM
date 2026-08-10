@@ -1,0 +1,47 @@
+# Test-time-support arm: ER on OmniEM; resnet34_detail, dpt head; LoRA rank 8; dice_bce loss; 10,000 steps; encoder lr 0.001; pixel-similarity prototypes at inference, support from manual annotations, k=4.
+amp: true
+cond:
+  arm: baseline
+  enabled: false
+  tta: b2_support
+  support_source: gt
+  n_support: 4
+data:
+  bucket: canonical
+  min_fg_frac_keep: 0.1
+  organelle: er
+  task: semantic
+decoder:
+  type: dpt
+device: cuda
+encoder:
+  run_dir: <OmniEM ViT-L encoder run directory>
+  adapt: lora
+  adapt_params:
+    conv: false
+    rank: 8
+  apply_encoder_norm: true
+  feature_layers: last4
+  tile_size: 512
+eval:
+  bootstrap_n: 1000
+  fg_threshold: 0.5
+  instance_min_size: 16
+  overlap: 0.25
+loss:
+  terms:
+  - type: dice_bce
+    weight: 1.0
+name: er_omniem_pixel_similarity_gt
+neck:
+  type: resnet34_detail
+notes: 'Test-time-support arm: ER on OmniEM; resnet34_detail, dpt head; LoRA rank 8; dice_bce loss; 10,000 steps; encoder lr 0.001; pixel-similarity prototypes at inference, support from manual annotations, k=4.'
+num_workers: 8
+optim:
+  adapter_lr: 0.001
+  batch_size: 8
+  lr: 0.001
+  max_steps: 10000
+  seed: 0
+  warmup_steps: 625
+  weight_decay: 0.0001

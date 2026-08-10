@@ -1,0 +1,72 @@
+# Benchmark model: lipid droplets on QuantEM; naive_1x1, affinity_mws head; last 4 encoder blocks unfrozen; dice_bce loss; 8 nm/px input; 4,000 steps; encoder lr 0.0001.
+name: ld_quantem
+notes: 'Benchmark model: lipid droplets on QuantEM; naive_1x1, affinity_mws head; last 4 encoder blocks unfrozen; dice_bce loss; 8 nm/px input; 4,000 steps; encoder lr 0.0001.'
+device: cuda
+amp: true
+num_workers: 8
+encoder:
+  run_dir: null  # supplied on the command line: --run-dir <QuantEM ViT-B encoder run directory>
+  checkpoint_step: null  # supplied on the command line: --step 674999
+  tile_size: 512
+  feature_layers: last4
+  apply_encoder_norm: true
+  adapt: last_n
+  adapt_params:
+    n: 4
+neck:
+  type: naive_1x1
+  params: {}
+decoder:
+  type: affinity_mws
+  params: {}
+loss:
+  terms:
+  - type: dice_bce
+    weight: 1.0
+    params: {}
+  ignore_index: 255
+data:
+  organelle: ld
+  canonical_nm: 8.0
+  group: benchmark_ld
+  bucket: canonical
+  train_split: train
+  val_split: val
+  test_split: test
+  num_classes: 2
+  task: instance
+  min_fg_frac_keep: 0.1
+  manifest_name: manifest.jsonl
+  aug_flip: true
+  aug_rot90: true
+  aug_elastic: true
+  aug_elastic_alpha: 20.0
+  aug_elastic_sigma: 6.0
+  aug_brightness: 0.15
+  aug_contrast: 0.15
+  aug_gamma: 0.2
+  aug_noise_std: 0.02
+optim:
+  max_steps: 4000
+  warmup_steps: 625
+  batch_size: 4
+  lr: 0.001
+  weight_decay: 0.0001
+  decoder_lr_mult: 1.0
+  adapter_lr: 0.0001
+  grad_checkpoint: false
+  grad_clip: 0.0
+  grad_accum: 2
+  seed: 0
+eval:
+  overlap: 0.25
+  boundary_theta_frac: 0.0075
+  boundary_dilation_ratio: 0.02
+  fg_threshold: 0.5
+  auprc_bins: 256
+  hd95_pct: 95.0
+  instance_min_size: 16
+  max_region_px: 0
+  bootstrap_n: 1000
+  bootstrap_ci: 95.0
+  max_eval_crops: 0

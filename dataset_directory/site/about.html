@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About — QuantEM dataset directory</title>
+<meta name="description" content="How the QuantEM dataset directory is built, where its numbers come from, and what it deliberately does not publish.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23111'/><circle cx='16' cy='16' r='7' fill='none' stroke='%23d9b57a' stroke-width='2.5'/><circle cx='16' cy='16' r='2' fill='%23d9b57a'/></svg>">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .prose { max-width: 74ch; margin: 0 auto; padding: 40px 24px 80px; }
+  .prose h1 { font-size: 26px; margin: 0 0 6px; }
+  .prose h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.07em;
+              color: var(--ink-3); margin: 38px 0 12px; }
+  .prose p, .prose li { font-size: 15px; }
+  .prose table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 0 0 10px; }
+  .prose th, .prose td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  .prose td.n, .prose th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .prose th { color: var(--ink-3); font-size: 12.5px; }
+  .back { display: inline-block; margin-bottom: 22px; font-size: 13.5px; }
+</style>
+</head>
+<body>
+<main class="prose">
+
+<a class="back" href="./">← Back to the directory</a>
+
+<h1>About this directory</h1>
+<p class="summary">
+  A browsable catalog of the electron microscopy corpus assembled for QuantEM — what is in it,
+  where each dataset lives, and what it looks like.
+</p>
+
+<h2>The corpus</h2>
+<table>
+  <tbody id="corpus-counts">
+    <tr><td colspan="2">Loading current totals…</td></tr>
+  </tbody>
+</table>
+<p>
+  The corpus was assembled from three streams: public repositories searched through their APIs and
+  triaged for intracellular biological EM; a campaign contacting the corresponding authors of
+  published EM studies whose underlying images had never been deposited; and previously unpublished
+  acquisitions from our own group and collaborators. A substantial share of it is newly released to
+  the community through this work.
+</p>
+
+<h2>Corrections</h2>
+<p>
+  If something here is wrong, or you are a depositor who would like a thumbnail removed, please
+  <a href="https://github.com/ArrojoDrigoLab/QuantEM/issues">open an issue</a>.
+</p>
+
+</main>
+
+<script type="module">
+// The corpus grows. Read the totals from the published data rather than
+// carrying a copy of them in the markup, which would go stale silently.
+const ROWS = [
+  ["Datasets", "datasets"],
+  ["2D images", "images_2d"],
+  ["3D acquisitions", "volumes_3d"],
+  ["Species", "species"],
+  ["Organs", "organs"],
+  ["Tissue contexts", "tissue_contexts"],
+  ["Imaging modalities", "modalities"],
+];
+const body = document.getElementById("corpus-counts");
+try {
+  const response = await fetch("data/manifest.json");
+  if (!response.ok) throw new Error(response.status);
+  const counts = (await response.json()).counts || {};
+  const rows = ROWS.filter(([, key]) => typeof counts[key] === "number");
+  if (!rows.length) throw new Error("no counts");
+  body.replaceChildren(...rows.map(([label, key]) => {
+    const tr = document.createElement("tr");
+    const name = document.createElement("td");
+    name.textContent = label;
+    const value = document.createElement("td");
+    value.className = "n";
+    value.textContent = counts[key].toLocaleString();
+    tr.append(name, value);
+    return tr;
+  }));
+} catch {
+  const tr = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = 2;
+  cell.textContent = "Current totals are shown on the directory itself.";
+  tr.append(cell);
+  body.replaceChildren(tr);
+}
+</script>
+</body>
+</html>

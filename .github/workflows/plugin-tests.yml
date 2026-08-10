@@ -1,0 +1,86 @@
+name: quantem-core + napari-quantem
+
+on:
+  push:
+    paths: ["quantem-core/**", "napari-quantem/**", ".github/workflows/plugin-tests.yml"]
+  pull_request:
+    paths: ["quantem-core/**", "napari-quantem/**", ".github/workflows/plugin-tests.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Newest first: the project targets current napari and Python, with 3.11 as the floor
+        # (napari 0.8 requires >= 3.11).
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.13", "3.12", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # CPU-only torch: CI never needs CUDA, and the CUDA wheels are ~2.5 GB.
+      - name: Install torch (CPU)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install packages
+        run: |
+          pip install -e ./quantem-core[test]
+          pip install -e ./napari-quantem[testing]
+
+      - name: quantem-core tests
+        run: pytest quantem-core/tests -q
+
+      - name: Validate the npe2 manifest
+        run: |
+          pip install npe2
+          npe2 validate napari-quantem/src/napari_quantem/napari.yaml
+
+      - name: napari widget tests
+        uses: aganders3/headless-gui@v2
+        with:
+          run: pytest napari-quantem/src/napari_quantem/_tests -q
+
+  offline:
+    name: no-network behaviour
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ./quantem-core[test]
+      # Nothing may touch the network at import, and a missing artifact must fail with an
+      # actionable message rather than a stack trace.
+      - name: import is network-free and offline mode raises cleanly
+        env:
+          QUANTEM_OFFLINE: "1"
+        run: |
+          python -c "import quantem_em; print(len(quantem_em.list_models()), 'models')"
+          python - <<'PY'
+          from quantem_em.api import load_model
+          from quantem_em.weights.fetch import WeightsUnavailableError
+          try:
+              load_model("quantem/mito")
+          except WeightsUnavailableError as e:
+              assert e.missing, "the error must name the missing files"
+              print("offline error is actionable:", str(e).splitlines()[0])
+          else:
+              raise SystemExit("expected WeightsUnavailableError")
+          PY
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff
+      - run: ruff check quantem-core napari-quantem
+      - run: ruff format --check quantem-core napari-quantem

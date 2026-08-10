@@ -1,0 +1,16 @@
+name: quantem-dataset-assembly
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  # tiling/
+  - numpy
+  - scipy
+  - pillow
+  - tifffile
+  - imagecodecs      # compressed TIFF variants
+  - zarr             # plane-wise reads from 3D TIFF stacks
+  - pytest           # optional runner for the unittest suites under catalog/tests and
+                     # literature_screen/tests (the READMEs invoke them via unittest discover)
+  # catalog/ and literature_screen/ are standard library only.
+  # catalog/classify.py additionally needs a model CLI on PATH; see catalog/README.md.

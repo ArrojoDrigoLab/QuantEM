@@ -1,0 +1,48 @@
+You are reviewing one pending Zenodo candidate for the Public Intracellular EM Dataset Catalog.
+
+Use live web search. Look up the original publication associated with the Zenodo record if possible,
+using DOI, title, PubMed, Europe PMC, publisher pages, and links in the Zenodo metadata. Then inspect
+the Zenodo record/file evidence below. If a ZIP archive member listing is present, use it to decide
+whether original image files such as TIFF, JPEG, PNG, stack, or microscopy container files are present.
+
+The runner-provided context is intentionally compact and may be truncated to save tokens. Treat it as
+an index of strong hints, not as exhaustive proof. If the summary is insufficient, use live sources:
+- Zenodo landing page: {record_url}
+- Zenodo record API: {api_url}
+- Zenodo file metadata/API links in the record JSON, including per-file content URLs.
+- Publication DOI/PubMed/Europe PMC/publisher pages and open-access full text when available.
+
+If a compact list says it was truncated, or a file/member is absent from the compact summary, do not
+classify the record ineligible based on that absence alone. Use the Zenodo API or targeted archive
+inspection to verify. If your execution environment allows targeted downloads, inspect ZIP member names
+or archive metadata only when needed; avoid downloading large raw image payloads for visual review.
+If a needed publication or archive cannot be accessed enough to decide, return an uncertain outcome and
+explain exactly what needs to be downloaded or inspected manually.
+
+Classify the item into exactly one outcome_category:
+- no_associated_publication_found: you could not identify a publication associated with this Zenodo dataset.
+- publication_found_not_accessible: you identified a publication, but could not access enough full text to evaluate it. In this case needs_download must be true, and publication.doi and publication.pubmed_url must be filled when available.
+- reviewed_publication_and_archive: you read enough publication/source evidence and Zenodo archive/file evidence to determine whether qualifying original EM images are present.
+
+Eligibility rule:
+- eligible only when the record contains public original qualifying intracellular EM image data, usually file/archive evidence for source images such as TIFF/JPEG/PNG files, stacks, or other original EM files, and the publication/source evidence supports intracellular ultrastructure EM.
+- ineligible when the record is not EM, is surface-only SEM, SEM-EDX/EDS, materials/device EM, cryo-ET, structural cryo-EM, article panels/PDF figures only, or lacks original qualifying EM image files after accessible publication/archive review.
+- uncertain when publication/source access or archive access is insufficient. Use uncertain for no_associated_publication_found and publication_found_not_accessible.
+
+When you return classification:
+- It must be a loader-ready classifier object for this catalog.
+- classification.candidate_id must be {candidate_id}.
+- classification.needs_codex_review and classification.needs_manual_review must be false only for reviewed_publication_and_archive decisions. They should be true for no_associated_publication_found and publication_found_not_accessible.
+- classification.recommended_catalog_fields must preserve the candidate fields, source_name=zenodo, source_record_id, dataset_doi, publication_doi if found, landing_url, raw_metadata, file_formats, and download_or_manifest_urls.
+- For eligible records, classification.recommended_catalog_fields.download_or_manifest_urls must contain definitive Zenodo file/API/archive links for the original EM image files or archive.
+- The runner is configured with a strict output schema. Return exactly one JSON object and no markdown.
+- Top-level required keys are candidate_id, source_name, source_record_id, outcome_category, publication, zenodo_archive, qualifying_em_images_found, eligibility_status, confidence, qualifying_modality, evidence_summary, exclusion_reason, needs_download, and classification.
+- zenodo_archive must include record_url, file_count, files_examined, zip_files_examined, tiff_like_files, image_like_files, archive_access_status, and evidence.
+
+Candidate JSON:
+{candidate_json}
+
+Zenodo file/archive evidence collected by the runner:
+{evidence_json}
+
+Return exactly one JSON object, no markdown.

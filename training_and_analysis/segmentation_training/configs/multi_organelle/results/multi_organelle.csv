@@ -1,0 +1,9 @@
+encoder,organelle,arm,dice,dice_sd,pq,n_seeds
+OmniEM,mito,per-organelle adapters,0.7323,0.0163,0.0064,3
+OmniEM,mito,"shared DoDNet, width 32, unbalanced",0.6872,0.0187,,3
+OmniEM,ER,per-organelle adapters,0.3774,0.0310,,3
+OmniEM,ER,"shared DoDNet, width 32, unbalanced",0.3725,0.0320,,3
+QuantEM,mito,per-organelle adapters,0.6191,0.0322,0.0830,3
+QuantEM,mito,"shared DoDNet, width 32, unbalanced",0.5546,0.0119,,3
+QuantEM,ER,per-organelle adapters,0.1769,0.0398,,3
+QuantEM,ER,"shared DoDNet, width 32, unbalanced",0.1293,0.0040,,3

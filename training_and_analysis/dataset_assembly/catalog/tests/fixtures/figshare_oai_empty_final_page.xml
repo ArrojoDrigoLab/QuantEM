@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-06-08T16:09:51Z</responseDate>
+  <request verb="ListRecords" resumptionToken="stale-token">https://api.figshare.com/v2/oai</request>
+  <ListRecords>
+    <resumptionToken expirationDate="2026-06-08T17:09:51Z"></resumptionToken>
+  </ListRecords>
+</OAI-PMH>

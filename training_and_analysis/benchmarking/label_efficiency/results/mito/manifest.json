@@ -1,0 +1,156 @@
+[
+  {
+    "name": "d0ccc5eb_0",
+    "asset": "6 hr fast M3 Liver - Region 11",
+    "shape": [
+      1938,
+      1888
+    ],
+    "gt_px": 356628,
+    "valid_px": 2948807,
+    "n_obj": 148
+  },
+  {
+    "name": "d0ccc5eb_1",
+    "asset": "6 hr fast M3 Liver - Region 11",
+    "shape": [
+      2079,
+      2151
+    ],
+    "gt_px": 537044,
+    "valid_px": 4083734,
+    "n_obj": 148
+  },
+  {
+    "name": "792f85a8_0",
+    "asset": "ON fast M1 Liver - Region 13",
+    "shape": [
+      1351,
+      1399
+    ],
+    "gt_px": 181211,
+    "valid_px": 1812133,
+    "n_obj": 82
+  },
+  {
+    "name": "792f85a8_1",
+    "asset": "ON fast M1 Liver - Region 13",
+    "shape": [
+      1220,
+      1262
+    ],
+    "gt_px": 227382,
+    "valid_px": 1421459,
+    "n_obj": 82
+  },
+  {
+    "name": "483d2be4_0",
+    "asset": "ON-1 hr 13C M3 Liver - Region 14",
+    "shape": [
+      1909,
+      1774
+    ],
+    "gt_px": 346175,
+    "valid_px": 3290970,
+    "n_obj": 135
+  },
+  {
+    "name": "483d2be4_1",
+    "asset": "ON-1 hr 13C M3 Liver - Region 14",
+    "shape": [
+      1161,
+      1387
+    ],
+    "gt_px": 208359,
+    "valid_px": 1557631,
+    "n_obj": 135
+  },
+  {
+    "name": "cad69930_0",
+    "asset": "ON fast M2 Liver - Region 17",
+    "shape": [
+      1864,
+      1888
+    ],
+    "gt_px": 506075,
+    "valid_px": 3496800,
+    "n_obj": 132
+  },
+  {
+    "name": "cad69930_1",
+    "asset": "ON fast M2 Liver - Region 17",
+    "shape": [
+      1160,
+      1298
+    ],
+    "gt_px": 199637,
+    "valid_px": 1439409,
+    "n_obj": 132
+  },
+  {
+    "name": "23c145bd_0",
+    "asset": "ON fast M3 Liver - Region 15",
+    "shape": [
+      1008,
+      1328
+    ],
+    "gt_px": 300271,
+    "valid_px": 1310949,
+    "n_obj": 46
+  },
+  {
+    "name": "5efb1b60_0",
+    "asset": "6 hr fast M1 Liver - Region 12",
+    "shape": [
+      1873,
+      1878
+    ],
+    "gt_px": 381388,
+    "valid_px": 3508082,
+    "n_obj": 151
+  },
+  {
+    "name": "5efb1b60_1",
+    "asset": "6 hr fast M1 Liver - Region 12",
+    "shape": [
+      1306,
+      1469
+    ],
+    "gt_px": 427316,
+    "valid_px": 1869598,
+    "n_obj": 151
+  },
+  {
+    "name": "d3c86c65_0",
+    "asset": "6 hr fast M2 Liver - Region 11",
+    "shape": [
+      1878,
+      1883
+    ],
+    "gt_px": 439642,
+    "valid_px": 3499871,
+    "n_obj": 210
+  },
+  {
+    "name": "d3c86c65_1",
+    "asset": "6 hr fast M2 Liver - Region 11",
+    "shape": [
+      1476,
+      1423
+    ],
+    "gt_px": 223307,
+    "valid_px": 2022999,
+    "n_obj": 210
+  },
+  {
+    "name": "92431c83_0",
+    "asset": "ON-1 hr 13C M2 Liver - Region 13",
+    "shape": [
+      1878,
+      1879
+    ],
+    "gt_px": 189241,
+    "valid_px": 3511881,
+    "n_obj": 68
+  }
+]

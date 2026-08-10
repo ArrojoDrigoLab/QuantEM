@@ -1,0 +1,36 @@
+{
+  "id": 19898404,
+  "title": "DeepContact training data",
+  "doi": "10.6084/m9.figshare.19898404.v1",
+  "figshare_url": "https://figshare.com/articles/dataset/DeepContact_Training_Data/19898404",
+  "url_public_api": "https://api.figshare.com/v2/articles/19898404",
+  "resource_doi": "10.1101/2022.01.01.000001",
+  "description": "<p>2D TEM images for mitochondria, ER, and lipid droplet contact analysis.</p>",
+  "license": {
+    "name": "CC BY 4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "tags": ["TEM", "mitochondria", "ER"],
+  "categories": [
+    {"title": "Cell Biology"}
+  ],
+  "files": [
+    {
+      "id": 11,
+      "name": "train_stack_001.tif",
+      "size": 2048,
+      "mimetype": "image/tiff",
+      "download_url": "https://ndownloader.figshare.com/files/11"
+    },
+    {
+      "id": 12,
+      "name": "labels.zip",
+      "size": 1024,
+      "mimetype": "application/zip",
+      "download_url": "https://ndownloader.figshare.com/files/12"
+    }
+  ],
+  "size": 3072,
+  "published_date": "2022-05-27T00:00:00Z",
+  "references": ["https://doi.org/10.1101/2022.01.01.000001"]
+}

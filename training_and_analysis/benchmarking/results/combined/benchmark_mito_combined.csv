@@ -1,0 +1,9 @@
+model,ME2-Mossy,MitoNet-bench,PlantHunter,DeepPI,DeepContact-TEM,Mean(dataset_avg)
+microsam_vit_l_em_organelles,0.609,0.646,0.469,0.841,0.599,0.633
+mitochondria_omniem,0.610,0.363,0.610,0.914,0.652,0.630
+mitochondria_quantem,0.518,0.329,0.638,0.799,0.619,0.581
+mitonet_scaled,0.603,0.522,0.282,0.797,0.590,0.559
+orgsegnet,0.401,0.207,0.706,0.458,0.488,0.452
+mitonet,0.603,0.648,0.145,0.145,0.576,0.423
+deepcontact_mito,0.499,0.176,0.089,0.143,0.486,0.279
+incasem,0.383,0.301,0.061,0.146,0.356,0.249

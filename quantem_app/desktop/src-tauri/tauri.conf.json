@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "QuantEM",
+  "version": "0.1.0",
+  "identifier": "edu.vanderbilt.arrojodrigolab.quantem",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "QuantEM",
+        "url": "index.html",
+        "width": 1600,
+        "height": 1000,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "useLocalToolsDir": true,
+    "icon": ["icons/icon.ico"],
+    "resources": {
+      "../../packaging/pyinstaller/dist/quantem-server": "quantem-server"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "template": "nsis/installer.nsi",
+        "installerHooks": "nsis/hooks.nsh"
+      }
+    }
+  }
+}

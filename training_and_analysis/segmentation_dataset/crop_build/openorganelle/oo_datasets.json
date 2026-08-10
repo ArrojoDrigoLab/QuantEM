@@ -1,0 +1,560 @@
+[
+{
+"folder": "aic_desmosome-1",
+"url": "s3://janelia-cosem-datasets/aic_desmosome-1/aic_desmosome-1.zarr/recon-1/em/fibsem-uint8",
+"exp": "Desmosomes in A431 Cells (aic_desmosome-1) FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "aic_desmosome-2",
+"url": "s3://janelia-cosem-datasets/aic_desmosome-2/aic_desmosome-2.zarr/recon-1/em/fibsem-uint8",
+"exp": "Bharathan 2023 Desmosome-ER Volume EM",
+"db_bit": 8
+},
+{
+"folder": "aic_desmosome-3",
+"url": "s3://janelia-cosem-datasets/aic_desmosome-3/aic_desmosome-3.zarr/recon-1/em/fibsem-uint8",
+"exp": "Bharathan 2023 Desmosome-ER Volume EM",
+"db_bit": 8
+},
+{
+"folder": "cam_hum-airway-14500",
+"url": "s3://janelia-cosem-datasets/cam_hum-airway-14500/cam_hum-airway-14500.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Human Airway Epithelium ALI FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "cam_hum-airway-14771-b",
+"url": "s3://janelia-cosem-datasets/cam_hum-airway-14771-b/cam_hum-airway-14771-b.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Human Airway Epithelium ALI Culture FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_ccl81-covid-1",
+"url": "s3://janelia-cosem-datasets/jrc_ccl81-covid-1/jrc_ccl81-covid-1.zarr/recon-1/em/fibsem-uint16/",
+"exp": "SARS-CoV-2-infected Vero Cell FIB-SEM Volume",
+"db_bit": 16
+},
+{
+"folder": "jrc_choroid-plexus-2",
+"url": "s3://janelia-cosem-datasets/jrc_choroid-plexus-2/jrc_choroid-plexus-2.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse Choroid Plexus FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_cos7-11",
+"url": "s3://janelia-cosem-datasets/jrc_cos7-11/jrc_cos7-11.zarr/recon-1/em/fibsem-uint16",
+"exp": "COS-7 ER and Mitochondria CLEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_cos7-1a",
+"url": "s3://janelia-cosem-datasets/jrc_cos7-1a/jrc_cos7-1a.zarr/recon-1/em/fibsem-uint8/",
+"exp": "COS-7 Cell FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_cos7-1b",
+"url": "s3://janelia-cosem-datasets/jrc_cos7-1b/jrc_cos7-1b.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Xu 2021 COS-7 Cell FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_ctl-id8-1",
+"url": "s3://janelia-cosem-datasets/jrc_ctl-id8-1/jrc_ctl-id8-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Xu 2021 OpenOrganelle Volume EM Atlas",
+"db_bit": 8
+},
+{
+"folder": "jrc_ctl-id8-2",
+"url": "s3://janelia-cosem-datasets/jrc_ctl-id8-2/jrc_ctl-id8-2.zarr/recon-1/em/fibsem-uint8",
+"exp": "Cytotoxic T Lymphocyte Attacking Cancer Cell",
+"db_bit": 8
+},
+{
+"folder": "jrc_ctl-id8-3",
+"url": "s3://janelia-cosem-datasets/jrc_ctl-id8-3/jrc_ctl-id8-3.zarr/recon-1/em/fibsem-uint8",
+"exp": "Cytotoxic T Lymphocyte Attacking Cancer Cell",
+"db_bit": 8
+},
+{
+"folder": "jrc_ctl-id8-4",
+"url": "s3://janelia-cosem-datasets/jrc_ctl-id8-4/jrc_ctl-id8-4.zarr/recon-1/em/fibsem-uint8",
+"exp": "Cytotoxic T Lymphocyte Attacking Cancer Cell",
+"db_bit": 8
+},
+{
+"folder": "jrc_ctl-id8-5",
+"url": "s3://janelia-cosem-datasets/jrc_ctl-id8-5/jrc_ctl-id8-5.zarr/recon-1/em/fibsem-uint8",
+"exp": "Cytotoxic T Lymphocyte Attacking Cancer Cell",
+"db_bit": 8
+},
+{
+"folder": "jrc_dauer-larva",
+"url": "s3://janelia-cosem-datasets/jrc_dauer-larva/jrc_dauer-larva.zarr/recon-1/em/tem-uint8",
+"exp": "C. elegans Dauer Larva TEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_fly-acc-calyx-1",
+"url": "s3://janelia-cosem-datasets/jrc_fly-acc-calyx-1/jrc_fly-acc-calyx-1.zarr/recon-1/em/fibsem-uint16",
+"exp": "Drosophila Brain Accessory Calyx FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_fly-ellipsoid-body",
+"url": "s3://janelia-cosem-datasets/jrc_fly-ellipsoid-body/jrc_fly-ellipsoid-body.zarr/recon-2/em/fibsem-int16",
+"exp": "Drosophila Ellipsoid Body FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_fly-fsb-1",
+"url": "s3://janelia-cosem-datasets/jrc_fly-fsb-1/jrc_fly-fsb-1.zarr/recon-1/em/fibsem-uint16",
+"exp": "Drosophila Brain Fan-Shaped Body FIB-SEM (jrc_fly-fsb-1)",
+"db_bit": 8
+},
+{
+"folder": "jrc_fly-fsb-2",
+"url": "s3://janelia-cosem-datasets/jrc_fly-fsb-2/jrc_fly-fsb-2.zarr/recon-2/em/fibsem-int16",
+"exp": "Drosophila Brain Fan-Shaped Body FIB-SEM (jrc_fly-fsb-2)",
+"db_bit": 8
+},
+{
+"folder": "jrc_fly-larva-1",
+"url": "s3://janelia-cosem-datasets/jrc_fly-larva-1/jrc_fly-larva-1.n5/em/tem-uint8",
+"exp": "D. melanogaster Whole Larva Igor",
+"db_bit": 8
+},
+{
+"folder": "jrc_fly-mb-1a",
+"url": "s3://janelia-cosem-datasets/jrc_fly-mb-1a/jrc_fly-mb-1a.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Drosophila Mushroom Body FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_fly-mb-z0419-20",
+"url": "s3://janelia-cosem-datasets/jrc_fly-mb-z0419-20/jrc_fly-mb-z0419-20.zarr/recon-1/em/fibsem-uint16",
+"exp": "Drosophila Mushroom Body Alpha Lobes",
+"db_bit": 16
+},
+{
+"folder": "jrc_fly-protocerebral-bridge",
+"url": "s3://janelia-cosem-datasets/jrc_fly-protocerebral-bridge/jrc_fly-protocerebral-bridge.zarr/recon-2/em/fibsem-uint8",
+"exp": "Drosophila brain: protocerebral bridge",
+"db_bit": 8
+},
+{
+"folder": "jrc_fly-vnc-1",
+"url": "s3://janelia-cosem-datasets/jrc_fly-vnc-1/jrc_fly-vnc-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Drosophila Ventral Nerve Cord FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_hela-1",
+"url": "https://open.quiltdata.com/b/janelia-cosem-datasets/tree/jrc_hela-1/jrc_hela-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Interphase HeLa Cell jrc_hela-1 FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_hela-2",
+"url": "s3://janelia-cosem-datasets/jrc_hela-2/jrc_hela-2.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Interphase HeLa Cell jrc_hela-2 FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_hela-21",
+"url": "s3://janelia-cosem-datasets/jrc_hela-21/jrc_hela-21.zarr/recon-1/em/fibsem-uint8",
+"exp": "Weigel 2021 BFA-treated HeLa Cell",
+"db_bit": 8
+},
+{
+"folder": "jrc_hela-22",
+"url": "s3://janelia-cosem-datasets/jrc_hela-22/jrc_hela-22.zarr/recon-1/em/fibsem-uint8",
+"exp": "Weigel 2021 BFA-treated HeLa Cell",
+"db_bit": 8
+},
+{
+"folder": "jrc_hela-3",
+"url": "s3://janelia-cosem-datasets/jrc_hela-3/jrc_hela-3.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Interphase HeLa Cell FIB-SEM Volume",
+"db_bit": 16
+},
+{
+"folder": "jrc_hela-4",
+"url": "s3://janelia-cosem-datasets/jrc_hela-4/jrc_hela-4.zarr/recon-1/em/fibsem-uint16/",
+"exp": "Mitotic HeLa Cell FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_hela-bfa",
+"url": "s3://janelia-cosem-datasets/jrc_hela-bfa/jrc_hela-bfa.zarr/recon-1/em/fibsem-uint8",
+"exp": "Weigel 2021 BFA-treated HeLa Cell",
+"db_bit": 8
+},
+{
+"folder": "jrc_hela-h89-1",
+"url": "s3://janelia-cosem-datasets/jrc_hela-h89-1/jrc_hela-h89-1.n5/em/fibsem-uint16",
+"exp": "Weigel 2021 BFA-treated HeLa Cell",
+"db_bit": 8
+},
+{
+"folder": "jrc_hela-h89-2",
+"url": "s3://janelia-cosem-datasets/jrc_hela-h89-2/jrc_hela-h89-2.n5/em/fibsem-uint16",
+"exp": "Weigel 2021 BFA-treated HeLa Cell",
+"db_bit": 16
+},
+{
+"folder": "jrc_hela-nz-1",
+"url": "s3://janelia-cosem-datasets/jrc_hela-nz-1/jrc_hela-nz-1.zarr/recon-2/em/fibsem-int16",
+"exp": "Nocodazole-Treated HeLa Cell",
+"db_bit": 16
+},
+{
+"folder": "jrc_hela-nz-2",
+"url": "s3://janelia-cosem-datasets/jrc_hela-nz-2/jrc_hela-nz-2.zarr/recon-1/em/fibsem-int16",
+"exp": "Nocodazole-Treated HeLa Cell (jrc_hela-nz-2)",
+"db_bit": 16
+},
+{
+"folder": "jrc_hum-airway-14953vc",
+"url": "s3://janelia-cosem-datasets/jrc_hum-airway-14953vc/jrc_hum-airway-14953vc.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Near-isotropic FIB-SEM Human Airway",
+"db_bit": null
+},
+{
+"folder": "jrc_jurkat-1",
+"url": "s3://janelia-cosem-datasets/jrc_jurkat-1/jrc_jurkat-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Immortalized T-Cells Jurkat FIB-SEM",
+"db_bit": 16
+},
+{
+"folder": "jrc_macrophage-2",
+"url": "s3://janelia-cosem-datasets/jrc_macrophage-2/jrc_macrophage-2.zarr/recon-1/em/fibsem-uint8/",
+"exp": "THP-1 Macrophage FIB-SEM Volume",
+"db_bit": 16
+},
+{
+"folder": "jrc_mus-cerebellum-4",
+"url": "s3://janelia-cosem-datasets/jrc_mus-cerebellum-4/jrc_mus-cerebellum-4.zarr/recon-1/em/fibsem-int16",
+"exp": "Mouse Deep Cerebellar Nuclei",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-cerebellum-5",
+"url": "s3://janelia-cosem-datasets/jrc_mus-cerebellum-5/jrc_mus-cerebellum-5.zarr/recon-1/em/fibsem-int16",
+"exp": "Mouse Deep Cerebellar Nuclei",
+"db_bit": 16
+},
+{
+"folder": "jrc_mus-choroid-plexus-3",
+"url": "s3://janelia-cosem-datasets/jrc_mus-choroid-plexus-3/jrc_mus-choroid-plexus-3.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse Choroid Plexus eFIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-cortex-3",
+"url": "s3://janelia-cosem-datasets/jrc_mus-cortex-3/jrc_mus-cortex-3.zarr/recon-1/em/fibsem-int16",
+"exp": "Mouse Cerebral Cortex eFIB-SEM Volume",
+"db_bit": 16
+},
+{
+"folder": "jrc_mus-dorsal-striatum",
+"url": "s3://janelia-cosem-datasets/jrc_mus-dorsal-striatum/jrc_mus-dorsal-striatum.zarr/recon-2/em/fibsem-int16",
+"exp": "Mouse dorsal striatum",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-dorsal-striatum-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-dorsal-striatum-2/jrc_mus-dorsal-striatum-2.zarr/recon-1/em/fibsem-int16",
+"exp": "Mouse Dorsal Striatum eFIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-duodenum-1a",
+"url": "s3://janelia-cosem-datasets/jrc_mus-duodenum-1a/jrc_mus-duodenum-1a.zarr/recon-1/em/fibsem-uint16",
+"exp": "Mouse Duodenum FIB-SEM (jrc_mus-duodenum-1a)",
+"db_bit": 16
+},
+{
+"folder": "jrc_mus-epididymis-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-epididymis-1/jrc_mus-epididymis-1.n5/em/fibsem-uint8/",
+"exp": "Mouse Epididymis 1 FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-epididymis-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-epididymis-2/jrc_mus-epididymis-2.n5/em/fibsem-uint8/",
+"exp": "Mouse Epididymis 2 FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-granule-neurons-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-granule-neurons-1/jrc_mus-granule-neurons-1.zarr/recon-2/em/fibsem-int16",
+"exp": "Cultured Mouse Cerebellar Granule Neurons",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-granule-neurons-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-granule-neurons-2/jrc_mus-granule-neurons-2.zarr/recon-2/em/fibsem-int16",
+"exp": "Mouse Cerebellar Granule Neurons FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-granule-neurons-3",
+"url": "s3://janelia-cosem-datasets/jrc_mus-granule-neurons-3/jrc_mus-granule-neurons-3.zarr/recon-2/em/fibsem-int16",
+"exp": "Mouse Cerebellar Granule Neuron FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-guard-hair-follicle",
+"url": "s3://janelia-cosem-datasets/jrc_mus-guard-hair-follicle/jrc_mus-guard-hair-follicle.zarr/recon-1/em/fibsem-uint8",
+"exp": "Handler et al. Sensory Organs OpenOrganelle",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-heart-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-heart-1/jrc_mus-heart-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "P7 Mouse Heart FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-hippocampus-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-hippocampus-1/jrc_mus-hippocampus-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "P7 Mouse Hippocampus FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-hippocampus-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-hippocampus-2/jrc_mus-hippocampus-2.zarr/recon-1/em/fibsem-uint8",
+"exp": "Mouse Hippocampus CA1 eFIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-hippocampus-3",
+"url": "s3://janelia-cosem-datasets/jrc_mus-hippocampus-3/jrc_mus-hippocampus-3.zarr/recon-1/em/fibsem-int16",
+"exp": "Mouse Hippocampus CA1 eFIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-kidney",
+"url": "s3://janelia-cosem-datasets/jrc_mus-kidney/jrc_mus-kidney.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse Kidney FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-kidney-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-kidney-2/jrc_mus-kidney-2.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse kidney",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-kidney-3",
+"url": "s3://janelia-cosem-datasets/jrc_mus-kidney-3/jrc_mus-kidney-3.zarr/recon-1/em/fibsem-uint8/",
+"exp": "P7 Mouse Kidney FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-kidney-glomerulus-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-kidney-glomerulus-2/jrc_mus-kidney-glomerulus-2.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse kidney glomerulus",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver/jrc_mus-liver.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse Liver",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver-2/jrc_mus-liver-2.n5/em/fibsem-uint8",
+"exp": "Mouse Liver FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver-3",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver-3/jrc_mus-liver-3.zarr/recon-1/em/fibsem-uint8",
+"exp": "P7 Mouse Liver FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver-4",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver-4/jrc_mus-liver-4.zarr/recon-1/em/fibsem-uint8",
+"exp": "Parlakgul 2022 Mouse Liver FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver-5",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver-5/jrc_mus-liver-5.zarr/recon-1/em/fibsem-uint8",
+"exp": "Parlakgul 2022 Mouse Liver FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver-6",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver-6/jrc_mus-liver-6.zarr/recon-1/em/fibsem-uint8",
+"exp": "Parlakgul 2022 Mouse Liver FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver-7",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver-7/jrc_mus-liver-7.zarr/recon-1/em/fibsem-uint8",
+"exp": "Parlakgul 2022 Mouse Liver FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver-zon-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver-zon-1/jrc_mus-liver-zon-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse Liver Acinus Zone 1 FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-liver-zon-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-liver-zon-2/jrc_mus-liver-zon-2.zarr/recon-1/em/fibsem-uint8",
+"exp": "Mouse Liver Acinus FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-lung-2a",
+"url": "s3://janelia-cosem-datasets/jrc_mus-lung-2a/jrc_mus-lung-2a.zarr/recon-1/em/fibsem-uint16",
+"exp": "Mouse Lung FIB-SEM (jrc_mus-lung-2a)",
+"db_bit": 16
+},
+{
+"folder": "jrc_mus-meissner-corpuscle-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-meissner-corpuscle-1/jrc_mus-meissner-corpuscle-1.zarr/recon-1/em/fibsem-uint8",
+"exp": "Handler et al. Sensory Organs OpenOrganelle",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-meissner-corpuscle-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-meissner-corpuscle-2/jrc_mus-meissner-corpuscle-2.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Handler et al. Sensory Organs OpenOrganelle",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-nacc-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-nacc-1/jrc_mus-nacc-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse Nucleus Accumbens FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-nacc-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-nacc-2/jrc_mus-nacc-2.zarr/recon-2/em/fibsem-int16",
+"exp": "Mouse Nucleus Accumbens FIB-SEM (jrc_mus-nacc-2)",
+"db_bit": 16
+},
+{
+"folder": "jrc_mus-nacc-3",
+"url": "s3://janelia-cosem-datasets/jrc_mus-nacc-3/jrc_mus-nacc-3.zarr/recon-2/em/fibsem-int16",
+"exp": "Mouse nucleus accumbens",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-nacc-4",
+"url": "s3://janelia-cosem-datasets/jrc_mus-nacc-4/jrc_mus-nacc-4.zarr/recon-2/em/fibsem-int16",
+"exp": "Mouse Nucleus Accumbens FIB-SEM Acquisition 4",
+"db_bit": 16
+},
+{
+"folder": "jrc_mus-pacinian-corpuscle",
+"url": "s3://janelia-cosem-datasets/jrc_mus-pacinian-corpuscle/jrc_mus-pacinian-corpuscle.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Handler et al. Sensory Organs OpenOrganelle",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-pancreas-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-pancreas-1/neuroglancer/em/fibsem-uint8.precomputed",
+"exp": "Isolated murine pancreatic islets",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-pancreas-2",
+"url": "s3://janelia-cosem-datasets/jrc_mus-pancreas-2/jrc_mus-pancreas-2.zarr/recon-1/em/fibsem-uint8",
+"exp": "Mouse Pancreatic Islet FIB-SEM Low Glucose",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-pancreas-3",
+"url": "s3://janelia-cosem-datasets/jrc_mus-pancreas-3/jrc_mus-pancreas-3.zarr/recon-1/em/fibsem-uint16",
+"exp": "Mouse Pancreatic Islet FIB-SEM Low Glucose",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-pancreas-4",
+"url": "s3://janelia-cosem-datasets/jrc_mus-pancreas-4/jrc_mus-pancreas-4.zarr/recon-1/em/fibsem-uint8",
+"exp": "P7 Mouse Pancreas FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-salivary-1",
+"url": "https://open.quiltdata.com/b/janelia-cosem-datasets/tree/jrc_mus-salivary-1/jrc_mus-salivary-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Mouse Salivary Gland FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-sc-zp104a",
+"url": "s3://janelia-cosem-datasets/jrc_mus-sc-zp104a/jrc_mus-sc-zp104a.zarr/recon-1/em/fibsem-uint8",
+"exp": "Zhu 2022 Mouse Spinal Cord FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-sc-zp105a",
+"url": "s3://janelia-cosem-datasets/jrc_mus-sc-zp105a/jrc_mus-sc-zp105a.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Zhu 2022 Mouse Spinal Cord FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-skel-muscle-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-skel-muscle-1/jrc_mus-skel-muscle-1.zarr/recon-1/em/fibsem-uint8",
+"exp": "Mouse Skeletal Muscle FIB-SEM (jrc_mus-skel-muscle-1)",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-skin-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-skin-1/jrc_mus-skin-1.zarr/recon-1/em/fibsem-uint8",
+"exp": "P7 Mouse Skin FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-skin-2a",
+"url": "s3://janelia-cosem-datasets/jrc_mus-skin-2a/jrc_mus-skin-2a.zarr/recon-1/em/fibsem-uint16",
+"exp": "Mouse Skin FIB-SEM (jrc_mus-skin-2a)",
+"db_bit": 16
+},
+{
+"folder": "jrc_mus-thymus-1",
+"url": "s3://janelia-cosem-datasets/jrc_mus-thymus-1/jrc_mus-thymus-1.zarr/recon-1/em/fibsem-uint8",
+"exp": "P7 Mouse Thymus FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_mus-thymus-2a",
+"url": "s3://janelia-cosem-datasets/jrc_mus-thymus-2a/jrc_mus-thymus-2a.zarr/recon-1/em/fibsem-uint16",
+"exp": "Mouse Thymus FIB-SEM (jrc_mus-thymus-2a)",
+"db_bit": 16
+},
+{
+"folder": "jrc_sum159-1",
+"url": "s3://janelia-cosem-datasets/jrc_sum159-1/jrc_sum159-1.zarr/recon-1/em/fibsem-uint8",
+"exp": "SUM159 Breast Cancer Cell FIB-SEM",
+"db_bit": 8
+},
+{
+"folder": "jrc_sum159-4",
+"url": "s3://janelia-cosem-datasets/jrc_sum159-4/jrc_sum159-4.zarr/recon-1/em/fibsem-uint8/",
+"exp": "SUM159 Breast Cancer Cell FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_ut21-1413-003",
+"url": "s3://janelia-cosem-datasets/jrc_ut21-1413-003/jrc_ut21-1413-003.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Human Renal Carcinoma FIB-SEM Volume",
+"db_bit": 8
+},
+{
+"folder": "jrc_zf-cardiac-1",
+"url": "s3://janelia-cosem-datasets/jrc_zf-cardiac-1/jrc_zf-cardiac-1.zarr/recon-1/em/fibsem-uint8/",
+"exp": "Zebrafish Cardiac FIB-SEM Volume",
+"db_bit": 8
+}
+]

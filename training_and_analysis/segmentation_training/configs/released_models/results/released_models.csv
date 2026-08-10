@@ -1,0 +1,5 @@
+organelle,model,neck,decoder,adaptation,dice,n_eval
+mito,OmniEM,naive_1x1,affinity_mws,lora,0.6298,518
+mito,QuantEM,naive_1x1,affinity_mws,last_n,0.5808,518
+er,OmniEM,resnet34_detail,dpt,lora,0.4532,359
+er,QuantEM,resnet34_detail,upernet,full,0.3622,359

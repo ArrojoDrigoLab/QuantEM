@@ -1,0 +1,79 @@
+[build-system]
+# 77 is the floor for PEP 639 (`license` as an SPDX string + `license-files`). The older
+# `license = {text = ...}` table is deprecated and warns on every build.
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "napari-quantem"
+version = "0.1.0"
+description = "QuantEM & OmniEM vision-transformer organelle segmentation for electron microscopy"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{ name = "Arrojo e Drigo Lab, Vanderbilt University" }]
+keywords = ["napari", "electron microscopy", "segmentation", "organelle", "mitochondria"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: napari",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Image Recognition",
+  "Operating System :: OS Independent",
+]
+
+dependencies = [
+  # Pinned to the 0.1 line: the artifact layout and the registry schema are a
+  # contract between these two packages, and a 0.2 core could change either.
+  "quantem-core~=0.1.0",
+  "napari>=0.7",
+  "magicgui>=0.8",
+  "qtpy",
+  "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# `pip install napari-quantem` deliberately does NOT pull a Qt binding: napari itself does not,
+# and a plugin that did would fight a user who already runs PySide6, conda-forge napari, or the
+# napari bundle. But that means a bare install of the plugin alone leaves napari unlaunchable
+# (`qtpy` raises QtBindingsNotFoundError), so there has to be one command that just works.
+all = ["napari[all]"]
+testing = ["pytest", "pytest-qt", "napari[pyqt6]"]
+
+[project.entry-points."napari.manifest"]
+napari-quantem = "napari_quantem:napari.yaml"
+
+[project.urls]
+Homepage = "https://github.com/ArrojoDrigoLab/QuantEM"
+"Bug Tracker" = "https://github.com/ArrojoDrigoLab/QuantEM/issues"
+"Source Code" = "https://github.com/ArrojoDrigoLab/QuantEM"
+"User Support" = "https://github.com/ArrojoDrigoLab/QuantEM/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["napari_quantem*"]
+
+[tool.setuptools.package-data]
+napari_quantem = ["napari.yaml", "resources/*.png", "resources/*.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests import after pytest.importorskip on purpose, so the guard actually guards.
+"**/_tests/**" = ["E402"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+  "E501",
+  # A widget must never take napari down because an optional path failed -- writing a feature
+  # table on an older napari, describing the device when torch is broken, raising a notification.
+  # Every one of these is a deliberate degrade-gracefully catch with a user-visible fallback.
+  "BLE001",
+  "S110",
+]

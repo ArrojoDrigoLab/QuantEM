@@ -1,0 +1,139 @@
+/* This card is a light panel that lives inside a dark sidebar (`.viewer-sidebar`
+ * sets `color: #f5f5f5`). Every rule below that renders text therefore has to
+ * state its own colour: anything left unset inherits near-white and lands on
+ * this card's #f7f9fb at about 1.02:1, i.e. invisible. The heading and the
+ * custom-name input were both in that state -- "Add segmentation" was white on
+ * white, and so was whatever you typed into the box.
+ *
+ * The root `color` here is the backstop for anything added later; the explicit
+ * per-element colours below are the contrast the design actually wants. */
+.segmentation-create-card {
+  background: #f7f9fb;
+  border: 1px solid #d7dde4;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: #1f2937;
+}
+
+.segmentation-create-card h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  /* 13.9:1 on #f7f9fb. */
+  color: #111827;
+}
+
+.segmentation-create-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.segmentation-create-card label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.segmentation-create-card input {
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  /* Both stated: the input inherited the sidebar's near-white text and had no
+     background of its own, so the name being typed was unreadable. */
+  background: #ffffff;
+  color: #111827;
+}
+
+.segmentation-create-card input::placeholder {
+  /* 4.6:1 on white. */
+  color: #6b7280;
+}
+
+.segmentation-create-card button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: #1d4ed8;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.segmentation-create-card button:hover:not(:disabled) {
+  background: #1e40af;
+}
+
+.segmentation-create-card button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.segmentation-quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmentation-quick-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.segmentation-quick-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.segmentation-quick-group-title {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.segmentation-quick-buttons button {
+  background: #0f172a;
+}
+
+.segmentation-quick-buttons button:hover:not(:disabled) {
+  background: #111827;
+}
+
+.segmentation-error {
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+/* The "Model to run" choice inside the create confirmation. Rendered in the
+   ConfirmDialog's details box (light background), so colours are stated the
+   same way the rest of this card states them. */
+.segmentation-create-model-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 0.5rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.segmentation-create-model-choice select {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 400;
+  background: #ffffff;
+  color: #111827;
+}

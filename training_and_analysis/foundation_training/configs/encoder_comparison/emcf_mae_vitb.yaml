@@ -1,0 +1,24 @@
+# EMCellFound (EMCF) — a masked autoencoder pretrained on EM.
+# Yu, Z. et al. EMCF ecosystem: towards a pretrained foundation model for electron microscopy image
+# analysis. bioRxiv 2025.12.09.693109.
+#
+# Obtain the weights from the Hugging Face release, which is Apache-2.0:
+#     https://huggingface.co/Zeyu0102/EMCellFound
+# Use that copy, not the GitHub source tree, which is GPL-3.0. The two carry the same
+# weights under different terms, and nothing here needs the GPL copy: EMCF is run as a
+# published comparison encoder only — never trained, fine-tuned, or redistributed.
+name: emcf_mae_vitb
+timm_model: vit_base_patch16_224
+weight_file: MAE_EMCellFoundVit_base_224_inEMCF.pth
+objective: mae
+arch: vit_base
+patch_size: 16
+embed_dim: 768
+depth: 12
+in_chans: 3
+base_tile: 512
+img_size_build: 224
+norm_mean: [0.485, 0.456, 0.406]
+norm_std: [0.229, 0.224, 0.225]
+# Learned absolute position embedding, so it stays at its native tile in the context sweep.
+context_sweepable: false

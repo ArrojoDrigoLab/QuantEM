@@ -1,0 +1,124 @@
+.viewer-screen {
+  display: flex;
+  height: 100%;
+  background: #0f0f0f;
+  color: #f5f5f5;
+}
+
+.viewer-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.viewer-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px 8px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+/* min-width: 0 lets the long filename ellipsis instead of forcing the header
+   wider than the pane and shoving the action links off the edge. */
+.viewer-header-identity {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.viewer-header h2 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The back control lives in the header flow, above the title, so it can never
+   overlap it. */
+.viewer-back-button {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #1b1b1b;
+  color: #e6e6e6;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.viewer-back-button:hover {
+  background: #262626;
+  border-color: #4a4a4a;
+}
+
+.viewer-back-button:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+.viewer-filename {
+  font-size: 12px;
+  color: #9a9a9a;
+}
+
+/* The pixel-size control is a Tailwind-styled shared component dropped into
+   this hand-written-CSS screen; it only needs spacing and a readable body
+   colour against the dark chrome. */
+.viewer-pixel-size {
+  margin-top: 8px;
+  color: #d1d1d1;
+}
+
+.viewer-pixel-size p {
+  color: #b9b9b9;
+}
+
+.viewer-loading-indicator {
+  font-size: 12px;
+  color: #d1d1d1;
+}
+
+.viewer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Entry points to the analysis screen and the fine-tuning wizard. Styled here
+   rather than with Tailwind because this screen is the hand-written-CSS one. */
+.viewer-header-link {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #1b1b1b;
+  color: #e6e6e6;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.viewer-header-link:hover {
+  background: #262626;
+  border-color: #4a4a4a;
+}
+
+.viewer-canvas {
+  flex: 1;
+  position: relative;
+}
+
+.viewer-loading {
+  padding: 24px;
+  color: #d1d1d1;
+}

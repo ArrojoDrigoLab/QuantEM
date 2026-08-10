@@ -1,0 +1,15 @@
+organelle,model,dataset,dice
+mito,OmniEM ViT-L,PlantHunter,0.610
+mito,OmniEM ViT-L,DeepContact-TEM,0.652
+mito,QuantEM ViT-B,PlantHunter,0.638
+mito,QuantEM ViT-B,DeepContact-TEM,0.619
+mito,OrgSegNet,PlantHunter,0.706
+mito,DeepContact,DeepContact-TEM,0.486
+er,OmniEM ViT-L,DeepContact-TEM,0.567
+er,QuantEM ViT-B,DeepContact-TEM,0.492
+er,DeepContact,DeepContact-TEM,0.353
+nucleus,OmniEM ViT-L,PlantHunter,0.946
+nucleus,QuantEM ViT-B,PlantHunter,0.827
+nucleus,OrgSegNet,PlantHunter,0.919
+ld,OmniEM ViT-L,DeepContact-cell,0.464
+ld,QuantEM ViT-B,DeepContact-cell,0.442

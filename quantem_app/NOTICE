@@ -1,0 +1,68 @@
+QuantEM
+Copyright (c) 2026 Vanderbilt University
+
+This product includes software developed by third parties, listed below. The
+QuantEM source in this directory is BSD-3-Clause (see LICENSE). Model weights
+are not distributed with it; they are hosted on Hugging Face and licensed there.
+
+If you use QuantEM in published research, please cite:
+    Acree, C. et al. QuantEM: An optimized platform of vision transformer-based
+    models for segmentation and analysis of electron microscopy data.
+
+================================================================================
+Model weights
+================================================================================
+
+QuantEM ViT-B encoder + mitochondria / ER / nucleus / lipid-droplet heads
+    Trained by the Arrojo e Drigo Lab on the QuantEM EM corpus, from scratch,
+    using a DINOv3-style self-supervised recipe. Not initialised from Meta
+    weights. Licence and training-data attribution are recorded on the Hugging
+    Face model repository.
+    Every released pack carries an exported TorchScript encoder, so the shipped
+    artifact does not redistribute Meta's implementation. See the "Self-contained
+    encoders" section of README.md.
+
+OmniEM (EM-DINO) ViT-L encoder + heads
+    Upstream encoder: EM-DINO, from "Unifying the Electron Microscopy Multiverse
+    through a Large-scale Foundation Model" (bioRxiv 10.1101/2025.04.13.648639).
+    The QuantEM heads are the Arrojo e Drigo Lab's; the base encoder is not.
+    Architecture is constructed through `timm` (Apache-2.0) as
+    `vit_large_patch14_dinov2.lvd142m`; the EM-DINO state dict is loaded into it.
+    The released QuantEM packs (both families) are published under CC BY 4.0,
+    stated on the Hugging Face repository they are fetched from.
+
+================================================================================
+Bundled Python dependencies
+================================================================================
+
+This application depends on, but does not vendor, the following. Each is
+installed from its own distribution and retains its own licence:
+
+    Django, Django REST Framework, django-environ, django-cors-headers,
+    django-filter, waitress            BSD-3-Clause / MIT
+    NumPy, SciPy, scikit-image, pandas BSD-3-Clause
+    Pillow                             MIT-CMU
+    OpenCV (headless)                  Apache-2.0
+    Shapely                            BSD-3-Clause
+    tifffile, imagecodecs              BSD-3-Clause
+    zarr, numcodecs                    MIT
+    PyTorch, torchvision               BSD-3-Clause
+    timm                               Apache-2.0
+    huggingface-hub                    Apache-2.0
+    pyvips (optional)                  MIT
+    pywebview (optional)               BSD-3-Clause
+
+    Every dependency above is permissively licensed. v1 reads TIFF and PNG only,
+    which removed the mrcfile, nd2 and RosettaSciIO readers; RosettaSciIO was
+    GPL-3.0-or-later, so its removal also clears the question of what a frozen
+    single-binary installer would embed.
+
+================================================================================
+Frontend
+================================================================================
+
+    React, React Router                MIT
+    Viv (@hms-dbmi/viv)                MIT
+    deck.gl, luma.gl                   MIT
+    Vite                               MIT
+

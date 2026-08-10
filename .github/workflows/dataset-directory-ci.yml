@@ -1,0 +1,79 @@
+name: dataset directory — checks
+
+# Runs on every change to the directory. The gate that matters is `verify`:
+# it re-asserts the corpus invariants and re-scans every published byte for
+# personal data, so a bad export cannot reach the deploy job.
+
+on:
+  pull_request:
+    paths:
+      - 'dataset_directory/**'
+      - 'pages/**'
+      - '.github/workflows/dataset-directory-*.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'dataset_directory/**'
+      - 'pages/**'
+      - '.github/workflows/dataset-directory-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exporter:
+    name: exporter (python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: python -m pip install --upgrade pip pytest ruff openpyxl pillow
+
+      - name: Lint
+        run: ruff check dataset_directory/exporter
+
+      - name: Unit tests
+        run: python -m pytest dataset_directory/exporter/tests -q
+        env:
+          PYTHONPATH: dataset_directory/exporter/src
+
+      - name: Verify the published artifacts
+        # Corpus invariants, structural consistency, the privacy scan, and the
+        # exclusion list. Supplementary-table parity is checked when exporting,
+        # not here: the table is not part of the public repository.
+        run: |
+          python -m quantem_directory verify \
+            --data dataset_directory/data \
+            --excluded dataset_directory/exporter/excluded.json
+        env:
+          PYTHONPATH: dataset_directory/exporter/src
+
+  site:
+    name: site (javascript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Engine tests
+        # The same suite the browser page runs, against the committed export.
+        run: node dataset_directory/site/tests/run.mjs dataset_directory/data
+
+      - name: No build step to break
+        # The site is plain ES modules on purpose. This asserts that stays true,
+        # because the moment a bundler appears the "just open it" property dies.
+        run: |
+          if [ -f dataset_directory/site/package.json ]; then
+            echo "A package.json appeared in site/. The site is meant to run without a build step."
+            exit 1
+          fi
+          grep -q 'type="module"' dataset_directory/site/index.html

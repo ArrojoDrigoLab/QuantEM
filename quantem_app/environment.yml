@@ -1,0 +1,43 @@
+# QuantEM desktop application — development environment.
+#
+#   conda env create -f environment.yml
+#   conda activate quantem-app
+#   pip install -e ".[dev,desktop,vips]"
+#
+# Runtime dependency truth lives in pyproject.toml. This file exists because the
+# scientific-Python stack (libvips, imagecodecs, torch) installs far more reliably
+# from conda-forge than from wheels on Windows.
+#
+# There is no PostgreSQL, no PostGIS, no GDAL, no GEOS, no mod_spatialite and no
+# Redis here. That is deliberate: everything lives in one SQLite file.
+name: quantem-app
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pip
+
+  # Native libraries that are painful as wheels
+  - libvips            # optional accelerator; Pillow fallback exists everywhere
+  - pyvips
+  - imagecodecs
+  - opencv
+
+  # Numerics / imaging
+  - numpy>=2
+  - scipy>=1.11
+  - scikit-image>=0.22
+  - shapely>=2.0
+  - pillow>=10
+  - pandas>=2.0
+  - tifffile>=2024
+  - zarr>=3.1,<4
+  - numcodecs>=0.16
+
+  # Torch: conda-forge resolves the CPU build cleanly on all three platforms.
+  # For CUDA, install the matching wheel afterwards from the PyTorch index.
+  - pytorch>=2.0
+  - torchvision>=0.15
+
+  - pip:
+      - -e .[dev,desktop]
