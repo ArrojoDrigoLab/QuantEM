@@ -20,7 +20,7 @@ behind the published numbers, and changing one changes what the site reports:
 from __future__ import annotations
 
 import re
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 # --------------------------------------------------------------------------
 # Dimensionality
@@ -30,7 +30,7 @@ _NM_AXIS = re.compile(r"(\d+(?:\.\d+)?)\s*nm", re.IGNORECASE)
 
 
 def is_three_dimensional(
-    *, dimensionality_tags: Sequence[str], resolution_field: str, depth: Optional[int]
+    *, dimensionality_tags: Sequence[str], resolution_field: str, depth: int | None
 ) -> bool:
     """Decide whether an asset is a 3D acquisition.
 
@@ -54,7 +54,7 @@ def is_three_dimensional(
 
 def reference_url(
     *, dataset_doi: str = "", source_url: str = "", experiment_doi: str = ""
-) -> Optional[str]:
+) -> str | None:
     """Return the public link for a dataset, or ``None`` if it has none.
 
     Preference order is the dataset's own DOI, then a direct source URL, then
@@ -106,7 +106,7 @@ _REPOSITORY_RULES: tuple[tuple[re.Pattern, str], ...] = (
 )
 
 
-def repository_of(url: Optional[str]) -> str:
+def repository_of(url: str | None) -> str:
     """Name the repository serving ``url``.
 
     Falls back to :data:`OTHER_REPOSITORY` rather than inventing a label from
@@ -127,7 +127,7 @@ def repository_of(url: Optional[str]) -> str:
 
 #: ``(label, exclusive upper bound in nm/px)``. The final band is unbounded and
 #: the unknown band is appended separately so it always sorts last.
-RESOLUTION_BANDS: tuple[tuple[str, Optional[float]], ...] = (
+RESOLUTION_BANDS: tuple[tuple[str, float | None], ...] = (
     ("< 1 nm/px", 1.0),
     ("1 – 4 nm/px", 4.0),
     ("4 – 8 nm/px", 8.0),
@@ -138,7 +138,7 @@ RESOLUTION_BANDS: tuple[tuple[str, Optional[float]], ...] = (
 RESOLUTION_UNKNOWN = "Unknown"
 
 
-def resolution_band(nm: Optional[float]) -> str:
+def resolution_band(nm: float | None) -> str:
     """Bucket an in-plane resolution, keeping unresolved values addressable.
 
     Roughly a third of assets have no parsable in-plane resolution. They get a
@@ -165,8 +165,8 @@ def resolution_band_labels() -> list[str]:
 
 
 def format_dimensions(
-    width: Optional[int], height: Optional[int], depth: Optional[int]
-) -> Optional[str]:
+    width: int | None, height: int | None, depth: int | None
+) -> str | None:
     """Render pixel extents as ``2048x2119`` or ``2048x2119x310``."""
     if not width or not height:
         return None
@@ -175,7 +175,7 @@ def format_dimensions(
     return f"{width}×{height}"
 
 
-def parse_int(value: object) -> Optional[int]:
+def parse_int(value: object) -> int | None:
     """Parse an integer from extract CSV text, tolerating blanks and floats."""
     text = str(value or "").strip()
     if not text:
@@ -186,7 +186,7 @@ def parse_int(value: object) -> Optional[int]:
         return None
 
 
-def parse_float(value: object) -> Optional[float]:
+def parse_float(value: object) -> float | None:
     """Parse a float from extract CSV text, tolerating blanks."""
     text = str(value or "").strip()
     if not text:

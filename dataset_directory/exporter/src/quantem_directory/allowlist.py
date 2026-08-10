@@ -13,7 +13,7 @@ regression fails the build rather than the review.
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 #: Tag groups whose values become public facets or public display strings.
 #: Anything absent from this set is dropped at transform time.

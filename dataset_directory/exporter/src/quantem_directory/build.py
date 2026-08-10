@@ -20,11 +20,11 @@ import csv
 import hashlib
 import json
 from collections import Counter, defaultdict
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
 
 from . import SCHEMA_VERSION, derive
-from .extract import Asset, Extract
+from .extract import Extract
 
 # Facet key -> (source tag group, display label). Order is display order.
 TREE_FACETS = (
@@ -37,17 +37,17 @@ TREE_FACETS = (
 NO_VALUE_LABEL = "Not recorded"
 
 
-def _csr(rows: Sequence[Sequence[int]]) -> Dict[str, List[int]]:
+def _csr(rows: Sequence[Sequence[int]]) -> dict[str, list[int]]:
     """Flatten variable-length integer rows into offsets and values."""
     offsets = [0]
-    values: List[int] = []
+    values: list[int] = []
     for row in rows:
         values.extend(row)
         offsets.append(len(values))
     return {"offsets": offsets, "values": values}
 
 
-def _dictionary(counts: Counter) -> List[str]:
+def _dictionary(counts: Counter) -> list[str]:
     """Order a facet vocabulary by frequency, then alphabetically."""
     return [label for label, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].casefold()))]
 
@@ -66,8 +66,8 @@ def build(
     extract: Extract,
     out_dir: Path,
     *,
-    thumb_ids: Optional[Iterable[str]] = None,
-    thumb_meta: Optional[dict] = None,
+    thumb_ids: Iterable[str] | None = None,
+    thumb_meta: dict | None = None,
     source_snapshot: str = "",
 ) -> dict:
     """Write every published artifact into ``out_dir`` and return a report."""
@@ -82,7 +82,7 @@ def build(
     repository_of_dataset = {d.id: derive.repository_of(d.url) for d in datasets}
 
     # ---- vocabularies ---------------------------------------------------
-    counts: Dict[str, Counter] = {
+    counts: dict[str, Counter] = {
         "kingdom": Counter(),
         "species": Counter(),
         "organ": Counter(),
@@ -105,9 +105,9 @@ def build(
     resolution_lookup = {label: i for i, label in enumerate(resolution_labels)}
 
     # ---- asset columns --------------------------------------------------
-    columns: Dict[str, list] = {k: [] for k in ("id", "name", "dataset", "w", "h", "z", "nm")}
-    single: Dict[str, list] = {k: [] for k in ("modality", "resolution", "dim", "repository", "thumb")}
-    multi_rows: Dict[str, List[List[int]]] = {
+    columns: dict[str, list] = {k: [] for k in ("id", "name", "dataset", "w", "h", "z", "nm")}
+    single: dict[str, list] = {k: [] for k in ("modality", "resolution", "dim", "repository", "thumb")}
+    multi_rows: dict[str, list[list[int]]] = {
         "kingdom": [],
         "species": [],
         "organ": [],
@@ -158,7 +158,7 @@ def build(
         dimension_counts["3D" if three_d else "2D"] += 1
 
     # ---- dataset rows ---------------------------------------------------
-    hero_pool: Dict[str, List[tuple]] = defaultdict(list)
+    hero_pool: dict[str, list[tuple]] = defaultdict(list)
     for asset in assets:
         if asset.id.replace("-", "") in thumbs:
             hero_pool[asset.dataset_id].append((-asset.tiles, asset.name, asset.id.replace("-", "")))
@@ -185,7 +185,7 @@ def build(
     # ---- facets ---------------------------------------------------------
     facets = []
     for key, (parent_group, child_group), label in TREE_FACETS:
-        pair_counts: Dict[int, Counter] = defaultdict(Counter)
+        pair_counts: dict[int, Counter] = defaultdict(Counter)
         parent_counts: Counter = Counter()
         for asset in assets:
             parents = asset.tags.get(parent_group, ())

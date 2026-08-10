@@ -31,13 +31,13 @@ class TestTagGroupGate:
     def test_the_published_set_is_the_five_facet_groups(self):
         # Widening this set is a privacy decision, not a refactor. If this test
         # is failing, that decision is what needs review.
-        assert allowlist.PUBLISHED_TAG_GROUPS == {
+        assert {
             "kingdom",
             "species",
             "organ",
             "Tissue Region",
             "modality",
-        }
+        } == allowlist.PUBLISHED_TAG_GROUPS
 
     def test_licence_is_withheld_deliberately(self):
         # Reuse terms come from the depositor, not from this directory.

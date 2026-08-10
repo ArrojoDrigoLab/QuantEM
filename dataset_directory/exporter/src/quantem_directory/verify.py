@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Optional
 
 from . import allowlist
 
@@ -30,7 +29,7 @@ def _load(data_dir: Path, name: str) -> dict:
     return json.loads((data_dir / name).read_text(encoding="utf-8"))
 
 
-def _check_invariants(manifest: dict, expected: dict, failures: List[str]) -> None:
+def _check_invariants(manifest: dict, expected: dict, failures: list[str]) -> None:
     actual = manifest.get("counts", {})
     for key, want in expected.items():
         if key.startswith("_"):
@@ -40,7 +39,7 @@ def _check_invariants(manifest: dict, expected: dict, failures: List[str]) -> No
             failures.append(f"invariant {key}: expected {want}, got {got}")
 
 
-def _check_structure(assets: dict, datasets: dict, failures: List[str]) -> None:
+def _check_structure(assets: dict, datasets: dict, failures: list[str]) -> None:
     n = assets["n"]
     for name, column in assets["columns"].items():
         if len(column) != n:
@@ -59,9 +58,14 @@ def _check_structure(assets: dict, datasets: dict, failures: List[str]) -> None:
 
     rows = datasets["rows"]
     known_ids = set(assets["columns"]["id"])
+    # strict=False deliberately: a length mismatch between these two columns is
+    # already reported by name in the loops above, and raising here would abort
+    # the run before the rest of the failures were collected.
     thumbed_ids = {
         asset_id
-        for asset_id, flag in zip(assets["columns"]["id"], assets["single"]["thumb"])
+        for asset_id, flag in zip(
+            assets["columns"]["id"], assets["single"]["thumb"], strict=False
+        )
         if flag
     }
     for row in rows:
@@ -89,7 +93,7 @@ def _check_structure(assets: dict, datasets: dict, failures: List[str]) -> None:
         failures.append(f"thumbnail flag set on {thumbed} of {n} assets")
 
 
-def _check_privacy(data_dir: Path, facets: dict, failures: List[str], notes: List[str]) -> None:
+def _check_privacy(data_dir: Path, facets: dict, failures: list[str], notes: list[str]) -> None:
     """Scan every published byte, and hold facet vocabularies to a higher bar.
 
     Dataset and asset names are the depositors' own published titles and are
@@ -117,7 +121,7 @@ def _check_privacy(data_dir: Path, facets: dict, failures: List[str], notes: Lis
     notes.append(f"privacy scan clean over {vocabulary_size} facet values")
 
 
-def _check_exclusions(datasets: dict, excluded: dict, failures: List[str], notes: List[str]) -> None:
+def _check_exclusions(datasets: dict, excluded: dict, failures: list[str], notes: list[str]) -> None:
     substrings = excluded.get("url_substrings") or []
     names = {n.strip() for n in excluded.get("dataset_names") or []}
     for row in datasets["rows"]:
@@ -135,14 +139,14 @@ def _check_exclusions(datasets: dict, excluded: dict, failures: List[str], notes
 def verify(
     data_dir: Path,
     *,
-    expected_counts: Optional[Path] = None,
-    thumbs_dir: Optional[Path] = None,
-    excluded: Optional[dict] = None,
-) -> List[str]:
+    expected_counts: Path | None = None,
+    thumbs_dir: Path | None = None,
+    excluded: dict | None = None,
+) -> list[str]:
     """Run every check. Returns notes; raises :class:`VerificationFailed` on any failure."""
     data_dir = Path(data_dir)
-    failures: List[str] = []
-    notes: List[str] = []
+    failures: list[str] = []
+    notes: list[str] = []
 
     manifest = _load(data_dir, "manifest.json")
     datasets = _load(data_dir, "datasets.json")
@@ -163,7 +167,11 @@ def verify(
     if thumbs_dir:
         thumbs_dir = Path(thumbs_dir)
         missing = 0
-        for hex_id, flag in zip(assets["columns"]["id"], assets["single"]["thumb"]):
+        # strict=False for the same reason as in _check_structure: any length
+        # disagreement is already a recorded failure, not a reason to raise.
+        for hex_id, flag in zip(
+            assets["columns"]["id"], assets["single"]["thumb"], strict=False
+        ):
             if flag and not (thumbs_dir / hex_id[:2] / f"{hex_id}.webp").exists():
                 missing += 1
         if missing:

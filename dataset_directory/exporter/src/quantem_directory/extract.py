@@ -13,7 +13,6 @@ import csv
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # Some extract columns hold long free-text values; the stdlib default field
 # limit is smaller than the widest of them.
@@ -25,17 +24,17 @@ class Asset:
     id: str
     name: str
     dataset_id: str
-    width: Optional[int]
-    height: Optional[int]
-    depth: Optional[int]
+    width: int | None
+    height: int | None
+    depth: int | None
     resolution_field: str
-    inplane_nm: Optional[float] = None
+    inplane_nm: float | None = None
     tiles: int = 0
     # tag group -> values, restricted to published groups
-    tags: Dict[str, List[str]] = field(default_factory=dict)
+    tags: dict[str, list[str]] = field(default_factory=dict)
     # Inputs to the dimensionality rule, and the extract's own answer to
     # cross-check it against. Neither is published.
-    dimensionality_tags: List[str] = field(default_factory=list)
+    dimensionality_tags: list[str] = field(default_factory=list)
     extract_dim: str = ""
 
 
@@ -44,24 +43,24 @@ class Dataset:
     id: str
     name: str
     experiment_name: str
-    url: Optional[str]
+    url: str | None
     doi: str
 
 
 @dataclass
 class Extract:
-    assets: List[Asset]
-    datasets: List[Dataset]
+    assets: list[Asset]
+    datasets: list[Dataset]
     tag_groups_seen: set
 
-    def by_dataset(self) -> Dict[str, List[Asset]]:
-        out: Dict[str, List[Asset]] = {d.id: [] for d in self.datasets}
+    def by_dataset(self) -> dict[str, list[Asset]]:
+        out: dict[str, list[Asset]] = {d.id: [] for d in self.datasets}
         for asset in self.assets:
             out.setdefault(asset.dataset_id, []).append(asset)
         return out
 
 
-def _rows(path: Path) -> List[dict]:
+def _rows(path: Path) -> list[dict]:
     with path.open(newline="", encoding="utf-8", errors="replace") as handle:
         return list(csv.DictReader(handle))
 
@@ -69,10 +68,10 @@ def _rows(path: Path) -> List[dict]:
 def load(
     extract_dir: Path,
     *,
-    urls_csv: Optional[Path] = None,
-    exclude_datasets: Optional[set] = None,
-    vocabulary_overrides: Optional[Dict[str, Dict[str, Optional[str]]]] = None,
-    link_overrides: Optional[Dict[str, str]] = None,
+    urls_csv: Path | None = None,
+    exclude_datasets: set | None = None,
+    vocabulary_overrides: dict[str, dict[str, str | None]] | None = None,
+    link_overrides: dict[str, str] | None = None,
 ) -> Extract:
     """Load the extract rooted at ``extract_dir``.
 
@@ -104,7 +103,7 @@ def load(
     # ---- datasets -------------------------------------------------------
     url_rows = {r["dataset_id"]: r for r in _rows(Path(urls_csv))} if urls_csv else {}
 
-    datasets: List[Dataset] = []
+    datasets: list[Dataset] = []
     dropped_dataset_ids = set()
     for row in _rows(extract_dir / "datasets.csv"):
         name = (row["name"] or "").strip()
@@ -130,7 +129,7 @@ def load(
     known_datasets = {d.id for d in datasets}
 
     # ---- per-asset side tables -----------------------------------------
-    inplane: Dict[str, float] = {}
+    inplane: dict[str, float] = {}
     for row in _rows(extract_dir / "derived" / "asset_inplane_resolution_nm.csv"):
         # The id column is unnamed in the extract.
         asset_id = row.get("") or row.get("asset_id") or ""
@@ -138,11 +137,11 @@ def load(
         if asset_id and value is not None:
             inplane[asset_id] = value
 
-    tiles: Dict[str, int] = {}
+    tiles: dict[str, int] = {}
     for row in _rows(extract_dir / "asset_tiles.csv"):
         tiles[row["asset_id"]] = derive.parse_int(row.get("accepted_tiles")) or 0
 
-    extract_dim: Dict[str, str] = {}
+    extract_dim: dict[str, str] = {}
     for row in _rows(extract_dir / "derived" / "asset_tidy.csv"):
         extract_dim[row["asset_id"]] = (row.get("dim") or "").strip()
 
@@ -155,8 +154,8 @@ def load(
         if not group.startswith("_")
     }
     groups_seen = set()
-    tags: Dict[str, Dict[str, List[str]]] = {}
-    dimensionality: Dict[str, List[str]] = {}
+    tags: dict[str, dict[str, list[str]]] = {}
+    dimensionality: dict[str, list[str]] = {}
     for row in _rows(extract_dir / "asset_tag_long.csv"):
         group = (row["group"] or "").strip()
         groups_seen.add(group)
@@ -179,7 +178,7 @@ def load(
     allowlist.check_tag_groups(groups_seen)
 
     # ---- assets ---------------------------------------------------------
-    assets: List[Asset] = []
+    assets: list[Asset] = []
     for row in _rows(extract_dir / "asset_meta.csv"):
         dataset_id = row["dataset_id"]
         if dataset_id in dropped_dataset_ids or dataset_id not in known_datasets:

@@ -26,7 +26,6 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 #: Reject sources too small to say anything, or too flat to be tissue. Both
 #: guard against scraped placeholder images that reached the preview folders —
@@ -47,10 +46,10 @@ _print_lock = threading.Lock()
 CANDIDATES_PER_ASSET = 6
 
 
-def _pick_best_tiles(index_csv: Path, wanted: set) -> Dict[str, List[Tuple[str, str]]]:
+def _pick_best_tiles(index_csv: Path, wanted: set) -> dict[str, list[tuple[str, str]]]:
     """Rank each asset's tiles by tissue content, then contrast, best first."""
     csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
-    ranked: Dict[str, List[Tuple[float, float, str, str]]] = {}
+    ranked: dict[str, list[tuple[float, float, str, str]]] = {}
     with index_csv.open(newline="", encoding="utf-8", errors="replace") as handle:
         for row in csv.DictReader(handle):
             asset_id = row["canonical_asset_id"]
@@ -67,7 +66,7 @@ def _pick_best_tiles(index_csv: Path, wanted: set) -> Dict[str, List[Tuple[str, 
             if len(bucket) > CANDIDATES_PER_ASSET * 4:
                 bucket.sort(key=lambda c: c[:2], reverse=True)
                 del bucket[CANDIDATES_PER_ASSET:]
-    out: Dict[str, List[Tuple[str, str]]] = {}
+    out: dict[str, list[tuple[str, str]]] = {}
     for asset_id, bucket in ranked.items():
         bucket.sort(key=lambda c: c[:2], reverse=True)
         out[asset_id] = [(run, rel) for _, _, run, rel in bucket[:CANDIDATES_PER_ASSET]]
@@ -107,7 +106,7 @@ def _stretch(image, low_pct: float = 1.0, high_pct: float = 99.0):
     return image.point(lambda v: max(0, min(255, int((v - low) * scale)))), span
 
 
-def _render(source: Path, target: Path, *, px: int, quality: int, normalize: bool) -> Optional[str]:
+def _render(source: Path, target: Path, *, px: int, quality: int, normalize: bool) -> str | None:
     """Downscale ``source`` into ``target``. Returns a rejection reason, or None.
 
     ``normalize`` stretches the histogram. Canonical tiles are left alone: the
@@ -230,7 +229,7 @@ def run(args) -> int:
     images_root = Path(args.fallback_images) if args.fallback_images else None
     max_bytes = args.max_source_mb * 1_000_000
 
-    def sources_for(asset_id: str) -> List[Tuple[Path, bool]]:
+    def sources_for(asset_id: str) -> list[tuple[Path, bool]]:
         """Every source worth trying, best first, paired with "is a canonical tile"."""
         candidates = []
         # The index stores the run separately from the path relative to it.
@@ -253,7 +252,7 @@ def run(args) -> int:
                         break
         return candidates
 
-    def rescan_tile_directories(asset_id: str) -> List[Tuple[Path, bool]]:
+    def rescan_tile_directories(asset_id: str) -> list[tuple[Path, bool]]:
         """Last resort: take any tile the asset still has on disk.
 
         Some assets were re-tiled after the index was built, so the index names
@@ -261,7 +260,7 @@ def run(args) -> int:
         perfectly good set at different ones. Any tile of the asset is still a
         representative crop, so prefer one of those over no thumbnail at all.
         """
-        found: List[Tuple[Path, bool]] = []
+        found: list[tuple[Path, bool]] = []
         seen = set()
         for run_name, rel_path in chosen.get(asset_id, ()):
             directory = (tile_root / run_name / rel_path).parent
@@ -279,7 +278,7 @@ def run(args) -> int:
         only_ids = {line.strip().replace("-", "") for line in text.split() if line.strip()}
         print(f"restricted to {len(only_ids)} assets")
 
-    todo: List[str] = []
+    todo: list[str] = []
     for asset_id in assets:
         hex_id = asset_id.replace("-", "")
         if only_ids is not None and hex_id not in only_ids:
@@ -293,9 +292,9 @@ def run(args) -> int:
     print(f"to render: {len(todo)}")
 
     done = {"ok": 0, "skipped": 0, "failed": 0}
-    reasons: Dict[str, str] = {}
+    reasons: dict[str, str] = {}
 
-    def record(outcome: str, hex_id: str, reason: Optional[str] = None) -> None:
+    def record(outcome: str, hex_id: str, reason: str | None = None) -> None:
         with _print_lock:
             done[outcome] += 1
             if reason:
