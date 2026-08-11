@@ -396,8 +396,19 @@ export function deleteAsset(assetId: string): Promise<void> {
   });
 }
 
-export function getSegmentationTypes(): Promise<SegmentationType[]> {
-  return apiRequest<SegmentationType[]>("/api/segmentation-types/");
+interface SegmentationTypePage {
+  results: SegmentationType[];
+}
+
+export async function getSegmentationTypes(): Promise<SegmentationType[]> {
+  const response = await apiRequest<SegmentationType[] | SegmentationTypePage>(
+    "/api/segmentation-types/"
+  );
+
+  // The DRF viewset is paginated in installed builds. Keep accepting a raw
+  // list as well so this client remains compatible with unpaginated servers.
+  if (Array.isArray(response)) return response;
+  return Array.isArray(response.results) ? response.results : [];
 }
 
 export function createSegmentationType(

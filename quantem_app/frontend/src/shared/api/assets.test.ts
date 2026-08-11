@@ -9,6 +9,7 @@ import {
   getHomeEntryPage,
   getHomeImages,
   getAssetNgffUrl,
+  getSegmentationTypes,
   updateAsset,
   updateExperiment,
   uploadAsset,
@@ -115,6 +116,16 @@ describe("shared/api/assets", () => {
       "http://127.0.0.1:9000/api/assets/?search=islet&dataset=set-1&experiment=exp-1&experiment=none&availability=all&limit=60&offset=120",
       expect.any(Object)
     );
+  });
+
+  it("unwraps the paginated segmentation-type response", async () => {
+    const rows = [{ id: "type-mito", short_name: "Mitochondria" }];
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ count: 1, next: null, previous: null, results: rows })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getSegmentationTypes()).resolves.toEqual(rows);
   });
 
   it("builds asset delete requests", async () => {

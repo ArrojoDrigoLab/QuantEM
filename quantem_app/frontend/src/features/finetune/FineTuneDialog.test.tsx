@@ -185,6 +185,29 @@ async function selectTheDataset(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("FineTuneDialog", () => {
+  it("opens from the library with the paginated organelle response", async () => {
+    const user = userEvent.setup();
+    stubApi();
+    server.use(
+      http.get(`${API}/api/segmentation-types/`, () =>
+        HttpResponse.json({
+          count: 1,
+          next: null,
+          previous: null,
+          results: [MITO],
+        })
+      )
+    );
+
+    render(<FineTuneDialog open onClose={() => {}} />);
+
+    const picker = screen.getByRole("combobox", { name: "Organelle" });
+    await screen.findByRole("option", { name: "Mitochondria" });
+    await user.selectOptions(picker, MITO.id);
+
+    expect(await screen.findByTestId("scope-tree")).toBeInTheDocument();
+  });
+
   it("renders the tree and totals the owner's ten-image dataset to 7", async () => {
     const user = userEvent.setup();
     stubApi();
