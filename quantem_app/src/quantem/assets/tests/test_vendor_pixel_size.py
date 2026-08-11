@@ -108,7 +108,7 @@ def fibics_xml(
         "<Application><Version>ZEISS Atlas 5 Client v5.5.5.35 PRE-RELEASE</Version>"
         "<SupportsTransparency>true</SupportsTransparency></Application>"
         f"{image}<Scan>{''.join(scan_parts)}</Scan>"
-        "<Stage><X units=\"um\">0</X></Stage>"
+        '<Stage><X units="um">0</X></Stage>'
         "</Fibics>"
     )
 
@@ -218,9 +218,7 @@ class FibicsTagReaderTests(_TempTiffCase):
                 scan_rot=30.0,
             ),
         )
-        self.assertAlmostEqual(
-            extract_tiff_metadata(path)["pixel_size_nm"], ATLAS_NM, delta=1e-9
-        )
+        self.assertAlmostEqual(extract_tiff_metadata(path)["pixel_size_nm"], ATLAS_NM, delta=1e-9)
 
     def test_field_of_view_is_the_fallback_when_the_step_vectors_are_absent(self):
         """``FOV_X / Width`` equals ``|U|`` to 15 digits in every corpus file.
@@ -241,9 +239,7 @@ class FibicsTagReaderTests(_TempTiffCase):
                 fov_y=ATLAS_UX_UM * 16,
             ),
         )
-        self.assertAlmostEqual(
-            extract_tiff_metadata(path)["pixel_size_nm"], ATLAS_NM, delta=1e-9
-        )
+        self.assertAlmostEqual(extract_tiff_metadata(path)["pixel_size_nm"], ATLAS_NM, delta=1e-9)
 
     def test_a_file_with_no_calibration_at_all_stays_uncalibrated(self):
         """The honest-silence case: no vendor tag, no unit, no scale.
@@ -301,9 +297,7 @@ class FibicsStaleRasterTests(_TempTiffCase):
     def test_a_block_with_no_declared_geometry_is_still_trusted(self):
         """Older writers omit ``<Image>``; absence is not a mismatch."""
         path = self.write("nogeom.tif", xml=fibics_xml(width=None, height=None))
-        self.assertAlmostEqual(
-            extract_tiff_metadata(path)["pixel_size_nm"], ATLAS_NM, delta=1e-9
-        )
+        self.assertAlmostEqual(extract_tiff_metadata(path)["pixel_size_nm"], ATLAS_NM, delta=1e-9)
 
 
 class CalibrationPrecedenceTests(_TempTiffCase):
@@ -463,9 +457,7 @@ class VendorPixelSizeVolumeTests(_TempTiffCase):
 
     def test_a_stale_vendor_block_reaches_extra_as_a_conflict(self):
         path = self.tmp / "stale_stack.tif"
-        path.write_bytes(
-            atlas_tiff_bytes(xml=fibics_xml(width=999, height=999), pages=4)
-        )
+        path.write_bytes(atlas_tiff_bytes(xml=fibics_xml(width=999, height=999), pages=4))
         meta = probe_volume_source(path)
         _z, y, x = meta.voxel_size_nm
         self.assertIsNone(x)
@@ -490,12 +482,8 @@ class VendorPixelSizeUploadTests(TestCase):
     def test_an_atlas_upload_lands_calibrated_with_the_tag_named(self):
         body = self._upload(atlas_tiff_bytes(xml=fibics_xml()))
         self.assertAlmostEqual(body["pixel_size_nm"], ATLAS_NM, delta=1e-9)
-        self.assertAlmostEqual(
-            body["file_declared_pixel_size_nm"], ATLAS_NM, delta=1e-9
-        )
-        self.assertEqual(
-            body["file_declared_pixel_size_source"], PIXEL_SIZE_SOURCE_FIBICS
-        )
+        self.assertAlmostEqual(body["file_declared_pixel_size_nm"], ATLAS_NM, delta=1e-9)
+        self.assertEqual(body["file_declared_pixel_size_source"], PIXEL_SIZE_SOURCE_FIBICS)
         self.assertIsNone(body["file_declared_pixel_size_caveat"])
 
         # And the provenance survives to the list payload the library renders,
@@ -516,12 +504,8 @@ class VendorPixelSizeUploadTests(TestCase):
         """
         body = self._upload(atlas_tiff_bytes(xml=fibics_xml()), pixel_size_nm="4.2")
         self.assertEqual(body["pixel_size_nm"], 4.2)
-        self.assertAlmostEqual(
-            body["file_declared_pixel_size_nm"], ATLAS_NM, delta=1e-9
-        )
-        self.assertEqual(
-            body["file_declared_pixel_size_source"], PIXEL_SIZE_SOURCE_FIBICS
-        )
+        self.assertAlmostEqual(body["file_declared_pixel_size_nm"], ATLAS_NM, delta=1e-9)
+        self.assertEqual(body["file_declared_pixel_size_source"], PIXEL_SIZE_SOURCE_FIBICS)
 
     def test_an_uncalibrated_upload_says_so_rather_than_guessing(self):
         body = self._upload(atlas_tiff_bytes(xml=None), name="silent.tif")
@@ -612,12 +596,8 @@ class AtlasCorpusTests(SimpleTestCase):
                     meta["pixel_size_nm"],
                     "a calibrated Atlas export imported uncalibrated",
                 )
-                self.assertAlmostEqual(
-                    meta["pixel_size_nm"], expected_nm, delta=1e-9
-                )
-                self.assertEqual(
-                    meta["pixel_size_source"], PIXEL_SIZE_SOURCE_FIBICS
-                )
+                self.assertAlmostEqual(meta["pixel_size_nm"], expected_nm, delta=1e-9)
+                self.assertEqual(meta["pixel_size_source"], PIXEL_SIZE_SOURCE_FIBICS)
                 self.assertIsNone(meta["pixel_size_caveat"])
 
     def test_the_step_vector_agrees_with_the_field_of_view_in_every_file(self):
@@ -634,9 +614,7 @@ class AtlasCorpusTests(SimpleTestCase):
                 cols = float(re.search(r"<Width>([^<]+)</Width>", xml).group(1))
                 self.assertAlmostEqual(fov / cols * 1000.0, expected_nm, delta=1e-6)
 
-    @unittest.skipUnless(
-        _uncalibrated_control_available(), "no uncalibrated control in the corpus"
-    )
+    @unittest.skipUnless(_uncalibrated_control_available(), "no uncalibrated control in the corpus")
     def test_the_re_export_that_lost_its_tag_stays_uncalibrated(self):
         meta = extract_tiff_metadata(_sample(UNCALIBRATED_SAMPLE))
         self.assertIsNone(meta["pixel_size_nm"])

@@ -140,9 +140,7 @@ def _plan_entry(
         "tiles": tiles,
         "model_installed": installed,
         "model_ready": bool(runnable.ok) if runnable is not None else False,
-        "model_blocked_reason": (
-            None if runnable is None or runnable.ok else runnable.reason
-        ),
+        "model_blocked_reason": (None if runnable is None or runnable.ok else runnable.reason),
         # 0 once it is on disk: a figure that keeps quoting the download size of
         # something already downloaded is how a cost screen loses its meaning.
         "download_bytes": 0 if installed or spec is None else download_bytes(spec),
@@ -165,9 +163,7 @@ def _build_plan(asset, selected: list[str], source_models: dict) -> dict:
     pixel_size_nm = _asset_pixel_size_nm(asset)
     by_internal_name = {
         seg.segmentation_type.internal_name: seg
-        for seg in ImageSegmentation.objects.filter(asset=asset).select_related(
-            "segmentation_type"
-        )
+        for seg in ImageSegmentation.objects.filter(asset=asset).select_related("segmentation_type")
     }
     entries = []
     for organelle in organelles:
@@ -189,9 +185,7 @@ def _build_plan(asset, selected: list[str], source_models: dict) -> dict:
     chosen = [entry for entry in entries if entry["organelle"] in set(selected)]
     tiles = [entry["tiles"] for entry in chosen]
     to_download = [
-        entry["pack_id"]
-        for entry in chosen
-        if entry["pack_id"] and not entry["model_installed"]
+        entry["pack_id"] for entry in chosen if entry["pack_id"] and not entry["model_installed"]
     ]
     return {
         "asset_id": str(asset.id),
@@ -219,16 +213,13 @@ class AssetRunsView(APIView):
         # An absent parameter means "cost them all"; an empty one means the user
         # has unticked everything, which is a different answer and not an error.
         raw = request.query_params.get("organelles")
-        organelles = _requested_organelles(
-            list(RUNNABLE_ORGANELLES) if raw is None else raw
-        )
+        organelles = _requested_organelles(list(RUNNABLE_ORGANELLES) if raw is None else raw)
         invalid = [item for item in organelles if item not in RUNNABLE_ORGANELLES]
         if invalid:
             return Response(
                 {
                     "detail": (
-                        "This image can be segmented for "
-                        f"{', '.join(RUNNABLE_ORGANELLES)}."
+                        f"This image can be segmented for {', '.join(RUNNABLE_ORGANELLES)}."
                     ),
                     "invalid": invalid,
                 },
@@ -250,8 +241,7 @@ class AssetRunsView(APIView):
             return Response(
                 {
                     "detail": (
-                        "This image can be segmented for "
-                        f"{', '.join(RUNNABLE_ORGANELLES)}."
+                        f"This image can be segmented for {', '.join(RUNNABLE_ORGANELLES)}."
                     ),
                     "invalid": invalid,
                 },
@@ -318,8 +308,7 @@ class AssetRunsView(APIView):
             resource_class="gpu",
             queue_name=QUEUE_P4_FULL,
             max_attempts=1,
-            tags=[f"asset:{asset.id}"]
-            + [f"segmentation:{leg['segmentation_id']}" for leg in legs],
+            tags=[f"asset:{asset.id}"] + [f"segmentation:{leg['segmentation_id']}" for leg in legs],
         )
         plan = _build_plan(asset, organelles, source_models)
         return Response(

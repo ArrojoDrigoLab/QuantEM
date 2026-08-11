@@ -98,9 +98,7 @@ def test_pack_loads_and_segments(pack_id: str, image: np.ndarray) -> None:
         windows.append(tile.shape)
         return model.forward_tile(tile)
 
-    prediction = engine.predict_region(
-        model, image, pixel_size_nm=PIXEL_SIZE_NM, forward=spy
-    )
+    prediction = engine.predict_region(model, image, pixel_size_nm=PIXEL_SIZE_NM, forward=spy)
     prob = prediction.prob
 
     # --- the published sliding-window geometry ---
@@ -115,9 +113,7 @@ def test_pack_loads_and_segments(pack_id: str, image: np.ndarray) -> None:
     # Shape is the resample plan's, not the image's: a pack with a canonical
     # scale predicts on a resampled grid. Nothing is thresholded there -- the
     # field comes back to native pixels first; see test_native_prob_maps.py.
-    expected = resample.plan_resample(
-        image.shape[:2], PIXEL_SIZE_NM, spec.canonical_nm
-    ).model_shape
+    expected = resample.plan_resample(image.shape[:2], PIXEL_SIZE_NM, spec.canonical_nm).model_shape
     assert prob.shape == expected
     assert prob.dtype == np.float32
     assert np.isfinite(prob).all(), f"{pack_id} produced non-finite probabilities"
@@ -154,7 +150,10 @@ def test_rebuilt_architecture_matches_the_manifest(pack_id: str) -> None:
     # the channel axis into a trained 1x1 conv, so the order is part of the model.
     encoder = model.module.encoder
     assert model.module.layers == [
-        encoder.depth - 4, encoder.depth - 3, encoder.depth - 2, encoder.depth - 1
+        encoder.depth - 4,
+        encoder.depth - 3,
+        encoder.depth - 2,
+        encoder.depth - 1,
     ]
 
     # The OmniEM family takes a raw [0, 1] tile and normalises inside the

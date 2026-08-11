@@ -141,9 +141,7 @@ def _ring_coords(ring) -> np.ndarray | None:
     return coords[:, :2]
 
 
-def _rasterize(
-    polygons: Iterable[Polygon], x0: int, y0: int, shape: tuple[int, int]
-) -> np.ndarray:
+def _rasterize(polygons: Iterable[Polygon], x0: int, y0: int, shape: tuple[int, int]) -> np.ndarray:
     """Fill polygons into a ``uint8`` 0/1 mask, honouring interior rings.
 
     Holes matter: ``CompletedRoiSubtractView`` punches interior rings into the
@@ -456,9 +454,7 @@ def _source_covering(
     return None
 
 
-def _load_prob_window(
-    source: _ProbSource, x: int, y: int, width: int, height: int
-) -> np.ndarray:
+def _load_prob_window(source: _ProbSource, x: int, y: int, width: int, height: int) -> np.ndarray:
     """Crop the stored map to a window, as float32 in ``[0, 1]``."""
     with Image.open(source.path) as handle:
         if handle.mode != "L":
@@ -616,9 +612,7 @@ def annotated_regions(
     regions: list[AnnotatedRegion] = []
     polygons: list[Polygon] = []
 
-    for roi in CompletedROI.objects.filter(segmentation=segmentation).order_by(
-        "created_at", "id"
-    ):
+    for roi in CompletedROI.objects.filter(segmentation=segmentation).order_by("created_at", "id"):
         polygon = roi.geometry
         if not isinstance(polygon, Polygon) or polygon.is_empty:
             continue
@@ -686,9 +680,7 @@ def count_annotations(
         segmentation_type_id=str(segmentation_type_id), asset__isnull=False
     ).exclude(asset__lifecycle_status="DELETED")
     if asset_ids is not None:
-        segmentations = segmentations.filter(
-            asset_id__in=[str(value) for value in asset_ids]
-        )
+        segmentations = segmentations.filter(asset_id__in=[str(value) for value in asset_ids])
 
     counts: dict[str, dict[str, int]] = {}
     for seg in segmentations.select_related("asset"):
@@ -746,9 +738,7 @@ def _collect(
         asset_h = int(asset.logical_height or 0)
         if asset_w <= 0 or asset_h <= 0:
             if CompletedROI.objects.filter(segmentation=seg).exists() or (
-                RoiSegmentationStatus.objects.filter(
-                    segmentation=seg, is_complete=True
-                ).exists()
+                RoiSegmentationStatus.objects.filter(segmentation=seg, is_complete=True).exists()
             ):
                 seen_any_region = True
                 crop_set.warnings.append(
@@ -825,9 +815,7 @@ def _collect(
                 n_objects=len(inside),
                 gt=gt,
                 valid=valid,
-                pixel_size_nm=(
-                    float(asset.pixel_size_nm) if asset.pixel_size_nm else None
-                ),
+                pixel_size_nm=(float(asset.pixel_size_nm) if asset.pixel_size_nm else None),
             )
 
             covering = _source_covering(prob_sources, x0, y0, width, height)

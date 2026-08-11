@@ -36,13 +36,8 @@ from quantem.library.serializers import (
 #: What a client is told when it names something that has since been deleted.
 #: One sentence, no identifier: the row it asked for is gone and the only
 #: useful next step is to look at the list again.
-EXPERIMENT_GONE = (
-    "That experiment is no longer in the library. Refresh to see what is there "
-    "now."
-)
-DATASET_GONE = (
-    "That dataset is no longer in the library. Refresh to see what is there now."
-)
+EXPERIMENT_GONE = "That experiment is no longer in the library. Refresh to see what is there now."
+DATASET_GONE = "That dataset is no longer in the library. Refresh to see what is there now."
 
 #: The largest number of images one assignment may touch. Far past a plate of
 #: forty and past any library this application is built for, and it exists only
@@ -92,10 +87,7 @@ def _first_serializer_error(serializer) -> str:
     shows one line, and the field names are the serializer's, not the form's.
     The first message is the one the user can act on.
     """
-    return (
-        _flatten(serializer.errors)
-        or "That could not be saved. Check the name and try again."
-    )
+    return _flatten(serializer.errors) or "That could not be saved. Check the name and try again."
 
 
 class ExperimentListCreateView(APIView):
@@ -108,9 +100,7 @@ class ExperimentListCreateView(APIView):
 
     def get(self, request):
         del request
-        return Response(
-            [serialize_experiment(row) for row in _experiment_queryset()]
-        )
+        return Response([serialize_experiment(row) for row in _experiment_queryset()])
 
     def post(self, request):
         serializer = ExperimentWriteSerializer(data=request.data or {})
@@ -120,9 +110,7 @@ class ExperimentListCreateView(APIView):
             name=serializer.validated_data["name"],
             notes=serializer.validated_data.get("notes", ""),
         )
-        return Response(
-            serialize_experiment(experiment), status=status.HTTP_201_CREATED
-        )
+        return Response(serialize_experiment(experiment), status=status.HTTP_201_CREATED)
 
 
 class ExperimentDetailView(APIView):
@@ -219,9 +207,7 @@ class DatasetDetailView(APIView):
         dataset = self._get(dataset_id)
         if dataset is None:
             return _detail(DATASET_GONE, status.HTTP_404_NOT_FOUND)
-        serializer = DatasetWriteSerializer(
-            instance=dataset, data=request.data or {}, partial=True
-        )
+        serializer = DatasetWriteSerializer(instance=dataset, data=request.data or {}, partial=True)
         if not serializer.is_valid():
             return _detail(_first_serializer_error(serializer), status.HTTP_400_BAD_REQUEST)
         updated = []
@@ -274,8 +260,7 @@ class AssetGroupingView(APIView):
             )
         if len(asset_ids) > MAX_ASSETS_PER_ASSIGNMENT:
             return _detail(
-                "That is more images than one change can cover. Select fewer "
-                "and try again.",
+                "That is more images than one change can cover. Select fewer and try again.",
                 status.HTTP_400_BAD_REQUEST,
             )
 
@@ -287,8 +272,7 @@ class AssetGroupingView(APIView):
         )
         if not assets:
             return _detail(
-                "None of those images are in the library any more. Refresh and "
-                "try again.",
+                "None of those images are in the library any more. Refresh and try again.",
                 status.HTTP_400_BAD_REQUEST,
             )
 
@@ -314,16 +298,12 @@ class AssetGroupingView(APIView):
         except DjangoValidationError as exc:
             return _detail(_first_error(exc), status.HTTP_400_BAD_REQUEST)
 
-        resolved_experiment = (
-            None if experiment is UNSET else experiment
-        )
+        resolved_experiment = None if experiment is UNSET else experiment
         return Response(
             {
                 "assets_changed": outcome.assets_changed,
                 "dataset_links_dropped": outcome.dataset_links_dropped,
-                "assets_moved_out_of_datasets": (
-                    outcome.assets_moved_out_of_datasets
-                ),
+                "assets_moved_out_of_datasets": (outcome.assets_moved_out_of_datasets),
                 "datasets_left": outcome.datasets_left,
                 "experiment": (
                     serialize_experiment(resolved_experiment)
@@ -344,9 +324,7 @@ class AssetGroupingView(APIView):
         touching their datasets" expressible; see
         :mod:`quantem.library.grouping`.
         """
-        mentions_experiment = (
-            "experiment" in payload or "experiment_name" in payload
-        )
+        mentions_experiment = "experiment" in payload or "experiment_name" in payload
         experiment = UNSET
         if mentions_experiment:
             experiment = resolve_experiment(
@@ -367,9 +345,7 @@ class AssetGroupingView(APIView):
             dataset = resolve_dataset(experiment=scope, dataset_id=dataset_id)
             if dataset is not None:
                 resolved.append(dataset)
-        typed = resolve_dataset(
-            experiment=scope, dataset_name=payload.get("dataset_name")
-        )
+        typed = resolve_dataset(experiment=scope, dataset_name=payload.get("dataset_name"))
         if typed is not None and typed not in resolved:
             resolved.append(typed)
         return experiment, resolved

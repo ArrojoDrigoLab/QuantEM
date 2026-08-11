@@ -53,7 +53,7 @@ class Naive1x1Neck(nn.Module):
         self, feats: list[torch.Tensor], image: torch.Tensor | None = None
     ) -> list[torch.Tensor]:
         x = torch.cat(feats, dim=1)  # [B, embed_dim * n_taps, H/16, W/16]
-        x = self.fuse(x)             # [B, C, H/16, W/16]
+        x = self.fuse(x)  # [B, C, H/16, W/16]
         sizes = _pyramid_hw(tuple(x.shape[-2:]))
         return [resize_to(x, hw) for hw in sizes]
 
@@ -133,7 +133,7 @@ class _ResNet34Stem(nn.Module):
 
     def forward(self, image: torch.Tensor) -> list[torch.Tensor]:
         x = self.pool(self.stem(image))
-        c1 = self.layer1(x)   # s4
+        c1 = self.layer1(x)  # s4
         c2 = self.layer2(c1)  # s8
         c3 = self.layer3(c2)  # s16
         c4 = self.layer4(c3)  # s32

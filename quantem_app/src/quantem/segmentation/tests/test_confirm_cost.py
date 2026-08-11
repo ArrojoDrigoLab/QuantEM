@@ -190,6 +190,7 @@ class ConfirmDefersTheRasterTests(TestCase):
         loop the running system drives -- run whatever is queued, ask the
         manifest, repeat -- and requires it to settle.
         """
+
         def _answer(segment) -> None:
             response = self.client.post(
                 "/api/segments/labels/batch/",
@@ -251,9 +252,7 @@ class ConfirmDefersTheRasterTests(TestCase):
             if job is None:
                 # Nothing queued but work outstanding: the manifest endpoint is
                 # the requeue path, and the viewer asks it on every poll.
-                self.client.get(
-                    f"/api/segmentations/{self.segmentation.id}/overlay-manifest/"
-                )
+                self.client.get(f"/api/segmentations/{self.segmentation.id}/overlay-manifest/")
                 continue
             job.status = "RUNNING"
             job.save(update_fields=["status"])
@@ -384,9 +383,7 @@ class BundleWriteLockTests(TestCase):
             except BaseException as exc:  # noqa: BLE001 - recorded, then asserted
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=_hold_the_lock) for _ in range(self.CONCURRENCY)
-        ]
+        threads = [threading.Thread(target=_hold_the_lock) for _ in range(self.CONCURRENCY)]
         for thread in threads:
             thread.start()
         for thread in threads:
@@ -559,9 +556,7 @@ class ConcurrentConfirmTests(TransactionTestCase):
 
             self.assertEqual(len(results), self.CONCURRENCY)
             failures.extend(
-                outcome
-                for outcome in results
-                if not (isinstance(outcome, int) and outcome == 200)
+                outcome for outcome in results if not (isinstance(outcome, int) and outcome == 200)
             )
 
         self.assertEqual(

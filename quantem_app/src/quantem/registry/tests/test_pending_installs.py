@@ -57,9 +57,7 @@ class PendingModelInstallsTests(TestCase):
         self.assertEqual(queued, ["omniem:mito", "quantem:er"])
         self.assertFalse(path.exists(), "the request file is one-shot")
 
-        jobs = Job.objects.filter(type=JOB_TYPE_INSTALL_MODEL_PACK).order_by(
-            "created_at"
-        )
+        jobs = Job.objects.filter(type=JOB_TYPE_INSTALL_MODEL_PACK).order_by("created_at")
         self.assertEqual(
             sorted(job.payload_json["pack_id"] for job in jobs),
             ["omniem:mito", "quantem:er"],
@@ -122,9 +120,7 @@ class PendingModelInstallsTests(TestCase):
         over three invisible bytes -- the reader decodes ``utf-8-sig``.
         """
         path = pending_installs_path()
-        path.write_bytes(
-            b"\xef\xbb\xbf" + json.dumps({"packs": ["omniem:mito"]}).encode("utf-8")
-        )
+        path.write_bytes(b"\xef\xbb\xbf" + json.dumps({"packs": ["omniem:mito"]}).encode("utf-8"))
 
         with patch("quantem.registry.cache.installed", return_value=False):
             queued = process_pending_model_installs()

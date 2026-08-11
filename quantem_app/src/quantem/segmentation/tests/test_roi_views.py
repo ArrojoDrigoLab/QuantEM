@@ -135,15 +135,11 @@ class SegmentationRoiViewTests(TestCase):
             is_complete=True,
         )
 
-        response = self.client.delete(
-            f"/api/segmentations/{self.segmentation.id}/roi/{roi.id}/"
-        )
+        response = self.client.delete(f"/api/segmentations/{self.segmentation.id}/roi/{roi.id}/")
 
         self.assertEqual(response.status_code, 204)
         self.assertFalse(ImageROI.objects.filter(id=roi.id).exists())
-        self.assertFalse(
-            RoiSegmentationStatus.objects.filter(image_roi_id=roi.id).exists()
-        )
+        self.assertFalse(RoiSegmentationStatus.objects.filter(image_roi_id=roi.id).exists())
 
     def test_roi_delete_activates_next_roi_when_active_removed(self):
         roi_old = create_roi_image_from_image(

@@ -47,9 +47,7 @@ def acquire_storage_artifact_leases(job: Job, paths: list[StoragePath]) -> None:
     for path in sorted({item.relpath for item in paths if item.lease_required}):
         with transaction.atomic():
             lease = (
-                StorageArtifactLease.objects.select_for_update()
-                .filter(artifact_path=path)
-                .first()
+                StorageArtifactLease.objects.select_for_update().filter(artifact_path=path).first()
             )
             if lease is None:
                 StorageArtifactLease.objects.create(
@@ -77,9 +75,7 @@ def acquire_storage_artifact_leases(job: Job, paths: list[StoragePath]) -> None:
             lease.acquired_at = now
             lease.expires_at = expires_at
             lease.released_at = None
-            lease.save(
-                update_fields=["job", "status", "acquired_at", "expires_at", "released_at"]
-            )
+            lease.save(update_fields=["job", "status", "acquired_at", "expires_at", "released_at"])
 
 
 def release_storage_artifact_leases(job: Job) -> None:

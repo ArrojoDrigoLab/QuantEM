@@ -411,7 +411,10 @@ class SourceMatrixTests(TestCase):
 
         # 7. the thumbnail renderer and the HTTP routes.
         self.assertTrue(render_lowest_resolution_ngff_png_from_root(resolved.root))
-        for url in (f"/ngff/assets/{asset.id}.zarr/.zattrs", f"/ngff/assets/{asset.id}.zarr/0/0.0.0"):
+        for url in (
+            f"/ngff/assets/{asset.id}.zarr/.zattrs",
+            f"/ngff/assets/{asset.id}.zarr/0/0.0.0",
+        ):
             response = self.client.get(url)
             try:
                 self.assertEqual(response.status_code, 200, f"{cell.name} {url}")
@@ -513,7 +516,8 @@ class SourceMatrixTests(TestCase):
             asset = self._stage(path)
         except ValueError as exc:
             self.assertNotEqual(
-                cell.container, Path(path).suffix.lstrip(".").replace("tiff", "tif"),
+                cell.container,
+                Path(path).suffix.lstrip(".").replace("tiff", "tif"),
                 f"{cell.name}: a matching container was refused at upload: {exc}",
             )
             self.assertIn("Error reading", str(exc), cell.name)

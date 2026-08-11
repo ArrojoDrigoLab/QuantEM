@@ -74,9 +74,7 @@ def handle_train_organelle_adapter(
 
 
 @job_handler(JOB_TYPE_INSTALL_MODEL_PACK)
-def handle_install_model_pack(
-    payload: dict, reporter: JobReporter, cancel: CancelToken
-) -> dict:
+def handle_install_model_pack(payload: dict, reporter: JobReporter, cancel: CancelToken) -> dict:
     """Download a model pack from the QuantEM Hugging Face repository and install it.
 
     The whole pipeline -- fetch, digest verification, conversion to the pack
@@ -113,10 +111,7 @@ def handle_install_model_pack(
         if total > 0:
             reporter.update(
                 progress=2.0 + 78.0 * (done / total),
-                message=(
-                    f"Downloading {model_name} — "
-                    f"{done / 1e6:.0f} of {total / 1e6:.0f} MB"
-                ),
+                message=(f"Downloading {model_name} — {done / 1e6:.0f} of {total / 1e6:.0f} MB"),
                 # Raw counts too, so the Models screen's active_install block
                 # can show real bytes without parsing the message back apart.
                 current_bytes=done,

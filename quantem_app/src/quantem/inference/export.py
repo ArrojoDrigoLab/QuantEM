@@ -155,7 +155,9 @@ def _max_abs_diff(a: tuple[torch.Tensor, ...], b: tuple[torch.Tensor, ...]) -> f
     worst = 0.0
     for x, y in zip(a, b, strict=True):
         if x.shape != y.shape:
-            raise ExportError(f"tap shape drift: eager {tuple(x.shape)} vs exported {tuple(y.shape)}")
+            raise ExportError(
+                f"tap shape drift: eager {tuple(x.shape)} vs exported {tuple(y.shape)}"
+            )
         worst = max(worst, float((x.float() - y.float()).abs().max()))
     return worst
 
@@ -204,11 +206,7 @@ def export_pack(
             index_path=files.index_path,
             encoder_path=files.encoder_path,
         ),
-        output=(
-            Path(output)
-            if output
-            else files.head_path.parent / exported_encoder_name(device)
-        ),
+        output=(Path(output) if output else files.head_path.parent / exported_encoder_name(device)),
         tolerance=tolerance,
         device=device,
         overwrite=overwrite,
@@ -276,9 +274,9 @@ def export_encoder_files(
     # weights immediately afterwards either way; this only decides the skeleton.
     skeleton_state = None
     if spec.embeds_encoder and encoder_path is None:
-        skeleton_state = torch.load(
-            str(head_path), map_location="cpu", weights_only=False
-        ).get("encoder_trainable")
+        skeleton_state = torch.load(str(head_path), map_location="cpu", weights_only=False).get(
+            "encoder_trainable"
+        )
 
     # Build eagerly on purpose: exporting an already-exported encoder would just
     # copy it, and the point is to capture the eager graph.
@@ -436,7 +434,14 @@ def export_built_encoder(
 
     logger.info(
         "Exported %s from tier %s on %s -> %s: max|diff|=%.3e, dynamic=%s, taps=%s, adapt=%s",
-        pack_id, source_tier, device, target.name, diff, dynamic, layers, adapt,
+        pack_id,
+        source_tier,
+        device,
+        target.name,
+        diff,
+        dynamic,
+        layers,
+        adapt,
     )
     return ExportResult(
         pack_id=pack_id,

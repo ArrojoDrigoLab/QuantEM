@@ -122,8 +122,7 @@ def run_prompt(
 
     if not candidates:
         raise PromptRefused(
-            "No object was found in that box. Try drawing it tighter around "
-            "one object."
+            "No object was found in that box. Try drawing it tighter around one object."
         )
 
     return PromptResult(

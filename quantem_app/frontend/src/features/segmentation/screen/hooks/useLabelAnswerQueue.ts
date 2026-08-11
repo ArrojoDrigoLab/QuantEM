@@ -106,13 +106,21 @@ export function useLabelAnswerQueue({
     handleOverlayMutationRefresh,
     showErrorToast,
   });
-  callbacksRef.current = {
-    rollbackOptimisticLabel,
-    stageOptimisticRevisionTargets,
+  useEffect(() => {
+    callbacksRef.current = {
+      rollbackOptimisticLabel,
+      stageOptimisticRevisionTargets,
+      getOptimisticTargetRevision,
+      handleOverlayMutationRefresh,
+      showErrorToast,
+    };
+  }, [
     getOptimisticTargetRevision,
     handleOverlayMutationRefresh,
+    rollbackOptimisticLabel,
     showErrorToast,
-  };
+    stageOptimisticRevisionTargets,
+  ]);
 
   const clearWindow = useCallback(() => {
     if (timerRef.current !== null) {

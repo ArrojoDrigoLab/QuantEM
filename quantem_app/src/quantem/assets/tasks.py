@@ -147,8 +147,8 @@ def prepare_asset_renditions(asset_id: str) -> None:
         _fail(asset, "Missing source file for upload.")
         return
 
-    source_is_canonical_png = (
-        source_path.suffix.lower() == ".png" and _is_canonical_image_file(source_path)
+    source_is_canonical_png = source_path.suffix.lower() == ".png" and _is_canonical_image_file(
+        source_path
     )
     target_png_path = source_path if source_is_canonical_png else _canonical_png_target(asset)
 

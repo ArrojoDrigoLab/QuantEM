@@ -21,10 +21,8 @@ import { Fragment } from "react";
 import { Badge, Button, Panel } from "@/shared/ui/design";
 import { formatInteger, formatNumber, NOT_MEASURED } from "@/shared/ui/format";
 import { downloadCsv } from "@/utils/downloadText";
-import type {
-  AnalysisMetricSummary,
-  AnalysisObjects,
-} from "@/shared/types/analysis";
+import type { AnalysisObjects } from "@/shared/types/analysis";
+import { metricNote } from "@/features/analysis/components/objectsPanelUtils";
 
 /** Metric rows we never show: constants, not distributions. */
 const HIDDEN_METRICS = new Set(["pixel_size_nm"]);
@@ -51,14 +49,6 @@ const HIDDEN_METRICS = new Set(["pixel_size_nm"]);
  * "mitochondria became more circular" out of a correct segmentation, and the
  * sentence that prevents it has to be beside the number.
  */
-export function metricNote(row: AnalysisMetricSummary): string | null {
-  const coverage = (row.note ?? "").trim();
-  const estimator = (row.estimator_note ?? "").trim();
-  if (!estimator) return coverage || null;
-  if (!coverage) return estimator;
-  return coverage.includes(estimator) ? coverage : `${coverage} ${estimator}`;
-}
-
 export interface ObjectsPanelProps {
   objects: AnalysisObjects;
   calibrated: boolean;

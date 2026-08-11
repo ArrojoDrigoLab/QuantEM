@@ -185,9 +185,7 @@ class UploadEndpointStagingTests(TestCase):
     def _tiff_bytes(self, width: int = 64, height: int = 48) -> bytes:
         path = STORAGE_DIR / "tmp" / f"upload_{uuid4().hex}.tif"
         path.parent.mkdir(parents=True, exist_ok=True)
-        tifffile.imwrite(
-            str(path), make_em_like_array(width, height), photometric="minisblack"
-        )
+        tifffile.imwrite(str(path), make_em_like_array(width, height), photometric="minisblack")
         try:
             return path.read_bytes()
         finally:
@@ -207,9 +205,7 @@ class UploadEndpointStagingTests(TestCase):
             response = self.client.post(
                 "/api/assets/upload/",
                 {
-                    "file": SimpleUploadedFile(
-                        "scan.tif", payload, content_type="image/tiff"
-                    ),
+                    "file": SimpleUploadedFile("scan.tif", payload, content_type="image/tiff"),
                     "display_name": "staged upload",
                 },
             )
@@ -252,6 +248,4 @@ class UploadEndpointStagingTests(TestCase):
         with tifffile.TiffFile(str(staged)) as tif:
             self.assertEqual(tif.series[0].shape, (60, 80))
         self.assertEqual(os.path.getsize(staged), len(payload))
-        np.testing.assert_array_equal(
-            tifffile.imread(str(staged)), make_em_like_array(80, 60)
-        )
+        np.testing.assert_array_equal(tifffile.imread(str(staged)), make_em_like_array(80, 60))

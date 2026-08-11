@@ -102,9 +102,7 @@ class RunIdentityPayloadTests(TestCase):
         self.assertEqual(payload["finished_at"], "2026-08-07T09:15:02.481Z")
 
     def test_a_non_utc_stamp_is_converted_not_relabelled(self):
-        moment = datetime(
-            2026, 8, 7, 11, 15, 2, 481000, tzinfo=timezone(timedelta(hours=2))
-        )
+        moment = datetime(2026, 8, 7, 11, 15, 2, 481000, tzinfo=timezone(timedelta(hours=2)))
         self.assertEqual(utc_timestamp(moment), "2026-08-07T09:15:02.481Z")
 
     def test_ran_at_nm_is_null_when_the_asset_is_uncalibrated(self):
@@ -118,9 +116,7 @@ class RunIdentityPayloadTests(TestCase):
         self.assertIsNone(resolve_ran_at_nm(canonical_nm=None, native_pixel_size_nm=5.0))
 
     def test_ran_at_nm_is_the_canonical_size_when_both_are_known(self):
-        self.assertEqual(
-            resolve_ran_at_nm(canonical_nm=8.0, native_pixel_size_nm=5.0), 8.0
-        )
+        self.assertEqual(resolve_ran_at_nm(canonical_nm=8.0, native_pixel_size_nm=5.0), 8.0)
 
 
 class ReadRunIdentityTests(TestCase):
@@ -209,9 +205,7 @@ class MinAreaResolutionTests(TestCase):
     def test_a_segmenter_with_no_opinion_gets_the_fallback(self):
         from quantem.seg_core.db.extraction import FALLBACK_MIN_AREA, resolve_min_area
 
-        self.assertEqual(
-            resolve_min_area(SimpleNamespace(), None), FALLBACK_MIN_AREA
-        )
+        self.assertEqual(resolve_min_area(SimpleNamespace(), None), FALLBACK_MIN_AREA)
 
 
 class _StubReporter:

@@ -68,7 +68,7 @@ def test_the_resample_back_is_linear_up_area_down_and_never_nearest():
     directions, which is right for the dominant upsample-back and wrong for a
     16 nm image on the 8 nm head.
     """
-    up = _context()                                     # 4 nm image, 8 nm head
+    up = _context()  # 4 nm image, 8 nm head
     down = resample.plan_resample((256, 320), 16.0, 8.0)  # 16 nm image
     identity = resample.plan_resample((256, 320), None, None)  # ER
 
@@ -123,9 +123,7 @@ def test_the_old_ordering_is_the_new_one_with_a_nearest_interpolator():
     height, width = context.native_shape
 
     old_ordering = resample.mask_to_native(postprocess.binarize(field, 0.5), context)
-    nearest_back = cv2.resize(
-        field, (width, height), interpolation=cv2.INTER_NEAREST
-    )
+    nearest_back = cv2.resize(field, (width, height), interpolation=cv2.INTER_NEAREST)
     new_ordering_with_nearest = resample.binarize_quantized(
         resample.quantize_probability(nearest_back), 0.5
     )
@@ -152,9 +150,7 @@ def test_the_interpolated_boundary_is_smoother_than_the_staircase():
     field = _model_field(context.model_shape)
 
     old_mask = resample.mask_to_native(postprocess.binarize(field, 0.5), context)
-    new_mask = resample.NativeProbabilityMap.from_model_grid(
-        field, context
-    ).foreground(0.5)
+    new_mask = resample.NativeProbabilityMap.from_model_grid(field, context).foreground(0.5)
 
     def perimeter(mask):
         regions = regionprops(label(mask))
@@ -188,8 +184,7 @@ def test_the_quantiser_rounds_to_nearest_not_down():
     maps that flips up to 13 956 pixels and loses an object at the default
     threshold. These are the smallest cases that show it.
     """
-    field = np.array([[0.0, 0.5, 0.9999, 1.0], [0.002, 0.4999, 0.5001, 0.998]],
-                     dtype=np.float32)
+    field = np.array([[0.0, 0.5, 0.9999, 1.0], [0.002, 0.4999, 0.5001, 0.998]], dtype=np.float32)
     stored = resample.quantize_probability(field)
     truncated = (np.clip(field, 0, 1) * 255).astype(np.uint8)
 
@@ -222,9 +217,7 @@ def test_a_threshold_becomes_a_level_and_the_level_is_recorded():
     # The ends stay meaningful rather than wrapping.
     assert resample.threshold_level(0.0) == 0
     assert resample.binarize_quantized(np.zeros((2, 2), np.uint8), 0.0).all()
-    assert not resample.binarize_quantized(
-        np.full((2, 2), 255, np.uint8), 1.0
-    ).any()
+    assert not resample.binarize_quantized(np.full((2, 2), 255, np.uint8), 1.0).any()
 
 
 def test_quantising_is_exact_regardless_of_array_size():
@@ -247,9 +240,7 @@ def _fake_engine(prob_by_shape, spec):
     """Stand in for ``engine`` so the segmenter runs with no weights."""
 
     def predict_region(_model, image, *, pixel_size_nm=None, **_kwargs):
-        context = resample.plan_resample(
-            image.shape[:2], pixel_size_nm, spec.canonical_nm
-        )
+        context = resample.plan_resample(image.shape[:2], pixel_size_nm, spec.canonical_nm)
         return SimpleNamespace(
             prob=prob_by_shape(context.model_shape),
             context=context,
@@ -277,9 +268,7 @@ def _run(segmenter, image, *, pixel_size_nm=NATIVE_NM, field=_model_field):
         patch("quantem.inference.segmenter.engine", _fake_engine(field, spec)),
         patch("quantem.inference.segmenter._job_progress", return_value=None),
     ):
-        return segmenter.run_dl_inference(
-            image, {}, None, pixel_size_nm=pixel_size_nm
-        )
+        return segmenter.run_dl_inference(image, {}, None, pixel_size_nm=pixel_size_nm)
 
 
 def test_a_fresh_run_thresholds_the_stored_map_not_the_float_it_came_from():
@@ -293,8 +282,8 @@ def test_a_fresh_run_thresholds_the_stored_map_not_the_float_it_came_from():
     else, which is precisely the drift this ordering removes.
     """
     image = np.zeros((64, 64), dtype=np.uint8)
-    boundary = np.full((32, 32), 0.401, dtype=np.float32)   # inside the gap
-    boundary[:4, :4] = 0.95                                  # something certain
+    boundary = np.full((32, 32), 0.401, dtype=np.float32)  # inside the gap
+    boundary[:4, :4] = 0.95  # something certain
 
     segmenter = DinoMitoSegmenter(source_model="quantem:mito", fg_threshold=0.4)
     maps = _run(segmenter, image, field=lambda _shape: boundary)
@@ -308,9 +297,7 @@ def test_a_fresh_run_thresholds_the_stored_map_not_the_float_it_came_from():
     assert float_decision.sum() > stored_decision.sum(), (
         "the fixture no longer separates the two decisions"
     )
-    assert np.array_equal(
-        stored_decision, resample.binarize_quantized(native.data, 0.4)
-    )
+    assert np.array_equal(stored_decision, resample.binarize_quantized(native.data, 0.4))
 
 
 def test_the_returned_map_is_the_stored_map_read_back_as_floats():
@@ -324,9 +311,7 @@ def test_the_returned_map_is_the_stored_map_read_back_as_floats():
     maps = _run(segmenter, image)
 
     native = segmenter.native_probability_map
-    assert np.array_equal(
-        resample.quantize_probability(maps[DL_MODEL_NAME]), native.data
-    )
+    assert np.array_equal(resample.quantize_probability(maps[DL_MODEL_NAME]), native.data)
     assert maps[DL_MODEL_NAME].shape == NATIVE
 
 
@@ -338,7 +323,7 @@ def test_the_no_resample_case_is_exactly_the_previous_pipeline():
     agree pixel for pixel. If this ever fails, the change has leaked into the
     path it was never meant to touch.
     """
-    context = resample.plan_resample(NATIVE, 5.0, None)   # ER: canonical_nm None
+    context = resample.plan_resample(NATIVE, 5.0, None)  # ER: canonical_nm None
     assert context.is_identity
 
     field = _model_field(NATIVE)
@@ -347,9 +332,7 @@ def test_the_no_resample_case_is_exactly_the_previous_pipeline():
     assert stored.back_factor == pytest.approx(1.0)
 
     for threshold in (0.1, 0.3, 0.5, 0.7, 0.9):
-        previous = resample.mask_to_native(
-            postprocess.binarize(field, threshold), context
-        )
+        previous = resample.mask_to_native(postprocess.binarize(field, threshold), context)
         assert np.array_equal(previous, stored.foreground(threshold)), (
             f"identity path differs at t={threshold}"
         )

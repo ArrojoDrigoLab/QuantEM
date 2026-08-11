@@ -33,9 +33,7 @@ def _square(x0, y0, x1, y1) -> Polygon:
 
 def _l_shape() -> Polygon:
     """A completed area whose bounding box contains unannotated pixels."""
-    return Polygon(
-        ((20, 20), (140, 20), (140, 80), (80, 80), (80, 140), (20, 140), (20, 20))
-    )
+    return Polygon(((20, 20), (140, 20), (140, 80), (80, 80), (80, 140), (20, 140), (20, 20)))
 
 
 class CropExtractionTests(TestCase):
@@ -81,7 +79,9 @@ class CropExtractionTests(TestCase):
         assert "marked as finished" in str(caught.exception)
 
     def test_completed_roi_without_confirmed_objects_is_blocked(self):
-        CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(20, 20, 140, 140))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
+        )
         self._segment(_square(30, 30, 70, 70), label_state="INFERRED")
 
         crop_set = collect_crops(self.segmentation)
@@ -96,7 +96,9 @@ class CropExtractionTests(TestCase):
         unconditionally, so a user who had annotated an image had nothing they
         could press.
         """
-        CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(20, 20, 140, 140))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
+        )
         self._segment(_square(30, 30, 70, 70))
 
         crop_set = collect_crops(self.segmentation)
@@ -115,7 +117,9 @@ class CropExtractionTests(TestCase):
 
     def test_threshold_calibration_still_refuses_without_a_map(self):
         """``require_probability=True`` is what the calibration job asks for."""
-        CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(20, 20, 140, 140))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
+        )
         self._segment(_square(30, 30, 70, 70))
 
         crop_set = collect_crops(self.segmentation, require_probability=True)
@@ -130,8 +134,8 @@ class CropExtractionTests(TestCase):
 
     def test_inside_the_roi_is_supervision_outside_it_is_ignore(self):
         CompletedROI.objects.create(segmentation=self.segmentation, geometry=_l_shape())
-        self._segment(_square(30, 30, 70, 70))            # confirmed, inside
-        self._segment(_square(100, 100, 130, 130))        # confirmed, outside the L
+        self._segment(_square(30, 30, 70, 70))  # confirmed, inside
+        self._segment(_square(100, 100, 130, 130))  # confirmed, outside the L
         self._segment(_square(90, 30, 130, 60), label_state="INFERRED")  # not GT
         self._prob_map()
 
@@ -143,12 +147,12 @@ class CropExtractionTests(TestCase):
         assert (crop.x, crop.y, crop.width, crop.height) == (20, 20, 120, 120)
 
         # Inside the L: annotated. In the notch: not annotated.
-        assert crop.valid[10, 10] == 1                    # (30, 30) image space
-        assert crop.valid[100, 100] == 0                  # (120, 120), the notch
+        assert crop.valid[10, 10] == 1  # (30, 30) image space
+        assert crop.valid[100, 100] == 0  # (120, 120), the notch
 
         # Only the confirmed object inside the ROI is foreground.
-        assert crop.gt[30, 30] == 1                       # (50, 50), confirmed
-        assert crop.gt[20, 80] == 0                       # (100, 40), inferred only
+        assert crop.gt[30, 30] == 1  # (50, 50), confirmed
+        assert crop.gt[20, 80] == 0  # (100, 40), inferred only
         assert crop.n_objects == 1
         # The ground truth is the shape the person drew: 30..70 is 40 px wide,
         # so 1600 px are supervised as foreground. It used to be 41 * 41,
@@ -163,7 +167,9 @@ class CropExtractionTests(TestCase):
         assert set(np.unique(target)) <= {0, 1, IGNORE}
 
     def test_confirmed_object_outside_the_roi_is_not_foreground(self):
-        CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(20, 20, 100, 100))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 100, 100)
+        )
         self._segment(_square(30, 30, 60, 60))
         self._segment(_square(150, 150, 200, 200))  # confirmed, but elsewhere
         self._prob_map()
@@ -185,12 +191,14 @@ class CropExtractionTests(TestCase):
         self._prob_map()
 
         (crop,) = require_crops(self.segmentation, load_prob=True).crops
-        assert crop.valid[10, 10] == 1     # (30, 30), still annotated
-        assert crop.valid[60, 60] == 0     # (80, 80), inside the hole
+        assert crop.valid[10, 10] == 1  # (30, 30), still annotated
+        assert crop.valid[60, 60] == 0  # (80, 80), inside the hole
         assert crop.target()[60, 60] == IGNORE
 
     def test_em_and_probability_windows_match_the_crop(self):
-        CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(20, 20, 140, 140))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
+        )
         self._segment(_square(30, 30, 70, 70))
         self._prob_map(value=0.9)
 
@@ -198,14 +206,16 @@ class CropExtractionTests(TestCase):
         assert crop.em is not None and crop.em.shape == (120, 120)
         assert crop.prob is not None and crop.prob.shape == (120, 120)
         # The map's high-probability block is (30..70, 30..70) in image space.
-        assert crop.prob[30, 30] > 0.85    # (50, 50)
+        assert crop.prob[30, 30] > 0.85  # (50, 50)
         assert crop.prob[100, 100] < 0.05  # (120, 120)
 
     def test_a_probability_map_of_unknown_extent_is_not_used(self):
         """An ROI-scoped map is stored at the ROI's size with no offset recorded.
         Reading it as if it started at (0, 0) would score the model against the
         wrong pixels, which is worse than reporting that nothing has been run."""
-        CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(20, 20, 140, 140))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
+        )
         self._segment(_square(30, 30, 70, 70))
         write_prob_map_png(
             self.segmentation, np.full((64, 64), 0.9, dtype=np.float32), name="MITO_Roi"
@@ -216,18 +226,20 @@ class CropExtractionTests(TestCase):
         assert "probability map" in crop_set.blockers[0]
 
     def test_a_map_that_records_its_window_is_read_at_that_offset(self):
-        CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(20, 20, 140, 140))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
+        )
         self._segment(_square(30, 30, 70, 70))
         window = np.zeros((120, 120), dtype=np.float32)
-        window[10:50, 10:50] = 0.9          # (30..70, 30..70) in image space
+        window[10:50, 10:50] = 0.9  # (30..70, 30..70) in image space
         prob_map = write_prob_map_png(self.segmentation, window, name="MITO_Roi")
         prob_map.metadata = {"roi": {"x": 20, "y": 20, "width": 120, "height": 120}}
         prob_map.save(update_fields=["metadata"])
 
         (crop,) = require_crops(self.segmentation, load_prob=True).crops
         assert crop.prob is not None and crop.prob.shape == (120, 120)
-        assert crop.prob[30, 30] > 0.85     # (50, 50)
-        assert crop.prob[100, 100] < 0.05   # (120, 120)
+        assert crop.prob[30, 30] > 0.85  # (50, 50)
+        assert crop.prob[100, 100] < 0.05  # (120, 120)
 
     def test_two_roi_runs_each_cover_their_own_completed_area(self):
         """Running the model over one ROI, annotating it, then doing the same on
@@ -240,18 +252,12 @@ class CropExtractionTests(TestCase):
                 geometry=_square(x0, 20, x0 + 100, 120),
             )
             window = np.full((100, 100), 0.9, dtype=np.float32)
-            prob_map = write_prob_map_png(
-                self.segmentation, window, name=f"MITO_Roi_{x0}"
-            )
-            prob_map.metadata = {
-                "roi": {"x": x0, "y": 20, "width": 100, "height": 100}
-            }
+            prob_map = write_prob_map_png(self.segmentation, window, name=f"MITO_Roi_{x0}")
+            prob_map.metadata = {"roi": {"x": x0, "y": 20, "width": 100, "height": 100}}
             prob_map.save(update_fields=["metadata"])
             self._segment(_square(x0 + 10, 30, x0 + 40, 60))
 
-        crop_set = require_crops(
-            self.segmentation, require_probability=True, load_prob=True
-        )
+        crop_set = require_crops(self.segmentation, require_probability=True, load_prob=True)
         assert len(crop_set.crops) == 2
         assert all(c.has_probability for c in crop_set.crops)
         assert all(c.prob is not None and float(c.prob.min()) > 0.85 for c in crop_set.crops)
@@ -276,7 +282,9 @@ class CropExtractionTests(TestCase):
         assert any("composited from" in w for w in crop_set.warnings)
 
     def test_tiny_completed_area_is_skipped_with_a_reason(self):
-        CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(10, 10, 20, 20))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(10, 10, 20, 20)
+        )
         self._segment(_square(11, 11, 19, 19))
         self._prob_map()
 

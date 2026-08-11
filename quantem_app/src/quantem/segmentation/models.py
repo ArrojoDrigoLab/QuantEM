@@ -142,11 +142,7 @@ class ImageSegmentation(TimeStampedModel):
         ordering = ["created_at"]
 
     def __str__(self):
-        target_name = (
-            self.asset.display_name
-            if self.asset_id
-            else str(self.id)
-        )
+        target_name = self.asset.display_name if self.asset_id else str(self.id)
         return f"{target_name} - {self.segmentation_type.long_name}"
 
 
@@ -185,9 +181,7 @@ class SegmentObject(TimeStampedModel):
         name="SegmentObject.centroid",
         doc="Segment centroid as a shapely Point in image pixels.",
     )
-    bbox = bbox_property(
-        "bbox", doc="Axis-aligned bounding box as a shapely box in image pixels."
-    )
+    bbox = bbox_property("bbox", doc="Axis-aligned bounding box as a shapely box in image pixels.")
 
     _GEOMETRY_UPDATE_FIELDS = {
         "geometry": ("geometry_wkb",),
@@ -207,9 +201,7 @@ class SegmentObject(TimeStampedModel):
         ("MANUAL", "Manual"),
         ("AUTOMATIC", "Automatic"),
     ]
-    label_state = models.CharField(
-        max_length=10, choices=LABEL_STATE_CHOICES, default="INFERRED"
-    )
+    label_state = models.CharField(max_length=10, choices=LABEL_STATE_CHOICES, default="INFERRED")
     refined = models.CharField(
         max_length=10,
         choices=REFINEMENT_STATUS_CHOICES,
@@ -372,9 +364,7 @@ class SegmentObject(TimeStampedModel):
         )
         if update_fields is not None:
             if lifecycle_fields:
-                update_fields = list(
-                    dict.fromkeys([*update_fields, *lifecycle_fields])
-                )
+                update_fields = list(dict.fromkeys([*update_fields, *lifecycle_fields]))
             kwargs["update_fields"] = update_fields
         self.geometry, self.centroid, self.bbox = self.prepare_shape_fields(
             geometry=self.geometry,
@@ -556,9 +546,7 @@ class SegmentationOverlayState(TimeStampedModel):
 
     def __str__(self):
         source_suffix = (
-            f" source={self.candidate_source_model}"
-            if self.candidate_source_model
-            else ""
+            f" source={self.candidate_source_model}" if self.candidate_source_model else ""
         )
         return (
             f"OverlayState<{self.segmentation_id}{source_suffix}> "
@@ -674,16 +662,12 @@ class UserFeedback(TimeStampedModel):
         constraints = [
             _build_check_constraint(
                 expression=(
-                    ~models.Q(input_type="point")
-                    | models.Q(pt_x__isnull=False, pt_y__isnull=False)
+                    ~models.Q(input_type="point") | models.Q(pt_x__isnull=False, pt_y__isnull=False)
                 ),
                 name="user_feedback_point_requires_coordinates",
             ),
             _build_check_constraint(
-                expression=(
-                    ~models.Q(input_type="polygon")
-                    | models.Q(polygon_wkb__isnull=False)
-                ),
+                expression=(~models.Q(input_type="polygon") | models.Q(polygon_wkb__isnull=False)),
                 name="user_feedback_polygon_requires_polygon",
             ),
         ]
@@ -741,9 +725,7 @@ class ProbabilityMap(TimeStampedModel):
         related_name="probability_maps",
     )
     name = models.CharField(max_length=255, blank=True)  # Optional display name
-    file_path = models.CharField(
-        max_length=1024
-    )  # Relative path within container/data directory
+    file_path = models.CharField(max_length=1024)  # Relative path within container/data directory
     channel_index = models.PositiveSmallIntegerField(
         default=0
     )  # For multi-channel probability maps
@@ -802,7 +784,6 @@ class SegmentationConfig(TimeStampedModel):
         return f"Config for {self.segmentation}"
 
 
-
 class SegmentationCompletionArchive(TimeStampedModel):
     """What one "mark image done" discarded, kept so unlock can put it back.
 
@@ -853,10 +834,7 @@ class SegmentationCompletionArchive(TimeStampedModel):
         ]
 
     def __str__(self):
-        return (
-            f"Completion archive for {self.segmentation_id}: "
-            f"{self.discarded_count} object(s)"
-        )
+        return f"Completion archive for {self.segmentation_id}: {self.discarded_count} object(s)"
 
 
 #: How many times :meth:`SegmentationResultVersion.record_new_result` will
@@ -1032,9 +1010,7 @@ class SegmentationResultVersion(TimeStampedModel):
         stamp = dict(run_identity) if isinstance(run_identity, dict) else {}
         level = None if include_level is None else float(include_level)
         floor = (
-            cls.current_version_for(segmentation)
-            if after_version is None
-            else int(after_version)
+            cls.current_version_for(segmentation) if after_version is None else int(after_version)
         )
 
         for _attempt in range(_VERSION_ALLOCATION_ATTEMPTS):

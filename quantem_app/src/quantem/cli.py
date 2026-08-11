@@ -480,8 +480,7 @@ def cmd_models_install(args: argparse.Namespace) -> int:
         total = sum(r.bytes_written for r in results)
         print(f"\n{len(results)} pack(s) installed under {cache.packs_root()}")
         print(
-            f"{total / 1e9:.2f} GB written "
-            f"({sum(r.reused_blobs for r in results)} blob(s) reused)"
+            f"{total / 1e9:.2f} GB written ({sum(r.reused_blobs for r in results)} blob(s) reused)"
         )
         return 0
 
@@ -516,9 +515,7 @@ def _install_from_hf(pack_ids: list[str], *, force: bool) -> int:
     for pack_id in pack_ids:
         last = {"t": 0.0}
 
-        def on_bytes(
-            done: int, total: int, pack_id: str = pack_id, last: dict = last
-        ) -> None:
+        def on_bytes(done: int, total: int, pack_id: str = pack_id, last: dict = last) -> None:
             now = time.monotonic()
             if now - last["t"] >= 1.0 or done >= total:
                 last["t"] = now
@@ -624,8 +621,8 @@ def _data_dir_parent() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         metavar="PATH",
         help="where the database, models and exports live. May be given before "
-             "or after the subcommand. Defaults to $QUANTEM_DATA_DIR, then the "
-             f"installation's own data directory ({default_data_dir()}).",
+        "or after the subcommand. Defaults to $QUANTEM_DATA_DIR, then the "
+        f"installation's own data directory ({default_data_dir()}).",
     )
     return parent
 
@@ -650,8 +647,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="where the database, models and exports live. Accepted here or "
-             "after the subcommand. Defaults to $QUANTEM_DATA_DIR, then "
-             f"{default_data_dir()}.",
+        "after the subcommand. Defaults to $QUANTEM_DATA_DIR, then "
+        f"{default_data_dir()}.",
     )
     sub = p.add_subparsers(dest="command")
 
@@ -697,12 +694,16 @@ def build_parser() -> argparse.ArgumentParser:
         "sources",
         nargs="*",
         help="pack ids to download (e.g. quantem:mito omniem:ld), or one release "
-             "bundle directory (optionally followed by pack ids to take from it)",
+        "bundle directory (optionally followed by pack ids to take from it)",
     )
-    mi.add_argument("--all", action="store_true",
-                    help="download and install all eight released packs")
-    mi.add_argument("--hf", action="store_true",
-                    help="treat every argument as a pack id to download (never a directory)")
+    mi.add_argument(
+        "--all", action="store_true", help="download and install all eight released packs"
+    )
+    mi.add_argument(
+        "--hf",
+        action="store_true",
+        help="treat every argument as a pack id to download (never a directory)",
+    )
     mi.add_argument("--force", action="store_true", help="reinstall packs already present")
     mi.set_defaults(func=cmd_models_install)
 

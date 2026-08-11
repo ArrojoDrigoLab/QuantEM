@@ -135,9 +135,7 @@ def image_shape(segmentation: ImageSegmentation) -> tuple[int, int]:
     """``(height, width)`` of the image a segmentation belongs to."""
     asset = segmentation.asset
     if asset is None:
-        raise AnalysisInputError(
-            f"Segmentation {segmentation.id} is not attached to an image."
-        )
+        raise AnalysisInputError(f"Segmentation {segmentation.id} is not attached to an image.")
     height = int(asset.logical_height or 0)
     width = int(asset.logical_width or 0)
     if height <= 0 or width <= 0:
@@ -178,11 +176,8 @@ def pixel_size_nm(segmentation: ImageSegmentation) -> float | None:
 
 def confirmed_objects(segmentation: ImageSegmentation) -> QuerySet[SegmentObject]:
     """The confirmed ``SegmentObject`` rows of a segmentation, oldest first."""
-    return (
-        SegmentObject.objects.filter(
-            segmentation=segmentation, label_state=CONFIRMED
-        )
-        .order_by("created_at", "id")
+    return SegmentObject.objects.filter(segmentation=segmentation, label_state=CONFIRMED).order_by(
+        "created_at", "id"
     )
 
 
@@ -194,9 +189,7 @@ def object_features(segmentation: ImageSegmentation) -> dict[str, dict[str, Any]
     """
     return {
         str(object_id): (features or {})
-        for object_id, features in confirmed_objects(segmentation).values_list(
-            "id", "features"
-        )
+        for object_id, features in confirmed_objects(segmentation).values_list("id", "features")
     }
 
 
@@ -209,20 +202,14 @@ def object_sources(segmentation: ImageSegmentation) -> dict[str, str]:
     """
     return {
         str(object_id): normalize_source_model(source) or SOURCE_MODEL_UNKNOWN
-        for object_id, source in confirmed_objects(segmentation).values_list(
-            "id", "source_model"
-        )
+        for object_id, source in confirmed_objects(segmentation).values_list("id", "source_model")
     }
 
 
 def source_counts(segmentation: ImageSegmentation) -> dict[str, int]:
     """Confirmed objects per ``source_model``, e.g. ``{"manual": 4, "quantem:mito": 86}``."""
     counts: dict[str, int] = {}
-    rows = (
-        confirmed_objects(segmentation)
-        .values_list("source_model")
-        .annotate(n=Count("id"))
-    )
+    rows = confirmed_objects(segmentation).values_list("source_model").annotate(n=Count("id"))
     for source, n in rows:
         key = normalize_source_model(source) or SOURCE_MODEL_UNKNOWN
         counts[key] = counts.get(key, 0) + int(n)
@@ -231,17 +218,13 @@ def source_counts(segmentation: ImageSegmentation) -> dict[str, int]:
 
 def object_centroids(segmentation: ImageSegmentation) -> np.ndarray:
     """Confirmed object centroids as an ``(N, 2)`` array of ``(x, y)`` pixels."""
-    rows = list(
-        confirmed_objects(segmentation).values_list("centroid_x", "centroid_y")
-    )
+    rows = list(confirmed_objects(segmentation).values_list("centroid_x", "centroid_y"))
     if not rows:
         return np.empty((0, 2), dtype=float)
     return np.asarray(rows, dtype=float)
 
 
-def segmentation_mask(
-    segmentation: ImageSegmentation, shape: tuple[int, int]
-) -> np.ndarray:
+def segmentation_mask(segmentation: ImageSegmentation, shape: tuple[int, int]) -> np.ndarray:
     """Union of a segmentation's confirmed object polygons as a boolean mask.
 
     Each object is painted into its own bounding box rather than into a
@@ -296,11 +279,7 @@ def _nesting(names: list[str]) -> dict[str, str]:
     """
     if "nucleus" not in names:
         return {}
-    return {
-        name: "cytoplasm"
-        for name in names
-        if name not in {"nucleus", "cytoplasm", "tissue"}
-    }
+    return {name: "cytoplasm" for name in names if name not in {"nucleus", "cytoplasm", "tissue"}}
 
 
 def build_compartment_set(
@@ -311,8 +290,7 @@ def build_compartment_set(
 ) -> CompartmentSet:
     """Rasterise several segmentations of one image into a ``CompartmentSet``."""
     masks = {
-        name: segmentation_mask(segmentation, shape)
-        for name, segmentation in compartments.items()
+        name: segmentation_mask(segmentation, shape) for name, segmentation in compartments.items()
     }
     tissue_mask = segmentation_mask(tissue, shape) if tissue is not None else None
     return CompartmentSet(
@@ -403,17 +381,14 @@ def parse_points_csv(text: str) -> ParsedPoints:
         if not cells:
             continue
         if len(cells) < 2:
-            raise AnalysisInputError(
-                f"Points CSV line {line_number} has fewer than two columns."
-            )
+            raise AnalysisInputError(f"Points CSV line {line_number} has fewer than two columns.")
         try:
             x, y = float(cells[0]), float(cells[1])
         except ValueError:
             if line_number == 1:
                 continue  # a header row
             raise AnalysisInputError(
-                f"Points CSV line {line_number} is not a pair of numbers: "
-                f"{','.join(cells[:2])}"
+                f"Points CSV line {line_number} is not a pair of numbers: {','.join(cells[:2])}"
             ) from None
         if not (math.isfinite(x) and math.isfinite(y)):
             unreadable.append((line_number, ",".join(cells[:2])))
@@ -429,9 +404,7 @@ def parse_points_csv(text: str) -> ParsedPoints:
                 "to measure."
             )
         raise AnalysisInputError("The points CSV contained no coordinates.")
-    return ParsedPoints(
-        xy=np.asarray(rows, dtype=float), unreadable=tuple(unreadable)
-    )
+    return ParsedPoints(xy=np.asarray(rows, dtype=float), unreadable=tuple(unreadable))
 
 
 def _points_provenance(
@@ -469,8 +442,7 @@ def _points_provenance(
     values["n_rows_read"] = int(points_xy.shape[0]) + parsed.n_unreadable
     values["n_unreadable"] = parsed.n_unreadable
     values["unreadable_lines"] = [
-        {"line": line, "text": text}
-        for line, text in parsed.unreadable[:MAX_NAMED_BAD_POINT_LINES]
+        {"line": line, "text": text} for line, text in parsed.unreadable[:MAX_NAMED_BAD_POINT_LINES]
     ]
     values["note"] = (
         "n_unreadable rows had a missing or infinite coordinate and are in no "
@@ -485,9 +457,7 @@ def _points_provenance(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_segmentation(
-    raw_id: Any, *, asset_id: Any, role: str
-) -> ImageSegmentation:
+def _resolve_segmentation(raw_id: Any, *, asset_id: Any, role: str) -> ImageSegmentation:
     try:
         # A malformed id is a bad request, not a 500: Django's UUIDField raises
         # rather than returning no rows when the value is not a UUID at all.
@@ -570,9 +540,7 @@ def normalise_params(raw: dict[str, Any], *, segmentation: ImageSegmentation) ->
 
     tissue_id = raw.get("tissue_segmentation_id") or None
     if tissue_id:
-        _resolve_segmentation(
-            tissue_id, asset_id=segmentation.asset_id, role="the tissue mask"
-        )
+        _resolve_segmentation(tissue_id, asset_id=segmentation.asset_id, role="the tissue mask")
         tissue_id = str(tissue_id)
 
     points_source = raw.get("points_source") or None
@@ -739,20 +707,17 @@ class RunStamps:
     def n_unstamped(self) -> int:
         """Model-produced objects that do not say which run made them."""
         return sum(
-            1
-            for source, stamp in self.objects
-            if source != SOURCE_MODEL_MANUAL and stamp is None
+            1 for source, stamp in self.objects if source != SOURCE_MODEL_MANUAL and stamp is None
         )
 
     def packs(self) -> list[str]:
         """Every model pack behind an object here, by stamp or by source model."""
         found = {
-            source for source, _ in self.objects
+            source
+            for source, _ in self.objects
             if source not in {SOURCE_MODEL_MANUAL, SOURCE_MODEL_UNKNOWN}
         }
-        found.update(
-            str(stamp["pack_id"]) for stamp in self.stamps if stamp.get("pack_id")
-        )
+        found.update(str(stamp["pack_id"]) for stamp in self.stamps if stamp.get("pack_id"))
         return sorted(found)
 
     def for_pack(self, pack_id: str) -> list[dict[str, Any]]:
@@ -780,9 +745,7 @@ def run_stamps(segmentation: ImageSegmentation) -> RunStamps:
         area = (features or {}).get("area")
         if isinstance(area, (int, float)) and not isinstance(area, bool):
             hand_drawn_areas.append(float(area))
-    return RunStamps(
-        objects=tuple(objects), hand_drawn_areas=tuple(hand_drawn_areas)
-    )
+    return RunStamps(objects=tuple(objects), hand_drawn_areas=tuple(hand_drawn_areas))
 
 
 def _tally(stamps: list[dict[str, Any]], field_name: str) -> dict[Any, int]:
@@ -845,9 +808,7 @@ class _RunReport:
             self.caveats.append(text)
 
 
-def run_provenance(
-    segmentation: ImageSegmentation, *, compartment: str = ""
-) -> dict[str, Any]:
+def run_provenance(segmentation: ImageSegmentation, *, compartment: str = "") -> dict[str, Any]:
     """The settings a segmentation's objects were *actually* produced under.
 
     Read from the objects themselves. Inference stamps the run that made each
@@ -1039,7 +1000,9 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
             },
         )
         entry["n_objects"] += 1
-    runs = sorted(by_id.values(), key=lambda r: (str(r["finished_at"] or ""), str(r["run_id"] or "")))
+    runs = sorted(
+        by_id.values(), key=lambda r: (str(r["finished_at"] or ""), str(r["run_id"] or ""))
+    )
     if len(runs) > 1:
         report.caveat(
             f"The objects in {report.where} come from {len(runs)} different "
@@ -1103,9 +1066,7 @@ def _adapter_section(
             "n_objects": tally[ids[0]],
         }
         out.update(_adapter_details(adapter_id))
-        if (adapter_now or {}).get("applied") and str(
-            adapter_now.get("adapter_id")
-        ) != adapter_id:
+        if (adapter_now or {}).get("applied") and str(adapter_now.get("adapter_id")) != adapter_id:
             report.caveat(
                 f"The adapter applied to {report.where} now "
                 f"({adapter_now.get('adapter_id')}) is not the one its objects "
@@ -1237,9 +1198,7 @@ def _adapter_details(adapter_id: str) -> dict[str, Any]:
     return adapter_facts(adapter)
 
 
-def _threshold_provenance(
-    report: _RunReport, adapter_now: dict[str, Any] | None
-) -> dict[str, Any]:
+def _threshold_provenance(report: _RunReport, adapter_now: dict[str, Any] | None) -> dict[str, Any]:
     """The probability above which a pixel was foreground, and where it came from.
 
     This is the number that decides the object set, so it is recorded per pack
@@ -1319,9 +1278,7 @@ def _threshold_for_pack(
         return provenance.section(
             {
                 "values": sorted(tally, key=repr),
-                "n_objects_by_value": {
-                    str(v): n for v, n in sorted(tally.items(), key=repr)
-                },
+                "n_objects_by_value": {str(v): n for v, n in sorted(tally.items(), key=repr)},
                 "source": f"recorded on the objects, which disagree: {spelled}",
                 "recorded_from": "the objects",
                 "pack_default": default,
@@ -1429,10 +1386,7 @@ def _min_area_provenance(report: _RunReport) -> dict[str, Any]:
             value, n = next(iter(tally.items()))
             entry: dict[str, Any] = {
                 "value": value,
-                "source": (
-                    f"recorded on the {_plural(n, 'object')} {pack_id} "
-                    "produced here"
-                ),
+                "source": (f"recorded on the {_plural(n, 'object')} {pack_id} produced here"),
                 "recorded_from": "the objects",
                 "organelle_default": default,
                 "n_objects": n,
@@ -1447,9 +1401,7 @@ def _min_area_provenance(report: _RunReport) -> dict[str, Any]:
             entry = provenance.section(
                 {
                     "values": sorted(tally, key=repr),
-                    "n_objects_by_value": {
-                        str(v): n for v, n in sorted(tally.items(), key=repr)
-                    },
+                    "n_objects_by_value": {str(v): n for v, n in sorted(tally.items(), key=repr)},
                     "source": f"recorded on the objects, which disagree: {spelled}",
                     "recorded_from": "the objects",
                     "organelle_default": default,
@@ -1535,9 +1487,7 @@ def _min_area_provenance(report: _RunReport) -> dict[str, Any]:
     }
 
 
-def _min_area_bypassed(
-    report: _RunReport, per_pack: dict[str, Any]
-) -> dict[str, Any]:
+def _min_area_bypassed(report: _RunReport, per_pack: dict[str, Any]) -> dict[str, Any]:
     """What the size floor did **not** filter, and what that does to a histogram.
 
     ``filter_min_area`` runs inside inference. A polygon a person drew never
@@ -1723,9 +1673,7 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
     if ran:
         values["recorded_from"] = "the objects"
         values["ran_at_nm_by_pack"] = {
-            pack_id: sorted(
-                _tally(stamps.for_pack(pack_id), "ran_at_nm"), key=repr
-            )
+            pack_id: sorted(_tally(stamps.for_pack(pack_id), "ran_at_nm"), key=repr)
             for pack_id in packs
         }
         if len(ran) == 1:
@@ -1742,8 +1690,7 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
                     "own pixel grid with a continuous interpolator (bilinear "
                     "onto a finer grid, area-averaged onto a coarser one, never "
                     "nearest-neighbour) and thresholded there, so every "
-                    "measurement in this bundle is in native pixels. "
-                    + _ORDERING_CHANGED_NOTE
+                    "measurement in this bundle is in native pixels. " + _ORDERING_CHANGED_NOTE
                 )
             )
         else:
@@ -1804,13 +1751,9 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
         )
         return provenance.section(values, unavailable)
 
-    unknown_packs = sorted(
-        pack_id for pack_id in packs if not _canonical_nm(pack_id)[1]
-    )
+    unknown_packs = sorted(pack_id for pack_id in packs if not _canonical_nm(pack_id)[1])
     resampling = {
-        pack_id: nm
-        for pack_id, nm in canonical.items()
-        if nm and abs(nm - native) > 1e-9
+        pack_id: nm for pack_id, nm in canonical.items() if nm and abs(nm - native) > 1e-9
     }
     values["resampled"] = bool(resampling)
     if resampling:
@@ -1822,8 +1765,7 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
             "brought back to the image's own pixel grid with a continuous "
             "interpolator (bilinear onto a finer grid, area-averaged onto a "
             "coarser one, never nearest-neighbour) and thresholded there, so "
-            "all measurements in this bundle are in native pixels. "
-            + _ORDERING_CHANGED_NOTE
+            "all measurements in this bundle are in native pixels. " + _ORDERING_CHANGED_NOTE
         )
     elif unknown_packs:
         values["ran_at"] = SCALE_UNKNOWN
@@ -1835,9 +1777,7 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
         unavailable["ran_at_nm"] = reason
         unavailable["resampled"] = reason
         values.pop("resampled", None)
-        report.caveat(
-            f"The scale inference ran at in {report.where} is unknown: " + reason
-        )
+        report.caveat(f"The scale inference ran at in {report.where} is unknown: " + reason)
     else:
         values["ran_at"] = "native"
         values["ran_at_nm"] = native
@@ -1850,9 +1790,7 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
     return provenance.section(values, unavailable)
 
 
-def _native_scale_note(
-    canonical: dict[str, Any], native: float | None, report: _RunReport
-) -> str:
+def _native_scale_note(canonical: dict[str, Any], native: float | None, report: _RunReport) -> str:
     """Why every object here ran at native scale -- benign, or a missed resample.
 
     ``ran_at_nm is None`` on every stamp has two very different causes, and the
@@ -2112,17 +2050,11 @@ def pixel_size_provenance(
     if declared is None:
         values["source"] = "entered_by_hand"
         values["note"] = (
-            "The source file declared no pixel size, so this value was typed by "
-            "a person."
+            "The source file declared no pixel size, so this value was typed by a person."
         )
-    elif abs(float(declared) - float(effective)) <= 1e-9 * max(
-        1.0, abs(float(effective))
-    ):
+    elif abs(float(declared) - float(effective)) <= 1e-9 * max(1.0, abs(float(effective))):
         values["source"] = "read_from_file"
-        values["note"] = (
-            "The source file declared this pixel size and it has not been "
-            "changed."
-        )
+        values["note"] = "The source file declared this pixel size and it has not been changed."
     else:
         values["source"] = "overridden_by_hand"
         values["note"] = (
@@ -2174,8 +2106,7 @@ def image_identity(
         )
     if not asset.pixel_size_nm:
         unavailable["pixel_size_nm"] = (
-            "No pixel size is set for this image, so nothing in this bundle is "
-            "in physical units."
+            "No pixel size is set for this image, so nothing in this bundle is in physical units."
         )
 
     try:
@@ -2191,8 +2122,7 @@ def image_identity(
         )
     values["file"] = provenance.file_identity(path, what="the image")
     values["file_is"] = (
-        "The stored rendition this run read pixels from, which is what the "
-        "sha256 above identifies."
+        "The stored rendition this run read pixels from, which is what the sha256 above identifies."
     )
 
     stored_name = (values["file"] or {}).get("filename")
@@ -2264,9 +2194,7 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
             role="the tissue mask",
         )
 
-    comp = build_compartment_set(
-        compartment_segmentations, tissue=tissue, shape=shape
-    )
+    comp = build_compartment_set(compartment_segmentations, tissue=tissue, shape=shape)
 
     points_xy: np.ndarray | None = None
     # Rows the imported CSV could not be read from. Raised here rather than in
@@ -2325,9 +2253,7 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
             "Confirmed segment objects, rasterised from their stored polygons "
             "(exteriors and holes). Candidate and inferred objects are excluded."
         ),
-        "image": image_identity(
-            asset, produced_pixel_size_nm=produced_pixel_size_nm
-        ),
+        "image": image_identity(asset, produced_pixel_size_nm=produced_pixel_size_nm),
         "image_id": str(asset.id),
         "image_name": asset.display_name,
         "image_shape": [shape[0], shape[1]],
@@ -2361,8 +2287,7 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
     subject_review = (
         reviewed_area(segmentation, shape)
         if not any(
-            block["segmentation_id"] == str(segmentation.id)
-            for block in compartment_provenance
+            block["segmentation_id"] == str(segmentation.id) for block in compartment_provenance
         )
         else next(
             block["proofreading"]["reviewed_area"]
@@ -2391,16 +2316,12 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
         compartments=comp,
         object_features=features,
         object_sources=sources,
-        object_in_reviewed_area=objects_in_reviewed_area(
-            segmentation, union=review_union
-        ),
+        object_in_reviewed_area=objects_in_reviewed_area(segmentation, union=review_union),
         reviewed_regions=reviewed_regions,
         # What the model was trained to see, so run_analysis can say when it did
         # not: an uncalibrated image is not resampled, and the dimensionless
         # numbers are affected even though no unit conversion touched them.
-        canonical_nm_by_pack={
-            pack_id: _canonical_nm(pack_id)[0] for pack_id in pack_ids
-        },
+        canonical_nm_by_pack={pack_id: _canonical_nm(pack_id)[0] for pack_id in pack_ids},
         # ...and the half of `_canonical_nm`'s answer the map cannot hold. Both
         # "declares no canonical scale" and "not a pack this build knows" arrive
         # as None above, and they mean opposite things: the first is a run that
@@ -2411,11 +2332,7 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
             pack_id for pack_id in pack_ids if not _canonical_nm(pack_id)[1]
         ),
         produced_pixel_size_nm=produced_pixel_size_nm,
-        reviewed_px=(
-            (int(reviewed_px), shape[0] * shape[1])
-            if reviewed_px is not None
-            else None
-        ),
+        reviewed_px=((int(reviewed_px), shape[0] * shape[1]) if reviewed_px is not None else None),
         n_rejected=rejected_count(segmentation),
         points_xy=points_xy,
         distance_target=params["distance_target"],
@@ -2444,15 +2361,11 @@ def circular_compartments(run: AnalysisRun, params: dict[str, Any]) -> list[str]
         return []
     own_id = str(run.segmentation_id)
     return sorted(
-        name
-        for name, seg_id in (params.get("compartments") or {}).items()
-        if str(seg_id) == own_id
+        name for name, seg_id in (params.get("compartments") or {}).items() if str(seg_id) == own_id
     )
 
 
-def centroid_self_reference_caveat(
-    run: AnalysisRun, params: dict[str, Any]
-) -> str | None:
+def centroid_self_reference_caveat(run: AnalysisRun, params: dict[str, Any]) -> str | None:
     """Warn when the point set is the centroids of one of the compartments.
 
     Enrichment of a compartment measured with that compartment's own centroids is
@@ -2464,9 +2377,7 @@ def centroid_self_reference_caveat(
     if not circular:
         return None
     one = len(circular) == 1
-    columns = ", ".join(
-        f"enrichment_{name} and z_enrichment_{name}" for name in circular
-    )
+    columns = ", ".join(f"enrichment_{name} and z_enrichment_{name}" for name in circular)
     return (
         "The points are the centroids of the objects that also define "
         f"{', '.join(circular)}, so enrichment in "
@@ -2496,9 +2407,7 @@ MAX_REVIEWED_GEOMETRY_WKT_CHARS = 200_000
 
 def rejected_count(segmentation: ImageSegmentation) -> int:
     """Candidates rejected in this segmentation."""
-    return SegmentObject.objects.filter(
-        segmentation=segmentation, label_state=REJECTED
-    ).count()
+    return SegmentObject.objects.filter(segmentation=segmentation, label_state=REJECTED).count()
 
 
 def label_state_counts(segmentation: ImageSegmentation) -> dict[str, int]:
@@ -2511,9 +2420,7 @@ def label_state_counts(segmentation: ImageSegmentation) -> dict[str, int]:
     return {str(state): int(n) for state, n in sorted(rows)}
 
 
-def reviewed_area(
-    segmentation: ImageSegmentation, shape: tuple[int, int]
-) -> dict[str, Any]:
+def reviewed_area(segmentation: ImageSegmentation, shape: tuple[int, int]) -> dict[str, Any]:
     """How much of the image a person marked as exhaustively reviewed.
 
     A :class:`~quantem.segmentation.models.CompletedROI` is the user's own
@@ -2535,9 +2442,7 @@ def reviewed_area(
 
     polygons = [
         roi.geometry
-        for roi in list_completed_rois(segmentation).only(
-            "geometry_wkb", "segmentation_id"
-        )
+        for roi in list_completed_rois(segmentation).only("geometry_wkb", "segmentation_id")
         if roi.geometry is not None and not roi.geometry.is_empty
     ]
     if not polygons:
@@ -2575,9 +2480,7 @@ def reviewed_area(
     else:  # pragma: no cover - image_shape() rejects a zero-sized image first
         unavailable["reviewed_fraction"] = "The image has no area, so this is 0/0."
 
-    geometry_values, geometry_unavailable = reviewed_regions_record(
-        union, n_regions=len(polygons)
-    )
+    geometry_values, geometry_unavailable = reviewed_regions_record(union, n_regions=len(polygons))
     values.update(geometry_values)
     unavailable.update(geometry_unavailable)
     values["note"] = (
@@ -2588,9 +2491,7 @@ def reviewed_area(
     return provenance.section(values, unavailable)
 
 
-def reviewed_regions_record(
-    union, *, n_regions: int
-) -> tuple[dict[str, Any], dict[str, str]]:
+def reviewed_regions_record(union, *, n_regions: int) -> tuple[dict[str, Any], dict[str, str]]:
     """The completed regions themselves, as ``(values, unavailable)``.
 
     An area and a bounding box cannot be turned back into "which pixels were
@@ -2635,9 +2536,7 @@ def reviewed_geometry(segmentation: ImageSegmentation) -> tuple[Any, int]:
 
     polygons = [
         roi.geometry
-        for roi in list_completed_rois(segmentation).only(
-            "geometry_wkb", "segmentation_id"
-        )
+        for roi in list_completed_rois(segmentation).only("geometry_wkb", "segmentation_id")
         if roi.geometry is not None and not roi.geometry.is_empty
     ]
     if not polygons:

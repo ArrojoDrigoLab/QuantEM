@@ -124,11 +124,7 @@ def utc_timestamp(moment: datetime | None = None) -> str:
         moment = datetime.now(UTC)
     elif moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
-    return (
-        moment.astimezone(UTC)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
+    return moment.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _optional_float(value: object) -> float | None:

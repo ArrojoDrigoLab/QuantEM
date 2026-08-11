@@ -405,9 +405,7 @@ def scan_file_for_local_paths(path: str | Path) -> list[str]:
 
     found: list[str] = []
     for run in _printable_runs(path):
-        hits = find_local_paths(
-            run, patterns=_BINARY_PATH_PATTERNS, min_len=_MIN_BINARY_MATCH
-        )
+        hits = find_local_paths(run, patterns=_BINARY_PATH_PATTERNS, min_len=_MIN_BINARY_MATCH)
         for hit in hits:
             if hit not in found:
                 found.append(hit)
@@ -650,9 +648,7 @@ def verify_bundle(
         wanted = set()
         for pack_id in pack_ids:
             pack = bundle.pack(pack_id)
-            wanted.update(
-                p for p in (pack.manifest_path(r) for r in pack.files) if p is not None
-            )
+            wanted.update(p for p in (pack.manifest_path(r) for r in pack.files) if p is not None)
 
     results: dict[str, bool] = {}
     for entry in bundle.files:
@@ -737,9 +733,7 @@ def _copy_for_release(src: Path, dst: Path, role: str) -> int:
     the one thing worse than a leaked path.
     """
     if role in SANITISED_ROLES:
-        return _write_text(
-            dst, sanitise_pack_file(role, Path(src).read_text(encoding="utf-8"))
-        )
+        return _write_text(dst, sanitise_pack_file(role, Path(src).read_text(encoding="utf-8")))
     return _copy_into(src, dst)
 
 
@@ -1296,9 +1290,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
         )
     for pack_id, reason in report.failures.items():
         print(f"{pack_id:18s} FAILED: {reason}", file=sys.stderr)
-    print(
-        f"\n{len(report.packs)} pack(s), {report.total_bytes / 1e9:.2f} GB in {report.root}"
-    )
+    print(f"\n{len(report.packs)} pack(s), {report.total_bytes / 1e9:.2f} GB in {report.root}")
     print(
         f"release {report.release}; now run: "
         f"python -m quantem.registry.release verify {report.root}"

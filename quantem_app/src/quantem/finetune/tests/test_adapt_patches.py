@@ -77,7 +77,7 @@ class TestBuildPatches:
 
     def test_images_are_normalised_with_the_encoder_statistics(self):
         crop = _crop(512)
-        (image, _), = build_patches([crop], 512, image_mean=MEAN, image_std=STD)
+        ((image, _),) = build_patches([crop], 512, image_mean=MEAN, image_std=STD)
         assert image.dtype == np.float32
         np.testing.assert_allclose(image, normalize_tile(crop.em, MEAN, STD), rtol=1e-6)
 

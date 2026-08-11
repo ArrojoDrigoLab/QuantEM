@@ -220,9 +220,7 @@ class SegmentationIncludeLevelMapView(APIView):
             model_name=resolved,
         )
         if not readiness.ready:
-            return _refusal(
-                readiness.detail, code=ErrorCode.PROBABILITY_MAP_MISSING
-            )
+            return _refusal(readiness.detail, code=ErrorCode.PROBABILITY_MAP_MISSING)
 
         file_path = get_prob_map_file_path(
             segmentation,
@@ -251,9 +249,7 @@ class SegmentationIncludeLevelView(APIView):
             id=seg_id,
         )
         source_model = normalize_source_model(request.query_params.get("source_model"))
-        return Response(
-            _dial_state(segmentation, source_model), status=status.HTTP_200_OK
-        )
+        return Response(_dial_state(segmentation, source_model), status=status.HTTP_200_OK)
 
     def post(self, request, seg_id):
         segmentation = get_object_or_404(
@@ -268,9 +264,7 @@ class SegmentationIncludeLevelView(APIView):
         serializer = IncludeLevelSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         include_level = float(serializer.validated_data["include_level"])
-        source_model = normalize_source_model(
-            serializer.validated_data.get("source_model")
-        )
+        source_model = normalize_source_model(serializer.validated_data.get("source_model"))
         roi_id = serializer.validated_data.get("roi_id")
 
         segmenter, resolved = _resolve_segmenter(segmentation, source_model)
@@ -290,9 +284,7 @@ class SegmentationIncludeLevelView(APIView):
             roi=roi,
         )
         if not readiness.ready:
-            return _refusal(
-                readiness.detail, code=ErrorCode.PROBABILITY_MAP_MISSING
-            )
+            return _refusal(readiness.detail, code=ErrorCode.PROBABILITY_MAP_MISSING)
 
         # The user is telling us nothing is running. If the stage says otherwise
         # because a worker died mid-run, correct it now rather than refusing a

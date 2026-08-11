@@ -70,10 +70,7 @@ WINDOWS_EXIT_CODE_NOTES: dict[int, str] = {
         "failed to initialise. This usually follows a heavy GPU job that left "
         "the graphics driver in a bad state. Restart QuantEM and run it again."
     ),
-    0xC000013A: (
-        "The worker was interrupted (Ctrl-C, or the console it belongs to was "
-        "closed)."
-    ),
+    0xC000013A: ("The worker was interrupted (Ctrl-C, or the console it belongs to was closed)."),
     0xC0000409: (
         "The worker was stopped by Windows after a native library overran a "
         "buffer. This is a fault in that library, not in your image."
@@ -243,9 +240,7 @@ def _reconcile_segmentation(
     # newer attempt that just crashed: the header would keep explaining the
     # previous failure while saying nothing about this one.
     protected = (
-        frozenset({"COMPLETED"})
-        if supersede_stale_failure
-        else _CONCLUDED_SEGMENTATION_STAGES
+        frozenset({"COMPLETED"}) if supersede_stale_failure else _CONCLUDED_SEGMENTATION_STAGES
     )
     if len(segmentation_ids) > 1:
         # A multi-organelle run: one job, several organelles, each with its own
@@ -307,9 +302,7 @@ def _reconcile_adapter(
 
 #: Preprocessing stages an asset can still be moved out of. ``DONE``,
 #: ``CANCELLED`` and ``SKIPPED`` are conclusions somebody reached on purpose.
-_UNFINISHED_PREPROCESS_STAGES: frozenset[str] = frozenset(
-    {"NONE", "ENCODING", "FEATURES"}
-)
+_UNFINISHED_PREPROCESS_STAGES: frozenset[str] = frozenset({"NONE", "ENCODING", "FEATURES"})
 
 
 def _reconcile_asset_preprocessing(
@@ -393,14 +386,9 @@ def reconcile_domain_objects_for_failed_job(
 # success write both reset their error field to "").
 
 
-def retrying_attempt_detail(
-    attempts: int, max_attempts: int, error_message: str
-) -> str:
+def retrying_attempt_detail(attempts: int, max_attempts: int, error_message: str) -> str:
     """The one sentence a retrying job leaves on its domain object."""
-    return (
-        f"Attempt {attempts} of {max_attempts} failed; retrying automatically. "
-        f"{error_message}"
-    )
+    return f"Attempt {attempts} of {max_attempts} failed; retrying automatically. {error_message}"
 
 
 def _note_segmentation_retry(payload: dict, error_message: str) -> None:
@@ -411,9 +399,9 @@ def _note_segmentation_retry(payload: dict, error_message: str) -> None:
     # Unlike the failed-job reconciler, FAILED is *not* excluded: a stale
     # FAILED message from an earlier run is exactly what this note supersedes.
     # COMPLETED still is -- it carries the completion lock the user set by hand.
-    model.objects.filter(id=segmentation_id).exclude(
-        status_stage="COMPLETED"
-    ).update(status_error=error_message)
+    model.objects.filter(id=segmentation_id).exclude(status_stage="COMPLETED").update(
+        status_error=error_message
+    )
 
 
 def _note_analysis_run_retry(payload: dict, error_message: str) -> None:
@@ -421,9 +409,7 @@ def _note_analysis_run_retry(payload: dict, error_message: str) -> None:
     if not run_id:
         return
     model = apps.get_model("analysis", "AnalysisRun")
-    model.objects.filter(id=run_id).exclude(status="SUCCESS").update(
-        error=error_message
-    )
+    model.objects.filter(id=run_id).exclude(status="SUCCESS").update(error=error_message)
 
 
 def _note_adapter_retry(payload: dict, error_message: str) -> None:
@@ -431,16 +417,12 @@ def _note_adapter_retry(payload: dict, error_message: str) -> None:
     if not adapter_id:
         return
     model = apps.get_model("finetune", "Adapter")
-    model.objects.filter(id=adapter_id).exclude(status="SUCCESS").update(
-        error=error_message
-    )
+    model.objects.filter(id=adapter_id).exclude(status="SUCCESS").update(error=error_message)
 
 
 #: Preprocessing conclusions somebody reached on purpose; a retry note never
 #: lands on them. ``FAILED`` is updatable for the same reason as above.
-_CONCLUDED_PREPROCESS_STAGES: frozenset[str] = frozenset(
-    {"DONE", "CANCELLED", "SKIPPED"}
-)
+_CONCLUDED_PREPROCESS_STAGES: frozenset[str] = frozenset({"DONE", "CANCELLED", "SKIPPED"})
 
 
 def _note_asset_preprocess_retry(payload: dict, error_message: str) -> None:

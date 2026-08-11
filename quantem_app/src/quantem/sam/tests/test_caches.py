@@ -95,9 +95,7 @@ class ModelCacheTests(SimpleTestCase):
     def test_the_model_is_built_once_and_reused(self):
         first = get_backend()
         second = get_backend()
-        self.assertIs(
-            first, second, "a second prompt rebuilt the model instead of reusing it"
-        )
+        self.assertIs(first, second, "a second prompt rebuilt the model instead of reusing it")
         self.assertEqual(len(loaded_backend_keys()), 1)
 
     def test_a_box_in_a_fresh_region_reuses_the_model(self):

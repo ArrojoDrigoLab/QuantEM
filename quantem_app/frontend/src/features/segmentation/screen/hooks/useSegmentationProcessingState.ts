@@ -87,10 +87,11 @@ export function useSegmentationProcessingState({
     [segmentationRois]
   );
 
-  const { data: jobQueueStatus, refetch: refetchJobs } = useApiQuery(
-    () => getJobQueueStatus(),
+  const { data: jobQueueSnapshot, refetch: refetchJobs } = useApiQuery(
+    async () => ({ status: await getJobQueueStatus(), receivedAt: Date.now() }),
     [currentSegmentation?.id]
   );
+  const jobQueueStatus = jobQueueSnapshot?.status ?? null;
 
   const queuePendingJobs: JobQueueItem[] = useMemo(() => {
     if (!jobQueueStatus) return [];
@@ -136,7 +137,7 @@ export function useSegmentationProcessingState({
     // watching went with it. `organelleRow` has always had the copy for this
     // ("stopped at 18 of 56 tiles · you stopped this one"); nothing could reach
     // it.
-    const now = Date.now();
+    const now = jobQueueSnapshot?.receivedAt ?? 0;
     const stillWorthShowing = [
       ...(jobQueueStatus?.completed ?? []),
       ...(jobQueueStatus?.failed ?? []),
@@ -162,7 +163,7 @@ export function useSegmentationProcessingState({
       })
       // Enqueue order, so the rows do not reshuffle as runs start and finish.
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
-  }, [allQueueJobs, currentSegmentation, jobQueueStatus]);
+  }, [allQueueJobs, currentSegmentation, jobQueueSnapshot, jobQueueStatus]);
 
   /**
    * Whether the run panel is worth a strip of the screen.

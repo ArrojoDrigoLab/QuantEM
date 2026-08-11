@@ -63,10 +63,7 @@ def _record_manifest_failure(
     *,
     reason: str,
 ) -> None:
-    if (
-        state.status == SegmentationOverlayState.STATUS_FAILED
-        and state.last_error == reason
-    ):
+    if state.status == SegmentationOverlayState.STATUS_FAILED and state.last_error == reason:
         return
     state.status = SegmentationOverlayState.STATUS_FAILED
     state.last_error = reason
@@ -189,9 +186,7 @@ def ensure_overlay_manifest(
         width=width,
         height=height,
     )
-    build_failed = (
-        state.status == SegmentationOverlayState.STATUS_FAILED and bool(state.last_error)
-    )
+    build_failed = state.status == SegmentationOverlayState.STATUS_FAILED and bool(state.last_error)
     if current_valid:
         has_pending_work = bool(state.pending_full_rebuild) or (
             int(state.desired_revision) > int(state.applied_revision)
@@ -260,9 +255,7 @@ def ensure_overlay_manifest(
         #   2. the job died without recording anything -- killed worker, lost
         #      queue -- and the count of failed jobs since the last successful
         #      build has run out of budget.
-        failure_count, failure_message = _failed_rebuilds_since_last_success(
-            segmentation, state
-        )
+        failure_count, failure_message = _failed_rebuilds_since_last_success(segmentation, state)
         out_of_budget = failure_count >= MANIFEST_REQUEUE_FAILURE_LIMIT
         if out_of_budget and not build_failed:
             _record_manifest_failure(

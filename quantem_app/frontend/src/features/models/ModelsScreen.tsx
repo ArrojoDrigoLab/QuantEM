@@ -91,7 +91,7 @@ function readLocalSourceExample(catalogue: unknown): string | null {
  * kind of folder it wants, in words, with no path at all. A generic
  * placeholder is worth more than a wrong one.
  */
-export function localSourcePlaceholder(example: string | null): string {
+function localSourcePlaceholder(example: string | null): string {
   return example
     ? `e.g. ${example}`
     : "the folder you unzipped a QuantEM model release into";

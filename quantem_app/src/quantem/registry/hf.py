@@ -309,7 +309,11 @@ def remote_file_info(filename: str, *, revision: str | None = None) -> RemoteFil
     lfs = getattr(entry, "lfs", None)
     sha256 = ""
     if lfs is not None:
-        sha256 = str(getattr(lfs, "sha256", None) or (lfs.get("sha256") if isinstance(lfs, dict) else "") or "")
+        sha256 = str(
+            getattr(lfs, "sha256", None)
+            or (lfs.get("sha256") if isinstance(lfs, dict) else "")
+            or ""
+        )
     if not sha256:
         raise HfError(
             f"{filename} in {HF_REPO_ID}@{rev} is not stored as an LFS object, so the "
@@ -362,9 +366,7 @@ def download_file(
         finally:
             done.set()
 
-    worker = threading.Thread(
-        target=_work, name=f"hf-download-{filename}", daemon=True
-    )
+    worker = threading.Thread(target=_work, name=f"hf-download-{filename}", daemon=True)
     worker.start()
 
     last_reported = -1

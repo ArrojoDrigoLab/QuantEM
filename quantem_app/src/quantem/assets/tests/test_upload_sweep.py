@@ -70,9 +70,7 @@ class RejectedUploadLeavesNoBytesTests(TestCase):
     def _tiff_bytes(self, width: int = 64, height: int = 48) -> bytes:
         path = STORAGE_DIR / "tmp" / f"sweep_src_{uuid.uuid4().hex}.tif"
         path.parent.mkdir(parents=True, exist_ok=True)
-        tifffile.imwrite(
-            str(path), make_em_like_array(width, height), photometric="minisblack"
-        )
+        tifffile.imwrite(str(path), make_em_like_array(width, height), photometric="minisblack")
         try:
             return path.read_bytes()
         finally:
@@ -85,11 +83,7 @@ class RejectedUploadLeavesNoBytesTests(TestCase):
         with self.settings(FILE_UPLOAD_MAX_MEMORY_SIZE=0):
             response = self.client.post(
                 "/api/assets/upload/",
-                {
-                    "file": SimpleUploadedFile(
-                        "scan.tif", payload, content_type="image/tiff"
-                    )
-                },
+                {"file": SimpleUploadedFile("scan.tif", payload, content_type="image/tiff")},
             )
 
         self.assertEqual(response.status_code, 400, response.content[:400])
@@ -115,11 +109,7 @@ class RejectedUploadLeavesNoBytesTests(TestCase):
         ):
             response = self.client.post(
                 "/api/assets/upload/",
-                {
-                    "file": SimpleUploadedFile(
-                        "scan.tif", payload, content_type="image/tiff"
-                    )
-                },
+                {"file": SimpleUploadedFile("scan.tif", payload, content_type="image/tiff")},
             )
 
         self.assertEqual(response.status_code, 500, response.content[:400])
@@ -132,11 +122,7 @@ class RejectedUploadLeavesNoBytesTests(TestCase):
         with self.settings(FILE_UPLOAD_MAX_MEMORY_SIZE=0):
             response = self.client.post(
                 "/api/assets/upload/",
-                {
-                    "file": SimpleUploadedFile(
-                        "scan.tif", payload, content_type="image/tiff"
-                    )
-                },
+                {"file": SimpleUploadedFile("scan.tif", payload, content_type="image/tiff")},
             )
 
         self.assertEqual(response.status_code, 201, response.content[:400])
@@ -180,9 +166,7 @@ class SweepAbandonedUploadsTests(TestCase):
 
     def test_an_old_interrupted_staging_file_is_swept(self):
         # The 2 GB file the killed server left behind, in miniature.
-        path = _write(
-            UPLOADS_DIR / f"{STAGING_PREFIX}{uuid.uuid4().hex}.tif", b"x" * 4096
-        )
+        path = _write(UPLOADS_DIR / f"{STAGING_PREFIX}{uuid.uuid4().hex}.tif", b"x" * 4096)
         _age_file(path, self.old)
 
         result = sweep_abandoned_uploads()
@@ -192,9 +176,7 @@ class SweepAbandonedUploadsTests(TestCase):
         self.assertEqual(result.freed_bytes, 4096)
 
     def test_a_staging_file_that_could_still_be_in_flight_is_kept(self):
-        path = _write(
-            UPLOADS_DIR / f"{STAGING_PREFIX}{uuid.uuid4().hex}.tif", b"still arriving"
-        )
+        path = _write(UPLOADS_DIR / f"{STAGING_PREFIX}{uuid.uuid4().hex}.tif", b"still arriving")
 
         result = sweep_abandoned_uploads()
 
@@ -253,19 +235,13 @@ class SweepAbandonedUploadsTests(TestCase):
         directory.rmdir()
 
     def test_the_age_threshold_is_configurable_and_has_a_floor(self):
-        with mock.patch.dict(
-            os.environ, {"QUANTEM_UPLOAD_SWEEP_MAX_AGE_SECONDS": "900"}
-        ):
+        with mock.patch.dict(os.environ, {"QUANTEM_UPLOAD_SWEEP_MAX_AGE_SECONDS": "900"}):
             self.assertEqual(abandoned_upload_max_age_seconds(), 900)
-        with mock.patch.dict(
-            os.environ, {"QUANTEM_UPLOAD_SWEEP_MAX_AGE_SECONDS": "1"}
-        ):
+        with mock.patch.dict(os.environ, {"QUANTEM_UPLOAD_SWEEP_MAX_AGE_SECONDS": "1"}):
             # A threshold shorter than a plausible upload would delete bytes out
             # from under the request writing them.
             self.assertGreaterEqual(abandoned_upload_max_age_seconds(), 300)
-        with mock.patch.dict(
-            os.environ, {"QUANTEM_UPLOAD_SWEEP_MAX_AGE_SECONDS": "not a number"}
-        ):
+        with mock.patch.dict(os.environ, {"QUANTEM_UPLOAD_SWEEP_MAX_AGE_SECONDS": "not a number"}):
             self.assertEqual(
                 abandoned_upload_max_age_seconds(),
                 DEFAULT_ABANDONED_UPLOAD_MAX_AGE_SECONDS,

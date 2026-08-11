@@ -115,9 +115,7 @@ def test_the_suite_does_not_write_to_the_real_data_directory():
     from quantem.core.config import STORAGE_DIR
 
     if sys.platform == "win32":
-        platform_root = Path(
-            os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
-        )
+        platform_root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
     elif sys.platform == "darwin":
         platform_root = Path.home() / "Library" / "Application Support"
     else:
@@ -186,16 +184,12 @@ def test_the_env_var_still_wins_in_a_frozen_build(monkeypatch, tmp_path):
     override = tmp_path / "elsewhere"
     monkeypatch.setenv("QUANTEM_DATA_DIR", str(override))
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(
-        sys, "executable", str(tmp_path / "inst" / "quantem-server" / "qs.exe")
-    )
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "inst" / "quantem-server" / "qs.exe"))
 
     assert default_data_dir() == override
 
 
-def test_an_unwritable_data_dir_is_a_clear_error_naming_the_override(
-    monkeypatch, tmp_path
-):
+def test_an_unwritable_data_dir_is_a_clear_error_naming_the_override(monkeypatch, tmp_path):
     """No silent fallback -- the owner ruling this whole module implements.
 
     A data directory that cannot be created (here: its parent is a *file*)

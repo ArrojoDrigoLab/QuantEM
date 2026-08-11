@@ -101,18 +101,14 @@ def _legacy_quantise(prob: np.ndarray) -> np.ndarray:
     One-sided, so it does not average out: every level sits at or below the one
     round-to-nearest would have stored.
     """
-    return (np.clip(np.asarray(prob, dtype=np.float64), 0.0, 1.0) * 255.0).astype(
-        np.uint8
-    )
+    return (np.clip(np.asarray(prob, dtype=np.float64), 0.0, 1.0) * 255.0).astype(np.uint8)
 
 
 class LegacyStoredMapTests(TestCase):
     """One stored map, made by the real writer, then aged by hand."""
 
     def setUp(self):
-        image = create_small_test_image(
-            "Legacy map", width=SIZE, height=SIZE, textured=True
-        )
+        image = create_small_test_image("Legacy map", width=SIZE, height=SIZE, textured=True)
         asset = image.asset
         asset.pixel_size_nm = PIXEL_SIZE_NM
         asset.save(update_fields=["pixel_size_nm"])
@@ -140,9 +136,7 @@ class LegacyStoredMapTests(TestCase):
         """
         segmenter = self._segmenter()
         spec = get_model_spec("quantem", "mito")
-        context = resample.plan_resample(
-            (SIZE, SIZE), PIXEL_SIZE_NM, spec.canonical_nm
-        )
+        context = resample.plan_resample((SIZE, SIZE), PIXEL_SIZE_NM, spec.canonical_nm)
         assert not context.is_identity, "the fixture must exercise a resample"
         native = resample.NativeProbabilityMap.from_model_grid(
             _model_field(context.model_shape), context
@@ -210,9 +204,7 @@ class LegacyStoredMapTests(TestCase):
         """
         stored = self._load()
         assert stored is not None
-        assert np.array_equal(
-            stored.native.data, self.segmenter.native_probability_map.data
-        )
+        assert np.array_equal(stored.native.data, self.segmenter.native_probability_map.data)
         assert stored.native.interpolation == "INTER_LINEAR"
         assert stored.native.back_factor > 1.5
         assert stored.native.quantization == resample.QUANTIZATION_ID
@@ -220,7 +212,7 @@ class LegacyStoredMapTests(TestCase):
         assert replay_provenance_problem(dict(self._record.metadata)) is None
 
     def test_nothing_stored_is_still_nothing_to_replay(self):
-        """"No map here" stays a different answer from "this map is refused"."""
+        """ "No map here" stays a different answer from "this map is refused"."""
         untouched = create_small_test_image("No map", width=SIZE, height=SIZE)
         other = ImageSegmentation.objects.create(
             asset=untouched.asset,
@@ -265,17 +257,11 @@ class LegacyStoredMapTests(TestCase):
     def test_the_dial_refuses_it_too_and_writes_no_objects(self):
         """The caller's contract, end to end: refuse, do not re-decide."""
         self._age_the_map()
-        assert not SegmentObject.objects.filter(
-            segmentation=self.segmentation
-        ).exists()
+        assert not SegmentObject.objects.filter(segmentation=self.segmentation).exists()
         with self.assertRaises(StoredMapUnavailable) as caught:
-            replay_stored_probability_map(
-                self._segmenter(0.4), self.segmentation, threshold=0.4
-            )
+            replay_stored_probability_map(self._segmenter(0.4), self.segmentation, threshold=0.4)
         assert str(caught.exception) == LEGACY_MAP_MESSAGE
-        assert not SegmentObject.objects.filter(
-            segmentation=self.segmentation
-        ).exists()
+        assert not SegmentObject.objects.filter(segmentation=self.segmentation).exists()
         # The bytes and the row survive for a human to look at; refusing to
         # read a file is not a reason to destroy it.
         assert self._map_path().exists()

@@ -13,6 +13,7 @@
  */
 
 import { useId } from "react";
+import type { GroupingChoice } from "@/features/library/components/grouping/groupingChoices";
 
 /**
  * Four intents, not two strings.
@@ -23,34 +24,10 @@ import { useId } from "react";
  * value), and it is only offered where a selection already has values worth
  * keeping -- the import form has nothing to keep, so it does not show it.
  */
-export type GroupingChoice =
-  | { kind: "keep" }
-  | { kind: "none" }
-  | { kind: "existing"; id: string }
-  | { kind: "new"; name: string };
-
 /** The sentinel the `<select>` uses for "I want to type a name". */
 const NEW_VALUE = "__new__";
 /** The sentinel for "do not touch this". Only rendered when offered. */
 const KEEP_VALUE = "__keep__";
-
-export const NO_GROUP: GroupingChoice = { kind: "none" };
-export const KEEP_GROUP: GroupingChoice = { kind: "keep" };
-
-/** The id an existing choice points at, or `""`. Convenient at call sites. */
-export function chosenId(choice: GroupingChoice): string {
-  return choice.kind === "existing" ? choice.id : "";
-}
-
-/** The name a new choice carries, trimmed, or `""`. */
-export function chosenName(choice: GroupingChoice): string {
-  return choice.kind === "new" ? choice.name.trim() : "";
-}
-
-/** Whether this choice asks for anything at all. */
-export function isChosen(choice: GroupingChoice): boolean {
-  return Boolean(chosenId(choice) || chosenName(choice));
-}
 
 export interface GroupingOption {
   id: string;

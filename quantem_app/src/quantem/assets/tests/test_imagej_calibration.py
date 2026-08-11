@@ -126,9 +126,7 @@ class ImageJCalibrationHelperTests(SimpleTestCase):
             resolution=(0.5, 0.5),
             resolutionunit="NONE",
         )
-        self.assertAlmostEqual(
-            extract_tiff_metadata(p)["pixel_size_nm"], 2.0, delta=1e-6
-        )
+        self.assertAlmostEqual(extract_tiff_metadata(p)["pixel_size_nm"], 2.0, delta=1e-6)
 
     def test_vendor_imagej_block_without_version_calibrates(self):
         """The user's exact layout: bare ``ImageJ`` first line.
@@ -150,9 +148,7 @@ class ImageJCalibrationHelperTests(SimpleTestCase):
 
     def test_resolutionunit_only_still_calibrates(self):
         # No ImageJ block at all: the baseline tag path is unchanged.
-        p = self._write(
-            "cm.tif", resolution=(2e6, 2e6), resolutionunit="CENTIMETER"
-        )
+        p = self._write("cm.tif", resolution=(2e6, 2e6), resolutionunit="CENTIMETER")
         meta = extract_tiff_metadata(p)
         self.assertAlmostEqual(meta["pixel_size_nm"], 5.0, delta=1e-6)
         self.assertIsNone(meta["pixel_size_caveat"])
@@ -285,9 +281,7 @@ class ImageJCalibrationUploadTests(TestCase):
         self.assertAlmostEqual(body["pixel_size_nm"], VENDOR_NM_PER_PX, delta=1e-6)
         # Provenance "from file": the declared value exists and matches the
         # effective one, which is exactly how the library card decides.
-        self.assertAlmostEqual(
-            body["file_declared_pixel_size_nm"], VENDOR_NM_PER_PX, delta=1e-6
-        )
+        self.assertAlmostEqual(body["file_declared_pixel_size_nm"], VENDOR_NM_PER_PX, delta=1e-6)
         self.assertIsNone(body["file_declared_pixel_size_caveat"])
 
     def test_conflicting_upload_surfaces_the_caveat_on_the_asset(self):
@@ -306,9 +300,7 @@ class ImageJCalibrationUploadTests(TestCase):
         listed = self.client.get("/api/assets/")
         self.assertEqual(listed.status_code, 200)
         entries = {entry["id"]: entry for entry in listed.data}
-        self.assertEqual(
-            entries[body["id"]]["file_declared_pixel_size_caveat"], caveat
-        )
+        self.assertEqual(entries[body["id"]]["file_declared_pixel_size_caveat"], caveat)
 
     def test_a_typed_pixel_size_still_wins_over_the_imagej_block(self):
         body = self._upload(
@@ -322,9 +314,7 @@ class ImageJCalibrationUploadTests(TestCase):
         self.assertEqual(body["pixel_size_nm"], 4.2)
         # The file's own claim is still recorded, so the UI can say
         # "entered by hand" for the effective value.
-        self.assertAlmostEqual(
-            body["file_declared_pixel_size_nm"], VENDOR_NM_PER_PX, delta=1e-6
-        )
+        self.assertAlmostEqual(body["file_declared_pixel_size_nm"], VENDOR_NM_PER_PX, delta=1e-6)
 
     @unittest.skipUnless(USER_SAMPLE.exists(), "no sample at $QUANTEM_IMAGEJ_SAMPLE")
     def test_the_users_real_pancreas_tem_imports_calibrated(self):
@@ -332,8 +322,6 @@ class ImageJCalibrationUploadTests(TestCase):
         body = self._upload(USER_SAMPLE.read_bytes(), name=USER_SAMPLE.name)
         self.assertIsNotNone(body["pixel_size_nm"])
         self.assertAlmostEqual(body["pixel_size_nm"], 7.10310527637452, delta=1e-6)
-        self.assertAlmostEqual(
-            body["file_declared_pixel_size_nm"], 7.10310527637452, delta=1e-6
-        )
+        self.assertAlmostEqual(body["file_declared_pixel_size_nm"], 7.10310527637452, delta=1e-6)
         # ResolutionUnit=NONE is the Fiji convention, not a conflict.
         self.assertIsNone(body["file_declared_pixel_size_caveat"])

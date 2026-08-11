@@ -81,7 +81,7 @@ def _rotating_handlers(env_overrides: dict[str, str | None]) -> list[dict]:
     assert out.returncode == 0, out.stderr
     for line in out.stdout.splitlines():
         if line.startswith("PROBE:"):
-            return json.loads(line[len("PROBE:"):])
+            return json.loads(line[len("PROBE:") :])
     raise AssertionError(f"probe printed nothing: {out.stdout!r}")
 
 

@@ -46,9 +46,7 @@ DEFAULT_TARGET_PLANES = 25
 # --------------------------------------------------------------------------- #
 # Z sampling
 # --------------------------------------------------------------------------- #
-def select_z_planes(
-    source_depth: int, z_sampling: dict | None
-) -> tuple[list[int], dict[str, Any]]:
+def select_z_planes(source_depth: int, z_sampling: dict | None) -> tuple[list[int], dict[str, Any]]:
     """Choose which source z-planes to keep and return ``(indices, resolved)``.
 
     Modes:

@@ -62,11 +62,7 @@ class SamModelDownloadView(APIView):
 
     def post(self, request: Request) -> Response:
         payload = checkpoint.start_download()
-        code = (
-            status.HTTP_200_OK
-            if payload["installed"]
-            else status.HTTP_202_ACCEPTED
-        )
+        code = status.HTTP_200_OK if payload["installed"] else status.HTTP_202_ACCEPTED
         return Response(payload, status=code)
 
 
@@ -107,8 +103,7 @@ class SamBoxPromptView(APIView):
         asset = getattr(segmentation, "asset", None)
         if asset is None:
             return _error(
-                "This segmentation has no image, so there is nothing to "
-                "segment.",
+                "This segmentation has no image, so there is nothing to segment.",
                 status.HTTP_400_BAD_REQUEST,
             )
         openable = get_asset_openable(asset, require=False)
@@ -121,8 +116,7 @@ class SamBoxPromptView(APIView):
         width, height = int(openable.width), int(openable.height)
         if width <= 0 or height <= 0:
             return _error(
-                "This image's size is not recorded, so a box cannot be "
-                "placed on it.",
+                "This image's size is not recorded, so a box cannot be placed on it.",
                 status.HTTP_409_CONFLICT,
             )
 
@@ -140,8 +134,7 @@ class SamBoxPromptView(APIView):
             return _error(str(exc), status.HTTP_409_CONFLICT)
         except MemoryError:
             return _error(
-                "This computer ran out of memory while segmenting that box. "
-                "Try a smaller box.",
+                "This computer ran out of memory while segmenting that box. Try a smaller box.",
                 status.HTTP_507_INSUFFICIENT_STORAGE,
             )
         except Exception as exc:  # pragma: no cover - last-resort sentence
@@ -196,7 +189,7 @@ def _parse_box(data) -> tuple[Box | None, str]:
     """A validated box from the request body, or the sentence to send back."""
     raw = data.get("box") if isinstance(data, dict) else None
     if not isinstance(raw, dict):
-        return None, "Send the drawn box as \"box\", with x0, y0, x1 and y1."
+        return None, 'Send the drawn box as "box", with x0, y0, x1 and y1.'
     try:
         corners = [float(raw[name]) for name in ("x0", "y0", "x1", "y1")]
     except (KeyError, TypeError, ValueError):

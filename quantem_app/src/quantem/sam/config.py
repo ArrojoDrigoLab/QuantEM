@@ -120,10 +120,7 @@ CHECKPOINT = CheckpointSpec(
     identity="microsam:vit_b_em_organelles",
     architecture="vit_b",
     filename="microsam_vit_b_em_organelles.pt",
-    url=(
-        "https://uk1s3.embassy.ebi.ac.uk/public-datasets/bioimage.io/"
-        "noisy-ox/1.2/files/vit_b.pt"
-    ),
+    url=("https://uk1s3.embassy.ebi.ac.uk/public-datasets/bioimage.io/noisy-ox/1.2/files/vit_b.pt"),
     sha256="0e08dd7bf3761df3f2440dcf74b3bc7156dd3c61ced65e838c845dd06102a7ac",
     size_bytes=375_023_499,
     display_name="micro-SAM EM organelles (ViT-B)",

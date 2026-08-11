@@ -186,10 +186,7 @@ def _run(spec: CheckpointSpec) -> None:
         logger.exception("SAM checkpoint download failed unexpectedly")
         with _STATE._lock:
             _STATE.status = "FAILED"
-            _STATE.error = (
-                f"QuantEM could not install {spec.display_name}. Try the "
-                "download again."
-            )
+            _STATE.error = f"QuantEM could not install {spec.display_name}. Try the download again."
         return
 
     from quantem.sam.backends import reset_backend

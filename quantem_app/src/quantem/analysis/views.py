@@ -114,9 +114,7 @@ def _group_warnings(rows: list[dict[str, Any]], circular: list[str]) -> list[str
     # numbers is not a statement. Micron-denominated metrics averaged across
     # scales are averaged across acquisitions, which is a study design question,
     # not a rounding one.
-    scales = sorted(
-        {row["pixel_size_nm"] for row in rows if row.get("pixel_size_nm") is not None}
-    )
+    scales = sorted({row["pixel_size_nm"] for row in rows if row.get("pixel_size_nm") is not None})
     if len(scales) > 1:
         warnings.append(
             f"These runs were acquired at {len(scales)} different pixel sizes "
@@ -157,8 +155,7 @@ def _group_caveats(
                 order.append(text)
             by_text[text].append(run_id)
     return [
-        {"text": text, "n_runs": len(by_text[text]), "run_ids": by_text[text]}
-        for text in order
+        {"text": text, "n_runs": len(by_text[text]), "run_ids": by_text[text]} for text in order
     ]
 
 
@@ -210,9 +207,7 @@ class AnalysisGroupRollupView(APIView):
                 # Skipping it is right -- guessing at its columns is not.
                 continue
             row["run_id"] = str(run.id)
-            caveats_by_run[str(run.id)] = [
-                str(c) for c in (run.results.get("caveats") or [])
-            ]
+            caveats_by_run[str(run.id)] = [str(c) for c in (run.results.get("caveats") or [])]
             circular_by_run[str(run.id)] = circular_columns(run.results, row)
             rows.append(row)
 
@@ -263,9 +258,7 @@ class AnalysisGroupRollupView(APIView):
                     "n_units": len(by_group[name]),
                     "unit": UNIT_DESCRIPTION,
                     "run_ids": [row["run_id"] for row in by_group[name]],
-                    "image_keys": sorted(
-                        {str(row.get("image_key")) for row in by_group[name]}
-                    ),
+                    "image_keys": sorted({str(row.get("image_key")) for row in by_group[name]}),
                     # Distinct values, not a mean: more than one entry here says
                     # the group mixes acquisition scales, which a reader needs.
                     "pixel_sizes_nm": sorted(
@@ -275,9 +268,7 @@ class AnalysisGroupRollupView(APIView):
                             if row.get("pixel_size_nm") is not None
                         }
                     ),
-                    "warnings": _group_warnings(
-                        by_group[name], circular_per_group[name]
-                    ),
+                    "warnings": _group_warnings(by_group[name], circular_per_group[name]),
                     # Everything the runs behind these means said about
                     # themselves. A caveat that stops at the per-image screen is
                     # a caveat that never reaches the figure.

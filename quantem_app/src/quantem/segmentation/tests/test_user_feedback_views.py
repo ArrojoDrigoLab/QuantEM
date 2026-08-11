@@ -105,14 +105,10 @@ class UserFeedbackViewTests(TestCase):
             updated_at=timezone.now() - timedelta(minutes=10)
         )
 
-        response = self.client.get(
-            f"/api/segmentations/{self.segmentation.id}/user-feedback/"
-        )
+        response = self.client.get(f"/api/segmentations/{self.segmentation.id}/user-feedback/")
 
         self.assertEqual(response.status_code, 200)
         stale_feedback.refresh_from_db()
         self.assertEqual(stale_feedback.utilized_status, UserFeedback.STATUS_FAILED)
-        returned_row = next(
-            item for item in response.data if item["id"] == str(stale_feedback.id)
-        )
+        returned_row = next(item for item in response.data if item["id"] == str(stale_feedback.id))
         self.assertEqual(returned_row["utilized_status"], UserFeedback.STATUS_FAILED)

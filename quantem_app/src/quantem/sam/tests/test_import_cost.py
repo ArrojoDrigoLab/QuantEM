@@ -39,9 +39,7 @@ def _import_probe(*statements: str) -> set[str]:
         timeout=300,
     )
     if completed.returncode != 0:
-        raise AssertionError(
-            f"probe failed:\n{completed.stdout}\n{completed.stderr}"
-        )
+        raise AssertionError(f"probe failed:\n{completed.stdout}\n{completed.stderr}")
     return set(json.loads(completed.stdout.strip().splitlines()[-1]))
 
 

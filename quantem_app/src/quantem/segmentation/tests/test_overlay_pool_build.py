@@ -283,9 +283,7 @@ class OverlayBuildFailureIsHonestTests(TestCase):
         job = _run_queued_overlay_job(job)
         self.assertEqual(job.status, "FAILED")
 
-        response = self.client.get(
-            f"/api/segmentations/{self.segmentation.id}/overlay-manifest/"
-        )
+        response = self.client.get(f"/api/segmentations/{self.segmentation.id}/overlay-manifest/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], SegmentationOverlayState.STATUS_FAILED)
@@ -305,9 +303,7 @@ class OverlayBuildFailureIsHonestTests(TestCase):
         one".
         """
         for _ in range(times):
-            self.client.get(
-                f"/api/segmentations/{self.segmentation.id}/overlay-manifest/"
-            )
+            self.client.get(f"/api/segmentations/{self.segmentation.id}/overlay-manifest/")
             Job.objects.filter(
                 type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
                 status__in=ACTIVE_OVERLAY_JOB_STATUSES,

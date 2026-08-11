@@ -161,10 +161,7 @@ class SegmentBatchLabelUpdateView(APIView):
         # any one of them is locked is the only outcome that does not leave a
         # partially applied edit the caller was never told about.
         locked = completion_lock_response(
-            *{
-                str(segment.segmentation_id): segment.segmentation
-                for segment in segments
-            }.values()
+            *{str(segment.segmentation_id): segment.segmentation for segment in segments}.values()
         )
         if locked is not None:
             return locked
@@ -202,9 +199,7 @@ class SegmentBatchLabelUpdateView(APIView):
             segments_to_update.append(segment)
             segmentation_key = str(segment.segmentation_id)
             touched_segmentations.add(segmentation_key)
-            geometries_by_segmentation.setdefault(segmentation_key, []).append(
-                segment.geometry
-            )
+            geometries_by_segmentation.setdefault(segmentation_key, []).append(segment.geometry)
             if old_label == "CONFIRMED" or new_label == "CONFIRMED":
                 confirmed_membership_changed_by_segmentation[segmentation_key] = True
 
@@ -222,8 +217,7 @@ class SegmentBatchLabelUpdateView(APIView):
             updated_count += len(segments_to_update)
             updated_ids.extend(str(segment.id) for segment in segments_to_update)
             segmentations_by_id = {
-                str(segment.segmentation_id): segment.segmentation
-                for segment in segments_to_update
+                str(segment.segmentation_id): segment.segmentation for segment in segments_to_update
             }
             for seg_id in touched_segmentations:
                 _invalidate_tiles_for_segmentation(seg_id)

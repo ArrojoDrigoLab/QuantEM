@@ -158,9 +158,7 @@ class ProducedPixelSizeTests(RunIdentityTestCase):
 
     def test_it_reports_what_the_objects_recorded_not_what_the_asset_says_now(self):
         mito = self._mito_uncalibrated()
-        loaded = loaders.load_inputs(
-            self._pending_run(mito, compartments={"mito": str(mito.id)})
-        )
+        loaded = loaders.load_inputs(self._pending_run(mito, compartments={"mito": str(mito.id)}))
         inputs = loaded.inputs if hasattr(loaded, "inputs") else loaded
         self.assertIn(None, inputs.produced_pixel_size_nm)
         self.assertEqual(float(self.asset.pixel_size_nm), 5.0)
@@ -429,9 +427,7 @@ class ServedToTheAnalysisScreenTests(RunIdentityTestCase):
         )
 
         run_id = started.data["analysis_run_id"]
-        self.assertEqual(
-            AnalysisRun.objects.get(id=run_id).status, AnalysisRun.STATUS_SUCCESS
-        )
+        self.assertEqual(AnalysisRun.objects.get(id=run_id).status, AnalysisRun.STATUS_SUCCESS)
         served = self.client.get(f"/api/analysis/{run_id}/")
         self.assertEqual(served.status_code, 200, served.data)
 
@@ -449,7 +445,6 @@ class ServedToTheAnalysisScreenTests(RunIdentityTestCase):
             [c for c in served.data["caveats"] if "--" in c],
             "the notice panel renders these verbatim",
         )
-
 
 
 class MinAreaProvenanceTests(RunIdentityTestCase):
@@ -477,9 +472,9 @@ class MinAreaProvenanceTests(RunIdentityTestCase):
         return self._compartment(got["manifest"], "mito")["run"]["min_area"]
 
     def test_an_uncalibrated_run_gets_no_micron_floor(self):
-        entry = self._min_area(
-            {"ran_at_nm": None, "native_pixel_size_nm": None}
-        )["by_pack"]["quantem:mito"]
+        entry = self._min_area({"ran_at_nm": None, "native_pixel_size_nm": None})["by_pack"][
+            "quantem:mito"
+        ]
 
         self.assertEqual(entry["value"], 60)
         self.assertIsNone(entry["um2"], "0.0015 um2 was never a real size floor")
@@ -488,9 +483,9 @@ class MinAreaProvenanceTests(RunIdentityTestCase):
         self.assertIn("after the run", entry["unavailable"]["um2"])
 
     def test_a_calibrated_run_still_restates_the_floor(self):
-        entry = self._min_area({"ran_at_nm": 8.0, "native_pixel_size_nm": 5.0})[
-            "by_pack"
-        ]["quantem:mito"]
+        entry = self._min_area({"ran_at_nm": 8.0, "native_pixel_size_nm": 5.0})["by_pack"][
+            "quantem:mito"
+        ]
 
         self.assertAlmostEqual(entry["um2"], 60 * (5.0 / 1000.0) ** 2)
         self.assertAlmostEqual(entry["model_grid_px"], round(60 * (5 / 8) ** 2, 3))
@@ -561,9 +556,7 @@ class CircularityBiasTravelsWithEveryBundleTests(RunIdentityTestCase):
         """
         _run, got = self._bundle_with_reportable_circularity()
         entry = next(
-            e
-            for e in got["manifest"]["outputs"]["files"]
-            if e["filename"] == "objects.csv"
+            e for e in got["manifest"]["outputs"]["files"] if e["filename"] == "objects.csv"
         )
 
         self.assertIn("circularity", entry["columns"])

@@ -45,9 +45,7 @@ class OwnersCountTests(TestCase):
 
     def setUp(self):
         self.experiment = Experiment.objects.create(name="Fasted cohort")
-        self.dataset = Dataset.objects.create(
-            experiment=self.experiment, name="Liver 24h"
-        )
+        self.dataset = Dataset.objects.create(experiment=self.experiment, name="Liver 24h")
         self.segmentations = []
         for index in range(10):
             segmentation = annotated_segmentation(
@@ -62,9 +60,7 @@ class OwnersCountTests(TestCase):
         # Two images with three annotated areas each...
         for segmentation in self.segmentations[:2]:
             for area in THREE_AREAS:
-                CompletedROI.objects.create(
-                    segmentation=segmentation, geometry=square(*area)
-                )
+                CompletedROI.objects.create(segmentation=segmentation, geometry=square(*area))
         # ...and a third with one.
         CompletedROI.objects.create(
             segmentation=self.segmentations[2], geometry=square(*THREE_AREAS[0])
@@ -126,23 +122,17 @@ class SameExperimentTests(TestCase):
             segmentation.asset.save(update_fields=["experiment"])
 
     def test_two_experiments_are_refused(self):
-        scope = resolve_scope(
-            asset_ids=[str(self.a.asset_id), str(self.b.asset_id)]
-        )
+        scope = resolve_scope(asset_ids=[str(self.a.asset_id), str(self.b.asset_id)])
         assert not scope.eligible
         assert "more than one experiment" in scope.blockers[0]
 
     def test_mixing_an_experiment_with_an_unassigned_image_is_refused(self):
-        scope = resolve_scope(
-            asset_ids=[str(self.a.asset_id), str(self.c.asset_id)]
-        )
+        scope = resolve_scope(asset_ids=[str(self.a.asset_id), str(self.c.asset_id)])
         assert not scope.eligible
 
     def test_unassigned_images_together_are_one_group(self):
         other = annotated_segmentation("loose_02.tif")
-        scope = resolve_scope(
-            asset_ids=[str(self.c.asset_id), str(other.asset_id)]
-        )
+        scope = resolve_scope(asset_ids=[str(self.c.asset_id), str(other.asset_id)])
         assert scope.eligible
         assert scope.experiment_id is None
 
@@ -198,9 +188,7 @@ class DoneRoiSourceTests(TestCase):
         assert crop.foreground_px > 0
 
     def test_a_done_roi_and_a_completed_area_are_two_annotations(self):
-        CompletedROI.objects.create(
-            segmentation=self.segmentation, geometry=square(20, 20, 90, 90)
-        )
+        CompletedROI.objects.create(segmentation=self.segmentation, geometry=square(20, 20, 90, 90))
         done_roi(self.segmentation, (110, 20, 80, 80))
         crop_set = self._crops()
         assert crop_set.annotation_count == 2
@@ -228,9 +216,7 @@ class DoneRoiSourceTests(TestCase):
         crop_set = self._crops()
         assert crop_set.annotation_count == 2
         done = next(c for c in crop_set.crops if c.source == SOURCE_DONE_ROI)
-        confirmed = next(
-            c for c in crop_set.crops if c.source == SOURCE_CONFIRMED_AREA
-        )
+        confirmed = next(c for c in crop_set.crops if c.source == SOURCE_CONFIRMED_AREA)
         # The done ROI keeps only what the polygon does not already claim.
         assert done.annotated_px < done.width * done.height
         overlap_w = min(confirmed.x + confirmed.width, done.x + done.width) - done.x
@@ -254,27 +240,19 @@ class FoldPlanTests(TestCase):
         self.two = annotated_segmentation("fold_b.tif", with_roi=False)
         for segmentation in (self.one, self.two):
             for area in THREE_AREAS[:2]:
-                CompletedROI.objects.create(
-                    segmentation=segmentation, geometry=square(*area)
-                )
+                CompletedROI.objects.create(segmentation=segmentation, geometry=square(*area))
         self.asset_ids = [str(self.one.asset_id), str(self.two.asset_id)]
-        self.crops = list(
-            collect_crops_for_scope(str(_mito_type().id), self.asset_ids).crops
-        )
+        self.crops = list(collect_crops_for_scope(str(_mito_type().id), self.asset_ids).crops)
 
     def test_use_all_is_one_round_over_everything(self):
-        folds, split_mode = plan_folds(
-            self.crops, training_mode=TRAINING_MODE_USE_ALL
-        )
+        folds, split_mode = plan_folds(self.crops, training_mode=TRAINING_MODE_USE_ALL)
         assert len(folds) == 1
         assert split_mode == "no-heldout"
         assert len(folds[0].train) == len(self.crops)
         assert folds[0].heldout == []
 
     def test_holding_out_uses_a_whole_image_when_there_are_two(self):
-        folds, split_mode = plan_folds(
-            self.crops, training_mode=TRAINING_MODE_HOLDOUT_1
-        )
+        folds, split_mode = plan_folds(self.crops, training_mode=TRAINING_MODE_HOLDOUT_1)
         assert split_mode == "image-disjoint"
         assert len(folds) == 1
         held_images = {c.image_key for c in folds[0].heldout}
@@ -318,9 +296,7 @@ class ProgressDenominatorTests(TestCase):
         self.two = annotated_segmentation("den_b.tif", with_roi=False)
         self.three = annotated_segmentation("den_c.tif", with_roi=False)
         for segmentation in (self.one, self.two, self.three):
-            CompletedROI.objects.create(
-                segmentation=segmentation, geometry=square(*THREE_AREAS[0])
-            )
+            CompletedROI.objects.create(segmentation=segmentation, geometry=square(*THREE_AREAS[0]))
         self.asset_ids = [
             str(self.one.asset_id),
             str(self.two.asset_id),
@@ -347,9 +323,7 @@ class ProgressDenominatorTests(TestCase):
         assert planned_training_units(payload) == 300
 
     def test_cross_validation_is_one_round_per_held_out_image(self):
-        payload = self._payload(
-            training_mode=TRAINING_MODE_HOLDOUT_1, cv_benchmark=True
-        )
+        payload = self._payload(training_mode=TRAINING_MODE_HOLDOUT_1, cv_benchmark=True)
         assert planned_round_count(payload) == 3
         assert planned_training_units(payload) == 900
 

@@ -267,9 +267,7 @@ def overlay_jobs_for_bundle(segmentation_id: str, source_model: str | None = Non
     )
     if normalized_source_model:
         return qs.filter(payload_json__source_model=normalized_source_model)
-    return qs.filter(
-        Q(payload_json__source_model__isnull=True) | Q(payload_json__source_model="")
-    )
+    return qs.filter(Q(payload_json__source_model__isnull=True) | Q(payload_json__source_model=""))
 
 
 def _overlay_job_exists(segmentation_id: str, source_model: str | None = None) -> bool:
@@ -567,12 +565,8 @@ def _write_tile_result(arrays, result) -> None:
     border_level0 = arrays[BORDER_ARRAY_KEY][0]
     y_slice = slice(interior_y0, interior_y0 + crop_h)
     x_slice = slice(interior_x0, interior_x0 + crop_w)
-    _retry_on_windows_lock(
-        lambda: labels_level0.__setitem__((y_slice, x_slice), labels_crop)
-    )
-    _retry_on_windows_lock(
-        lambda: border_level0.__setitem__((y_slice, x_slice), border_crop)
-    )
+    _retry_on_windows_lock(lambda: labels_level0.__setitem__((y_slice, x_slice), labels_crop))
+    _retry_on_windows_lock(lambda: border_level0.__setitem__((y_slice, x_slice), border_crop))
 
 
 def _rasterize_level0(arrays, payloads: list[dict[str, Any]], *, use_pool: bool) -> None:
@@ -617,9 +611,7 @@ def _rasterize_level0(arrays, payloads: list[dict[str, Any]], *, use_pool: bool)
         outstanding: deque[Future] = deque()
         try:
             for payload in payloads:
-                outstanding.append(
-                    executor.submit(render_module.rasterize_tile_worker, payload)
-                )
+                outstanding.append(executor.submit(render_module.rasterize_tile_worker, payload))
                 if len(outstanding) >= window:
                     _write_tile_result(arrays, outstanding.popleft().result())
             while outstanding:
@@ -704,9 +696,7 @@ def _pyramid_level_blocks(
         block_cols = max(1, math.ceil(parent_width / PYRAMID_BLOCK_SIZE))
         if indices is None:
             level_indices = {
-                (block_y, block_x)
-                for block_y in range(block_rows)
-                for block_x in range(block_cols)
+                (block_y, block_x) for block_y in range(block_rows) for block_x in range(block_cols)
             }
         else:
             if level_idx > 1:
@@ -763,9 +753,7 @@ def _build_pyramid(
     """
     level_shapes = _level_shapes(width, height)
     blocks_by_level = _pyramid_level_blocks(level_shapes, content_bboxes)
-    total_blocks = sum(len(blocks) for blocks in blocks_by_level.values()) * len(
-        OVERLAY_ARRAY_KEYS
-    )
+    total_blocks = sum(len(blocks) for blocks in blocks_by_level.values()) * len(OVERLAY_ARRAY_KEYS)
     if not total_blocks:
         return
 
@@ -861,9 +849,7 @@ def rebuild_overlay_full(
         # Level 0 alone is gated on the object count: that is the stage whose
         # cost scales with draw ops. The pyramid decides for itself, from the
         # number of blocks it will actually visit.
-        _rasterize_level0(
-            arrays, payloads, use_pool=len(objects) >= RASTER_POOL_MIN_OBJECTS
-        )
+        _rasterize_level0(arrays, payloads, use_pool=len(objects) >= RASTER_POOL_MIN_OBJECTS)
     finally:
         # Close level-0 handles before the pyramid: it re-opens the staged store
         # by path, so the parent must not hold the arrays open.
@@ -895,9 +881,7 @@ def rebuild_overlay_full(
         last_built_at=now,
     )
     # A full rebuild renumbers labels, so clients must refetch the LUT.
-    SegmentationOverlayState.objects.filter(pk=state.pk).update(
-        lut_revision=F("lut_revision") + 1
-    )
+    SegmentationOverlayState.objects.filter(pk=state.pk).update(lut_revision=F("lut_revision") + 1)
     state.refresh_from_db(fields=["lut_revision"])
     _write_debug_manifest(segmentation, state)
     return state
@@ -939,9 +923,7 @@ def apply_partial_overlay_update(
     # indexed bbox columns -- an axis-aligned rectangle needs no shapely refine.
     region_box = make_bbox(region_x0, region_y0, region_x1, region_y1)
     queryset = labels_lut.bundle_queryset(segmentation, normalized_source_model)
-    objects = list(
-        queryset.filter(bbox_intersects_filter(region_box)).only(*_object_only_fields())
-    )
+    objects = list(queryset.filter(bbox_intersects_filter(region_box)).only(*_object_only_fields()))
     label_map = labels_lut.existing_label_map(state)
     new_objects = [obj.id for obj in objects if obj.id not in label_map]
     if new_objects:
@@ -967,9 +949,7 @@ def apply_partial_overlay_update(
 
             child_coords = chunk_coords
             for level_idx in range(1, len(arrays[LABELS_ARRAY_KEY])):
-                parent_coords = {
-                    (chunk_x // 2, chunk_y // 2) for chunk_x, chunk_y in child_coords
-                }
+                parent_coords = {(chunk_x // 2, chunk_y // 2) for chunk_x, chunk_y in child_coords}
                 for array_key in OVERLAY_ARRAY_KEYS:
                     for chunk_x, chunk_y in sorted(parent_coords):
                         render_module.write_parent_chunk(
@@ -990,9 +970,7 @@ def apply_partial_overlay_update(
         last_built_at=timezone.now(),
     )
     # Geometry edits can add/remove labels, so clients must refetch the LUT.
-    SegmentationOverlayState.objects.filter(pk=state.pk).update(
-        lut_revision=F("lut_revision") + 1
-    )
+    SegmentationOverlayState.objects.filter(pk=state.pk).update(lut_revision=F("lut_revision") + 1)
     state.refresh_from_db(fields=["lut_revision"])
     _write_debug_manifest(segmentation, state)
     return state

@@ -80,9 +80,7 @@ _HASH_CHUNK = 4 * 1024 * 1024
 #: who are about to paste it.
 INSTALL_COMMAND_REMOTE = "quantem models install quantem:mito"
 INSTALL_COMMAND = "quantem models install ./quantem-models-0.1.0"
-INSTALL_COMMAND_MODULE = (
-    "python -m quantem.registry.install bundle ./quantem-models-0.1.0 --all"
-)
+INSTALL_COMMAND_MODULE = "python -m quantem.registry.install bundle ./quantem-models-0.1.0 --all"
 
 #: App copy. One or two sentences, safe to embed in a longer message, and safe
 #: to print: no em dash, because ``quantem models list`` puts a pack's ``reason``

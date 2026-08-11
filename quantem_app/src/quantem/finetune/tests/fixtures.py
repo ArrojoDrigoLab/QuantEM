@@ -110,9 +110,7 @@ def done_roi(
         source="MANUAL",
     )
     roi.segmentations.add(segmentation)
-    status = RoiSegmentationStatus.objects.create(
-        image_roi=roi, segmentation=segmentation
-    )
+    status = RoiSegmentationStatus.objects.create(image_roi=roi, segmentation=segmentation)
     status.set_complete(True)
     status.save()
     return status

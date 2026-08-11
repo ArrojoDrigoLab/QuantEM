@@ -115,8 +115,14 @@ class FakeOrganelleSegmenter(BaseSegmenter):
             if region.area < max(int(min_area), 1):
                 continue
             segment = build_segment_from_region(
-                region, labels, prob_maps, prob, self.generated_flag,
-                float(dx), float(dy), image,
+                region,
+                labels,
+                prob_maps,
+                prob,
+                self.generated_flag,
+                float(dx),
+                float(dy),
+                image,
             )
             if segment is not None:
                 segments.append(segment)
@@ -174,9 +180,7 @@ class ProbabilityMapPersistedByRunTests(TestCase):
 
     def _run_full(self, prob: np.ndarray | None = None) -> int:
         segmenter = FakeOrganelleSegmenter(prob if prob is not None else _blob_prob())
-        with patch(
-            "quantem.segmentation.organelle_tasks.get_segmenter", return_value=segmenter
-        ):
+        with patch("quantem.segmentation.organelle_tasks.get_segmenter", return_value=segmenter):
             return run_segmentation_full_task(
                 segmentation_id=str(self.segmentation.id),
                 segmentation_type=MITO_INTERNAL_NAME,
@@ -204,8 +208,8 @@ class ProbabilityMapPersistedByRunTests(TestCase):
         # The map really is the one the run produced: the blob is inside the
         # confirmed object and the rest of the ROI is background.
         assert crop.prob is not None
-        assert crop.prob[40, 40] > 0.9      # image (60, 60), inside the blob
-        assert crop.prob[110, 110] < 0.1    # image (130, 130), outside it
+        assert crop.prob[40, 40] > 0.9  # image (60, 60), inside the blob
+        assert crop.prob[110, 110] < 0.1  # image (130, 130), outside it
 
     def test_rerunning_replaces_the_map_instead_of_accumulating_rows(self):
         self._run_full()
@@ -225,9 +229,7 @@ class ProbabilityMapPersistedByRunTests(TestCase):
         prob[40:100, 40:100] = 0.95
         segmenter = FakeOrganelleSegmenter(prob[20:140, 20:140])
 
-        with patch(
-            "quantem.segmentation.organelle_tasks.get_segmenter", return_value=segmenter
-        ):
+        with patch("quantem.segmentation.organelle_tasks.get_segmenter", return_value=segmenter):
             run_segmentation_roi_task(
                 segmentation_id=str(self.segmentation.id),
                 segmentation_type=MITO_INTERNAL_NAME,
@@ -251,8 +253,8 @@ class ProbabilityMapPersistedByRunTests(TestCase):
         # Without the recorded window the map would be read as if it started at
         # (0, 0) and the model would be scored against the wrong pixels.
         assert crop.prob is not None
-        assert crop.prob[20, 20] > 0.9      # image (40, 40)
-        assert crop.prob[110, 110] < 0.1    # image (130, 130)
+        assert crop.prob[20, 20] > 0.9  # image (40, 40)
+        assert crop.prob[110, 110] < 0.1  # image (130, 130)
 
     def test_an_oversized_image_is_skipped_and_says_why(self):
         details: list[str] = []
@@ -299,9 +301,7 @@ class EmptyRunReportingTests(TestCase):
     def _run(self, prob: np.ndarray) -> tuple[int, _Reporter]:
         reporter = _Reporter()
         segmenter = FakeOrganelleSegmenter(prob)
-        with patch(
-            "quantem.segmentation.organelle_tasks.get_segmenter", return_value=segmenter
-        ):
+        with patch("quantem.segmentation.organelle_tasks.get_segmenter", return_value=segmenter):
             count = run_segmentation_full_task(
                 segmentation_id=str(self.segmentation.id),
                 segmentation_type=MITO_INTERNAL_NAME,
@@ -332,7 +332,9 @@ class SegmentationJobHandlerOutcomeTests(TestCase):
     """The job's terminal message and result are what the queue UI reads."""
 
     def setUp(self):
-        self.image = create_small_test_image("Handler outcome", width=SIZE, height=SIZE, textured=True)
+        self.image = create_small_test_image(
+            "Handler outcome", width=SIZE, height=SIZE, textured=True
+        )
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
             segmentation_type=get_or_create_mitochondria_type(),

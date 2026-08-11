@@ -51,9 +51,7 @@ def _start_scheduler_if_needed() -> None:
     from quantem.jobs.scheduler import JobScheduler
 
     scheduler = JobScheduler()
-    thread = threading.Thread(
-        target=scheduler.run_forever, name="JobScheduler", daemon=True
-    )
+    thread = threading.Thread(target=scheduler.run_forever, name="JobScheduler", daemon=True)
     thread.start()
     _scheduler_started = True
     logging.getLogger(__name__).info("Job scheduler autostarted in-process.")

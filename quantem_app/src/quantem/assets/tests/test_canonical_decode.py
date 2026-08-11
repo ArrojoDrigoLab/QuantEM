@@ -90,8 +90,7 @@ class PalettesResolveToPixels(DecodeCase):
         self.assertEqual(
             int(
                 np.abs(
-                    self.decode(path).array.astype(int)
-                    - self.decode(rgb_path).array.astype(int)
+                    self.decode(path).array.astype(int) - self.decode(rgb_path).array.astype(int)
                 ).max()
             ),
             0,
@@ -226,9 +225,7 @@ class StandardWindows(unittest.TestCase):
     def test_two_images_whose_data_sits_in_the_same_cells_get_the_same_window(self):
         # Beta cell.tif and Collagen.tif from the measured corpus. 14 of the 26
         # narrow images in that corpus share this one window.
-        self.assertEqual(
-            standard_window(28848, 29759, 65535), standard_window(28947, 29789, 65535)
-        )
+        self.assertEqual(standard_window(28848, 29759, 65535), standard_window(28947, 29789, 65535))
 
     def test_a_pair_straddling_a_grid_line_gets_two_windows_and_that_is_recorded(self):
         # The honest cost of a fixed grid. Not a defect to be smoothed away:
@@ -301,9 +298,7 @@ class SixteenBitConversion(DecodeCase):
     def test_the_full_range_map_would_have_destroyed_that_same_image(self):
         rng = np.random.default_rng(20260810)
         values = rng.integers(28481, 30077, size=(256, 256)).astype(np.uint16)
-        flattened = np.clip(
-            values.astype(np.float32) * (255.0 / 65535.0), 0, 255
-        ).astype(np.uint8)
+        flattened = np.clip(values.astype(np.float32) * (255.0 / 65535.0), 0, 255).astype(np.uint8)
         self.assertLess(int(np.unique(flattened).size), MIN_FULL_RANGE_LEVELS)
 
     def test_the_branch_is_deterministic_for_the_same_file(self):
@@ -337,11 +332,7 @@ class SixteenBitConversion(DecodeCase):
         self.assertEqual(first.conversion.strategy, "standard-window")
         self.assertEqual(first.conversion.window, second.conversion.window)
         self.assertEqual(
-            int(
-                np.abs(
-                    first.array[:8, :8].astype(int) - second.array[:8, :8].astype(int)
-                ).max()
-            ),
+            int(np.abs(first.array[:8, :8].astype(int) - second.array[:8, :8].astype(int)).max()),
             0,
         )
 
@@ -423,9 +414,7 @@ class SixteenBitConversion(DecodeCase):
 
     def test_an_all_black_and_an_all_white_16_bit_image_stay_black_and_white(self):
         black = self.decode(self._write("black.tif", np.zeros((32, 32), dtype=np.uint16)))
-        white = self.decode(
-            self._write("white.tif", np.full((32, 32), 65535, dtype=np.uint16))
-        )
+        white = self.decode(self._write("white.tif", np.full((32, 32), 65535, dtype=np.uint16)))
 
         self.assertEqual(int(black.array.max()), 0)
         self.assertEqual(int(white.array.min()), 255)
@@ -478,8 +467,7 @@ class UnchangedBehaviour(DecodeCase):
         self.assertEqual(
             int(
                 np.abs(
-                    self.decode(honest).array.astype(int)
-                    - self.decode(liar).array.astype(int)
+                    self.decode(honest).array.astype(int) - self.decode(liar).array.astype(int)
                 ).max()
             ),
             0,

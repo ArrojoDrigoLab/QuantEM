@@ -47,9 +47,16 @@ FIGURE_OF_EIGHT_AREA = 5000.0
 
 #: A stroke that crosses itself twice: four enclosed areas, 8750 px in total.
 CROSSES_TWICE = [
-    [0, 0], [100, 100], [100, 0], [0, 100],
-    [0, 150], [100, 150], [100, 200], [0, 200],
-    [50, 200], [50, 150],
+    [0, 0],
+    [100, 100],
+    [100, 0],
+    [0, 100],
+    [0, 150],
+    [100, 150],
+    [100, 200],
+    [0, 200],
+    [50, 200],
+    [50, 150],
 ]
 CROSSES_TWICE_AREA = 8750.0
 
@@ -57,8 +64,14 @@ CROSSES_TWICE_AREA = 8750.0
 #: enclosed areas, but two of them are hairs: 50x0.6 px and 0.1 px, both under
 #: the "more than 1 pixel in both dimensions" rule an object has to meet.
 SQUARE_WITH_A_FLICK = [
-    [10, 10], [110, 10], [110, 110], [10, 110],
-    [10, 9.4], [60, 9.4], [60, 10.2], [9, 10.2],
+    [10, 10],
+    [110, 10],
+    [110, 110],
+    [10, 110],
+    [10, 9.4],
+    [60, 9.4],
+    [60, 10.2],
+    [9, 10.2],
 ]
 
 
@@ -101,9 +114,7 @@ class ConfirmBatchKeepsEveryLobeTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         # The reported number: 2500 stored against 5000 drawn.
         self.assertAlmostEqual(self._stored_area(), FIGURE_OF_EIGHT_AREA, places=3)
-        self.assertEqual(
-            SegmentObject.objects.filter(segmentation=self.segmentation).count(), 2
-        )
+        self.assertEqual(SegmentObject.objects.filter(segmentation=self.segmentation).count(), 2)
         self.assertEqual(response.data["created"], 2)
         self.assertEqual(len(response.data["confirmed_ids"]), 2)
 
@@ -124,9 +135,7 @@ class ConfirmBatchKeepsEveryLobeTests(TestCase):
 
         outlines = response.data["outlines"]
         self.assertIsNotNone(outlines)
-        self.assertEqual(
-            outlines["separated"], [{"index": 0, "areas": 2, "kept": 2}]
-        )
+        self.assertEqual(outlines["separated"], [{"index": 0, "areas": 2, "kept": 2}])
         self.assertIn("crosses itself", outlines["detail"])
         self.assertIn("2 separate areas", outlines["detail"])
         self.assertIn("its own object", outlines["detail"])
@@ -151,9 +160,7 @@ class ConfirmBatchKeepsEveryLobeTests(TestCase):
         self.assertEqual(outlines["separated"], [{"index": 0, "areas": 3, "kept": 1}])
         # The count in the response matches what actually landed.
         self.assertEqual(response.data["created"], 1)
-        self.assertEqual(
-            SegmentObject.objects.filter(segmentation=self.segmentation).count(), 1
-        )
+        self.assertEqual(SegmentObject.objects.filter(segmentation=self.segmentation).count(), 1)
         self.assertIn("1 pixel or less", outlines["detail"])
         self.assertIn("could not be stored", outlines["detail"])
 
@@ -191,9 +198,7 @@ class ConfirmBatchKeepsEveryLobeTests(TestCase):
         segments = list(SegmentObject.objects.filter(segmentation=self.segmentation))
         self.assertEqual(len(segments), 2)
         for segment in segments:
-            self.assertAlmostEqual(
-                segment.features["area"], segment.geometry.area, delta=120
-            )
+            self.assertAlmostEqual(segment.features["area"], segment.geometry.area, delta=120)
             self.assertLess(segment.features["area"], FIGURE_OF_EIGHT_AREA)
 
 
@@ -202,9 +207,7 @@ class RemoveAreaErasesTheWholeStrokeTests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
-        self.image = create_small_test_image(
-            "Erase stroke", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Erase stroke", width=SIZE, height=SIZE, textured=True)
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
             segmentation_type=get_or_create_mitochondria_type(),
@@ -246,9 +249,7 @@ class RemoveAreaErasesTheWholeStrokeTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertAlmostEqual(
-            float(SIZE * SIZE) - self._remaining_area(), 2500.0, places=3
-        )
+        self.assertAlmostEqual(float(SIZE * SIZE) - self._remaining_area(), 2500.0, places=3)
 
 
 class RoutedFromTheSingleSegmentEndpointTests(TestCase):
@@ -256,9 +257,7 @@ class RoutedFromTheSingleSegmentEndpointTests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
-        self.image = create_small_test_image(
-            "Routing", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Routing", width=SIZE, height=SIZE, textured=True)
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
             segmentation_type=get_or_create_mitochondria_type(),
@@ -274,9 +273,7 @@ class RoutedFromTheSingleSegmentEndpointTests(TestCase):
         self.assertEqual(refused.status_code, 400, refused.data)
         self.assertIn("segments/confirm-batch/", refused.data["error"])
         self.assertIn("2 enclosed areas", refused.data["error"])
-        self.assertFalse(
-            SegmentObject.objects.filter(segmentation=self.segmentation).exists()
-        )
+        self.assertFalse(SegmentObject.objects.filter(segmentation=self.segmentation).exists())
 
         accepted = self.client.post(
             f"{self.base}/confirm-batch/",

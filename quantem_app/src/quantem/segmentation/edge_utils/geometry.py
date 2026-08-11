@@ -45,9 +45,7 @@ def sample_bilinear(image: np.ndarray, x_val: float, y_val: float) -> float | No
     )
 
 
-def resample_polyline(
-    coords: list[tuple[float, float]], step: float
-) -> list[tuple[float, float]]:
+def resample_polyline(coords: list[tuple[float, float]], step: float) -> list[tuple[float, float]]:
     sampled: list[tuple[float, float]] = []
     for idx in range(len(coords) - 1):
         x0, y0 = coords[idx]
@@ -183,8 +181,7 @@ def mask_to_polygon(
             if idx == jdx:
                 continue
             if candidate.contains(poly.centroid) and (
-                parent_idx is None
-                or candidate.area < contour_polys[parent_idx][0].area
+                parent_idx is None or candidate.area < contour_polys[parent_idx][0].area
             ):
                 parent_idx = jdx
         if parent_idx is None:
@@ -211,9 +208,7 @@ def mask_to_polygon(
         for poly in result_polys:
             if all(poly.covers(pt) for pt in include_pts):
                 return poly
-        containing = [
-            poly for poly in result_polys if any(poly.covers(pt) for pt in include_pts)
-        ]
+        containing = [poly for poly in result_polys if any(poly.covers(pt) for pt in include_pts)]
         if containing:
             combined = containing[0]
             for poly in containing[1:]:
@@ -261,12 +256,8 @@ def compute_normals(
         tx, ty = dx / length, dy / length
         nx, ny = -ty, tx
         if signed_distance is not None:
-            d_pos = sample_bilinear(
-                signed_distance, curr_pt[0] + nx * step, curr_pt[1] + ny * step
-            )
-            d_neg = sample_bilinear(
-                signed_distance, curr_pt[0] - nx * step, curr_pt[1] - ny * step
-            )
+            d_pos = sample_bilinear(signed_distance, curr_pt[0] + nx * step, curr_pt[1] + ny * step)
+            d_neg = sample_bilinear(signed_distance, curr_pt[0] - nx * step, curr_pt[1] - ny * step)
             if d_pos is not None and d_neg is not None:
                 inside_normals.append((nx, ny) if d_pos >= d_neg else (-nx, -ny))
             elif d_pos is not None:

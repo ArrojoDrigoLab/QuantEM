@@ -85,9 +85,7 @@ class TestOverlayRemap:
     """The head's ``encoder_trainable`` block makes the same journey."""
 
     def test_backbone_tensors_are_remapped_under_their_prefix(self):
-        out = encoders.remap_dinov3_overlay(
-            {"backbone.blocks.8.ls1.gamma": torch.ones(2)}
-        )
+        out = encoders.remap_dinov3_overlay({"backbone.blocks.8.ls1.gamma": torch.ones(2)})
         assert list(out) == ["backbone.blocks.8.gamma_1"]
 
     def test_lora_modules_pass_through_untouched(self):
@@ -242,9 +240,9 @@ def test_the_timm_build_is_the_shipped_model_to_the_bit(pack_id: str) -> None:
 
     skeleton = None
     if spec.embeds_encoder and files.encoder_path is None:
-        skeleton = torch.load(
-            str(files.head_path), map_location="cpu", weights_only=False
-        ).get("encoder_trainable")
+        skeleton = torch.load(str(files.head_path), map_location="cpu", weights_only=False).get(
+            "encoder_trainable"
+        )
 
     rng = np.random.default_rng(11)
     tile = rng.integers(0, 256, (spec.tile_size, spec.tile_size)).astype(np.uint8)

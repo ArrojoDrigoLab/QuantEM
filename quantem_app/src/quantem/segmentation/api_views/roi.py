@@ -347,9 +347,7 @@ class SegmentationRoiDetailView(APIView):
         roi_image.delete()
 
         if was_active and asset is not None:
-            next_roi = (
-                ImageROI.objects.filter(asset=asset).order_by("-created_at").first()
-            )
+            next_roi = ImageROI.objects.filter(asset=asset).order_by("-created_at").first()
             if next_roi is not None:
                 activate_roi(next_roi)
 

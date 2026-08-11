@@ -167,8 +167,7 @@ class ModelInstallView(APIView):
         pack_id = str(pack_id or "").strip()
         if pack_id not in MODEL_SPECS:
             return _error(
-                f"Unknown model pack {pack_id!r}. Known packs: "
-                f"{', '.join(sorted(MODEL_SPECS))}.",
+                f"Unknown model pack {pack_id!r}. Known packs: {', '.join(sorted(MODEL_SPECS))}.",
                 status.HTTP_404_NOT_FOUND,
             )
 
@@ -301,9 +300,7 @@ class ModelInstallView(APIView):
                 installed = install_pack_from_bundle(pack_id, install_root, force=force)
             else:
                 head_dir = install_kwargs.pop("head_dir")
-                installed = install_pack_from_path(
-                    pack_id, head_dir, force=force, **install_kwargs
-                )
+                installed = install_pack_from_path(pack_id, head_dir, force=force, **install_kwargs)
         except Exception as exc:
             logger.exception("Install of %s from %s failed", pack_id, install_root)
             self._finish_job(job, ok=False, message=str(exc))
@@ -373,5 +370,6 @@ class ModelInstallView(APIView):
                 job.error_traceback = traceback.format_exc()
             job.save()
         except Exception:
-            logger.warning("Could not finalise install job %s", getattr(job, "id", "?"),
-                           exc_info=True)
+            logger.warning(
+                "Could not finalise install job %s", getattr(job, "id", "?"), exc_info=True
+            )

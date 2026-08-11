@@ -416,6 +416,8 @@ class JobScheduler:
                     "Job scheduler tick failed (%d in a row); continuing.",
                     consecutive_failures,
                 )
-                time.sleep(min(30.0, self.poll_interval_seconds * 2**min(consecutive_failures, 5)))
+                time.sleep(
+                    min(30.0, self.poll_interval_seconds * 2 ** min(consecutive_failures, 5))
+                )
                 continue
             time.sleep(self.poll_interval_seconds)

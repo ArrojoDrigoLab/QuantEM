@@ -144,9 +144,7 @@ def check_head_size(crops, base_model: str) -> HeadSizeVerdict | None:
         span_px = math.sqrt(model_area)
         # The pack's canonical size when it has one; otherwise the model runs at
         # native resolution and the image's own pixel size is the model's.
-        nm_per_model_px = spec.canonical_nm or (
-            float(pixel_size) if pixel_size else None
-        )
+        nm_per_model_px = spec.canonical_nm or (float(pixel_size) if pixel_size else None)
         span_nm = span_px * nm_per_model_px if nm_per_model_px else None
         needed_nm = required_px * nm_per_model_px if nm_per_model_px else None
         if model_area >= min_area:
@@ -171,8 +169,7 @@ def check_head_size(crops, base_model: str) -> HeadSizeVerdict | None:
     subject = "Your checked area is" if len(crops) == 1 else "Your largest checked area is"
     if span_nm is not None and needed_nm is not None:
         reason = (
-            f"{subject} {_micrometres(span_nm)} across; this needs about "
-            f"{_micrometres(needed_nm)}."
+            f"{subject} {_micrometres(span_nm)} across; this needs about {_micrometres(needed_nm)}."
         )
     else:
         # No pixel size on the image, so the span cannot be stated as a length.

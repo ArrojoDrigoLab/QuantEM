@@ -264,7 +264,7 @@ class LoadedModel:
             # Only reachable after a fallback lowered the ceiling mid-run.
             out: list[np.ndarray] = []
             for start in range(0, len(tiles), limit):
-                out.extend(self.forward_tiles(tiles[start:start + limit]))
+                out.extend(self.forward_tiles(tiles[start : start + limit]))
             return out
         try:
             return self._forward_batch(tiles)
@@ -296,10 +296,7 @@ class LoadedModel:
         ):
             tiles = list(tiles) + [tiles[-1]] * (self.tile_batch - want)
         stacked = np.stack(
-            [
-                normalize_tile(tile, self.spec.input_mean, self.spec.input_std)
-                for tile in tiles
-            ]
+            [normalize_tile(tile, self.spec.input_mean, self.spec.input_std) for tile in tiles]
         )
         xt = torch.from_numpy(np.ascontiguousarray(stacked))[:, None].to(self.device)
 
@@ -354,12 +351,13 @@ class LoadedModel:
         was = self.device
         logger.warning(
             "%s ran out of memory on %s; moving this run to the CPU.",
-            self.spec.pack_id, was, exc_info=cause is not None,
+            self.spec.pack_id,
+            was,
+            exc_info=cause is not None,
         )
         if self.files is None:
             raise RuntimeError(
-                f"{self.spec.pack_id}: cannot move to the processor without the "
-                "pack's files."
+                f"{self.spec.pack_id}: cannot move to the processor without the pack's files."
             ) from cause
         module, tier = build_module(self.files, self.spec, "cpu")
         if self.adapter_head_path is not None:
@@ -485,8 +483,12 @@ def build_module(
 
     logger.info(
         "Built %s: %s neck + %s decoder, adapt=%s, taps=%s, encoder tier=%s",
-        spec.pack_id, info["neck"], info["decoder"], info["adapt"],
-        info["layers"], contract.tier,
+        spec.pack_id,
+        info["neck"],
+        info["decoder"],
+        info["adapt"],
+        info["layers"],
+        contract.tier,
     )
 
     if contract.tier != "exported":
@@ -634,9 +636,10 @@ def _check_contract(spec: ModelSpec, contract: EncoderContract) -> None:
         problems.append(
             f"the exported encoder was built for {exported_for!r}, not {spec.pack_id!r}"
         )
-    if abs(contract.input_mean - spec.input_mean) > 1e-9 or abs(
-        contract.input_std - spec.input_std
-    ) > 1e-9:
+    if (
+        abs(contract.input_mean - spec.input_mean) > 1e-9
+        or abs(contract.input_std - spec.input_std) > 1e-9
+    ):
         problems.append(
             f"input normalisation {contract.input_mean}/{contract.input_std} != "
             f"spec {spec.input_mean}/{spec.input_std}"
@@ -644,9 +647,7 @@ def _check_contract(spec: ModelSpec, contract: EncoderContract) -> None:
     if contract.patch_size != spec.patch_size:
         problems.append(f"patch size {contract.patch_size} != spec {spec.patch_size}")
     if spec.tile_size % contract.patch_size != 0:
-        problems.append(
-            f"tile {spec.tile_size} is not a multiple of patch {contract.patch_size}"
-        )
+        problems.append(f"tile {spec.tile_size} is not a multiple of patch {contract.patch_size}")
     if problems:
         raise ModelArchitectureUnavailable(
             f"{spec.pack_id}: the built encoder does not match the pack spec "
@@ -745,15 +746,19 @@ def prepare_for_device(model: LoadedModel) -> None:
             if is_out_of_memory(exc) and batch > 1:
                 batch = max(1, batch // 2)
                 logger.warning(
-                    "%s: not enough graphics memory for %d windows per pass; "
-                    "trying %d.", model.pack_id, batch * 2, batch,
+                    "%s: not enough graphics memory for %d windows per pass; trying %d.",
+                    model.pack_id,
+                    batch * 2,
+                    batch,
                 )
                 continue
             if batch > 1:
                 logger.warning(
                     "%s: this model's graph did not accept %d windows in one "
                     "pass; running one window at a time.",
-                    model.pack_id, batch, exc_info=True,
+                    model.pack_id,
+                    batch,
+                    exc_info=True,
                 )
                 batch = 1
                 continue
@@ -767,7 +772,10 @@ def prepare_for_device(model: LoadedModel) -> None:
             model.load_notices = (*model.load_notices, _SMALLER_BATCHES)
         logger.info(
             "%s warm on %s at %d window(s) per pass (encoder tier: %s)",
-            model.pack_id, model.device, batch, model.encoder_tier,
+            model.pack_id,
+            model.device,
+            batch,
+            model.encoder_tier,
         )
         return
 
@@ -783,9 +791,7 @@ def _organelle_label(spec: ModelSpec) -> str:
     organelle = ORGANELLES.get(spec.organelle)
     if organelle is None:
         return "this"
-    definition = BUILTIN_SEGMENTATION_TYPES_BY_INTERNAL_NAME.get(
-        organelle.internal_name
-    )
+    definition = BUILTIN_SEGMENTATION_TYPES_BY_INTERNAL_NAME.get(organelle.internal_name)
     return definition.long_name.lower() if definition else spec.organelle
 
 
@@ -855,14 +861,15 @@ def model_cache_slots(device: str = "cpu") -> int:
         except ValueError:
             logger.warning(
                 "Ignoring %s=%r: it is not a whole number of models",
-                MODEL_CACHE_SLOTS_ENV_VAR, override,
+                MODEL_CACHE_SLOTS_ENV_VAR,
+                override,
             )
 
     if device_type(device) == "cuda":
         total = total_memory_bytes(device)
         if total is None:
             return MAX_CACHED_MODELS
-        gib = total / (1024 ** 3)
+        gib = total / (1024**3)
         if gib >= 12.0:
             return MAX_MODEL_CACHE_SLOTS
         return MAX_CACHED_MODELS if gib >= 6.0 else 1
@@ -876,7 +883,7 @@ def model_cache_slots(device: str = "cpu") -> int:
         return MAX_CACHED_MODELS
     if ram is None:
         return MAX_CACHED_MODELS
-    return MAX_MODEL_CACHE_SLOTS if ram >= 32 * (1024 ** 3) else MAX_CACHED_MODELS
+    return MAX_MODEL_CACHE_SLOTS if ram >= 32 * (1024**3) else MAX_CACHED_MODELS
 
 
 # --- Module-level cache -----------------------------------------------------
@@ -970,7 +977,9 @@ def load_model(pack_id: str, device: str | None = None) -> LoadedModel:
     loaded = _build_and_prepare(spec, files, resolved_device)
     logger.info(
         "Loaded model pack %s on %s (encoder tier: %s)",
-        pack_id, loaded.device, loaded.encoder_tier,
+        pack_id,
+        loaded.device,
+        loaded.encoder_tier,
     )
 
     key = (pack_id, loaded.device)
@@ -1025,9 +1034,7 @@ def _build_and_prepare(
         if without_artifact and tried_eager_here:
             continue  # the failing attempt was already the eager one
         try:
-            model = _build_on(
-                spec, files, where, adapter_head, adapter_id, cache_key, **options
-            )
+            model = _build_on(spec, files, where, adapter_head, adapter_id, cache_key, **options)
         except Exception as exc:
             # An out-of-memory here is the weights not fitting on the card at
             # all, before a single window has run. It belongs on this ladder for
@@ -1051,9 +1058,7 @@ def _build_and_prepare(
             empty_cache(where)
             continue
         if on_accelerator and device_type(where) == "cpu":
-            model.load_notices = (
-                _cannot_use_accelerator_notice(spec, device, last),
-            )
+            model.load_notices = (_cannot_use_accelerator_notice(spec, device, last),)
         return model
 
     # Every route failed, including the CPU one. Nothing here can invent a
@@ -1071,9 +1076,7 @@ def _build_and_prepare(
     )
 
 
-def _as_unusable(
-    exc: BaseException, spec: ModelSpec, device: str
-) -> Exception:
+def _as_unusable(exc: BaseException, spec: ModelSpec, device: str) -> Exception:
     """Normalise a build failure into something the ladder can reason about."""
     if isinstance(exc, ModelUnavailableError):
         return exc
@@ -1162,8 +1165,7 @@ def load_adapted_model(
     head_path = Path(head_path)
     if not head_path.is_file():
         raise FileNotFoundError(
-            f"Adapted head for {pack_id} is missing at {head_path}; the adapter "
-            "cannot be applied."
+            f"Adapted head for {pack_id} is missing at {head_path}; the adapter cannot be applied."
         )
 
     resolved_device = select_device(device)
@@ -1185,7 +1187,11 @@ def load_adapted_model(
     )
     logger.info(
         "Loaded model pack %s on %s with adapted head %s (adapter=%s, encoder tier: %s)",
-        pack_id, loaded.device, head_path, adapter_id or "?", loaded.encoder_tier,
+        pack_id,
+        loaded.device,
+        head_path,
+        adapter_id or "?",
+        loaded.encoder_tier,
     )
 
     key = (key[0], loaded.device)
@@ -1302,15 +1308,12 @@ def predict_region(
     spec = model.spec
     if spec.canonical_nm is not None and not pixel_size_nm:
         logger.warning(
-            "%s expects %.1f nm/px but the asset has no pixel_size_nm; "
-            "running at native scale",
+            "%s expects %.1f nm/px but the asset has no pixel_size_nm; running at native scale",
             spec.pack_id,
             spec.canonical_nm,
         )
 
-    context = resample.plan_resample(
-        image.shape[:2], pixel_size_nm, spec.canonical_nm
-    )
+    context = resample.plan_resample(image.shape[:2], pixel_size_nm, spec.canonical_nm)
     scaled = resample.to_model_scale(image, context)
     padded, _pads = tiling.pad_for_tiling(scaled, spec.tile_size, spec.patch_size)
     plan = tiling.plan_tiles(padded.shape[:2], spec.tile_size, overlap)
@@ -1368,6 +1371,7 @@ def predict_region_streaming(
     windows read ahead -- 2 MB at eight 512-px windows, against the hundreds of
     megabytes this function exists to avoid.
     """
+
     def predict_tiles(tiles: list[tiling.Tile]) -> list[np.ndarray]:
         windows = [read_tile(tile) for tile in tiles]
         if forward is not None:

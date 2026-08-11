@@ -33,7 +33,6 @@ class RemovedSegmentationRoutesTests(TestCase):
             response = self.client.post(path, {}, format="json")
             self.assertEqual(response.status_code, 404, path)
 
-
     def test_probability_maps_post_returns_405(self):
         response = self.client.post(
             f"/api/segmentations/{self.segmentation.id}/probability-maps/",

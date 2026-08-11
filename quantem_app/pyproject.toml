@@ -80,7 +80,7 @@ dev = [
     "pytest>=8.0",
     "pytest-django>=4.8",
     "pytest-cov>=5.0",
-    "ruff>=0.6",
+    "ruff==0.16.1",
     "mypy>=1.11",
 ]
 
@@ -149,7 +149,8 @@ exclude = ["**/__pycache__", "**/.env"]
 line-length = 100
 target-version = "py313"
 src = ["src"]
-extend-exclude = ["**/migrations/*"]
+extend-exclude = ["**/migrations/*", "_vendor"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "TID"]
@@ -205,5 +206,5 @@ markers = [
     # Deselected by the default lane through addopts above -- not merely
     # documented as excluded, which is what it was.
     "requires_network: reaches the live Hugging Face repository over the internet; deselected by the default lane, run it with `pytest -m requires_network`",
-    "slow: excluded from the CI lane (.github/workflows/quantem-app.yml), which runs `-m \"not requires_weights and not requires_gpu and not slow\"`",
+    "slow: excluded from the CI lane (.github/workflows/quantem-app.yml), which runs `-m \"not requires_network and not requires_weights and not requires_gpu and not slow\"`",
 ]

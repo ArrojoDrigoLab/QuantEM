@@ -82,9 +82,7 @@ class FileLoggingPredicateTests(TestCase):
     def test_a_worker_is_not_a_file_logger(self):
         from quantem.core.config import file_logging_enabled
 
-        with patch.dict(
-            os.environ, {"QUANTEM_LOG_TO_FILE": "1", "QUANTEM_JOB_WORKER": "1"}
-        ):
+        with patch.dict(os.environ, {"QUANTEM_LOG_TO_FILE": "1", "QUANTEM_JOB_WORKER": "1"}):
             self.assertFalse(file_logging_enabled())
 
     def test_the_server_with_the_flag_on_is(self):

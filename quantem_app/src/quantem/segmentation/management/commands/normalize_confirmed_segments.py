@@ -63,9 +63,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         segmentation_type = str(options["segmentation_type"]).strip()
         image_names = [
-            str(name).strip()
-            for name in (options.get("image_names") or [])
-            if str(name).strip()
+            str(name).strip() for name in (options.get("image_names") or []) if str(name).strip()
         ]
 
         qs = (
@@ -78,9 +76,7 @@ class Command(BaseCommand):
 
         segmentations = list(qs)
         if not segmentations:
-            raise CommandError(
-                f"No segmentations found for type '{segmentation_type}'."
-            )
+            raise CommandError(f"No segmentations found for type '{segmentation_type}'.")
 
         totals = {
             "created": 0,
@@ -90,8 +86,7 @@ class Command(BaseCommand):
             "passes": 0,
         }
         self.stdout.write(
-            "[normalize_confirmed_segments] "
-            f"type={segmentation_type} count={len(segmentations)}"
+            f"[normalize_confirmed_segments] type={segmentation_type} count={len(segmentations)}"
         )
 
         for segmentation in segmentations:
@@ -158,9 +153,7 @@ class Command(BaseCommand):
                 _ConfirmedFamily(
                     segment=segment,
                     polygons=extract_polygons(segment.geometry),
-                    features=dict(segment.features)
-                    if isinstance(segment.features, dict)
-                    else {},
+                    features=dict(segment.features) if isinstance(segment.features, dict) else {},
                 )
                 for segment in confirmed_segments
             ]

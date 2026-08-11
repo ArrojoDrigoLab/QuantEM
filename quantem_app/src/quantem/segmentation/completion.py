@@ -88,6 +88,7 @@ def locked_payload(segmentation: ImageSegmentation) -> dict:
         },
     }
 
+
 #: Above this many objects the discarded set is not archived. A restore has to
 #: hold the whole snapshot in memory and write it as one row; past some size
 #: that trade is worse than the undo is worth. The API reports
@@ -150,16 +151,10 @@ def completion_preview(segmentation: ImageSegmentation) -> dict:
     second round trip to find out why it was refused.
     """
     label_states = [choice[0] for choice in SegmentObject.LABEL_STATE_CHOICES]
-    by_label_state = {
-        state: 0 for state in label_states if state != KEPT_LABEL_STATE
-    }
+    by_label_state = {state: 0 for state in label_states if state != KEPT_LABEL_STATE}
     by_source_model: dict[str, int] = {}
 
-    rows = (
-        discardable_queryset(segmentation)
-        .values_list("label_state", "source_model")
-        .order_by()
-    )
+    rows = discardable_queryset(segmentation).values_list("label_state", "source_model").order_by()
     discard_count = 0
     for label_state, source_model in rows.iterator():
         discard_count += 1
@@ -210,14 +205,10 @@ def _snapshot_row(segment: SegmentObject) -> dict:
         "status": int(segment.status),
         "source_model": segment.source_model,
         "confidence_score": (
-            float(segment.confidence_score)
-            if segment.confidence_score is not None
-            else None
+            float(segment.confidence_score) if segment.confidence_score is not None else None
         ),
         "features": segment.features if isinstance(segment.features, dict) else {},
-        "base_segment_id": (
-            str(segment.base_segment_id) if segment.base_segment_id else None
-        ),
+        "base_segment_id": (str(segment.base_segment_id) if segment.base_segment_id else None),
         "geometry_wkb": bytes(wkb).hex() if wkb else "",
         "centroid_x": float(segment.centroid_x),
         "centroid_y": float(segment.centroid_y),
@@ -333,9 +324,7 @@ def _restore_rows(
             except (TypeError, ValueError):
                 continue
             if base_uuid in present:
-                SegmentObject.objects.filter(id=segment_id).update(
-                    base_segment_id=base_uuid
-                )
+                SegmentObject.objects.filter(id=segment_id).update(base_segment_id=base_uuid)
 
     return len(instances)
 
@@ -349,9 +338,7 @@ def archive_and_discard(segmentation: ImageSegmentation) -> dict:
     this whole module exists to prevent.
     """
     rows, complete = build_snapshot(segmentation)
-    discarded_count = (
-        len(rows) if complete else discardable_queryset(segmentation).count()
-    )
+    discarded_count = len(rows) if complete else discardable_queryset(segmentation).count()
 
     # One archive per segmentation: unlock restores the most recent, so older
     # ones are dead weight.

@@ -98,6 +98,7 @@ def raster_process_pool_size() -> int:
         return RASTER_PROCESS_POOL_MAX
     return max(1, int(get_machine_profile().raster_workers))
 
+
 # ---------------------------------------------------------------------------
 # State -> colour palette (render-time; resolved per object into the LUT).
 #

@@ -163,14 +163,13 @@ class DetectorTests(TestCase):
         innocent = [
             "Mitochondria 62% \u00b7 531 of 858 tiles \u00b7 about 4 min",
             "quantem:mito cannot run on this machine.",
-            'Nothing changed: the 41 object(s) you have already labelled here '
+            "Nothing changed: the 41 object(s) you have already labelled here "
             "are exactly as they were.",
             "Could not reach the QuantEM model repository "
             "(https://huggingface.co/ArrojoeDrigoLab/quantem).",
             "This run found 0 objects at include level 0.50.",
             "8 nm/px \u00b7 entered by hand",
-            "Your objects are safe. This only affects the picture the viewer "
-            "draws from them.",
+            "Your objects are safe. This only affects the picture the viewer draws from them.",
         ]
         for text in innocent:
             assert find_violations(text) == [], text
@@ -385,20 +384,14 @@ def _copy_strings(tree: ast.Module) -> list[tuple[int, str, str, list[str]]]:
         elif isinstance(node, ast.Call):
             func = node.func
             name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-            raises = name.endswith(
-                ("Error", "Exception", "NotInstalled", "Denied", "NotFound")
-            )
+            raises = name.endswith(("Error", "Exception", "NotInstalled", "Denied", "NotFound"))
             if (raises or name in _DRF_ERRORS) and node.args:
                 take(node.args[0], f"{name}(")
             for keyword in node.keywords:
                 if keyword.arg in _COPY_KEYS:
                     take(keyword.value, f"{keyword.arg}=")
         elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-            targets = (
-                node.targets
-                if isinstance(node, ast.Assign)
-                else [node.target]
-            )
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
                 name = getattr(target, "id", None) or getattr(target, "attr", None)
                 if not name:
@@ -550,9 +543,7 @@ def _module_functions(tree: ast.Module) -> dict[str, ast.FunctionDef | ast.Async
     }
 
 
-def _copy_composers(
-    trees: dict[Path, ast.Module], in_layer: set[Path]
-) -> dict[Path, set[str]]:
+def _copy_composers(trees: dict[Path, ast.Module], in_layer: set[Path]) -> dict[Path, set[str]]:
     """``{module: functions}`` an in-layer module fills a copy slot from."""
     composers: dict[Path, set[str]] = {}
     for rel in sorted(in_layer):
@@ -585,9 +576,7 @@ def _copy_composers(
     return composers
 
 
-def _composer_strings(
-    tree: ast.Module, names: set[str]
-) -> list[tuple[int, str, str, list[str]]]:
+def _composer_strings(tree: ast.Module, names: set[str]) -> list[tuple[int, str, str, list[str]]]:
     """What the named functions hand back.
 
     Two words is the floor rather than five, and a string made **entirely** of
@@ -690,9 +679,7 @@ def test_no_serialised_error_copy_holds_a_shell_command_or_an_internal():
 
     if violations:
         report = "\n".join(f"  {where}\n    {v.kind} {v.match!r}" for where, v in violations)
-        raise AssertionError(
-            f"I-12: {len(violations)} defect(s) in serialised copy:\n{report}"
-        )
+        raise AssertionError(f"I-12: {len(violations)} defect(s) in serialised copy:\n{report}")
 
 
 def test_the_sweep_would_have_caught_the_string_that_shipped():
@@ -728,10 +715,7 @@ def test_the_job_log_register_is_being_read_and_not_merely_declared():
     a sentence count, and the modules it comes from -- which are *task* modules,
     none of which the structural test would ever admit.
     """
-    found = {
-        rel.as_posix(): _joblog_strings(tree)
-        for rel, tree in _parsed_modules().items()
-    }
+    found = {rel.as_posix(): _joblog_strings(tree) for rel, tree in _parsed_modules().items()}
     sentences = {rel: rows for rel, rows in found.items() if rows}
     total = sum(len(rows) for rows in sentences.values())
 
@@ -751,7 +735,7 @@ def test_the_sweep_would_have_caught_the_job_log_line_that_shipped():
         "def run(reporter):\n"
         "    reporter.log(\n"
         "        'warning',\n"
-        "        f\"The model's exported encoder was missing, so it was rebuilt \"\n"
+        '        f"The model\'s exported encoder was missing, so it was rebuilt "\n'
         "        f\"from raw weights (tier '{tier}') -- this is why the load was slow.\",\n"
         "    )\n"
     )
@@ -817,7 +801,9 @@ def _assert_body_is_clean(body, surface: str, *, user_supplied=()) -> None:
     pairs = list(walk_strings(body, "$"))
     assert pairs, f"{surface} serialised no strings at all"
     violations = [
-        v for where, text in pairs for v in find_violations(text, where, user_supplied=user_supplied)
+        v
+        for where, text in pairs
+        for v in find_violations(text, where, user_supplied=user_supplied)
     ]
     if violations:
         report = "\n".join(f"  {v}" for v in violations)
@@ -973,7 +959,8 @@ class ServedErrorBodyTests(TestCase):
 
         assert response.status_code == 400
         _assert_body_is_clean(
-            response.json(), "POST an import of the wrong kind of file",
+            response.json(),
+            "POST an import of the wrong kind of file",
             user_supplied=["notes.txt"],
         )
 
@@ -987,7 +974,8 @@ class ServedErrorBodyTests(TestCase):
 
         assert response.status_code == 400
         _assert_body_is_clean(
-            response.json(), "POST an import with a bad pixel size",
+            response.json(),
+            "POST an import with a bad pixel size",
             user_supplied=["image.png"],
         )
 
@@ -1062,9 +1050,9 @@ class ServedErrorBodyTests(TestCase):
         response = self.client.post("/api/assets/upload/", data=payload)
 
         assert response.status_code == 400
-        assert response.headers["Content-Type"].startswith("application/json"), (
-            response.headers["Content-Type"]
-        )
+        assert response.headers["Content-Type"].startswith("application/json"), response.headers[
+            "Content-Type"
+        ]
         body = response.json()
         _assert_body_is_clean(body, "an import refused during parsing")
         assert "too many files" in body["error"]
@@ -1164,9 +1152,7 @@ def _concretise(route: str) -> str | None:
     """
     if "(?P" in route or "\\" in route:
         return None
-    filled = _URL_CONVERTER.sub(
-        lambda m: _GHOST_VALUES.get(m.group(1) or "", "ghost"), route
-    )
+    filled = _URL_CONVERTER.sub(lambda m: _GHOST_VALUES.get(m.group(1) or "", "ghost"), route)
     if "<" in filled or ">" in filled:
         return None
     return "/" + filled.lstrip("/")

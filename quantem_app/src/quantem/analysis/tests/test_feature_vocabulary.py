@@ -96,25 +96,17 @@ class TestOneVocabulary:
             "the analysis does not read."
         )
         # mean_prob is the one key a drawn polygon legitimately lacks.
-        assert set(SEGMENT_FEATURE_KEYS) - set(MEASUREMENT_KEYS) == set(
-            PROBABILITY_FEATURE_KEYS
-        )
+        assert set(SEGMENT_FEATURE_KEYS) - set(MEASUREMENT_KEYS) == set(PROBABILITY_FEATURE_KEYS)
 
     def test_every_stored_key_maps_to_exactly_one_column(self):
         assert set(STORED_FEATURE_FOR_METRIC.values()) == set(SEGMENT_FEATURE_KEYS)
-        assert len(set(STORED_FEATURE_FOR_METRIC.values())) == len(
-            STORED_FEATURE_FOR_METRIC
-        )
+        assert len(set(STORED_FEATURE_FOR_METRIC.values())) == len(STORED_FEATURE_FOR_METRIC)
 
     def test_a_real_extracted_object_fills_every_column(self):
         """End of the chain: extractor -> features -> objects.csv row."""
-        row = derive(
-            _build().features, object_id="o1", pixel_size_nm=8.0
-        ).as_row()
+        row = derive(_build().features, object_id="o1", pixel_size_nm=8.0).as_row()
         blank = [
-            key
-            for key in (*PIXEL_METRIC_KEYS, *CALIBRATED_METRIC_KEYS)
-            if row.get(key) is None
+            key for key in (*PIXEL_METRIC_KEYS, *CALIBRATED_METRIC_KEYS) if row.get(key) is None
         ]
         assert not blank, f"{blank} are blank for a model-produced object"
 
@@ -124,9 +116,7 @@ class TestOneVocabulary:
         the ``mean_intensity``/``intensity_mean`` mismatch produced ten times
         over, silently."""
         features = dict(_build().features)
-        column = next(
-            metric for metric, key in STORED_FEATURE_FOR_METRIC.items() if key == stored
-        )
+        column = next(metric for metric, key in STORED_FEATURE_FOR_METRIC.items() if key == stored)
         assert derive(features, object_id="o", pixel_size_nm=8.0).values[column] is not None
 
         features[f"{stored}_renamed"] = features.pop(stored)
@@ -149,9 +139,7 @@ class TestNoFabricatedNumbers:
 
     def test_confidence_is_the_object_mean_not_one_pixel(self):
         segment = _build(prob_value=0.8)
-        assert segment.confidence_score == pytest.approx(
-            segment.features["mean_prob"]
-        )
+        assert segment.confidence_score == pytest.approx(segment.features["mean_prob"])
 
     def test_intensity_is_absent_rather_than_zero_when_there_is_no_image(self):
         features = _build(with_intensity=False).features
@@ -171,11 +159,7 @@ class TestNoFabricatedNumbers:
 
     def test_percentiles_are_ordered_and_inside_the_object(self):
         features = _build().features
-        assert (
-            features["intensity_p10"]
-            <= features["intensity_p50"]
-            <= features["intensity_p90"]
-        )
+        assert features["intensity_p10"] <= features["intensity_p50"] <= features["intensity_p90"]
         # The ellipse is 100 grey levels brighter than its surround, so a mean
         # taken over the bounding box instead of the mask would fall short.
         assert features["intensity_mean"] > 100.0

@@ -159,9 +159,7 @@ def save_completed_roi(
     retained_record.geometry = draft
     retained_record.save(update_fields=["geometry", "bbox", "updated_at"])
 
-    absorbed_ids = [
-        record.id for record in merged_records if record.id != retained_record.id
-    ]
+    absorbed_ids = [record.id for record in merged_records if record.id != retained_record.id]
     if absorbed_ids:
         CompletedROI.objects.filter(id__in=absorbed_ids).delete()
 

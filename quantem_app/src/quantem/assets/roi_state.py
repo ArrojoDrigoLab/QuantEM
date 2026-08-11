@@ -27,11 +27,7 @@ def get_active_roi_for_segmentation(segmentation: ImageSegmentation) -> ImageROI
 def get_active_roi_for_asset(asset: Asset | None) -> ImageROI | None:
     if asset is None:
         return None
-    active = (
-        ImageROI.objects.filter(asset=asset, is_active=True)
-        .order_by("-created_at")
-        .first()
-    )
+    active = ImageROI.objects.filter(asset=asset, is_active=True).order_by("-created_at").first()
     if active is not None:
         return active
     return ImageROI.objects.filter(asset=asset).order_by("-created_at").first()

@@ -116,9 +116,7 @@ def test_a_truly_absent_package_is_still_null_with_the_reason(monkeypatch):
     """The fallback must not fabricate: no metadata AND no importable module
     keeps the honest null + sentence."""
     _stripped_metadata(monkeypatch)
-    monkeypatch.setitem(
-        provenance._DISTRIBUTION_MODULES, "torch", "definitely_not_a_module_qx"
-    )
+    monkeypatch.setitem(provenance._DISTRIBUTION_MODULES, "torch", "definitely_not_a_module_qx")
 
     env = provenance.environment()
 

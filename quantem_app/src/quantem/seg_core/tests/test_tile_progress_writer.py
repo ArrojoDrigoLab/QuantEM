@@ -116,9 +116,10 @@ class TileProgressWriterTests(TestCase):
             for done in range(1, 20):
                 clock.advance(0.7)
                 scope.set(done)
-                if frozen_at is None and Job.objects.get(
-                    id=self.job.id
-                ).progress_units_done != done:
+                if (
+                    frozen_at is None
+                    and Job.objects.get(id=self.job.id).progress_units_done != done
+                ):
                     frozen_at = done
         self.assertIsNotNone(
             frozen_at,
@@ -128,9 +129,7 @@ class TileProgressWriterTests(TestCase):
     def test_a_failed_write_is_one_missed_sample_not_a_dead_counter(self):
         writer = TileProgressWriter(min_interval_seconds=0.0)
         writer.report(1, 10)
-        with patch.object(
-            Job.objects, "filter", side_effect=RuntimeError("database is locked")
-        ):
+        with patch.object(Job.objects, "filter", side_effect=RuntimeError("database is locked")):
             writer.report(2, 10)
         writer.report(3, 10)
         self.assertEqual(self._units()[0], 3)

@@ -39,7 +39,9 @@ class ConvLoRAAdapter(nn.Module):
     instead of to noise. The loader still checks names and shapes.
     """
 
-    def __init__(self, dim: int, n_prefix: int, rank: int = 8, conv: bool = True, ksize: int = 3) -> None:
+    def __init__(
+        self, dim: int, n_prefix: int, rank: int = 8, conv: bool = True, ksize: int = 3
+    ) -> None:
         super().__init__()
         self.n_prefix = int(n_prefix)
         self.rank = int(rank)

@@ -76,12 +76,7 @@ class Crop:
         return self.y + self.height
 
     def contains(self, box: Box) -> bool:
-        return (
-            box.x0 >= self.x
-            and box.y0 >= self.y
-            and box.x1 <= self.x1
-            and box.y1 <= self.y1
-        )
+        return box.x0 >= self.x and box.y0 >= self.y and box.x1 <= self.x1 and box.y1 <= self.y1
 
     def key(self) -> tuple[int, int, int, int]:
         return (self.x, self.y, self.width, self.height)

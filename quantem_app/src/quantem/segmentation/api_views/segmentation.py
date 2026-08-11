@@ -91,9 +91,7 @@ class AssetSegmentationListCreateView(APIView):
         # ``asset`` is joined for ``objects_pixel_size``, which compares the
         # image's pixel size now with the one its objects were produced under.
         # Without it that is one extra query per row of a list a screen polls.
-        segmentations = segmentations.select_related(
-            "segmentation_type", "config", "asset"
-        )
+        segmentations = segmentations.select_related("segmentation_type", "config", "asset")
         # A run whose worker died leaves its stage behind, and this is the read
         # the labeling screen makes: without the repair the screen shows a
         # "Running... 40%" pill for a run with no process behind it until the
@@ -185,8 +183,10 @@ def _create_segmentation_for_asset(request, *, asset):
             segmentation_type_internal_name=segmentation_type.internal_name,
             source_model=source_model,
         )
-    segmenter = None if manual_only_workflow else get_segmenter_or_none(
-        segmenter_internal_name or segmentation_type.internal_name
+    segmenter = (
+        None
+        if manual_only_workflow
+        else get_segmenter_or_none(segmenter_internal_name or segmentation_type.internal_name)
     )
     if segmenter is not None:
         tags = [
@@ -246,17 +246,13 @@ def _segmentation_delete_preview(segmentation: ImageSegmentation) -> dict:
             state: int(label_counts.get(state, 0))
             for state, _label in SegmentObject.LABEL_STATE_CHOICES
         },
-        "probability_map_count": ProbabilityMap.objects.filter(
-            segmentation=segmentation
-        ).count(),
+        "probability_map_count": ProbabilityMap.objects.filter(segmentation=segmentation).count(),
         "overlay_count": segmentation.overlay_states.count(),
         "adapter_count": Adapter.objects.filter(segmentation=segmentation).count(),
         # Kept, not deleted: a run's numbers and its export bundle are the
         # record of an analysis that happened. They survive with
         # segmentation_deleted: true in their payloads.
-        "analysis_run_count": AnalysisRun.objects.filter(
-            segmentation=segmentation
-        ).count(),
+        "analysis_run_count": AnalysisRun.objects.filter(segmentation=segmentation).count(),
         "locked": is_locked(segmentation),
     }
 
@@ -430,8 +426,7 @@ class SegmentationDetailView(APIView):
                 head_file.unlink(missing_ok=True)
             except OSError:
                 logger.warning(
-                    "Could not remove adapter head %s while deleting "
-                    "segmentation %s.",
+                    "Could not remove adapter head %s while deleting segmentation %s.",
                     head_file,
                     segmentation_id,
                     exc_info=True,
@@ -541,8 +536,7 @@ class SegmentationCompleteView(APIView):
             return Response(
                 {
                     "detail": (
-                        "discard_unconfirmed must be a boolean. Omit it to keep "
-                        "every object."
+                        "discard_unconfirmed must be a boolean. Omit it to keep every object."
                     ),
                     "preview": completion_preview(segmentation),
                 },

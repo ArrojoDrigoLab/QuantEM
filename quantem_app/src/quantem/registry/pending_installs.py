@@ -137,8 +137,7 @@ def _queue_pack(pack_id: str) -> bool:
 
     if pack_id not in MODEL_SPECS:
         logger.warning(
-            "The installer requested unknown model pack %r; skipping it. "
-            "Known packs: %s",
+            "The installer requested unknown model pack %r; skipping it. Known packs: %s",
             pack_id,
             ", ".join(sorted(MODEL_SPECS)),
         )
@@ -146,16 +145,13 @@ def _queue_pack(pack_id: str) -> bool:
     if cache.installed(pack_id):
         logger.info("Model pack %s is already installed; nothing to queue.", pack_id)
         return False
-    if (
-        Job.objects.filter(
-            type=JOB_TYPE_INSTALL_MODEL_PACK,
-            status__in=_ACTIVE_JOB_STATUSES,
-            payload_json__pack_id=pack_id,
-        ).exists()
-    ):
+    if Job.objects.filter(
+        type=JOB_TYPE_INSTALL_MODEL_PACK,
+        status__in=_ACTIVE_JOB_STATUSES,
+        payload_json__pack_id=pack_id,
+    ).exists():
         logger.info(
-            "An install of model pack %s is already queued or running; not "
-            "queueing another.",
+            "An install of model pack %s is already queued or running; not queueing another.",
             pack_id,
         )
         return False

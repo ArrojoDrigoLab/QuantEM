@@ -283,8 +283,7 @@ def derive(
     anything was blanked here.
     """
     out: dict[str, float | None] = {
-        metric: _f(features.get(stored))
-        for metric, stored in STORED_FEATURE_FOR_METRIC.items()
+        metric: _f(features.get(stored)) for metric, stored in STORED_FEATURE_FOR_METRIC.items()
     }
     area_px = out["area_px"]
     perim_px = out["perimeter_px"]
@@ -294,9 +293,7 @@ def derive(
 
     # Shape descriptors that need no calibration (ratios are scale-free).
     out["aspect_ratio"] = (major / minor) if (major and minor) else None
-    circularity = (
-        (4.0 * math.pi * area_px / (perim_px**2)) if (area_px and perim_px) else None
-    )
+    circularity = (4.0 * math.pi * area_px / (perim_px**2)) if (area_px and perim_px) else None
     if circularity is not None and circularity > CIRCULARITY_REPORT_CEILING:
         # Not clamped to 1.0 and not rounded down: both would put a number in
         # the column that no measurement produced. The object keeps its area and
@@ -304,9 +301,7 @@ def derive(
         unreportable[CIRCULARITY_KEY] = CIRCULARITY_ABOVE_CEILING_REASON
         circularity = None
     out[CIRCULARITY_KEY] = circularity
-    out["equivalent_diameter_px"] = (
-        math.sqrt(4.0 * area_px / math.pi) if area_px else None
-    )
+    out["equivalent_diameter_px"] = math.sqrt(4.0 * area_px / math.pi) if area_px else None
 
     if not pixel_size_nm or pixel_size_nm <= 0:
         return ObjectMetrics(
@@ -326,9 +321,7 @@ def derive(
             "perimeter_um": perim_px * um if perim_px is not None else None,
             "major_axis_um": major * um if major is not None else None,
             "minor_axis_um": minor * um if minor is not None else None,
-            "feret_max_um": (
-                out["feret_max_px"] * um if out["feret_max_px"] is not None else None
-            ),
+            "feret_max_um": (out["feret_max_px"] * um if out["feret_max_px"] is not None else None),
             "equivalent_diameter_um": (
                 out["equivalent_diameter_px"] * um
                 if out["equivalent_diameter_px"] is not None
@@ -426,9 +419,7 @@ def summarize(
                     total,
                     by_source,
                     n_unreportable=len(refused),
-                    unreportable_reason=(
-                        refused[0].unreportable[key] if refused else ""
-                    ),
+                    unreportable_reason=(refused[0].unreportable[key] if refused else ""),
                 )
             )
         if key == CIRCULARITY_KEY:
@@ -513,8 +504,7 @@ def _coverage_note(
     clauses: list[str] = []
     if absent:
         clauses.append(
-            f"{absent} carr{'ies' if absent == 1 else 'y'} no stored value for "
-            "this metric"
+            f"{absent} carr{'ies' if absent == 1 else 'y'} no stored value for this metric"
         )
     if n_unreportable:
         clauses.append(

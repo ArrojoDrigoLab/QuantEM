@@ -182,8 +182,7 @@ def enforce_constraints_watershed(
             "Failed to extract polygon from constrained segmentation.", stats
         )
     mask_satisfies = (
-        stats["include_in_refined"] == len(include_points)
-        and stats["exclude_in_refined"] == 0
+        stats["include_in_refined"] == len(include_points) and stats["exclude_in_refined"] == 0
     )
     stats["mask_satisfies"] = bool(mask_satisfies)
     stats["include_in_polygon"] = sum(
@@ -222,7 +221,5 @@ def enforce_constraints_watershed(
                     stats["erode_radius"] = radius
                     return normalize_polygon(eroded_polygon)
 
-        raise ConstraintEnforcementError(
-            "Constraint enforcement failed to satisfy points.", stats
-        )
+        raise ConstraintEnforcementError("Constraint enforcement failed to satisfy points.", stats)
     return refined_polygon

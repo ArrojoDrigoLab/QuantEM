@@ -94,9 +94,7 @@ class _SegmentationTestCase(TestCase):
 
     def setUp(self):
         self.client = APIClient()
-        self.image = create_small_test_image(
-            "Objects pixel size", width=SIZE, height=SIZE
-        )
+        self.image = create_small_test_image("Objects pixel size", width=SIZE, height=SIZE)
         self.asset = self.image.asset
         self.asset.pixel_size_nm = self.pixel_size_nm
         self.asset.save(update_fields=["pixel_size_nm"])
@@ -154,9 +152,7 @@ class _SegmentationTestCase(TestCase):
         against the shape that actually reaches the database rather than against
         a literal this file made up.
         """
-        _message, outcome = _segmentation_run_outcome(
-            segment_count, segmentation=self.segmentation
-        )
+        _message, outcome = _segmentation_run_outcome(segment_count, segmentation=self.segmentation)
         return Job.objects.create(
             type=job_type,
             status="SUCCESS",
@@ -268,9 +264,7 @@ class ObjectsPixelSizeTests(_SegmentationTestCase):
         a specific finding, not a place to put whatever could not be parsed.
         """
         self._object(stamp=_stamp(native_pixel_size_nm=5.0))
-        self._object(
-            features={"run": {"id": RUN_B, "native_pixel_size_nm": "five"}}
-        )
+        self._object(features={"run": {"id": RUN_B, "native_pixel_size_nm": "five"}})
 
         block = self._objects_pixel_size()
         self.assertEqual(block["produced_nm"], [5.0, "five"])
@@ -292,21 +286,14 @@ class ObjectsPixelSizeTests(_SegmentationTestCase):
         response = self.client.get(f"/api/assets/{self.asset.id}/segmentations/")
 
         self.assertEqual(response.status_code, 200, response.data)
-        row = next(
-            item
-            for item in response.data
-            if item["id"] == str(self.segmentation.id)
-        )
+        row = next(item for item in response.data if item["id"] == str(self.segmentation.id))
         self.assertTrue(row["objects_pixel_size"]["predates_calibration"])
 
     def _field_queries(self, *, join_asset: bool = True) -> int:
         related = ["segmentation_type", "config"]
         if join_asset:
             related.append("asset")
-        instance = (
-            ImageSegmentation.objects.select_related(*related)
-            .get(id=self.segmentation.id)
-        )
+        instance = ImageSegmentation.objects.select_related(*related).get(id=self.segmentation.id)
         with _CountQueries() as counted:
             ImageSegmentationSerializer().get_objects_pixel_size(instance)
         return counted.count
@@ -416,9 +403,7 @@ class RunNoticeReachesAProofreadImageTests(_SegmentationTestCase):
 
         notice = self._notice()
 
-        self.assertIsNotNone(
-            notice, '"Candidates ready" was the whole story again'
-        )
+        self.assertIsNotNone(notice, '"Candidates ready" was the whole story again')
         self.assertEqual(notice["kind"], "no_new_objects")
         self.assertIn("added no new objects", notice["message"])
         self.assertIn("12 object(s)", notice["message"])
@@ -449,13 +434,11 @@ class RunNoticeReachesAProofreadImageTests(_SegmentationTestCase):
         )
 
     def test_the_chip_line_does_not_claim_there_are_no_objects(self):
-        """"Ran and found no objects" over twelve confirmed ones is a new lie."""
+        """ "Ran and found no objects" over twelve confirmed ones is a new lie."""
         self._labelled(12)
         self._finished_run(segment_count=0)
 
-        self.assertEqual(
-            self._notice()["summary"], "Ran and added no new objects"
-        )
+        self.assertEqual(self._notice()["summary"], "Ran and added no new objects")
 
     def test_a_run_that_produced_something_says_nothing(self):
         self._labelled(12)
@@ -474,9 +457,7 @@ class RunNoticeReachesAProofreadImageTests(_SegmentationTestCase):
 
     def test_an_roi_run_counts_the_same_as_a_full_one(self):
         self._labelled(12)
-        self._finished_run(
-            segment_count=0, job_type=JOB_TYPE_RUN_SEGMENTATION_ROI
-        )
+        self._finished_run(segment_count=0, job_type=JOB_TYPE_RUN_SEGMENTATION_ROI)
 
         self.assertIsNotNone(self._notice())
 
@@ -494,9 +475,7 @@ class RunNoticeReachesAProofreadImageTests(_SegmentationTestCase):
         withheld rather than guessed at.
         """
         for _ in range(12):
-            self._object(
-                stamp=_stamp(native_pixel_size_nm=5.0), label_state="CANDIDATE"
-            )
+            self._object(stamp=_stamp(native_pixel_size_nm=5.0), label_state="CANDIDATE")
         self._finished_run(segment_count=0)
 
         self.assertIsNone(self._notice())
@@ -540,9 +519,5 @@ class RunNoticeReachesAProofreadImageTests(_SegmentationTestCase):
         response = self.client.get(f"/api/assets/{self.asset.id}/segmentations/")
 
         self.assertEqual(response.status_code, 200, response.data)
-        row = next(
-            item
-            for item in response.data
-            if item["id"] == str(self.segmentation.id)
-        )
+        row = next(item for item in response.data if item["id"] == str(self.segmentation.id))
         self.assertEqual(row["run_notice"]["kind"], "no_new_objects")

@@ -25,9 +25,7 @@ class BoxPromptApiTests(TestCase):
     def setUp(self):
         self.enterContext(stub_environment())
         self.client = APIClient()
-        self.image = create_small_test_image(
-            "Box prompt", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Box prompt", width=SIZE, height=SIZE, textured=True)
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
             segmentation_type=get_or_create_mitochondria_type(),
@@ -73,9 +71,7 @@ class BoxPromptApiTests(TestCase):
         for candidate in body["other_candidates"]:
             self.assertIn("geometry_coords", candidate)
             self.assertIn("score", candidate)
-        self.assertLessEqual(
-            body["other_candidates"][0]["score"], body["object"]["score"]
-        )
+        self.assertLessEqual(body["other_candidates"][0]["score"], body["object"]["score"])
 
     def test_the_stored_object_keeps_its_score(self):
         self._prompt(100, 100, 200, 200)
@@ -87,9 +83,7 @@ class BoxPromptApiTests(TestCase):
         self._prompt(120, 120, 220, 220)
         reloaded = ImageSegmentation.objects.get(id=self.segmentation.id)
         self.assertEqual(
-            SegmentObject.objects.filter(
-                segmentation=reloaded, label_state="CONFIRMED"
-            ).count(),
+            SegmentObject.objects.filter(segmentation=reloaded, label_state="CONFIRMED").count(),
             1,
         )
 
@@ -140,9 +134,7 @@ class BoxPromptApiTests(TestCase):
         for index in range(12):
             EMBEDDINGS.put(
                 ("seg", "stub:threshold", (index, 0, 64, 64)),
-                get_backend().encode(
-                    __import__("numpy").zeros((64, 64, 3), dtype="uint8")
-                ),
+                get_backend().encode(__import__("numpy").zeros((64, 64, 3), dtype="uint8")),
             )
         self.assertLessEqual(len(EMBEDDINGS), 8)
 

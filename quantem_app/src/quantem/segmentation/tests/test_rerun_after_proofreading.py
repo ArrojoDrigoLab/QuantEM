@@ -82,8 +82,7 @@ class RerunAfterProofreadingTests(TestCase):
 
         step = next(s for s in self._steps() if "pixel size" in s)
 
-        self.assertIn("2 object(s) here were produced while this image had no "
-                      "pixel size", step)
+        self.assertIn("2 object(s) here were produced while this image had no pixel size", step)
         self.assertIn("5 nm/px now", step)
         self.assertIn("A re-run cannot replace them", step)
 

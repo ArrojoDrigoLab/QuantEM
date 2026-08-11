@@ -69,9 +69,7 @@ class SegmentationUserFeedbackView(APIView):
     def get(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         _expire_stale_user_feedback(str(segmentation.id))
-        feedback_qs = UserFeedback.objects.filter(segmentation=segmentation).order_by(
-            "created_at"
-        )
+        feedback_qs = UserFeedback.objects.filter(segmentation=segmentation).order_by("created_at")
 
         ids_param = request.query_params.get("ids")
         if ids_param:
@@ -81,11 +79,7 @@ class SegmentationUserFeedbackView(APIView):
 
         statuses_param = request.query_params.get("utilized_statuses")
         if statuses_param:
-            statuses = [
-                item.strip().upper()
-                for item in statuses_param.split(",")
-                if item.strip()
-            ]
+            statuses = [item.strip().upper() for item in statuses_param.split(",") if item.strip()]
             valid_statuses = {
                 UserFeedback.STATUS_QUEUED,
                 UserFeedback.STATUS_PROCESSING,
@@ -100,13 +94,8 @@ class SegmentationUserFeedbackView(APIView):
                 serializer = UserFeedbackSerializer(feedback_qs, many=True)
                 return Response(serializer.data, status=status.HTTP_200_OK)
             except OperationalError as exc:
-                if (
-                    not _is_sqlite_lock_error(exc)
-                    or attempt >= _SQLITE_READ_RETRY_ATTEMPTS - 1
-                ):
-                    logger.exception(
-                        "Failed reading user feedback for segmentation %s", seg_id
-                    )
+                if not _is_sqlite_lock_error(exc) or attempt >= _SQLITE_READ_RETRY_ATTEMPTS - 1:
+                    logger.exception("Failed reading user feedback for segmentation %s", seg_id)
                     return Response(
                         {"error": "Database busy while reading user feedback"},
                         status=status.HTTP_503_SERVICE_UNAVAILABLE,

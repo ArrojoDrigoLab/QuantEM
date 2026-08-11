@@ -71,6 +71,8 @@ def file_logging_enabled() -> bool:
     if flag is None or flag.strip().lower() not in {"1", "true", "yes", "on"}:
         return False
     return os.environ.get("QUANTEM_JOB_WORKER") != "1"
+
+
 CACHE_DIR = STORAGE_DIR / "cache"
 MODELS_DIR = STORAGE_DIR / "models"
 DATA_DIR = STORAGE_DIR / "data"
@@ -114,9 +116,7 @@ def ensure_directories():
             if directory.exists():
                 created_dirs.append(str(directory))
         except Exception as e:
-            logger.error(
-                f"Failed to create directory {directory}: {str(e)}", exc_info=True
-            )
+            logger.error(f"Failed to create directory {directory}: {str(e)}", exc_info=True)
             # Never fall back to another location (owner ruling): storage that
             # silently relocates is storage nobody can find. Name the path and
             # the override instead.
@@ -128,8 +128,6 @@ def ensure_directories():
             ) from e
 
     if created_dirs:
-        logger.info(
-            f"Ensured directories exist: {len(created_dirs)} directories checked"
-        )
+        logger.info(f"Ensured directories exist: {len(created_dirs)} directories checked")
 
     return directories

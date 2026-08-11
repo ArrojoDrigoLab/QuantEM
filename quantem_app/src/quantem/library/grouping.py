@@ -148,9 +148,7 @@ def resolve_dataset(
             "A dataset lives inside an experiment. Choose or name an "
             "experiment as well, then this dataset can be created in it."
         )
-    existing = Dataset.objects.filter(
-        experiment=experiment, name__iexact=name
-    ).first()
+    existing = Dataset.objects.filter(experiment=experiment, name__iexact=name).first()
     if existing is not None:
         return existing
     return Dataset.objects.create(experiment=experiment, name=name)
@@ -215,10 +213,7 @@ def apply_grouping(
             validate_asset_grouping(asset)
 
             after_datasets = {dataset.id for dataset in asset.datasets.all()}
-            if (
-                asset.experiment_id != before_experiment
-                or after_datasets != before_datasets
-            ):
+            if asset.experiment_id != before_experiment or after_datasets != before_datasets:
                 outcome.assets_changed += 1
 
     outcome.datasets_left = sorted(left_dataset_names)

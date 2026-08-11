@@ -25,7 +25,8 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { ObjectsPanel, metricNote } from "./ObjectsPanel";
+import { ObjectsPanel } from "./ObjectsPanel";
+import { metricNote } from "./objectsPanelUtils";
 import type { AnalysisObjects } from "@/shared/types/analysis";
 
 /**

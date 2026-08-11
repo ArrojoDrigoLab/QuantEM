@@ -151,9 +151,9 @@ def compute_segment_features_task(segment_id: str) -> None:
         return
 
     try:
-        segment = SegmentObject.objects.select_related(
-            "segmentation", "segmentation__asset"
-        ).get(id=segment_id)
+        segment = SegmentObject.objects.select_related("segmentation", "segmentation__asset").get(
+            id=segment_id
+        )
     except SegmentObject.DoesNotExist:
         logger.warning("Segment %s missing for feature task", segment_id)
         return

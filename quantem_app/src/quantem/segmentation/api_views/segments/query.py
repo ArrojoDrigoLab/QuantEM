@@ -56,11 +56,9 @@ class SegmentationUncertainSegmentsView(APIView):
             ),
             source_model,
         )
-        qs = (
-            qs
-            .annotate(uncertainty=Abs(F("confidence_score") - 0.5))
-            .order_by("uncertainty")[:limit]
-        )
+        qs = qs.annotate(uncertainty=Abs(F("confidence_score") - 0.5)).order_by("uncertainty")[
+            :limit
+        ]
         serializer = SegmentObjectSerializer(qs, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 

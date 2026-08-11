@@ -133,9 +133,7 @@ def _confirm_manual_segments(
                 polygons=polygons,
                 features=features,
                 confidence_score=(
-                    float(confidence_score)
-                    if isinstance(confidence_score, (float, int))
-                    else None
+                    float(confidence_score) if isinstance(confidence_score, (float, int)) else None
                 ),
                 is_manual_new=True,
                 dirty=True,
@@ -318,11 +316,7 @@ def confirm_segment_geometries(
                 if not polygons:
                     continue
                 sam_score = item.get("sam_score")
-                features = (
-                    {"sam_score": float(sam_score)}
-                    if isinstance(sam_score, float)
-                    else {}
-                )
+                features = {"sam_score": float(sam_score)} if isinstance(sam_score, float) else {}
                 for polygon in polygons:
                     affected_geometries.append(polygon)
                     segment = SegmentObject.objects.create(
@@ -379,9 +373,7 @@ def confirm_segment_geometries(
                         if geometries_overlap(group_geometry, candidate_geometry):
                             affected_geometries.append(candidate_geometry)
                             group_geometry = group_geometry.union(candidate_geometry)
-                            candidate_score = _parse_optional_sam_score(
-                                candidate.get("sam_score")
-                            )
+                            candidate_score = _parse_optional_sam_score(candidate.get("sam_score"))
                             if candidate_score is not None:
                                 group_scores.append(candidate_score)
                             changed = True
@@ -400,9 +392,7 @@ def confirm_segment_geometries(
                             overlapping_ids.add(existing_id)
                             affected_geometries.append(existing_geometry)
                             group_geometry = group_geometry.union(existing_geometry)
-                            existing_score = _read_sam_score_from_features(
-                                existing.features
-                            )
+                            existing_score = _read_sam_score_from_features(existing.features)
                             if existing_score is not None:
                                 group_scores.append(existing_score)
                             changed = True
@@ -416,9 +406,7 @@ def confirm_segment_geometries(
                 merged_polygons.sort(key=lambda poly: float(poly.area), reverse=True)
 
                 overlapping_segments = [
-                    segment
-                    for segment in eligible_segments
-                    if str(segment.id) in overlapping_ids
+                    segment for segment in eligible_segments if str(segment.id) in overlapping_ids
                 ]
                 confirmed_existing = [
                     segment
@@ -472,9 +460,7 @@ def confirm_segment_geometries(
                         continue
 
                     features = (
-                        {"sam_score": float(merged_score)}
-                        if merged_score is not None
-                        else {}
+                        {"sam_score": float(merged_score)} if merged_score is not None else {}
                     )
                     create_kwargs: dict[str, Any] = {}
                     if forced_source_model is not None:

@@ -91,9 +91,7 @@ def extracted(
 
 class _SegmentationMixin:
     def make_segmentation(self) -> ImageSegmentation:
-        image = create_image_from_test_tiff(
-            "Segment writer fixture", width=64, height=64
-        )
+        image = create_image_from_test_tiff("Segment writer fixture", width=64, height=64)
         return ImageSegmentation.objects.create(
             asset=image.asset,
             segmentation_type=get_or_create_mitochondria_type(),
@@ -260,9 +258,7 @@ class BatchingTests(_SegmentationMixin, TestCase):
             sizes.append(len(objs))
             return original(objs, *args, **kwargs)
 
-        return sizes, mock.patch.object(
-            SegmentObject.objects, "bulk_create", side_effect=spy
-        )
+        return sizes, mock.patch.object(SegmentObject.objects, "bulk_create", side_effect=spy)
 
     def test_rows_go_out_in_separate_batches_of_at_most_150(self):
         rows = [extracted(20.0 * i, 0.0) for i in range(400)]

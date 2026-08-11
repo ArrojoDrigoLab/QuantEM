@@ -20,9 +20,7 @@ def _apply_user_feedback(feedback: UserFeedback) -> dict[str, Any]:
 
     TODO(quantem): implement add/remove-at-point against the DINO segmenters.
     """
-    raise NotImplementedError(
-        "Point feedback has no organelle handler in QuantEM yet."
-    )
+    raise NotImplementedError("Point feedback has no organelle handler in QuantEM yet.")
 
 
 def process_user_feedback(user_feedback_id: str) -> dict[str, Any]:

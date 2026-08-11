@@ -67,9 +67,20 @@ class CatalogueShapeTests(SimpleTestCase):
     def test_an_entry_carries_every_contract_field(self):
         entry = catalogue.pack_entry("quantem:mito")
         assert set(entry) >= {
-            "id", "family", "organelle", "title", "installed", "download_bytes",
-            "canonical_nm", "tile_size", "default_threshold", "decoder", "neck",
-            "adapt", "licence", "notes",
+            "id",
+            "family",
+            "organelle",
+            "title",
+            "installed",
+            "download_bytes",
+            "canonical_nm",
+            "tile_size",
+            "default_threshold",
+            "decoder",
+            "neck",
+            "adapt",
+            "licence",
+            "notes",
         }
 
     def test_titles_read_the_way_the_contract_shows_them(self):
@@ -81,10 +92,7 @@ class CatalogueShapeTests(SimpleTestCase):
         # Published HF sizes at the pinned revision: 136,541,856 (head) +
         # 227,685,512 (quantem-vitb trunk). The old pin, 662,337,373, counted
         # the local fp32 research artifacts and overstated the download by 74%.
-        assert (
-            catalogue.pack_entry("quantem:mito")["download_bytes"]
-            == 136_541_856 + 227_685_512
-        )
+        assert catalogue.pack_entry("quantem:mito")["download_bytes"] == 136_541_856 + 227_685_512
 
     def test_a_full_finetune_pack_needs_no_separate_encoder(self):
         # quantem:er was adapted with `adapt: full`, so its 465 MB head file is

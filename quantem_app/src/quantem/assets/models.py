@@ -314,9 +314,7 @@ def refuse_duplicate_import(uploaded_file, *, allow_duplicate: bool = False) -> 
     closing it with a database constraint would take the ``allow_duplicate``
     escape hatch away.
     """
-    sha256, _existing = resolve_duplicate_import(
-        uploaded_file, allow_duplicate=allow_duplicate
-    )
+    sha256, _existing = resolve_duplicate_import(uploaded_file, allow_duplicate=allow_duplicate)
     return sha256
 
 

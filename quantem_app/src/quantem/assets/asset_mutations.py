@@ -438,8 +438,7 @@ def _tiff_values(uploaded_file, entry, total: int, order, big: bool) -> list[int
         if len(data) < payload:
             raise _SourceIsTruncated
     return [
-        int.from_bytes(data[at : at + type_bytes], order)
-        for at in range(0, payload, type_bytes)
+        int.from_bytes(data[at : at + type_bytes], order) for at in range(0, payload, type_bytes)
     ]
 
 
@@ -527,7 +526,9 @@ def create_uploaded_asset(
     asset_id = uuid.uuid4()
     original_filename = uploaded_file.name
     display_name = display_name or original_filename
-    file_ext = (uploaded_file.name.rsplit(".", 1)[-1] if "." in uploaded_file.name else "tif").lower()
+    file_ext = (
+        uploaded_file.name.rsplit(".", 1)[-1] if "." in uploaded_file.name else "tif"
+    ).lower()
     staged_path = UPLOADS_DIR / f"{asset_id}.{file_ext}"
     save_uploaded_file_to_path(uploaded_file, staged_path)
     try:

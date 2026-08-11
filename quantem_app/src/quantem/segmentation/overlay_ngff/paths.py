@@ -55,12 +55,7 @@ def get_overlay_active_bundle_path(state: SegmentationOverlayState) -> Path:
         if not state.candidate_source_model
         else get_overlay_root(str(state.segmentation_id), state.candidate_source_model)
     )
-    return (
-        root
-        / OVERLAY_VERSIONED_DIRNAME
-        / str(state.bundle_version)
-        / OVERLAY_STORE_DIRNAME
-    )
+    return root / OVERLAY_VERSIONED_DIRNAME / str(state.bundle_version) / OVERLAY_STORE_DIRNAME
 
 
 def get_overlay_stage_bundle_path(

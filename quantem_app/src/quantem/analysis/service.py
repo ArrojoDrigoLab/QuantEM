@@ -356,9 +356,7 @@ class AnalysisInputs:
     #: ``calibrated: True`` with micron columns, working distances and the
     #: wrong-scale caveat gone -- on objects a differently-scaled model had
     #: produced. Empty from a notebook or from objects made before stamping.
-    produced_pixel_size_nm: frozenset[float | None] = field(
-        default_factory=frozenset
-    )
+    produced_pixel_size_nm: frozenset[float | None] = field(default_factory=frozenset)
     #: How much of the image a person actually reviewed, if it is known:
     #: ``(reviewed_px, image_px)``. See
     #: :func:`quantem.analysis.loaders.reviewed_area`.
@@ -474,16 +472,12 @@ def _scale_caveat(
     already says so in the manifest, in as many words, and this is the site that
     disagreed with it.
     """
-    trained = {
-        pack_id: nm for pack_id, nm in sorted(canonical_nm_by_pack.items()) if nm
-    }
+    trained = {pack_id: nm for pack_id, nm in sorted(canonical_nm_by_pack.items()) if nm}
     unrecognised = sorted(set(unrecognised_packs) - set(trained))
     if not trained and not unrecognised:
         return None
     one = len(trained) == 1
-    spelled = ", ".join(
-        f"{pack_id} is applied at {nm} nm/px" for pack_id, nm in trained.items()
-    )
+    spelled = ", ".join(f"{pack_id} is applied at {nm} nm/px" for pack_id, nm in trained.items())
     if not trained:
         # Nothing to spell out: we cannot say what scale these packs run at,
         # which is the whole problem. Deliberately its own short sentence rather
@@ -653,9 +647,7 @@ def _proofreading(inputs: AnalysisInputs, *, n_confirmed: int) -> dict[str, Any]
     return provenance.section(values, unavailable)
 
 
-def _proofreading_caveats(
-    proofreading: dict[str, Any], inputs: AnalysisInputs
-) -> list[str]:
+def _proofreading_caveats(proofreading: dict[str, Any], inputs: AnalysisInputs) -> list[str]:
     """The two proofreading facts that belong in front of the reader, not in JSON."""
     out: list[str] = []
     rejected = proofreading.get("n_rejected")
@@ -854,9 +846,7 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
             source_model=inputs.object_sources.get(oid, UNKNOWN_SOURCE),
             # None for the whole run when nothing was ever marked complete, so
             # the column is blank rather than a column of False.
-            in_reviewed_area=(
-                None if reviewed_by_object is None else reviewed_by_object.get(oid)
-            ),
+            in_reviewed_area=(None if reviewed_by_object is None else reviewed_by_object.get(oid)),
         )
         for oid, f in inputs.object_features.items()
     ]
@@ -1219,9 +1209,7 @@ def write_bundle(
             # image_key is the join to the image_summary.csv row that holds them.
             row["n_caveats"] = n_caveats
             obj_rows.append(row)
-    obj_columns = _write_csv(
-        out_dir / "objects.csv", obj_rows, fields=OBJECT_CSV_FIELDS
-    )
+    obj_columns = _write_csv(out_dir / "objects.csv", obj_rows, fields=OBJECT_CSV_FIELDS)
 
     # image_summary.csv -- one row per image
     img_rows = [image_summary_row(r) for r in results]
@@ -1307,9 +1295,7 @@ def _monte_carlo_manifest(results: list[dict[str, Any]]) -> dict[str, Any]:
     first = next((r["monte_carlo"] for r in results if r.get("monte_carlo")), None)
     values: dict[str, Any] = {
         "seeding": "per (image, replicate), independent of processing order",
-        "distance": (
-            "exact KD-tree to the eroded mask boundary, observed and null alike"
-        ),
+        "distance": ("exact KD-tree to the eroded mask boundary, observed and null alike"),
     }
     if first is not None:
         values["replicates"] = first["replicates"]
@@ -1441,9 +1427,7 @@ def _object_manifest(results: list[dict[str, Any]]) -> dict[str, Any]:
             # the caveat block above for what shipping without it costs.
             if not stats.get("n_missing") and not stats.get("estimator_note"):
                 continue
-            entry = coverage.setdefault(
-                key, {"n": 0, "n_objects": 0, "notes": [], "by_image": []}
-            )
+            entry = coverage.setdefault(key, {"n": 0, "n_objects": 0, "notes": [], "by_image": []})
             n = int(stats.get("n") or 0)
             n_objects = int(stats.get("n_objects") or 0)
             entry["n"] += n
@@ -1571,9 +1555,7 @@ def run_for_segmentation(
         # Named, not only described: the caveat says which compartment is
         # circular in a sentence, and image_summary.csv turns that into the
         # exact column headers so a spreadsheet reader gets it too.
-        result["circular_compartments"] = circular_compartments(
-            analysis_run, loaded.params
-        )
+        result["circular_compartments"] = circular_compartments(analysis_run, loaded.params)
         circular = centroid_self_reference_caveat(analysis_run, loaded.params)
         if circular:
             result["caveats"].append(circular)

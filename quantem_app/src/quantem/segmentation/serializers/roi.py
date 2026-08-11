@@ -46,9 +46,7 @@ class SegmentationRoiSerializer(serializers.ModelSerializer):
         if completion_map is not None:
             return bool(completion_map.get(obj.id, False))
         is_complete = (
-            RoiSegmentationStatus.objects.filter(
-                image_roi=obj, segmentation=segmentation
-            )
+            RoiSegmentationStatus.objects.filter(image_roi=obj, segmentation=segmentation)
             .values_list("is_complete", flat=True)
             .first()
         )
@@ -83,10 +81,7 @@ class CompletedRoiSerializer(serializers.ModelSerializer):
         geometry = obj.geometry
         if geometry is None or geometry.is_empty or geometry.geom_type != "Polygon":
             return []
-        return [
-            [[float(x), float(y)] for x, y in ring.coords]
-            for ring in geometry.interiors
-        ]
+        return [[[float(x), float(y)] for x, y in ring.coords] for ring in geometry.interiors]
 
     def get_bbox(self, obj):
         bbox = obj.bbox

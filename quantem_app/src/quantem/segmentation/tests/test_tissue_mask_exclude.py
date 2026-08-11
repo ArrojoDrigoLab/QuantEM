@@ -47,9 +47,7 @@ class TissueMaskExcludeTests(TestCase):
         )
         self.assertEqual(add.status_code, 200, add.data)
         confirmed = list(
-            SegmentObject.objects.filter(
-                segmentation=self.segmentation, label_state="CONFIRMED"
-            )
+            SegmentObject.objects.filter(segmentation=self.segmentation, label_state="CONFIRMED")
         )
         self.assertEqual(len(confirmed), 1, "add should create one confirmed region")
         self.assertEqual(confirmed[0].source_model or "manual", "manual")
@@ -75,16 +73,10 @@ class TissueMaskExcludeTests(TestCase):
         self.assertEqual(exclude.status_code, 200, exclude.data)
         # The mask object should be updated (a hole cut), not left untouched.
         self.assertEqual(int(exclude.data["updated"]), 1, exclude.data)
-        self.assertIsNotNone(
-            exclude.data.get("overlay"), "an overlay refresh must be returned"
-        )
+        self.assertIsNotNone(exclude.data.get("overlay"), "an overlay refresh must be returned")
 
         # 3) The resulting geometry must actually contain a hole.
-        seg = SegmentObject.objects.get(
-            segmentation=self.segmentation, label_state="CONFIRMED"
-        )
-        self.assertGreater(
-            len(seg.geometry.interiors), 0, "the cut must leave an interior hole"
-        )
+        seg = SegmentObject.objects.get(segmentation=self.segmentation, label_state="CONFIRMED")
+        self.assertGreater(len(seg.geometry.interiors), 0, "the cut must leave an interior hole")
         self.assertTrue(seg.geometry.contains(Point(15, 15)))
         self.assertFalse(seg.geometry.contains(Point(50, 50)))

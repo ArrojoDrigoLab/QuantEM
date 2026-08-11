@@ -207,9 +207,7 @@ class TileProgressWriter:
                 updates["progress_detail_json"] = detail
             # Only onto a job that still has work ahead of it: a count written
             # onto a concluded run is a lie, where silence is only silence.
-            Job.objects.filter(id=self._job_id, status__in=open_statuses).update(
-                **updates
-            )
+            Job.objects.filter(id=self._job_id, status__in=open_statuses).update(**updates)
         except Exception:
             # One missed sample. Never a failed run, and never a reason to stop
             # trying -- that is the freeze this class exists to prevent.

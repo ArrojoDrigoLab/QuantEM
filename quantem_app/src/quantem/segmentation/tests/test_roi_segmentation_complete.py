@@ -71,9 +71,7 @@ class RoiSegmentationCompleteViewTests(TestCase):
         self.client.post(self._url(), {}, format="json")
 
         # The ROI is done for ER but not for the mitochondria segmentation.
-        response = self.client.get(
-            f"/api/segmentations/{other_segmentation.id}/roi/"
-        )
+        response = self.client.get(f"/api/segmentations/{other_segmentation.id}/roi/")
         self.assertEqual(response.status_code, 200)
         roi_entry = next(r for r in response.data if r["id"] == str(self.roi.id))
         self.assertFalse(roi_entry["completed_for_segmentation"])

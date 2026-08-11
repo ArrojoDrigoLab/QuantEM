@@ -357,9 +357,7 @@ def banned_references(tree: ast.AST) -> list[tuple[int, str]]:
             if node.args and isinstance(node.args[0], ast.Constant):
                 candidates.append(node.args[0].value)
             for keyword in node.keywords:
-                if keyword.arg in {"mode", "format"} and isinstance(
-                    keyword.value, ast.Constant
-                ):
+                if keyword.arg in {"mode", "format"} and isinstance(keyword.value, ast.Constant):
                     candidates.append(keyword.value.value)
             for value in candidates:
                 if not isinstance(value, str):
@@ -470,9 +468,7 @@ def test_the_pyramid_and_reader_modules_hold_no_decode_at_all():
 
     for relative in PIXEL_PATH_MODULES:
         tree = ast.parse((SRC / relative).read_text(encoding="utf-8"))
-        assert banned_references(tree) == [], (
-            f"{relative} decodes an image itself; {_REPLACEMENT}"
-        )
+        assert banned_references(tree) == [], f"{relative} decodes an image itself; {_REPLACEMENT}"
 
 
 def test_the_pyramid_and_reader_modules_do_not_even_import_an_image_library():
@@ -603,35 +599,26 @@ def test_the_scanner_catches_every_shape_of_decode_that_defeated_it():
             "import matplotlib.image as mpimg\ndef read(p):\n    return mpimg.imread(str(p))\n"
         ),
         "deep_alias": (
-            "import tifffile\n_reader = tifffile.imread\n"
-            "def read(p):\n    return _reader(str(p))\n"
+            "import tifffile\n_reader = tifffile.imread\ndef read(p):\n    return _reader(str(p))\n"
         ),
         "default_argument": (
-            "from PIL import Image\n"
-            "def read(p, opener=Image.open):\n    return opener(p)\n"
+            "from PIL import Image\ndef read(p, opener=Image.open):\n    return opener(p)\n"
         ),
         "dynamic_import": (
             "import importlib\n"
             "def read(p):\n    return importlib.import_module('tifffile').imread(str(p))\n"
         ),
         "getattr_lookup": (
-            "from PIL import Image\n"
-            "def read(p):\n    return getattr(Image, 'open')(p)\n"
+            "from PIL import Image\ndef read(p):\n    return getattr(Image, 'open')(p)\n"
         ),
-        "dunder_import": (
-            "def read(p):\n    return __import__('imageio').imread(p)\n"
-        ),
+        "dunder_import": ("def read(p):\n    return __import__('imageio').imread(p)\n"),
         "aliased_pyvips": (
             "import pyvips as v\n"
             "def read(p):\n    return v.Image.new_from_file(str(p)).cast('uchar')\n"
         ),
     }
-    missed = [
-        name for name, source in attacks.items() if not banned_references(ast.parse(source))
-    ]
-    assert missed == [], (
-        "the chokepoint scanner did not see these decodes: " + ", ".join(missed)
-    )
+    missed = [name for name, source in attacks.items() if not banned_references(ast.parse(source))]
+    assert missed == [], "the chokepoint scanner did not see these decodes: " + ", ".join(missed)
 
 
 def test_the_scanner_does_not_fire_on_the_things_that_are_not_decodes():
@@ -643,8 +630,7 @@ def test_the_scanner_does_not_fire_on_the_things_that_are_not_decodes():
 
     innocent = {
         "writes_a_png": (
-            "from PIL import Image\n"
-            "def write(a, p):\n    Image.fromarray(a).save(p)\n"
+            "from PIL import Image\ndef write(a, p):\n    Image.fromarray(a).save(p)\n"
         ),
         "cv2_morphology": (
             "import cv2\n"
@@ -655,13 +641,8 @@ def test_the_scanner_does_not_fire_on_the_things_that_are_not_decodes():
             "from skimage.measure import regionprops\ndef m(a):\n    return regionprops(a)\n"
         ),
         "zarr_store": "import zarr\ndef open_store(p):\n    return zarr.open(p, mode='r')\n",
-        "convert_rgb": (
-            "from PIL import Image\n"
-            "def rgb(h):\n    return h.convert('RGB')\n"
-        ),
-        "tifffile_write": (
-            "import tifffile\ndef save(a, p):\n    tifffile.imwrite(str(p), a)\n"
-        ),
+        "convert_rgb": ("from PIL import Image\ndef rgb(h):\n    return h.convert('RGB')\n"),
+        "tifffile_write": ("import tifffile\ndef save(a, p):\n    tifffile.imwrite(str(p), a)\n"),
     }
     fired = {
         name: banned_references(ast.parse(source))

@@ -94,9 +94,7 @@ class RealModelProbabilityMapTests(TestCase):
         assert stored.metadata["pack_id"] == "quantem:mito"
         assert stored.metadata["organelle"] == "mito"
 
-        unblocked = collect_crops(
-            self.segmentation, require_probability=True, load_prob=True
-        )
+        unblocked = collect_crops(self.segmentation, require_probability=True, load_prob=True)
         assert unblocked.ready, unblocked.blockers
         (crop,) = unblocked.crops
         assert crop.prob is not None

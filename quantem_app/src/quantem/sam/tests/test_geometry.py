@@ -113,15 +113,11 @@ class BinarizeTests(SimpleTestCase):
 
     def test_probabilities_split_at_a_half(self):
         mask = np.array([[0.2, 0.5, 0.51, 1.0]], dtype=np.float32)
-        np.testing.assert_array_equal(
-            binarize(mask), np.array([[False, False, True, True]])
-        )
+        np.testing.assert_array_equal(binarize(mask), np.array([[False, False, True, True]]))
 
     def test_floats_above_one_split_at_zero(self):
         mask = np.array([[-1.0, 0.0, 0.3, 7.0]], dtype=np.float32)
-        np.testing.assert_array_equal(
-            binarize(mask), np.array([[False, False, True, True]])
-        )
+        np.testing.assert_array_equal(binarize(mask), np.array([[False, False, True, True]]))
 
     def test_zero_one_integers_are_taken_as_labels(self):
         mask = np.array([[0, 1, 1]], dtype=np.uint8)
@@ -129,9 +125,7 @@ class BinarizeTests(SimpleTestCase):
 
     def test_zero_two_five_five_images_split_at_the_midpoint(self):
         mask = np.array([[0, 127, 128, 255]], dtype=np.uint8)
-        np.testing.assert_array_equal(
-            binarize(mask), np.array([[False, False, True, True]])
-        )
+        np.testing.assert_array_equal(binarize(mask), np.array([[False, False, True, True]]))
 
 
 class MaskToGlobalPolygonTests(SimpleTestCase):

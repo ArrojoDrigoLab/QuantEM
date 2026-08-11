@@ -112,9 +112,9 @@ def downsample(plane: np.ndarray) -> np.ndarray:
         ((0, max(0, height * 2 - plane.shape[0])), (0, max(0, width * 2 - plane.shape[1]))),
         mode="edge",
     )[: height * 2, : width * 2]
-    return np.rint(
-        padded.reshape(height, 2, width, 2).astype(np.float64).mean(axis=(1, 3))
-    ).astype(np.uint8)
+    return np.rint(padded.reshape(height, 2, width, 2).astype(np.float64).mean(axis=(1, 3))).astype(
+        np.uint8
+    )
 
 
 def pyramid(plane: np.ndarray) -> list[np.ndarray]:

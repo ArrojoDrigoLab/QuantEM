@@ -216,17 +216,25 @@ class TestTheReportingRule:
         assert "n_unreportable" not in stats
         note = stats["note"]
         assert CIRCULARITY_ESTIMATOR_NOTE == note
-        assert "perimeter_crofton" in note          # which estimator ran
-        assert "estimator, not geometry" in note    # what the number is
-        assert "censor the roundest" in note        # why >1.0 can be reported
+        assert "perimeter_crofton" in note  # which estimator ran
+        assert "estimator, not geometry" in note  # what the number is
+        assert "censor the roundest" in note  # why >1.0 can be reported
 
     def test_another_metric_keeps_the_wording_it_had(self):
         """The refusal clause is circularity's; the plain-absence clause is not."""
         metrics = [
-            derive({"area": 500.0, "perimeter": 90.0, "mean_prob": 0.8}, object_id="a",
-                   pixel_size_nm=20.0, source_model="quantem:mito"),
-            derive({"area": 500.0, "perimeter": 90.0}, object_id="b",
-                   pixel_size_nm=20.0, source_model="manual"),
+            derive(
+                {"area": 500.0, "perimeter": 90.0, "mean_prob": 0.8},
+                object_id="a",
+                pixel_size_nm=20.0,
+                source_model="quantem:mito",
+            ),
+            derive(
+                {"area": 500.0, "perimeter": 90.0},
+                object_id="b",
+                pixel_size_nm=20.0,
+                source_model="manual",
+            ),
         ]
 
         note = summarize(metrics)["mean_prob"]["note"]
@@ -246,8 +254,8 @@ class TestTheBundleNeverShipsAnEstimatorFailure:
         tissue = np.zeros((200, 200), dtype=bool)
         tissue[10:190, 10:190] = True
         shapes = {
-            "d5": _measure(_disc(5), size=140),    # failure regime, blanked
-            "d7": _measure(_disc(7), size=140),    # failure regime, blanked
+            "d5": _measure(_disc(5), size=140),  # failure regime, blanked
+            "d7": _measure(_disc(7), size=140),  # failure regime, blanked
             "s20": _measure(_square(20), size=60),  # reported
             "s50": _measure(_square(50), size=90),  # reported
         }

@@ -118,7 +118,7 @@ def test_serve_announces_url_data_dir_and_models_pointer_on_a_piped_stdout(tmp_p
         assert f"http://127.0.0.1:{port}" in received[0], received
         assert str(data_dir) in received[1], received
         assert received[2].startswith("log file: "), received
-        log_path = Path(received[2][len("log file: "):])
+        log_path = Path(received[2][len("log file: ") :])
         assert log_path == data_dir / "logs" / "quantem-server.log", received
         assert "downloaded on demand" in received[3], received
         assert "models" in received[3], received

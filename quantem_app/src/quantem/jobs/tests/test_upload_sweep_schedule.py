@@ -77,9 +77,7 @@ class UploadSweepIsScheduledTests(TestCase):
         self.scheduler.tick()
         self.scheduler.tick()
 
-        self.assertEqual(
-            self.swept, ["sweep"], "the timer must reset after it fires"
-        )
+        self.assertEqual(self.swept, ["sweep"], "the timer must reset after it fires")
 
 
 class UploadSweepIsWiredToTheRealSweeperTests(TestCase):
@@ -98,9 +96,7 @@ class UploadSweepIsWiredToTheRealSweeperTests(TestCase):
 
         self.scheduler.sweep_abandoned_uploads()
 
-        self.assertFalse(
-            path.exists(), "the scheduler did not reach the real sweeper"
-        )
+        self.assertFalse(path.exists(), "the scheduler did not reach the real sweeper")
 
     def test_a_failing_sweep_does_not_take_the_tick_down(self):
         # Housekeeping must never cost the queue its dispatch.

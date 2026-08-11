@@ -95,9 +95,7 @@ class RemovedQueuedJobTests(TestCase):
         adapter = Adapter.objects.create(
             segmentation=_segmentation(), base_model="quantem:mito", status="PENDING"
         )
-        job = self._queued(
-            JOB_TYPE_TRAIN_ORGANELLE_ADAPTER, {"adapter_id": str(adapter.id)}
-        )
+        job = self._queued(JOB_TYPE_TRAIN_ORGANELLE_ADAPTER, {"adapter_id": str(adapter.id)})
 
         self._remove(job)
 
@@ -196,14 +194,13 @@ class RemovedQueuedJobTests(TestCase):
         self.assertFalse(Job.objects.filter(id=job.id).exists())
 
     def test_cancel_all_concludes_every_run_it_removes(self):
-        """"Cancel all" is one DELETE per queued job; none may be left behind."""
+        """ "Cancel all" is one DELETE per queued job; none may be left behind."""
         runs = [
             AnalysisRun.objects.create(segmentation=_segmentation(), status="PENDING")
             for _ in range(3)
         ]
         jobs = [
-            self._queued(JOB_TYPE_RUN_ANALYSIS, {"analysis_run_id": str(run.id)})
-            for run in runs
+            self._queued(JOB_TYPE_RUN_ANALYSIS, {"analysis_run_id": str(run.id)}) for run in runs
         ]
 
         for job in jobs:

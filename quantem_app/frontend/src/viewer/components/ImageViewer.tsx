@@ -49,23 +49,9 @@ export function ImageViewer({
   const persistentOverlays = useMemo(() => overlays?.persistent ?? [], [overlays?.persistent]);
   const transientOverlays = useMemo(() => overlays?.transient ?? [], [overlays?.transient]);
   const overlayNgffLayers = useMemo(() => overlays?.rasterLayers ?? [], [overlays?.rasterLayers]);
-  // Stabilize the idMapOverlays reference by CONTENT. The labeling panel rebuilds
-  // this wrapper array every render even when the (memoized) specs inside are
-  // unchanged. An unstable reference forces the `deckLayers` memo to recompute
-  // every render, which rebuilds the base-image MultiscaleImageLayer with a fresh
-  // `selections` array -- viv keys `updateTriggers.getTileData` on `selections`,
-  // so deck then invalidates and refetches the entire base-image tileset on every
-  // incidental re-render (endless base-tile loading). Keeping a stable reference
-  // unless an element actually changes prevents that.
-  const rawIdMapOverlays = overlays?.idMapOverlays ?? EMPTY_ID_MAP_OVERLAYS;
-  const idMapOverlaysRef = useRef<ViewerIdMapOverlaySpec[]>(rawIdMapOverlays);
-  if (
-    rawIdMapOverlays.length !== idMapOverlaysRef.current.length ||
-    rawIdMapOverlays.some((spec, index) => spec !== idMapOverlaysRef.current[index])
-  ) {
-    idMapOverlaysRef.current = rawIdMapOverlays;
-  }
-  const idMapOverlays = idMapOverlaysRef.current;
+  // Callers memoize this array. Keeping that contract explicit lets React track
+  // rendering from props instead of hiding render state in a mutable ref.
+  const idMapOverlays = overlays?.idMapOverlays ?? EMPTY_ID_MAP_OVERLAYS;
   const bitmapOverlays = useMemo(() => overlays?.bitmapOverlays ?? [], [overlays?.bitmapOverlays]);
   const drawMode = interactions?.draw?.enabled ?? false;
   const brushMode = interactions?.brush?.enabled ?? false;

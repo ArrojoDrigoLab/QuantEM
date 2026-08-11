@@ -129,8 +129,7 @@ def _write_bundle(
             cache.CONFIG_NAME: config.encode(),
             cache.INDEX_NAME: json.dumps(FAKE_INDEX).encode(),
         }
-        roles = {"head": cache.HEAD_NAME, "config": cache.CONFIG_NAME,
-                 "index": cache.INDEX_NAME}
+        roles = {"head": cache.HEAD_NAME, "config": cache.CONFIG_NAME, "index": cache.INDEX_NAME}
         if with_export:
             contents[cache.EXPORTED_ENCODER_NAME] = f"torchscript of {pack_id}".encode()
             roles["export"] = cache.EXPORTED_ENCODER_NAME
@@ -148,9 +147,7 @@ def _write_bundle(
                 "run_id": RUN_ID,
                 "checkpoint_step": STEP,
             }
-        contents[release.PACK_DESCRIPTOR_NAME] = (
-            json.dumps(descriptor, indent=2) + "\n"
-        ).encode()
+        contents[release.PACK_DESCRIPTOR_NAME] = (json.dumps(descriptor, indent=2) + "\n").encode()
 
         for name, blob in contents.items():
             (pack_dir / name).write_bytes(blob)
@@ -180,9 +177,7 @@ def _write_bundle(
         "files": sorted(files, key=lambda f: f["path"]),
         "total_bytes": sum(f["size_bytes"] for f in files),
     }
-    (root / release.MANIFEST_NAME).write_text(
-        json.dumps(manifest, indent=2), encoding="utf-8"
-    )
+    (root / release.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return root
 
 
@@ -291,10 +286,10 @@ def test_redacting_removes_exactly_what_scanning_looks_for() -> None:
 def test_what_is_not_a_local_path_survives() -> None:
     """Over-redaction would quietly destroy provenance, so it is pinned too."""
     for text in (
-        "foundation_weights/m1_dinov3_vitb",   # a run dir, relative
-        "m1_teacher_674999.pth",               # a checkpoint, by name
-        "packs/quantem__mito/head.pt",         # a path inside the bundle
-        "bioRxiv 10.1101/2025.04.13.648639",   # a DOI
+        "foundation_weights/m1_dinov3_vitb",  # a run dir, relative
+        "m1_teacher_674999.pth",  # a checkpoint, by name
+        "packs/quantem__mito/head.pt",  # a path inside the bundle
+        "bioRxiv 10.1101/2025.04.13.648639",  # a DOI
         "https://doi.org/10.1101/2025.04.13.648639",
         "quantem:mito",
     ):
@@ -427,15 +422,18 @@ def test_verify_bundle_catches_a_changed_byte(bundle: Path) -> None:
 # --- Installing from a bundle -----------------------------------------------
 
 
-def test_install_copies_every_file_and_records_the_release(
-    bundle: Path, data_dir: Path
-) -> None:
+def test_install_copies_every_file_and_records_the_release(bundle: Path, data_dir: Path) -> None:
     installed = install.install_pack_from_bundle(PACK_ID, bundle)
 
     pack_root = cache.pack_dir(PACK_ID)
     assert installed.root == pack_root
-    for name in (cache.HEAD_NAME, cache.CONFIG_NAME, cache.INDEX_NAME,
-                 cache.EXPORTED_ENCODER_NAME, cache.RECORD_NAME):
+    for name in (
+        cache.HEAD_NAME,
+        cache.CONFIG_NAME,
+        cache.INDEX_NAME,
+        cache.EXPORTED_ENCODER_NAME,
+        cache.RECORD_NAME,
+    ):
         assert (pack_root / name).is_file(), name
 
     record = cache.read_record(PACK_ID)
@@ -526,16 +524,12 @@ def test_a_bundle_without_an_export_is_refused(tmp_path: Path, data_dir: Path) -
     assert not cache.installed(PACK_ID)
 
 
-def test_install_all_reports_a_pack_the_bundle_does_not_have(
-    bundle: Path, data_dir: Path
-) -> None:
+def test_install_all_reports_a_pack_the_bundle_does_not_have(bundle: Path, data_dir: Path) -> None:
     with pytest.raises(install.InstallError, match=OTHER_PACK_ID):
         install.install_all_from_bundle(bundle, pack_ids=[OTHER_PACK_ID])
 
 
-def test_install_all_takes_every_pack_in_the_bundle(
-    tmp_path: Path, data_dir: Path
-) -> None:
+def test_install_all_takes_every_pack_in_the_bundle(tmp_path: Path, data_dir: Path) -> None:
     bundle = _write_bundle(tmp_path / "two", pack_ids=(PACK_ID, OTHER_PACK_ID))
     results = install.install_all_from_bundle(bundle)
     assert [r.pack_id for r in results] == [PACK_ID, OTHER_PACK_ID]

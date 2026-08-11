@@ -164,8 +164,7 @@ def apply_active_adapter(
         # An install that never migrated. Loud rather than silent: a user who
         # applied an adapter and gets an uncalibrated run deserves to know.
         logger.warning(
-            "Could not read the applied adapter for segmentation %s; running the "
-            "released model.",
+            "Could not read the applied adapter for segmentation %s; running the released model.",
             segmentation.id,
             exc_info=True,
         )
@@ -178,7 +177,9 @@ def apply_active_adapter(
         logger.info(
             "Adapter %s is applied to segmentation %s but %s cannot use one; "
             "running the released model.",
-            adapter.id, segmentation.id, type(segmenter).__name__,
+            adapter.id,
+            segmentation.id,
+            type(segmenter).__name__,
         )
         return None
     if adapter.base_model != pack_id:
@@ -407,9 +408,7 @@ def run_inference_for_segmentation(
     target_image = get_asset_openable(segmentation.asset)
     roi_id = str(roi.id) if roi else None
     prefix = segmenter.prob_map_prefix
-    persist_probability_maps = bool(
-        getattr(segmenter, "persist_probability_maps", True)
-    )
+    persist_probability_maps = bool(getattr(segmenter, "persist_probability_maps", True))
     if applied_adapter_id and persist_probability_maps:
         # A map on disk was produced by the released head. Reusing it under an
         # adapter would report the adapted model's provenance over the base
@@ -429,9 +428,7 @@ def run_inference_for_segmentation(
         # gigapixel array).
         img_array = image_array
     elif roi:
-        img_array = load_image_roi_array(
-            target_image, roi.x, roi.y, roi.width, roi.height
-        )
+        img_array = load_image_roi_array(target_image, roi.x, roi.y, roi.width, roi.height)
     elif use_image_file_prediction:
         # Streaming segmenters read their own tiles; never materialize the
         # full image (a gigapixel asset does not fit in RAM).
@@ -466,9 +463,7 @@ def run_inference_for_segmentation(
     stage_labels: dict[str, str] = {}
 
     pending_dl_models = [
-        model_name
-        for model_name in dl_model_names
-        if cached_prob_maps.get(model_name) is None
+        model_name for model_name in dl_model_names if cached_prob_maps.get(model_name) is None
     ]
     for index, model_name in enumerate(pending_dl_models):
         stage_key = _stage_key(model_name)
@@ -612,8 +607,7 @@ def run_inference_for_segmentation(
             # ``progress``, which also carries the stages either side of the
             # tiles and therefore divides by more than the plan's tile count.
             status_message = (
-                f"{label}: {bounded_fraction * 100.0:.0f}% "
-                f"({_tile_phrase(completed, total_items)})"
+                f"{label}: {bounded_fraction * 100.0:.0f}% ({_tile_phrase(completed, total_items)})"
             )
 
         if on_status is not None:
@@ -641,10 +635,7 @@ def run_inference_for_segmentation(
         should_emit = (
             bounded_fraction >= 1.0
             or (bounded_fraction - prev_fraction) >= _DETAIL_PROGRESS_DELTA
-            or (
-                (now - prev_time) >= _DETAIL_MIN_SECONDS
-                and bounded_fraction > prev_fraction
-            )
+            or ((now - prev_time) >= _DETAIL_MIN_SECONDS and bounded_fraction > prev_fraction)
         )
         if not should_emit:
             return
@@ -668,10 +659,7 @@ def run_inference_for_segmentation(
             else None
         )
         if time_left is not None:
-            on_detail(
-                f"{label}: {bounded_fraction * 100.0:.0f}% "
-                f"({item_progress}, {time_left})"
-            )
+            on_detail(f"{label}: {bounded_fraction * 100.0:.0f}% ({item_progress}, {time_left})")
         else:
             on_detail(f"{label}: {bounded_fraction * 100.0:.0f}% ({item_progress})")
         last_detail_fraction[stage_key] = bounded_fraction
@@ -730,7 +718,6 @@ def run_inference_for_segmentation(
                         segmenter.get_probability_map_metadata(model_name)
                     ),
                 )
-
 
     return result, img_array
 
@@ -865,9 +852,7 @@ def replay_stored_probability_map(
 
     target_image = get_asset_openable(segmentation.asset)
     if roi is not None:
-        img_array = load_image_roi_array(
-            target_image, roi.x, roi.y, roi.width, roi.height
-        )
+        img_array = load_image_roi_array(target_image, roi.x, roi.y, roi.width, roi.height)
     else:
         img_array, _ = load_image_array(target_image)
 

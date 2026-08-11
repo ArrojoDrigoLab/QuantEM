@@ -93,4 +93,3 @@ def coerce_instance_params(
             pass
 
     return merged
-

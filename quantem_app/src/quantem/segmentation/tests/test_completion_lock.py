@@ -191,9 +191,7 @@ class CompletionLockTests(TestCase):
         self.assertEqual(after.label_state, before.label_state)
         self.assertEqual(after.features, before.features)
         self.assertEqual(
-            SegmentationConfig.objects.get(
-                segmentation=self.segmentation
-            ).get_instance_params(),
+            SegmentationConfig.objects.get(segmentation=self.segmentation).get_instance_params(),
             config_before,
         )
 
@@ -204,9 +202,7 @@ class CompletionLockTests(TestCase):
         marked the segmentation done and answered 200. Unlocking is ``DELETE``,
         and the refusal has to say so or the caller has no way to find it.
         """
-        response = self.client.post(
-            f"{self.base}/complete", {"is_complete": False}, format="json"
-        )
+        response = self.client.post(f"{self.base}/complete", {"is_complete": False}, format="json")
         self.assertEqual(response.status_code, 400, response.data)
         # The verb belongs in ``unlock``, which is what a client reads. The
         # sentence names the control on the screen instead (I-12, http-verb).
@@ -220,9 +216,7 @@ class CompletionLockTests(TestCase):
 
     def test_posting_is_complete_true_still_marks_it_done(self):
         """A client that spells out what POST already means is not wrong."""
-        response = self.client.post(
-            f"{self.base}/complete", {"is_complete": True}, format="json"
-        )
+        response = self.client.post(f"{self.base}/complete", {"is_complete": True}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         self.segmentation.refresh_from_db()
         self.assertEqual(self.segmentation.status_stage, "COMPLETED")
@@ -286,9 +280,7 @@ class CompletionLockTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 409, response.data)
-        self.assertEqual(
-            SegmentObject.objects.get(id=other_segment_id).label_state, "CONFIRMED"
-        )
+        self.assertEqual(SegmentObject.objects.get(id=other_segment_id).label_state, "CONFIRMED")
 
     def test_creating_the_same_segmentation_again_does_not_start_a_run(self):
         """``POST /assets/<id>/segmentations/`` is get_or_create and queues a run."""

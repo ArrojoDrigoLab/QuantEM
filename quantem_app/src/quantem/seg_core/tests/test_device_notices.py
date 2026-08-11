@@ -79,9 +79,7 @@ class DeviceNoticesReachTheJobLogTests(TestCase):
     def test_every_sentence_is_kept_and_none_is_merged_into_another(self):
         report_device_notices(_Segmenter([_SMALLER, _MOVED]))
 
-        self.assertEqual(
-            self._logged(), [("warning", _SMALLER), ("warning", _MOVED)]
-        )
+        self.assertEqual(self._logged(), [("warning", _SMALLER), ("warning", _MOVED)])
 
     def test_the_ordinary_run_says_nothing_at_all(self):
         """Empty is the normal case, and it must stay silent.
@@ -153,9 +151,7 @@ class TheRunItselfReportsThemTests(TestCase):
         )
 
         self.assertEqual(
-            list(
-                JobLog.objects.filter(job=job).values_list("level", "message")
-            ),
+            list(JobLog.objects.filter(job=job).values_list("level", "message")),
             [("warning", _MOVED)],
         )
 

@@ -223,9 +223,7 @@ class BaseSegmenter(ABC):
     ) -> InferenceResult:
         """Optional full-image prediction path that streams from the source image."""
         _ = (image_file, cached_prob_maps, on_progress, kwargs)
-        raise NotImplementedError(
-            "This model cannot run over a whole image file."
-        )
+        raise NotImplementedError("This model cannot run over a whole image file.")
 
     # --- DL Inference ---
 

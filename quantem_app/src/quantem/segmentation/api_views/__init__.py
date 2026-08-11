@@ -1,2 +1,1 @@
 """Segmentation API view modules."""
-

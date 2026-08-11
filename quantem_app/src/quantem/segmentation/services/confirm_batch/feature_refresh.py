@@ -9,9 +9,7 @@ from quantem.jobs.models import Job
 
 
 def _segment_feature_refresh_triggers_enabled() -> bool:
-    raw = str(
-        os.environ.get("QUANTEM_ENABLE_SEGMENT_FEATURE_REFRESH_TRIGGERS", "0")
-    ).strip()
+    raw = str(os.environ.get("QUANTEM_ENABLE_SEGMENT_FEATURE_REFRESH_TRIGGERS", "0")).strip()
     return raw.lower() not in {"", "0", "false", "no", "off"}
 
 

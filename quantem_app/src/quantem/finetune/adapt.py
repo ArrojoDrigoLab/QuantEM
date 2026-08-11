@@ -373,9 +373,7 @@ def train_head(
     rng = np.random.default_rng(config.seed)
 
     trainable, n_trainable = freeze_to_head(module)
-    optimizer = torch.optim.AdamW(
-        trainable, lr=config.lr, weight_decay=config.weight_decay
-    )
+    optimizer = torch.optim.AdamW(trainable, lr=config.lr, weight_decay=config.weight_decay)
     tile = int(patches[0][0].shape[0])
     logger.info(
         "Head-only adaptation: %d patches, %.3f M trainable params, %d steps on %s",
@@ -441,8 +439,7 @@ def save_head(module: Any, path: Path, *, meta: dict[str, object] | None = None)
     payload: dict[str, object] = {"format": HEAD_FORMAT, "meta": dict(meta or {})}
     for name in HEAD_MODULES:
         payload[name] = {
-            key: value.detach().cpu()
-            for key, value in getattr(module, name).state_dict().items()
+            key: value.detach().cpu() for key, value in getattr(module, name).state_dict().items()
         }
     torch.save(payload, str(path))
     return path

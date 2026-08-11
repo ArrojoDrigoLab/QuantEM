@@ -27,9 +27,7 @@ def _choose_scored_candidate(
     seed: int | None = None,
 ) -> tuple[float, int, int]:
     finite_candidates = [
-        candidate
-        for candidate in top_candidates
-        if candidate[0] > 0 and np.isfinite(candidate[0])
+        candidate for candidate in top_candidates if candidate[0] > 0 and np.isfinite(candidate[0])
     ]
     if not finite_candidates:
         return top_candidates[0]

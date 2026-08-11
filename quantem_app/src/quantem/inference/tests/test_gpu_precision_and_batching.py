@@ -84,24 +84,18 @@ def test_the_processor_never_batches():
 
 
 def test_a_big_card_gets_the_ceiling_and_a_small_one_gets_one_window():
-    big = device_mod.tile_batch_for(
-        "cuda", embedding_dim=768, free_bytes=48 * 1024 ** 3
-    )
+    big = device_mod.tile_batch_for("cuda", embedding_dim=768, free_bytes=48 * 1024**3)
     assert big == device_mod.MAX_AUTOMATIC_TILE_BATCH
 
     # A ViT-L with 3 GB free: 1 536 MiB of headroom leaves ~1 536 MiB, under the
     # 2 259 MiB the measured table wants even for one window.
-    small = device_mod.tile_batch_for(
-        "cuda", embedding_dim=1024, free_bytes=3 * 1024 ** 3
-    )
+    small = device_mod.tile_batch_for("cuda", embedding_dim=1024, free_bytes=3 * 1024**3)
     assert small == 1
 
 
 def test_the_ceiling_is_four_because_that_is_where_the_curve_flattens():
     assert device_mod.MAX_AUTOMATIC_TILE_BATCH == 4
-    assert device_mod.tile_batch_for(
-        "cuda", embedding_dim=768, free_bytes=64 * 1024 ** 3
-    ) == 4
+    assert device_mod.tile_batch_for("cuda", embedding_dim=768, free_bytes=64 * 1024**3) == 4
 
 
 def test_support_can_force_a_batch(monkeypatch):
@@ -118,10 +112,7 @@ def test_support_can_force_a_batch(monkeypatch):
 def _blend(shape, tile, batch, seed=3):
     plan = tiling.plan_tiles(shape, tile, overlap=0.25)
     rng = np.random.default_rng(seed)
-    fields = {
-        (t.y, t.x): rng.random((tile, tile)).astype(np.float32)
-        for t in plan.tiles()
-    }
+    fields = {(t.y, t.x): rng.random((tile, tile)).astype(np.float32) for t in plan.tiles()}
     seen: list[tuple[int, int]] = []
 
     def predict(tiles):
@@ -136,9 +127,7 @@ def test_a_batched_blend_is_the_same_array_as_a_one_at_a_time_blend():
     base, order1, total = _blend((900, 1300), 256, batch=1)
     for batch in (2, 3, 4, 8, 64):
         got, order, _ = _blend((900, 1300), 256, batch=batch)
-        np.testing.assert_array_equal(
-            got, base, err_msg=f"batch {batch} changed the blended map"
-        )
+        np.testing.assert_array_equal(got, base, err_msg=f"batch {batch} changed the blended map")
         # Same windows, same order: batching slices the sequence, it does not
         # reorder it, which is what BandBlender's row-major contract needs.
         assert order == order1
@@ -147,6 +136,7 @@ def test_a_batched_blend_is_the_same_array_as_a_one_at_a_time_blend():
 
 def test_every_window_is_reported_once_however_they_are_grouped():
     plan = tiling.plan_tiles((900, 1300), 256, overlap=0.25)
+
     def blank(tiles):
         return [np.zeros((256, 256), np.float32) for _ in tiles]
 

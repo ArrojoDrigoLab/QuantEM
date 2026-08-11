@@ -67,7 +67,9 @@ class ManualSegmentMeasurementTests(TestCase):
         self.assertAlmostEqual(segment.features["elongation"], 1.0, delta=0.05)
         self.assertGreater(segment.features["solidity"], 0.95)
         self.assertGreater(segment.features["feret_diameter_max"], 60.0)
-        self.assertGreaterEqual(segment.features["intensity_p90"], segment.features["intensity_p10"])
+        self.assertGreaterEqual(
+            segment.features["intensity_p90"], segment.features["intensity_p10"]
+        )
 
     def test_the_vestigial_sam_score_is_gone(self):
         """SAM is not in this product; the 1.0 default was the only thing a
@@ -145,9 +147,7 @@ class ConfirmBatchMeasurementTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
 
         segments = list(
-            SegmentObject.objects.filter(
-                segmentation=self.segmentation, label_state="CONFIRMED"
-            )
+            SegmentObject.objects.filter(segmentation=self.segmentation, label_state="CONFIRMED")
         )
         self.assertEqual(len(segments), 2)
         for segment in segments:

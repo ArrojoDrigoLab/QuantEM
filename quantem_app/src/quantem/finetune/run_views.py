@@ -97,10 +97,7 @@ def _base_model_for(segmentation_type: SegmentationType) -> str:
 def _runnable_reason(base_model: str) -> str | None:
     """Why this pack cannot be fitted here, or None when it can."""
     if base_model not in MODEL_SPECS:
-        return (
-            "There is no released model for this organelle, so there is nothing "
-            "to fine-tune."
-        )
+        return "There is no released model for this organelle, so there is nothing to fine-tune."
     if not torch_available():
         return (
             "This copy of QuantEM was installed without PyTorch, so no model can "
@@ -155,9 +152,7 @@ class FineTuneScopeView(APIView):
                 for dataset_id in dataset_ids:
                     by_dataset.setdefault(dataset_id, []).append(row)
             elif asset.experiment_id:
-                by_experiment_ungrouped.setdefault(
-                    str(asset.experiment_id), []
-                ).append(row)
+                by_experiment_ungrouped.setdefault(str(asset.experiment_id), []).append(row)
             else:
                 unassigned.append(row)
 
@@ -181,9 +176,7 @@ class FineTuneScopeView(APIView):
                     "id": str(experiment.id),
                     "name": experiment.name,
                     "datasets": datasets,
-                    "ungrouped_images": by_experiment_ungrouped.get(
-                        str(experiment.id), []
-                    ),
+                    "ungrouped_images": by_experiment_ungrouped.get(str(experiment.id), []),
                 }
             )
 
@@ -207,9 +200,7 @@ class FineTuneScopeView(APIView):
     def _rollup(images: list[dict]) -> dict:
         return {
             "image_count": len(images),
-            "annotated_image_count": sum(
-                1 for image in images if image["annotation_count"]
-            ),
+            "annotated_image_count": sum(1 for image in images if image["annotation_count"]),
             "annotation_count": sum(image["annotation_count"] for image in images),
         }
 
@@ -233,9 +224,7 @@ def _preview(
     for the answer the user was shown and the answer the run uses to differ.
     ``CropSet`` is None when the scope was refused before it was read.
     """
-    scope = resolve_scope(
-        asset_ids=data.get("asset_ids"), dataset_ids=data.get("dataset_ids")
-    )
+    scope = resolve_scope(asset_ids=data.get("asset_ids"), dataset_ids=data.get("dataset_ids"))
     base_model = _base_model_for(segmentation_type)
     body: dict = {
         "experiment": (
@@ -268,9 +257,9 @@ def _preview(
 
     names = {
         str(asset_id): display_name
-        for asset_id, display_name in Asset.objects.filter(
-            id__in=scope.asset_ids
-        ).values_list("id", "display_name")
+        for asset_id, display_name in Asset.objects.filter(id__in=scope.asset_ids).values_list(
+            "id", "display_name"
+        )
     }
     per_image_counts = crop_set.per_image_counts()
     per_image = [
@@ -281,9 +270,7 @@ def _preview(
             "done_rois": entry["done_rois"],
             "tiles": tiles_by_image.get(asset_id, 0),
         }
-        for asset_id, entry in sorted(
-            per_image_counts.items(), key=lambda kv: names.get(kv[0], "")
-        )
+        for asset_id, entry in sorted(per_image_counts.items(), key=lambda kv: names.get(kv[0], ""))
     ]
 
     blockers = list(crop_set.blockers)
@@ -353,21 +340,15 @@ class FineTuneRunsView(APIView):
         if segmentation_type is None:
             return _detail("Choose which organelle to fine-tune for.")
 
-        base_model = str(data.get("base_model") or "").strip() or _base_model_for(
-            segmentation_type
-        )
+        base_model = str(data.get("base_model") or "").strip() or _base_model_for(segmentation_type)
         if base_model not in MODEL_SPECS:
             return _detail(
-                "There is no released model for this organelle, so there is "
-                "nothing to fine-tune."
+                "There is no released model for this organelle, so there is nothing to fine-tune."
             )
 
         training_mode = str(data.get("mode") or data.get("training_mode") or "").strip()
         if training_mode and training_mode not in TRAINING_MODES:
-            return _detail(
-                "Choose whether to train on every annotated area or to hold one "
-                "back."
-            )
+            return _detail("Choose whether to train on every annotated area or to hold one back.")
         cv_benchmark = bool(data.get("cv_benchmark"))
 
         preview, scope, crop_set = _preview(segmentation_type, data)
@@ -381,9 +362,7 @@ class FineTuneRunsView(APIView):
 
         overwrite_id = str(data.get("overwrite_adapter_id") or "").strip()
         existing = (
-            Adapter.objects.filter(
-                name=name, segmentation_type=segmentation_type
-            ).first()
+            Adapter.objects.filter(name=name, segmentation_type=segmentation_type).first()
             if name
             else None
         )
@@ -399,8 +378,7 @@ class FineTuneRunsView(APIView):
             adapter = Adapter.objects.filter(id=overwrite_id).first()
             if adapter is None:
                 return _detail(
-                    "The fine-tune you asked to replace is no longer here. Start "
-                    "a new one instead."
+                    "The fine-tune you asked to replace is no longer here. Start a new one instead."
                 )
             if adapter.segmentation_type_id != segmentation_type.id:
                 return _detail(
@@ -582,9 +560,7 @@ class FineTuneRunProgressView(APIView):
 
     def get(self, request, adapter_id):
         adapter = get_object_or_404(Adapter, id=adapter_id)
-        return Response(
-            _progress_body(adapter, _job_for(adapter)), status=status.HTTP_200_OK
-        )
+        return Response(_progress_body(adapter, _job_for(adapter)), status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
@@ -599,9 +575,7 @@ def serialize_run(adapter: Adapter) -> dict:
     body.update(
         {
             "segmentation_type": (
-                str(adapter.segmentation_type_id)
-                if adapter.segmentation_type_id
-                else None
+                str(adapter.segmentation_type_id) if adapter.segmentation_type_id else None
             ),
             "experiment": (
                 {
@@ -616,9 +590,7 @@ def serialize_run(adapter: Adapter) -> dict:
             "cv_results": adapter.cv_results or {},
             "asset_count": len(scope_assets),
             "asset_ids": [str(asset.id) for asset in scope_assets],
-            "dataset_ids": [
-                str(dataset.id) for dataset in adapter.scope_datasets.all()
-            ],
+            "dataset_ids": [str(dataset.id) for dataset in adapter.scope_datasets.all()],
         }
     )
     return body
@@ -628,9 +600,7 @@ class FineTuneRunDetailView(APIView):
     """``GET /api/finetune/runs/<adapter_id>/``"""
 
     def get(self, request, adapter_id):
-        adapter = get_object_or_404(
-            Adapter.objects.select_related("experiment"), id=adapter_id
-        )
+        adapter = get_object_or_404(Adapter.objects.select_related("experiment"), id=adapter_id)
         return Response(serialize_run(adapter), status=status.HTTP_200_OK)
 
 
@@ -708,9 +678,7 @@ class FineTuneRunApplyView(APIView):
                 "legs": [
                     {
                         "segmentation_id": str(segmentation.id),
-                        "segmentation_type": (
-                            segmentation.segmentation_type.internal_name
-                        ),
+                        "segmentation_type": (segmentation.segmentation_type.internal_name),
                         "source_model": adapter.base_model,
                     }
                 ],

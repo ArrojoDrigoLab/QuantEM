@@ -184,9 +184,7 @@ def drop_outline_probability(existing: object) -> dict:
     features = dict(existing) if isinstance(existing, dict) else {}
     for key in list(features):
         name = str(key)
-        if name == OUTLINE_PROBABILITY_KEY or name.startswith(
-            OUTLINE_PROBABILITY_KEY_PREFIX
-        ):
+        if name == OUTLINE_PROBABILITY_KEY or name.startswith(OUTLINE_PROBABILITY_KEY_PREFIX):
             features.pop(key, None)
     return features
 
@@ -399,8 +397,7 @@ def measure_segments(
             segmentation.id,
         )
         return _all_unmeasured(
-            "This segmentation has no image behind it, so its objects cannot "
-            "be measured."
+            "This segmentation has no image behind it, so its objects cannot be measured."
         )
 
     try:
@@ -422,9 +419,7 @@ def measure_segments(
             try:
                 measurements = measure_polygon(target, polygon, bbox=segment.bbox)
             except Exception:
-                logger.warning(
-                    "Failed to measure segment %s", segment.id, exc_info=True
-                )
+                logger.warning("Failed to measure segment %s", segment.id, exc_info=True)
                 measurements = {}
 
         # ``MEASURED_MARKER_KEY`` rather than a truthiness test on the dict:

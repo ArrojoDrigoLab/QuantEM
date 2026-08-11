@@ -105,9 +105,7 @@ def select_device(preference: str | None = None) -> str:
         return requested
 
     fallback = available[0]
-    logger.warning(
-        "Requested device %r is not available; using %r instead", requested, fallback
-    )
+    logger.warning("Requested device %r is not available; using %r instead", requested, fallback)
     return fallback
 
 

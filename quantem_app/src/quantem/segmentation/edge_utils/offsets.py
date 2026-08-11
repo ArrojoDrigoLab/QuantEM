@@ -226,9 +226,7 @@ def apply_offsets(
     return adjusted
 
 
-def percentile_stretch(
-    image: np.ndarray, p_low: float = 2.0, p_high: float = 98.0
-) -> np.ndarray:
+def percentile_stretch(image: np.ndarray, p_low: float = 2.0, p_high: float = 98.0) -> np.ndarray:
     if image.size == 0:
         return image.astype(np.float32)
     low, high = np.percentile(image, [p_low, p_high])

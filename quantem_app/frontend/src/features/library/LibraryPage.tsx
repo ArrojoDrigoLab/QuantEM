@@ -221,7 +221,7 @@ function entryFromUploadedAsset(asset: AssetDetail): HomeEntry {
  * survive and become unassigned; the datasets do not, because a dataset cannot
  * exist outside an experiment.
  */
-export function describeExperimentDeletion(experiment: Experiment): string {
+function describeExperimentDeletion(experiment: Experiment): string {
   const images =
     experiment.asset_count === 0
       ? "It holds no images."
@@ -318,6 +318,7 @@ function ImageGrid({
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const [gridTop, setGridTop] = useState(0);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -334,6 +335,8 @@ function ImageGrid({
     const readViewport = () => {
       setScrollTop(window.scrollY);
       setViewportHeight(window.innerHeight);
+      const node = containerRef.current;
+      setGridTop(node ? node.getBoundingClientRect().top + window.scrollY : 0);
     };
     readViewport();
     window.addEventListener("scroll", readViewport, { passive: true });
@@ -350,9 +353,6 @@ function ImageGrid({
   );
   const rowHeight = CARD_HEIGHT + CARD_GAP;
   const rowCount = Math.ceil(images.length / columns);
-  const gridTop = containerRef.current
-    ? containerRef.current.getBoundingClientRect().top + scrollTop
-    : 0;
   const firstVisibleRow = Math.max(
     0,
     Math.floor((scrollTop - gridTop) / rowHeight) - GRID_OVERSCAN_ROWS

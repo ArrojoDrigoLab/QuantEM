@@ -140,9 +140,7 @@ class QueueStatusProgressTests(TestCase):
         _set_progress(cancelled, units_done=3, units_total=6, status="CANCELLED")
         _set_progress(remaining, units_done=1, units_total=4)
         response = self.client.get("/api/jobs/queue-status/")
-        (payload,) = [
-            job for job in response.data["running"] if job["id"] == str(remaining.id)
-        ]
+        (payload,) = [job for job in response.data["running"] if job["id"] == str(remaining.id)]
         batch = payload["batch_progress"]
         self.assertEqual(batch["units_abandoned"], 3)
         self.assertEqual(batch["units_reachable"], 63)

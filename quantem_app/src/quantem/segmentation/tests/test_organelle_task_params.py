@@ -159,9 +159,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
             for call in reporter.update.call_args_list
             if call.kwargs.get("message")
         ]
-        self.assertTrue(
-            any("Tile 120/120" in message for message in recorded_messages)
-        )
+        self.assertTrue(any("Tile 120/120" in message for message in recorded_messages))
 
     @patch("quantem.segmentation.organelle_tasks.persist_run_probability_maps")
     @patch("quantem.segmentation.organelle_tasks.run_inference_for_segmentation")
@@ -218,6 +216,4 @@ class OrganelleTaskInstanceParamsTests(TestCase):
             force_recompute_prob_maps=True,
         )
 
-        self.assertTrue(
-            mock_run_inference.call_args.kwargs["force_recompute_prob_maps"]
-        )
+        self.assertTrue(mock_run_inference.call_args.kwargs["force_recompute_prob_maps"])

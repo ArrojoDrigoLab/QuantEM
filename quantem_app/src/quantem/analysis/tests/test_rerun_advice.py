@@ -1,4 +1,4 @@
-""""Set the image's pixel size and re-run inference" was advice that could not work.
+""" "Set the image's pixel size and re-run inference" was advice that could not work.
 
 A user read that caveat, set the pixel size, and re-ran full segmentation over a
 proofread image. The run completed SUCCESS and returned::
@@ -104,9 +104,7 @@ class TheAdviceIsTrueTests(RerunAdviceTestCase):
 
         self._caveats(uncalibrated=True)
 
-        scale = next(
-            c for c in self._last["result"]["caveats"] if "not trained for" in c
-        )
+        scale = next(c for c in self._last["result"]["caveats"] if "not trained for" in c)
         self.assertIn("Set the image's pixel size and re-run inference", scale)
         self.assertIn("Re-running inference is not by itself enough", scale)
         self.assertIn("Discard objects and re-run", scale)

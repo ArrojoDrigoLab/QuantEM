@@ -224,14 +224,10 @@ class SegmentationConfirmBatchView(APIView):
             # that separated, is what stopped a single sub-pixel outline being
             # dropped in silence.
             kept = (
-                len(pieces)
-                if merge_overlaps
-                else len(filter_supported_confirmed_polygons(pieces))
+                len(pieces) if merge_overlaps else len(filter_supported_confirmed_polygons(pieces))
             )
             if len(pieces) > 1 or kept < len(pieces):
-                outline_outcomes.append(
-                    {"index": index, "areas": len(pieces), "kept": kept}
-                )
+                outline_outcomes.append({"index": index, "areas": len(pieces), "kept": kept})
 
             sam_score_raw = raw_segment.get("sam_score")
             sam_score = _parse_optional_sam_score(sam_score_raw)
@@ -241,9 +237,7 @@ class SegmentationConfirmBatchView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            incoming.append(
-                {"geometry": outline_geometry(pieces), "sam_score": sam_score}
-            )
+            incoming.append({"geometry": outline_geometry(pieces), "sam_score": sam_score})
 
         def _bool_flag(name: str, default: bool = False) -> bool:
             raw_value = request.data.get(name, default)
@@ -264,17 +258,13 @@ class SegmentationConfirmBatchView(APIView):
             overlay = register_confirmation_overlay_mutation(
                 segmentation=segmentation,
                 result=result,
-                fallback_geometries=[
-                    item["geometry"] for item in incoming if "geometry" in item
-                ],
+                fallback_geometries=[item["geometry"] for item in incoming if "geometry" in item],
             )
         result.pop("dirty_bbox", None)
         result["overlay"] = overlay
         measurement = result.pop("measurement", None) or MeasurementOutcome()
         result["measurement"] = measurement.as_payload()
-        result["outlines"] = separated_outlines_payload(
-            outline_outcomes, merged=merge_overlaps
-        )
+        result["outlines"] = separated_outlines_payload(outline_outcomes, merged=merge_overlaps)
 
         return Response(result, status=measurement_response_status(measurement))
 
@@ -430,11 +420,7 @@ class SegmentationRemoveAreaView(APIView):
                 feature_refresh_ids.append(str(segment.id))
 
                 base_segment = segment.resolve_base_segment_or_self()
-                base_features = (
-                    dict(segment.features)
-                    if isinstance(segment.features, dict)
-                    else {}
-                )
+                base_features = dict(segment.features) if isinstance(segment.features, dict) else {}
                 for polygon in remaining_polygons[1:]:
                     created_segment = SegmentObject.objects.create(
                         segmentation=segmentation,
@@ -517,9 +503,7 @@ class SegmentBatchDeleteView(APIView):
 
         qs = SegmentObject.objects.filter(segmentation=segmentation, id__in=ids)
         bboxes = [
-            bbox
-            for segment in qs.only(*_BBOX_ONLY_FIELDS)
-            if (bbox := segment.bbox) is not None
+            bbox for segment in qs.only(*_BBOX_ONLY_FIELDS) if (bbox := segment.bbox) is not None
         ]
         with transaction.atomic():
             deleted, _ = qs.delete()
@@ -532,8 +516,7 @@ class SegmentBatchDeleteView(APIView):
             overlay = register_overlay_mutation_all_bundles(
                 segmentation,
                 dirty_bbox=(
-                    merge_dirty_bboxes(segmentation, bboxes)
-                    or full_image_dirty_bbox(segmentation)
+                    merge_dirty_bboxes(segmentation, bboxes) or full_image_dirty_bbox(segmentation)
                 ),
             )
 

@@ -92,11 +92,7 @@ def _runtime_config_script(request: HttpRequest) -> str:
         "apiBaseUrl": origin,
         "dev": bool(settings.DEBUG),
     }
-    return (
-        "<script>window.__APP_CONFIG__="
-        + json.dumps(config)
-        + ";</script>"
-    )
+    return "<script>window.__APP_CONFIG__=" + json.dumps(config) + ";</script>"
 
 
 def _index_response(request: HttpRequest) -> HttpResponse:

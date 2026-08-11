@@ -6,9 +6,7 @@ from quantem.jobs.reporter import CancelToken, JobReporter
 
 
 @job_handler(JOB_TYPE_RUN_ANALYSIS)
-def handle_run_analysis(
-    payload: dict, reporter: JobReporter, cancel: CancelToken
-) -> dict:
+def handle_run_analysis(payload: dict, reporter: JobReporter, cancel: CancelToken) -> dict:
     """Run a quantitative analysis and write its export bundle.
 
     The payload is passed through untouched; ``analysis_run_id`` identifies both

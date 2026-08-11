@@ -154,18 +154,10 @@ class ExtractionReplacementGuaranteeTests(TestCase):
         )
 
         self.assertEqual(created, 1)
-        self.assertFalse(
-            SegmentObject.objects.filter(id=old_generated_candidate.id).exists()
-        )
-        self.assertFalse(
-            SegmentObject.objects.filter(id=old_generated_inferred.id).exists()
-        )
-        self.assertTrue(
-            SegmentObject.objects.filter(id=old_generated_outside_roi.id).exists()
-        )
-        self.assertTrue(
-            SegmentObject.objects.filter(id=preserved_manual_candidate.id).exists()
-        )
+        self.assertFalse(SegmentObject.objects.filter(id=old_generated_candidate.id).exists())
+        self.assertFalse(SegmentObject.objects.filter(id=old_generated_inferred.id).exists())
+        self.assertTrue(SegmentObject.objects.filter(id=old_generated_outside_roi.id).exists())
+        self.assertTrue(SegmentObject.objects.filter(id=preserved_manual_candidate.id).exists())
         self.assertTrue(SegmentObject.objects.filter(id=preserved_confirmed.id).exists())
         self.assertTrue(SegmentObject.objects.filter(id=preserved_excluded.id).exists())
 

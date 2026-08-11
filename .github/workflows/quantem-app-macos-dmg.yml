@@ -14,6 +14,11 @@ name: quantem-app macOS dmg
 # worth adding only if somebody asks for one.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "quantem_app/**"
+      - ".github/workflows/quantem-app-macos-dmg.yml"
   release:
     types: [published]
   workflow_dispatch:

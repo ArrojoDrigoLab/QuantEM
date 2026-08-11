@@ -38,9 +38,7 @@ def test_the_baked_fallback_matches_pyproject():
     )
 
 
-def test_a_frozen_build_with_no_metadata_resolves_the_baked_release(
-    monkeypatch, tmp_path
-):
+def test_a_frozen_build_with_no_metadata_resolves_the_baked_release(monkeypatch, tmp_path):
     """The exact frozen-build shape: no dist-info, no pyproject, sys.frozen."""
 
     def refuse(name: str) -> str:
@@ -60,9 +58,7 @@ def test_a_frozen_build_with_no_metadata_resolves_the_baked_release(
     assert resolved != "0+unknown"
 
 
-def test_an_unpacked_wheel_on_a_bare_path_also_gets_the_baked_release(
-    monkeypatch, tmp_path
-):
+def test_an_unpacked_wheel_on_a_bare_path_also_gets_the_baked_release(monkeypatch, tmp_path):
     """No metadata, no pyproject, NOT frozen: the last-ditch shape that used
     to be the only way to reach '0+unknown'."""
 

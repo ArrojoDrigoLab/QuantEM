@@ -73,9 +73,7 @@ def validate_asset_grouping(asset) -> None:
     """
     from django.core.exceptions import ValidationError
 
-    dataset_experiments = {
-        dataset.experiment_id for dataset in asset.datasets.all()
-    }
+    dataset_experiments = {dataset.experiment_id for dataset in asset.datasets.all()}
     if not dataset_experiments:
         return
     if asset.experiment_id is None:

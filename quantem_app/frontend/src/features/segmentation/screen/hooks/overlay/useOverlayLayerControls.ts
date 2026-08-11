@@ -89,18 +89,13 @@ export function useOverlayLayerControls({
     enabled: !!overlayManifest?.ngff_url,
   });
 
-  const ngffUrl = useMemo(() => {
-    if (!overlayManifest?.ngff_url) return null;
-    return withRasterRevision(
-      overlayManifest.ngff_url,
-      overlayManifest.bundle_version,
-      overlayManifest.applied_revision
-    );
-  }, [
-    overlayManifest?.ngff_url,
-    overlayManifest?.bundle_version,
-    overlayManifest?.applied_revision,
-  ]);
+  const ngffUrl = overlayManifest?.ngff_url
+    ? withRasterRevision(
+        overlayManifest.ngff_url,
+        overlayManifest.bundle_version,
+        overlayManifest.applied_revision
+      )
+    : null;
 
   const leftIdMapOverlay = useMemo<ViewerIdMapOverlaySpec | null>(() => {
     if (!ngffUrl || !lut) return null;

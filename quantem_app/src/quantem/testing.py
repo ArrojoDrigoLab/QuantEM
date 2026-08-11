@@ -47,9 +47,7 @@ TEST_PIXEL_SIZE_NM = 5.0
 # ---------------------------------------------------------------------------
 
 
-def make_em_like_array(
-    width: int = 512, height: int = 512, *, seed: int = 0
-) -> np.ndarray:
+def make_em_like_array(width: int = 512, height: int = 512, *, seed: int = 0) -> np.ndarray:
     """A deterministic 8-bit greyscale image with EM-ish texture and blobs.
 
     Not a simulation — just structure enough that thresholding, connected
@@ -74,9 +72,7 @@ def make_em_like_array(
     return np.clip(background, 0, 255).astype(np.uint8)
 
 
-def write_test_tiff(
-    path: Path, *, width: int = 512, height: int = 512, seed: int = 0
-) -> Path:
+def write_test_tiff(path: Path, *, width: int = 512, height: int = 512, seed: int = 0) -> Path:
     """Write a synthetic single-page greyscale TIFF carrying a resolution tag."""
     path.parent.mkdir(parents=True, exist_ok=True)
     array = make_em_like_array(width, height, seed=seed)
@@ -152,9 +148,7 @@ def create_small_test_image(
     abs_path = IMAGES_DIR / f"{uuid4().hex}.png"
     abs_path.parent.mkdir(parents=True, exist_ok=True)
     data = (
-        make_em_like_array(width, height)
-        if textured
-        else np.zeros((height, width), dtype=np.uint8)
+        make_em_like_array(width, height) if textured else np.zeros((height, width), dtype=np.uint8)
     )
     Image.fromarray(data, mode="L").save(abs_path)
     return _create_asset_openable(

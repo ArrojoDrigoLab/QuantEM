@@ -221,7 +221,7 @@ class SecondImportTests(UploadsDirectoryTestCase):
 
 
 class DeliberateSecondCopyTests(TestCase):
-    """"I know, import it anyway" -- the door in the refusal."""
+    """ "I know, import it anyway" -- the door in the refusal."""
 
     def _import(self, name: str, payload: bytes, **kwargs) -> Asset:
         detail = create_uploaded_asset(
@@ -297,12 +297,8 @@ class UploadEndpointTests(UploadsDirectoryTestCase):
     def test_the_second_upload_of_the_same_bytes_is_refused(self):
         payload = _tiff_bytes()
 
-        first = self.client.post(
-            UPLOAD_URL, {"file": _upload("grid2_cell04.tif", payload)}
-        )
-        second = self.client.post(
-            UPLOAD_URL, {"file": _upload("grid2_cell04.tif", payload)}
-        )
+        first = self.client.post(UPLOAD_URL, {"file": _upload("grid2_cell04.tif", payload)})
+        second = self.client.post(UPLOAD_URL, {"file": _upload("grid2_cell04.tif", payload)})
 
         self.assertEqual(first.status_code, 201, first.content[:300])
         # 400 today; 409 once the view answers with the identity payload. Both
@@ -358,9 +354,7 @@ class HashingIsStreamedTests(TestCase):
         path.write_bytes(payload)
         try:
             with open(path, "rb") as handle:
-                uploaded = UploadedFile(
-                    handle, "big.tif", "image/tiff", len(payload), None
-                )
+                uploaded = UploadedFile(handle, "big.tif", "image/tiff", len(payload), None)
                 tracemalloc.start()
                 try:
                     digest = sha256_of_upload(uploaded)

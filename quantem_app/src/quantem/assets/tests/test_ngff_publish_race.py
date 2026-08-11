@@ -73,7 +73,14 @@ def run_driver(mode: str, *args, timeout: int = 1800) -> dict:
     for name in ("TEMP", "TMP", "TMPDIR"):
         env[name] = str(tmp_dir)
     completed = subprocess.run(
-        [sys.executable, "-m", DRIVER, mode, *[str(value) for value in args], str(workdir / "work")],
+        [
+            sys.executable,
+            "-m",
+            DRIVER,
+            mode,
+            *[str(value) for value in args],
+            str(workdir / "work"),
+        ],
         env=env,
         capture_output=True,
         text=True,

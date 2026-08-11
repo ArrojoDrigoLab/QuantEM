@@ -53,9 +53,7 @@ def serialize_adapter(adapter: Adapter) -> dict[str, object]:
         "mode": adapter.mode,
         "steps": params.get("steps", 0),
         "trainable_params": adapter.trainable_params,
-        "segmentation_id": (
-            str(adapter.segmentation_id) if adapter.segmentation_id else None
-        ),
+        "segmentation_id": (str(adapter.segmentation_id) if adapter.segmentation_id else None),
         "split_mode": adapter.split_mode,
         "train_crop_names": sweep.get("train_crop_names", []),
         "heldout_crop_names": sweep.get("heldout_crop_names", []),
@@ -119,9 +117,7 @@ class AdaptCropsView(APIView):
         body = crop_set.as_api_dict()
         # Which rungs this machine can actually offer. threshold_only needs no
         # torch and no GPU, which is exactly why it is listed unconditionally.
-        body["modes"] = [MODE_THRESHOLD_ONLY] + (
-            [MODE_HEAD] if torch_available() else []
-        )
+        body["modes"] = [MODE_THRESHOLD_ONLY] + ([MODE_HEAD] if torch_available() else [])
 
         base_model = str(request.query_params.get("base_model") or "").strip()
         verdict = check_head_size(crop_set.crops, base_model) if base_model else None
@@ -156,11 +152,7 @@ class AdaptLatestView(APIView):
 
     def get(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
-        adapter = (
-            Adapter.objects.filter(segmentation=segmentation)
-            .order_by("-created_at")
-            .first()
-        )
+        adapter = Adapter.objects.filter(segmentation=segmentation).order_by("-created_at").first()
         if adapter is None:
             return Response({"adapter": None, "job_id": None}, status=status.HTTP_200_OK)
         # Matched on the payload, not on ``tags``: ``JSONField.__contains`` is
@@ -195,8 +187,7 @@ class AdaptStartView(APIView):
         base_model = str(data.get("base_model") or "").strip()
         if base_model not in MODEL_SPECS:
             return _error(
-                f"Unknown model {base_model!r}. Choose one of: "
-                f"{', '.join(sorted(MODEL_SPECS))}."
+                f"Unknown model {base_model!r}. Choose one of: {', '.join(sorted(MODEL_SPECS))}."
             )
 
         mode = str(data.get("mode") or MODE_THRESHOLD_ONLY).strip().lower()

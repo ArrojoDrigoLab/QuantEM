@@ -66,10 +66,9 @@ class DispatchFailureTests(TestCase):
 
     def _dispatch_with_failing_runner(self, job):
         scheduler = JobScheduler()
-        with mock.patch.object(
-            scheduler.runner, "can_dispatch", return_value=True
-        ), mock.patch.object(
-            scheduler.runner, "start_job", side_effect=OSError("no worker slot")
+        with (
+            mock.patch.object(scheduler.runner, "can_dispatch", return_value=True),
+            mock.patch.object(scheduler.runner, "start_job", side_effect=OSError("no worker slot")),
         ):
             scheduler.dispatch_ready()
         job.refresh_from_db()

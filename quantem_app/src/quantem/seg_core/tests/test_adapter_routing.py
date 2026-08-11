@@ -67,9 +67,7 @@ class ApplyActiveAdapterTests(TestCase):
         self.details: list[str] = []
 
     def _apply(self):
-        return apply_active_adapter(
-            self.segmenter, self.segmentation, self.details.append
-        )
+        return apply_active_adapter(self.segmenter, self.segmentation, self.details.append)
 
     def test_no_adapter_leaves_the_segmenter_alone(self):
         assert self._apply() is None
@@ -256,9 +254,7 @@ class AdaptedRunTests(TestCase):
         from quantem.seg_core.db.inference import run_inference_for_segmentation
 
         segmenter = DinoMitoSegmenter(source_model="quantem:mito", device="cpu")
-        result, image = run_inference_for_segmentation(
-            segmenter, self.segmentation, None
-        )
+        result, image = run_inference_for_segmentation(segmenter, self.segmentation, None)
         segments = segmenter.extract_instances(
             result.prob, image, result.prob_maps, coordinate_offset=(0, 0)
         )

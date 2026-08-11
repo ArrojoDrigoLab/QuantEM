@@ -169,6 +169,7 @@ _ABSOLUTE_PATH = re.compile(_DRIVE_OR_ROOT + r"[^\s'\"()\[\]<>|]*")
 #: with spaces in them that Windows is full of.
 _BARE_PATH = re.compile(_DRIVE_OR_ROOT + r"[^\n]*")
 
+
 def _job_type_vocabulary() -> tuple[str, ...]:
     """Every job type this build knows, live rather than copied.
 
@@ -199,7 +200,12 @@ def _job_type_vocabulary() -> tuple[str, ...]:
 #: off within a week.
 _INTERNAL_TASK = re.compile(
     r"(?<![\w.])(?:"
-    + "|".join([*(re.escape(t) for t in _job_type_vocabulary()), r"[a-z][a-z0-9_]*_(?:task|tasks|job|jobs|handler|worker|pipeline)"])
+    + "|".join(
+        [
+            *(re.escape(t) for t in _job_type_vocabulary()),
+            r"[a-z][a-z0-9_]*_(?:task|tasks|job|jobs|handler|worker|pipeline)",
+        ]
+    )
     + r")(?![\w])"
 )
 
@@ -413,9 +419,7 @@ _TOOLCHAIN_ROOTS: frozenset[str] = frozenset({"/home/web_user"})
 #: literal, ``D:\\x`` in a Python docstring or a JSON string, and ``D:\\\\x``
 #: in a docstring that is itself quoting an escaped path. The lookbehind keeps
 #: the ``s:/`` of every ``https://`` out.
-_HARDCODED_DRIVE = re.compile(
-    r"(?<![A-Za-z0-9])[A-Za-z]:(?:\\{1,4}|/)[A-Za-z0-9_.<%-]"
-)
+_HARDCODED_DRIVE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:(?:\\{1,4}|/)[A-Za-z0-9_.<%-]")
 
 #: ``\\HOST\share`` -- the worst of them, because it names a machine on a
 #: network rather than only a disk on one.

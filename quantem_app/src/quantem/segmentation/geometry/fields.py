@@ -68,14 +68,9 @@ def repair_geometry(
         except Exception as exc:
             raise ValueError(f"{subject} could not be repaired.") from exc
 
-    if (
-        repaired.is_empty
-        or not repaired.is_valid
-        or repaired.geom_type not in allowed_types
-    ):
+    if repaired.is_empty or not repaired.is_valid or repaired.geom_type not in allowed_types:
         raise ValueError(
-            f"{subject} must be a valid {'/'.join(allowed_types)}, "
-            f"got {repaired.geom_type}."
+            f"{subject} must be a valid {'/'.join(allowed_types)}, got {repaired.geom_type}."
         )
     return repaired
 
@@ -124,8 +119,7 @@ def bbox_property(prefix: str = "bbox", *, doc: str | None = None) -> property:
 
     def _get(self):
         values = [
-            getattr(self, name, None)
-            for name in (minx_attr, miny_attr, maxx_attr, maxy_attr)
+            getattr(self, name, None) for name in (minx_attr, miny_attr, maxx_attr, maxy_attr)
         ]
         if any(value is None for value in values):
             return None
@@ -137,9 +131,7 @@ def bbox_property(prefix: str = "bbox", *, doc: str | None = None) -> property:
                 setattr(self, name, None)
             return
         if not isinstance(value, BaseGeometry):
-            raise TypeError(
-                f"{prefix} must be a shapely geometry, got {type(value).__name__}."
-            )
+            raise TypeError(f"{prefix} must be a shapely geometry, got {type(value).__name__}.")
         if value.is_empty:
             raise ValueError(f"{prefix} must not be empty.")
         min_x, min_y, max_x, max_y = value.bounds
@@ -174,17 +166,13 @@ def point_property(
             return
         if isinstance(value, BaseGeometry):
             if value.is_empty or value.geom_type != "Point":
-                raise ValueError(
-                    f"{name} must be a non-empty Point, got {value.geom_type}."
-                )
+                raise ValueError(f"{name} must be a non-empty Point, got {value.geom_type}.")
             x_value, y_value = value.x, value.y
         else:
             try:
                 x_value, y_value = value
             except (TypeError, ValueError) as exc:
-                raise TypeError(
-                    f"{name} must be a shapely Point or an (x, y) pair."
-                ) from exc
+                raise TypeError(f"{name} must be a shapely Point or an (x, y) pair.") from exc
         setattr(self, x_attr, float(x_value))
         setattr(self, y_attr, float(y_value))
 

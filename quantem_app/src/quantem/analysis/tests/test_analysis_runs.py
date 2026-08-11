@@ -45,9 +45,7 @@ CANDIDATE_BOX = (150, 150)
 
 
 def _square(x: float, y: float, side: float = 20.0) -> Polygon:
-    return Polygon(
-        ((x, y), (x + side, y), (x + side, y + side), (x, y + side), (x, y))
-    )
+    return Polygon(((x, y), (x + side, y), (x + side, y + side), (x, y + side), (x, y)))
 
 
 class AnalysisRunTestCase(TestCase):
@@ -55,9 +53,7 @@ class AnalysisRunTestCase(TestCase):
 
     def setUp(self) -> None:
         self.client = APIClient()
-        self.image = create_small_test_image(
-            "Analysis Image", width=IMAGE_SIZE, height=IMAGE_SIZE
-        )
+        self.image = create_small_test_image("Analysis Image", width=IMAGE_SIZE, height=IMAGE_SIZE)
         self.asset = self.image.asset
 
         self.segmentation = ImageSegmentation.objects.create(
@@ -68,12 +64,9 @@ class AnalysisRunTestCase(TestCase):
         )
 
         self.objects = [
-            self._segment(self.segmentation, _square(x, y), "CONFIRMED")
-            for x, y in MITO_BOXES
+            self._segment(self.segmentation, _square(x, y), "CONFIRMED") for x, y in MITO_BOXES
         ]
-        self.candidate = self._segment(
-            self.segmentation, _square(*CANDIDATE_BOX), "CANDIDATE"
-        )
+        self.candidate = self._segment(self.segmentation, _square(*CANDIDATE_BOX), "CANDIDATE")
         # Tissue is the middle of the image: the corners are resin, and every
         # fraction below is relative to this, not to the whole frame.
         self._segment(self.tissue, _square(20, 20, side=160), "CONFIRMED")
@@ -172,9 +165,7 @@ class LoaderTests(AnalysisRunTestCase):
         )
 
     def test_pixel_size_comes_from_the_asset(self):
-        self.assertEqual(
-            loaders.pixel_size_nm(self.segmentation), TEST_PIXEL_SIZE_NM
-        )
+        self.assertEqual(loaders.pixel_size_nm(self.segmentation), TEST_PIXEL_SIZE_NM)
         self.asset.pixel_size_nm = None
         self.asset.save(update_fields=["pixel_size_nm"])
         self.segmentation.refresh_from_db()
@@ -266,9 +257,7 @@ class LoaderTests(AnalysisRunTestCase):
 
     def test_a_coordinate_that_is_not_a_position_is_dropped_and_named(self):
         """``nan``/``inf`` parse as floats and used to become points at (0, 0)."""
-        parsed = loaders.parse_points_csv(
-            "x,y\n10,20\nnan,nan\ninf,0\n-inf,0\n1e400,5\n30,40\n"
-        )
+        parsed = loaders.parse_points_csv("x,y\n10,20\nnan,nan\ninf,0\n-inf,0\n1e400,5\n30,40\n")
         self.assertEqual(parsed.xy.tolist(), [[10.0, 20.0], [30.0, 40.0]])
         self.assertEqual(parsed.n_unreadable, 4)
         self.assertEqual([line for line, _ in parsed.unreadable], [3, 4, 5, 6])
@@ -398,16 +387,12 @@ class ServiceTests(AnalysisRunTestCase):
         service.run_for_segmentation(run)
         run.refresh_from_db()
 
-        manifest = json.loads(
-            (Path(run.export_dir) / "manifest.json").read_text(encoding="utf-8")
-        )
+        manifest = json.loads((Path(run.export_dir) / "manifest.json").read_text(encoding="utf-8"))
         models = manifest["models"]
         self.assertIn("Confirmed segment objects", models["mask_source"])
         self.assertEqual(models["image_id"], str(self.asset.id))
         compartments = {entry["compartment"]: entry for entry in models["compartments"]}
-        self.assertEqual(
-            compartments["mito"]["n_confirmed_objects"], len(MITO_BOXES)
-        )
+        self.assertEqual(compartments["mito"]["n_confirmed_objects"], len(MITO_BOXES))
         self.assertIsNotNone(models["tissue"])
         self.assertIn("unweighted means", manifest["aggregation_rule"])
 
@@ -580,9 +565,7 @@ class ServiceTests(AnalysisRunTestCase):
         export_dir, three files on disk no row could name, and
         "CHECK constraint failed" as the explanation.
         """
-        run = self._make_run(
-            tissue_segmentation_id=str(self.tissue.id), replicates=5
-        )
+        run = self._make_run(tissue_segmentation_id=str(self.tissue.id), replicates=5)
         real = service.run_analysis
 
         def poisoned(inputs):
@@ -605,9 +588,7 @@ class ServiceTests(AnalysisRunTestCase):
         )
 
     def test_a_bundle_written_by_a_run_that_then_failed_is_not_left_behind(self):
-        run = self._make_run(
-            tissue_segmentation_id=str(self.tissue.id), replicates=5
-        )
+        run = self._make_run(tissue_segmentation_id=str(self.tissue.id), replicates=5)
         real = service.write_bundle
 
         def write_then_fail(results, out_dir, **kwargs):
@@ -673,9 +654,7 @@ class ServiceTests(AnalysisRunTestCase):
     def test_the_bundle_is_readable_when_nothing_was_confirmed(self):
         """``objects.csv`` used to be a zero-byte file, which
         ``pandas.read_csv`` refuses with ``EmptyDataError``."""
-        SegmentObject.objects.filter(segmentation=self.segmentation).update(
-            label_state="CANDIDATE"
-        )
+        SegmentObject.objects.filter(segmentation=self.segmentation).update(label_state="CANDIDATE")
         run = self._make_run(tissue_segmentation_id=str(self.tissue.id), replicates=5)
 
         service.run_for_segmentation(run)
@@ -686,12 +665,8 @@ class ServiceTests(AnalysisRunTestCase):
 
         bundle = Path(run.export_dir)
         for name in ("objects.csv", "image_summary.csv"):
-            self.assertGreater(
-                (bundle / name).stat().st_size, 0, f"{name} is zero-byte"
-            )
-        rows = list(
-            csv.DictReader((bundle / "objects.csv").open(encoding="utf-8-sig"))
-        )
+            self.assertGreater((bundle / name).stat().st_size, 0, f"{name} is zero-byte")
+        rows = list(csv.DictReader((bundle / "objects.csv").open(encoding="utf-8-sig")))
         self.assertEqual(rows, [])
         reader = csv.reader((bundle / "objects.csv").open(encoding="utf-8-sig"))
         self.assertIn("area_um2", next(reader))
@@ -922,9 +897,7 @@ class AnalysisApiTests(AnalysisRunTestCase):
         first = self._start(replicates=5).data["analysis_run_id"]
         second = self._start(replicates=5).data["analysis_run_id"]
 
-        response = self.client.get(
-            f"/api/segmentations/{self.segmentation.id}/analysis/"
-        )
+        response = self.client.get(f"/api/segmentations/{self.segmentation.id}/analysis/")
 
         self.assertEqual(response.status_code, 200)
         ids = [row["id"] for row in response.data]
@@ -977,9 +950,7 @@ class AnalysisApiTests(AnalysisRunTestCase):
         self.addCleanup(outside.unlink, True)
 
         request = APIRequestFactory().get("/")
-        response = AnalysisRunExportView.as_view()(
-            request, run_id=str(run.id), name=str(outside)
-        )
+        response = AnalysisRunExportView.as_view()(request, run_id=str(run.id), name=str(outside))
 
         self.assertEqual(response.status_code, 400, response.data)
 
@@ -1034,18 +1005,14 @@ class GroupRollupApiTests(AnalysisRunTestCase):
         normalised = loaders.normalise_params(
             {"group": group, "replicates": 5, **params}, segmentation=segmentation
         )
-        run = AnalysisRun.objects.create(
-            segmentation=segmentation, params=normalised, group=group
-        )
+        run = AnalysisRun.objects.create(segmentation=segmentation, params=normalised, group=group)
         service.run_for_segmentation(run)
         run.refresh_from_db()
         return run
 
     def _second_unit(self) -> ImageSegmentation:
         """A second image with two confirmed mitochondria instead of three."""
-        other = create_small_test_image(
-            "Second Unit", width=IMAGE_SIZE, height=IMAGE_SIZE
-        )
+        other = create_small_test_image("Second Unit", width=IMAGE_SIZE, height=IMAGE_SIZE)
         segmentation = ImageSegmentation.objects.create(
             asset=other.asset, segmentation_type=get_or_create_mitochondria_type()
         )
@@ -1059,8 +1026,8 @@ class GroupRollupApiTests(AnalysisRunTestCase):
         return response.data
 
     def test_group_mean_is_unweighted_over_units_and_says_so(self):
-        self._run(self.segmentation, group="fasted")          # 3 objects
-        self._run(self._second_unit(), group="fasted")        # 2 objects
+        self._run(self.segmentation, group="fasted")  # 3 objects
+        self._run(self._second_unit(), group="fasted")  # 2 objects
 
         body = self._groups()
 
@@ -1135,9 +1102,7 @@ class GroupRollupApiTests(AnalysisRunTestCase):
         (group,) = self._groups()["groups"]
 
         self.assertEqual(group["group"], "")
-        self.assertTrue(
-            any("no group label" in w for w in group["warnings"]), group["warnings"]
-        )
+        self.assertTrue(any("no group label" in w for w in group["warnings"]), group["warnings"])
 
     def test_a_circular_metric_is_named_as_such_in_the_rollup(self):
         """The rollup is the endpoint whose output goes in a figure, and it was
@@ -1153,20 +1118,14 @@ class GroupRollupApiTests(AnalysisRunTestCase):
         self.assertIn("enrichment_mito", body["circular_metrics"])
         self.assertIn("z_enrichment_mito", group["circular_metrics"])
         self.assertTrue(group["metrics"]["enrichment_mito"]["circular"])
-        self.assertIn(
-            "must not be reported", group["metrics"]["enrichment_mito"]["note"]
-        )
+        self.assertIn("must not be reported", group["metrics"]["enrichment_mito"]["note"])
         # A real measurement beside it is not flagged, or the flag means nothing.
         self.assertFalse(group["metrics"]["area_fraction_mito"]["circular"])
         self.assertNotIn("area_fraction_mito", body["circular_metrics"])
-        self.assertTrue(
-            any("circular" in w for w in group["warnings"]), group["warnings"]
-        )
+        self.assertTrue(any("circular" in w for w in group["warnings"]), group["warnings"])
 
     def test_the_runs_caveats_travel_with_the_group_mean(self):
-        run = self._run(
-            self.segmentation, group="fasted", points_source="centroids"
-        )
+        run = self._run(self.segmentation, group="fasted", points_source="centroids")
 
         (group,) = self._groups()["groups"]
 
@@ -1186,9 +1145,7 @@ class GroupRollupApiTests(AnalysisRunTestCase):
 
         shared = [entry for entry in group["caveats"] if entry["n_runs"] == 2]
         self.assertTrue(shared, group["caveats"])
-        self.assertEqual(
-            sorted(shared[0]["run_ids"]), sorted([str(first.id), str(second.id)])
-        )
+        self.assertEqual(sorted(shared[0]["run_ids"]), sorted([str(first.id), str(second.id)]))
         texts = [entry["text"] for entry in group["caveats"]]
         self.assertEqual(len(texts), len(set(texts)), "each sentence appears once")
 

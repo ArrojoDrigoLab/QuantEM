@@ -103,9 +103,7 @@ class RunIdentityTestCase(TestCase):
     """One calibrated 5 nm/px image; segmentations are added per test."""
 
     def setUp(self) -> None:
-        self.image = create_small_test_image(
-            "Run Identity", width=IMAGE_SIZE, height=IMAGE_SIZE
-        )
+        self.image = create_small_test_image("Run Identity", width=IMAGE_SIZE, height=IMAGE_SIZE)
         self.asset = self.image.asset
         self.exports_root = STORAGE_DIR / "exports_test" / self.id().rsplit(".", 1)[-1]
         shutil.rmtree(self.exports_root, ignore_errors=True)
@@ -117,9 +115,7 @@ class RunIdentityTestCase(TestCase):
     # --- fixture helpers ---------------------------------------------------
 
     def _segmentation(self, type_factory) -> ImageSegmentation:
-        return ImageSegmentation.objects.create(
-            asset=self.asset, segmentation_type=type_factory()
-        )
+        return ImageSegmentation.objects.create(asset=self.asset, segmentation_type=type_factory())
 
     def _object(
         self,
@@ -154,9 +150,7 @@ class RunIdentityTestCase(TestCase):
         run = AnalysisRun.objects.create(segmentation=subject, params=normalised)
         result = service.run_for_segmentation(run)
         manifest = json.loads(
-            (service.export_dir_for_run(run.id) / "manifest.json").read_text(
-                encoding="utf-8"
-            )
+            (service.export_dir_for_run(run.id) / "manifest.json").read_text(encoding="utf-8")
         )
         return run, {"result": result, "manifest": manifest}
 
@@ -298,9 +292,7 @@ class UnknownScaleTests(RunIdentityTestCase):
         empty = self._segmentation(get_or_create_er_type)
         self._object(mito, _square(30, 40), source_model="quantem:mito")
 
-        _run, got = self._run(
-            mito, compartments={"mito": str(mito.id), "er": str(empty.id)}
-        )
+        _run, got = self._run(mito, compartments={"mito": str(mito.id), "er": str(empty.id)})
         scale = self._compartment(got["manifest"], "er")["run"]["scale"]
 
         assert scale["ran_at"] == loaders.SCALE_UNKNOWN
@@ -315,9 +307,7 @@ class UnknownScaleTests(RunIdentityTestCase):
         empty = self._segmentation(get_or_create_er_type)
         self._object(mito, _square(30, 40), source_model="quantem:mito")
 
-        _run, got = self._run(
-            mito, compartments={"mito": str(mito.id), "er": str(empty.id)}
-        )
+        _run, got = self._run(mito, compartments={"mito": str(mito.id), "er": str(empty.id)})
 
         named = [c for c in got["result"]["caveats"] if "'er'" in c and "unknown" in c]
         assert named, got["result"]["caveats"]
@@ -331,9 +321,7 @@ class UnknownScaleTests(RunIdentityTestCase):
         for i in range(2):
             self._object(drawn, _square(120 + 30 * i, 120), source_model="manual")
 
-        _run, got = self._run(
-            mito, compartments={"mito": str(mito.id), "nucleus": str(drawn.id)}
-        )
+        _run, got = self._run(mito, compartments={"mito": str(mito.id), "nucleus": str(drawn.id)})
         scale = self._compartment(got["manifest"], "nucleus")["run"]["scale"]
 
         assert scale["ran_at"] == loaders.SCALE_UNKNOWN
@@ -429,9 +417,9 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
         er = self._er_with_stamps(threshold=0.5)
 
         _run, got = self._run(er, compartments={"er": str(er.id)})
-        threshold = self._compartment(got["manifest"], "er")["run"][
-            "foreground_threshold"
-        ]["by_pack"]["quantem:er"]
+        threshold = self._compartment(got["manifest"], "er")["run"]["foreground_threshold"][
+            "by_pack"
+        ]["quantem:er"]
 
         assert threshold["value"] == 0.5
         assert threshold["recorded_from"] == "the objects"
@@ -459,9 +447,7 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
             applied_at=timezone.now(),
         )
 
-        with mock.patch(
-            "quantem.finetune.models.active_adapter_for", return_value=adapter
-        ):
+        with mock.patch("quantem.finetune.models.active_adapter_for", return_value=adapter):
             _run, got = self._run(er, compartments={"er": str(er.id)})
 
         block = self._compartment(got["manifest"], "er")["run"]
@@ -500,12 +486,12 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
         assert sorted(threshold["values"]) == [0.45, 0.5]
         assert "more than one threshold" in threshold["unavailable"]["value"]
         assert [r["n_objects"] for r in block["runs"]] == [3, 2]
-        assert any("not all produced at the same foreground threshold" in c
-                   for c in got["result"]["caveats"])
-        assert any("not all produced under the same adapter" in c
-                   for c in got["result"]["caveats"])
-        assert any("2 different inference runs" in c
-                   for c in got["result"]["caveats"])
+        assert any(
+            "not all produced at the same foreground threshold" in c
+            for c in got["result"]["caveats"]
+        )
+        assert any("not all produced under the same adapter" in c for c in got["result"]["caveats"])
+        assert any("2 different inference runs" in c for c in got["result"]["caveats"])
 
     def test_objects_made_before_stamping_fall_back_and_say_so_at_the_top(self):
         er = self._segmentation(get_or_create_er_type)
@@ -529,9 +515,7 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
     def test_a_partly_stamped_compartment_names_how_many_are_unaccounted_for(self):
         er = self._segmentation(get_or_create_er_type)
         for i in range(3):
-            self._object(
-                er, _square(20 + 25 * i, 20), source_model="quantem:er", stamp=_stamp()
-            )
+            self._object(er, _square(20 + 25 * i, 20), source_model="quantem:er", stamp=_stamp())
         for i in range(2):
             self._object(er, _square(20 + 25 * i, 80), source_model="quantem:er")
 
@@ -584,9 +568,9 @@ class ManifestGapTests(RunIdentityTestCase):
         self._object(mito, _square(30, 40), source_model="quantem:mito")
 
         _run, got = self._run(mito, compartments={"mito": str(mito.id)})
-        entry = self._compartment(got["manifest"], "mito")["run"]["min_area"][
-            "by_pack"
-        ]["quantem:mito"]
+        entry = self._compartment(got["manifest"], "mito")["run"]["min_area"]["by_pack"][
+            "quantem:mito"
+        ]
 
         assert entry["value"] == 60, "quantem:mito's default_min_area"
         assert entry["recorded_from"] == "the segmentation's current configuration"
@@ -639,9 +623,7 @@ class ManifestGapTests(RunIdentityTestCase):
                 stamp=_stamp(run_id=RUN_A if i else RUN_B, threshold=0.5 - 0.05 * i),
             )
 
-        _run, got = self._run(
-            er, compartments={"er": str(er.id), "nucleus": str(empty.id)}
-        )
+        _run, got = self._run(er, compartments={"er": str(er.id), "nucleus": str(empty.id)})
 
         def walk(node: Any):
             if isinstance(node, dict):
@@ -656,8 +638,7 @@ class ManifestGapTests(RunIdentityTestCase):
             for field_name, reason in (node.get("unavailable") or {}).items():
                 head = field_name.split(".", 1)[0]
                 assert head in node, (
-                    f"{field_name!r} is explained but not present as null in "
-                    f"{sorted(node)}"
+                    f"{field_name!r} is explained but not present as null in {sorted(node)}"
                 )
                 assert isinstance(reason, str) and len(reason) > 20, (
                     f"{field_name!r} is null with no usable reason: {reason!r}"
@@ -816,13 +797,43 @@ class RealInferenceToManifestTests(TestCase):
         return Adapter.objects.create(**fields)
 
     def _infer_and_confirm(self) -> int:
+        from quantem.finetune.models import Adapter
+        from quantem.inference.specs import MODEL_SPECS
+        from quantem.jobs.handlers.rethreshold import handle_reextract_at_include_level
         from quantem.segmentation.organelle_tasks import run_segmentation_full_task
 
-        run_segmentation_full_task(
+        stored_count = run_segmentation_full_task(
             segmentation_id=str(self.segmentation.id),
             segmentation_type=self.segmentation.segmentation_type.internal_name,
             source_model="quantem:mito",
         )
+        assert stored_count == 1
+
+        # A model run now saves the threshold preview and deliberately creates
+        # no candidates. Applying that threshold is the separate action that
+        # materialises objects, so exercise both halves of the real flow.
+        active_adapter = (
+            Adapter.objects.filter(segmentation=self.segmentation, applied_at__isnull=False)
+            .order_by("-applied_at", "-created_at")
+            .first()
+        )
+        include_level = (
+            float(active_adapter.calibrated_threshold)
+            if active_adapter is not None and active_adapter.calibrated_threshold is not None
+            else float(MODEL_SPECS["quantem:mito"].threshold)
+        )
+        reporter = mock.Mock(job_id="include-level")
+        cancel = mock.Mock()
+        outcome = handle_reextract_at_include_level(
+            {
+                "segmentation_id": str(self.segmentation.id),
+                "source_model": "quantem:mito",
+                "include_level": include_level,
+            },
+            reporter,
+            cancel,
+        )
+        assert outcome["segment_count"] >= 1
         return SegmentObject.objects.filter(segmentation=self.segmentation).update(
             label_state="CONFIRMED"
         )
@@ -832,9 +843,7 @@ class RealInferenceToManifestTests(TestCase):
         run = AnalysisRun.objects.create(segmentation=self.segmentation, params=params)
         result = service.run_for_segmentation(run)
         manifest = json.loads(
-            (service.export_dir_for_run(run.id) / "manifest.json").read_text(
-                encoding="utf-8"
-            )
+            (service.export_dir_for_run(run.id) / "manifest.json").read_text(encoding="utf-8")
         )
         return {"result": result, "manifest": manifest}
 
@@ -848,8 +857,7 @@ class RealInferenceToManifestTests(TestCase):
         assert block["foreground_threshold"]["by_pack"]["quantem:mito"] == {
             "value": self.CALIBRATED,
             "source": (
-                "recorded on the 1 object quantem:mito produced here, by the "
-                "run that produced it"
+                "recorded on the 1 object quantem:mito produced here, by the run that produced it"
             ),
             "recorded_from": "the objects",
             "pack_default": 0.5,
@@ -861,9 +869,9 @@ class RealInferenceToManifestTests(TestCase):
         assert block["scale"]["ran_at_nm"] == 8.0
         assert block["scale"]["resampled"] is True
         assert block["caveats"] == []
-        assert not [
-            c for c in got["result"]["caveats"] if "not the run's" in c
-        ], got["result"]["caveats"]
+        assert not [c for c in got["result"]["caveats"] if "not the run's" in c], got["result"][
+            "caveats"
+        ]
 
     def test_the_manifest_names_the_device_a_real_run_finished_on(self):
         """The other end of the wire the reader was written against.
@@ -878,9 +886,7 @@ class RealInferenceToManifestTests(TestCase):
         assert self._infer_and_confirm() >= 1
 
         got = self._manifest()
-        device = got["manifest"]["models"]["compartments"][0]["run"][
-            "inference_device"
-        ]
+        device = got["manifest"]["models"]["compartments"][0]["run"]["inference_device"]
 
         assert device["value"] == "cpu"
         assert device["recorded_from"] == "the objects"
@@ -911,9 +917,7 @@ class BundleFileTests(RunIdentityTestCase):
             self._object(er, _square(20 + 25 * i, 20), source_model="quantem:er")
 
         run, got = self._run(er, compartments={"er": str(er.id)})
-        manifest = json.loads(
-            (Path(run.export_dir) / "manifest.json").read_text(encoding="utf-8")
-        )
+        manifest = json.loads((Path(run.export_dir) / "manifest.json").read_text(encoding="utf-8"))
 
         image_caveats = manifest["images"][0]["caveats"]
         assert any("current ones, not the run's" in c for c in image_caveats)
@@ -1043,9 +1047,7 @@ class AdapterBelongsToTheRunThatUsedItTests(RunIdentityTestCase):
     def test_a_run_with_no_adapter_says_so_rather_than_borrowing_one(self):
         self._adapter(applied_at=timezone.now())
         seg = self._segmentation(get_or_create_er_type)
-        self._object(
-            seg, _square(20, 20), source_model="quantem:er", stamp=_stamp()
-        )
+        self._object(seg, _square(20, 20), source_model="quantem:er", stamp=_stamp())
 
         _run, got = self._run(seg, compartments={"er": str(seg.id)})
         run = self._the_run(got)
@@ -1100,9 +1102,7 @@ class InferenceDeviceTests(RunIdentityTestCase):
         for i in range(2):
             stamp = _stamp()
             stamp[loaders.DEVICE_STAMP_FIELD] = "cuda"
-            self._object(
-                seg, _square(20 + 30 * i, 20), source_model="quantem:er", stamp=stamp
-            )
+            self._object(seg, _square(20 + 30 * i, 20), source_model="quantem:er", stamp=stamp)
 
         _run, got = self._run(seg, compartments={"er": str(seg.id)})
         device = self._compartment(got["manifest"], "er")["run"]["inference_device"]
@@ -1116,9 +1116,7 @@ class InferenceDeviceTests(RunIdentityTestCase):
         for i, name in enumerate(("cuda", "cpu")):
             stamp = _stamp()
             stamp[loaders.DEVICE_STAMP_FIELD] = name
-            self._object(
-                seg, _square(20 + 30 * i, 20), source_model="quantem:er", stamp=stamp
-            )
+            self._object(seg, _square(20 + 30 * i, 20), source_model="quantem:er", stamp=stamp)
 
         _run, got = self._run(seg, compartments={"er": str(seg.id)})
         device = self._compartment(got["manifest"], "er")["run"]["inference_device"]

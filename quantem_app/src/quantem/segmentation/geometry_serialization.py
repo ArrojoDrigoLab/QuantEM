@@ -108,9 +108,6 @@ def geometry_coords_from_polygon(
     if resolved_geometry is None or getattr(resolved_geometry, "exterior", None) is None:
         return []
     try:
-        return [
-            [float(coord[0]), float(coord[1])]
-            for coord in resolved_geometry.exterior.coords
-        ]
+        return [[float(coord[0]), float(coord[1])] for coord in resolved_geometry.exterior.coords]
     except Exception:
         return []

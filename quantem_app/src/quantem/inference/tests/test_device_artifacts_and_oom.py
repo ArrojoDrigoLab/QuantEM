@@ -58,9 +58,7 @@ def test_an_accelerator_trace_has_nowhere_to_go_but_its_own_name(device, expecte
 def test_the_index_is_not_part_of_the_name():
     """Two cards in one machine share an artifact; they are the same device
     kind and a per-index file would be two copies of one 1.2 GB trace."""
-    assert encoders.exported_encoder_name("cuda:0") == encoders.exported_encoder_name(
-        "cuda:7"
-    )
+    assert encoders.exported_encoder_name("cuda:0") == encoders.exported_encoder_name("cuda:7")
 
 
 # --- The stamp inside the archive --------------------------------------------
@@ -198,8 +196,9 @@ def test_one_window_that_does_not_fit_moves_the_run_to_the_processor(tmp_path):
         assert device == "cpu"
         return object(), "exported"
 
-    with patch.object(engine.LoadedModel, "_forward_batch", forward), patch.object(
-        engine, "build_module", fake_build
+    with (
+        patch.object(engine.LoadedModel, "_forward_batch", forward),
+        patch.object(engine, "build_module", fake_build),
     ):
         out = model.forward_tiles([np.zeros((4, 4), np.uint8)])
 
@@ -243,9 +242,11 @@ def test_a_fallback_keeps_the_user_s_own_head(tmp_path):
         return [np.zeros((4, 4), np.float32) for _ in tiles]
 
     fake_adapt = SimpleNamespace(load_head=lambda module, path: loaded.append(path))
-    with patch.object(engine.LoadedModel, "_forward_batch", forward), patch.object(
-        engine, "build_module", lambda *a, **k: (object(), "exported")
-    ), patch.dict("sys.modules", {"quantem.finetune.adapt": fake_adapt}):
+    with (
+        patch.object(engine.LoadedModel, "_forward_batch", forward),
+        patch.object(engine, "build_module", lambda *a, **k: (object(), "exported")),
+        patch.dict("sys.modules", {"quantem.finetune.adapt": fake_adapt}),
+    ):
         model.forward_tiles([np.zeros((4, 4), np.uint8)])
 
     assert loaded == [head]
@@ -285,7 +286,7 @@ def test_the_two_reasons_a_run_leaves_the_card_read_differently():
     assert "cannot run" in cannot
     assert "not enough memory" in no_room
     for sentence in (cannot, no_room):
-        assert "mitochondria" in sentence      # the organelle, not the pack id
+        assert "mitochondria" in sentence  # the organelle, not the pack id
         assert "quantem:mito" not in sentence
         assert "cuda" not in sentence
         assert "result is complete" in sentence
@@ -303,8 +304,19 @@ def test_no_device_sentence_carries_an_internal_name():
         ),
     ]
     forbidden = (
-        "quantem.", "torch", "cuda", "mps", "encoder_ts", "OutOfMemoryError",
-        "pip install", "GET ", "POST ", "/api/", "omniem:", "fp32", "bf16",
+        "quantem.",
+        "torch",
+        "cuda",
+        "mps",
+        "encoder_ts",
+        "OutOfMemoryError",
+        "pip install",
+        "GET ",
+        "POST ",
+        "/api/",
+        "omniem:",
+        "fp32",
+        "bf16",
     )
     for sentence in sentences:
         for token in forbidden:

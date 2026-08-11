@@ -47,18 +47,14 @@ class ValidateUploadFileTests(SimpleTestCase):
     def test_accepts_tiff_and_png(self):
         for name in ("scan.tif", "scan.TIFF", "scan.png"):
             with self.subTest(name=name):
-                is_valid, error = validate_upload_file(
-                    SimpleUploadedFile(name, b"bytes")
-                )
+                is_valid, error = validate_upload_file(SimpleUploadedFile(name, b"bytes"))
                 self.assertTrue(is_valid)
                 self.assertIsNone(error)
 
     def test_rejects_dropped_formats_by_naming_the_accepted_ones(self):
         for name in ("tomo.mrc", "stack.nd2", "scan.dm4", "sbfsem.avi", "photo.jpg"):
             with self.subTest(name=name):
-                is_valid, error = validate_upload_file(
-                    SimpleUploadedFile(name, b"bytes")
-                )
+                is_valid, error = validate_upload_file(SimpleUploadedFile(name, b"bytes"))
                 self.assertFalse(is_valid)
                 self.assertIn(".tif", error)
                 self.assertIn(".png", error)

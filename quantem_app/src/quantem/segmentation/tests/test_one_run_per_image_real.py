@@ -81,9 +81,7 @@ class RealTwoOrganelleRunTests(TransactionTestCase):
 
     def test_two_real_packs_share_one_row_and_one_monotone_count(self):
         planned = self.job.progress_units_total
-        self.assertIsNotNone(
-            planned, "the queued run could not say how big it was"
-        )
+        self.assertIsNotNone(planned, "the queued run could not say how big it was")
 
         reporter = JobReporter(str(self.job.id), min_interval_seconds=0.0)
         seen: list[int] = []
@@ -111,9 +109,7 @@ class RealTwoOrganelleRunTests(TransactionTestCase):
             reporter.deactivate()
 
         self.assertEqual(len(outcome["organelles"]), 2)
-        self.assertEqual(
-            {item["status"] for item in outcome["organelles"]}, {"SUCCESS"}
-        )
+        self.assertEqual({item["status"] for item in outcome["organelles"]}, {"SUCCESS"})
 
         self.job.refresh_from_db()
         # One row, one denominator, and it did not move under the run.
@@ -133,8 +129,6 @@ class RealTwoOrganelleRunTests(TransactionTestCase):
 
         # Sanity: this ran a real model, not a stub.
         self.assertGreaterEqual(
-            SegmentObject.objects.filter(
-                segmentation__asset=self.asset
-            ).count(),
+            SegmentObject.objects.filter(segmentation__asset=self.asset).count(),
             0,
         )

@@ -11,7 +11,7 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'quantem.core.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "quantem.core.settings")
 
 # Ensure directories exist before Django fully initializes
 from quantem.core.config import ensure_directories

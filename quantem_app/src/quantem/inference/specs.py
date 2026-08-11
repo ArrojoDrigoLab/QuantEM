@@ -65,11 +65,11 @@ class FamilySpec:
 
     key: str
     label: str
-    encoder: str          # encoder run name, as published
-    patch_size: int       # ViT patch edge; tile sizes are multiples of it
-    image_mean: float     # EM corpus normalisation -- never ImageNet
+    encoder: str  # encoder run name, as published
+    patch_size: int  # ViT patch edge; tile sizes are multiples of it
+    image_mean: float  # EM corpus normalisation -- never ImageNet
     image_std: float
-    input_mean: float     # scaling of the tensor the model is called with
+    input_mean: float  # scaling of the tensor the model is called with
     input_std: float
 
 
@@ -115,9 +115,9 @@ class OrganelleSpec:
     """
 
     key: str
-    internal_name: str      # segmentation-type internal name
-    segmenter_name: str     # registry key, e.g. "dino_mito"
-    generated_flag: str     # feature marker, e.g. "mito_generated"
+    internal_name: str  # segmentation-type internal name
+    segmenter_name: str  # registry key, e.g. "dino_mito"
+    generated_flag: str  # feature marker, e.g. "mito_generated"
     default_min_area: int
     #: Disk radius for the morphological closing applied to the thresholded
     #: mask before labeling, to consolidate a compact object fragmented by
@@ -174,18 +174,18 @@ SEGMENTER_NAME_TO_ORGANELLE: dict[str, str] = {
 class ModelSpec:
     """Everything inference needs to know about one released model pack."""
 
-    pack_id: str            # "quantem:mito"
+    pack_id: str  # "quantem:mito"
     family: str
     organelle: str
-    neck: str               # "naive_1x1" | "resnet34_detail"
-    decoder: str            # "affinity_mws" | "upernet" | "dpt"
-    adapt: str              # "last_n" | "full" | "lora8"
-    canonical_nm: float | None   # None = run at the asset's native resolution
-    tile_size: int          # 512 (patch 16) or 518 (patch 14)
+    neck: str  # "naive_1x1" | "resnet34_detail"
+    decoder: str  # "affinity_mws" | "upernet" | "dpt"
+    adapt: str  # "last_n" | "full" | "lora8"
+    canonical_nm: float | None  # None = run at the asset's native resolution
+    tile_size: int  # 512 (patch 16) or 518 (patch 14)
     patch_size: int
-    image_mean: float       # encoder EM corpus stats; see FamilySpec
+    image_mean: float  # encoder EM corpus stats; see FamilySpec
     image_std: float
-    input_mean: float       # scaling of the tensor the model is called with
+    input_mean: float  # scaling of the tensor the model is called with
     input_std: float
     threshold: float = DEFAULT_THRESHOLD
 
@@ -223,8 +223,7 @@ def _build_model_specs() -> dict[str, ModelSpec]:
         tile_size = int(arch["tile"])
         if tile_size % family_spec.patch_size != 0:
             raise ValueError(
-                f"{pack_id}: tile {tile_size} is not a multiple of patch "
-                f"{family_spec.patch_size}"
+                f"{pack_id}: tile {tile_size} is not a multiple of patch {family_spec.patch_size}"
             )
         canonical = arch["canonical_nm"]
         specs[pack_id] = ModelSpec(

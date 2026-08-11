@@ -61,11 +61,7 @@ SRC_ROOT = Path(quantem.__file__).resolve().parent
 
 
 def _source_files() -> list[Path]:
-    return [
-        path
-        for path in SRC_ROOT.rglob("*.py")
-        if "__pycache__" not in path.parts
-    ]
+    return [path for path in SRC_ROOT.rglob("*.py") if "__pycache__" not in path.parts]
 
 
 def _callee_name(node: ast.Call) -> str | None:

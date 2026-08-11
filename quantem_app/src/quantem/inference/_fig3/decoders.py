@@ -34,7 +34,9 @@ from .schema import DecoderSpec
 class _PPM(nn.Module):
     """Pyramid Pooling Module: adaptive-pool the coarsest map at several bins, fuse."""
 
-    def __init__(self, in_channels: int, out_channels: int, bins: tuple[int, ...] = (1, 2, 3, 6)) -> None:
+    def __init__(
+        self, in_channels: int, out_channels: int, bins: tuple[int, ...] = (1, 2, 3, 6)
+    ) -> None:
         super().__init__()
         self.stages = nn.ModuleList(ConvGNAct(in_channels, out_channels, k=1) for _ in bins)
         self.bins = tuple(bins)
@@ -52,7 +54,9 @@ class _PPM(nn.Module):
 class UPerNet(nn.Module):
     """PPM on the coarsest level + FPN over the pyramid -> fuse -> seg head."""
 
-    def __init__(self, in_channels: int, strides: tuple, num_classes: int, channels: int = 256) -> None:
+    def __init__(
+        self, in_channels: int, strides: tuple, num_classes: int, channels: int = 256
+    ) -> None:
         super().__init__()
         self.strides = tuple(strides)
         n = len(self.strides)
@@ -100,7 +104,9 @@ class _ResidualConvUnit(nn.Module):
 class DPT(nn.Module):
     """DPT-style dense decoder: reassemble pyramid levels + progressive fusion."""
 
-    def __init__(self, in_channels: int, strides: tuple, num_classes: int, channels: int = 256) -> None:
+    def __init__(
+        self, in_channels: int, strides: tuple, num_classes: int, channels: int = 256
+    ) -> None:
         super().__init__()
         self.strides = tuple(strides)
         n = len(self.strides)
@@ -160,8 +166,16 @@ class AffinityMWS(nn.Module):
     # (dy, dx). The first N_SHORT are the nearest-neighbour attractive edges;
     # the rest are long-range repulsive mutex edges.
     DEFAULT_OFFSETS = (
-        (0, 1), (1, 0), (1, 1), (1, -1),
-        (0, 3), (3, 0), (0, 9), (9, 0), (9, 9), (9, -9),
+        (0, 1),
+        (1, 0),
+        (1, 1),
+        (1, -1),
+        (0, 3),
+        (3, 0),
+        (0, 9),
+        (9, 0),
+        (9, 9),
+        (9, -9),
     )
     N_SHORT = 4
 

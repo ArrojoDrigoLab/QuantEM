@@ -94,12 +94,8 @@ class ObjectTableTestCase(RunIdentityTestCase):
         return {
             "result": got["result"],
             "manifest": got["manifest"],
-            "objects": list(
-                csv.DictReader((out / "objects.csv").open(encoding="utf-8-sig"))
-            ),
-            "images": list(
-                csv.DictReader((out / "image_summary.csv").open(encoding="utf-8-sig"))
-            ),
+            "objects": list(csv.DictReader((out / "objects.csv").open(encoding="utf-8-sig"))),
+            "images": list(csv.DictReader((out / "image_summary.csv").open(encoding="utf-8-sig"))),
         }
 
     @staticmethod
@@ -150,13 +146,11 @@ class OneRatioNotTwoTests(ObjectTableTestCase):
         self.assertIn("PCA", reason)
 
     def test_the_manifest_defines_the_surviving_ratio(self):
-        """"Which is which" cannot be answered by the name on its own."""
+        """ "Which is which" cannot be answered by the name on its own."""
         entry = self._file_entry(self._bundle()["manifest"], "objects.csv")
 
         self.assertTrue(
-            entry["column_notes"]["elongation"].startswith(
-                "major_axis_px / max(minor_axis_px, 1)"
-            ),
+            entry["column_notes"]["elongation"].startswith("major_axis_px / max(minor_axis_px, 1)"),
             entry["column_notes"]["elongation"],
         )
 
@@ -164,7 +158,9 @@ class OneRatioNotTwoTests(ObjectTableTestCase):
         entry = self._file_entry(self._bundle()["manifest"], "objects.csv")
         derived = entry["columns_derived_from"]
 
-        self.assertEqual(derived["equivalent_diameter_px"], "area_px alone (a monotone transform of it)")
+        self.assertEqual(
+            derived["equivalent_diameter_px"], "area_px alone (a monotone transform of it)"
+        )
         self.assertIn("area_px", derived["area_um2"])
         self.assertIn("correlation matrix", entry["columns_are_not_independent"])
 
@@ -216,21 +212,19 @@ class TwoPixelSizeColumnsTests(ObjectTableTestCase):
         for row in bundle["objects"]:
             self.assertEqual(row["values_in_pixel_size_nm"], "")
 
-        objects_note = self._file_entry(bundle["manifest"], "objects.csv")[
-            "column_notes"
-        ]["values_in_pixel_size_nm"]
+        objects_note = self._file_entry(bundle["manifest"], "objects.csv")["column_notes"][
+            "values_in_pixel_size_nm"
+        ]
         self.assertIn("image_summary.csv", objects_note)
         self.assertIn("calibrated column is true", objects_note)
 
-        images_note = self._file_entry(bundle["manifest"], "image_summary.csv")[
-            "column_notes"
-        ]["pixel_size_nm"]
+        images_note = self._file_entry(bundle["manifest"], "image_summary.csv")["column_notes"][
+            "pixel_size_nm"
+        ]
         self.assertIn("values_in_pixel_size_nm", images_note)
 
         self.assertIn("image_key", bundle["manifest"]["outputs"]["joining"])
-        self.assertIn(
-            "values_in_pixel_size_nm", bundle["manifest"]["outputs"]["joining"]
-        )
+        self.assertIn("values_in_pixel_size_nm", bundle["manifest"]["outputs"]["joining"])
 
 
 class TheScaleIsNotADistributionTests(ObjectTableTestCase):
@@ -256,9 +250,7 @@ class TheScaleIsNotADistributionTests(ObjectTableTestCase):
         result = self._bundle()["result"]
         summary = result["objects"]["summary"]
 
-        self.assertTrue(
-            all(key not in summary for key in ("pixel_size_nm", "aspect_ratio"))
-        )
+        self.assertTrue(all(key not in summary for key in ("pixel_size_nm", "aspect_ratio")))
         for caveat in result["caveats"]:
             if "metrics" in caveat and "measured on fewer than" in caveat:
                 self.assertIn(f"of {len(summary)} metrics", caveat)

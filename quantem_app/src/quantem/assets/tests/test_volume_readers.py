@@ -59,9 +59,7 @@ class ImageSequenceTests(SimpleTestCase):
             Image.fromarray(np.full((4, 5), 10, dtype=np.uint8), mode="L").save(
                 directory / "slice_2.png"
             )
-            tifffile.imwrite(
-                str(directory / "slice_10.tif"), np.full((4, 5), 20, dtype=np.uint8)
-            )
+            tifffile.imwrite(str(directory / "slice_10.tif"), np.full((4, 5), 20, dtype=np.uint8))
             (directory / "notes.txt").write_text("not a slice", encoding="utf-8")
             (directory / "preview.avi").write_bytes(b"not a slice either")
 

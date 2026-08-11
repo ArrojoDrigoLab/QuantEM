@@ -108,9 +108,7 @@ def test_every_model_failure_gives_the_one_shared_answer(exc):
 
 
 def test_missing_weights_and_an_unbuildable_pack_read_differently():
-    absent = translate_model_error(
-        ModelWeightsNotInstalled("x"), pack_id="quantem:mito"
-    )
+    absent = translate_model_error(ModelWeightsNotInstalled("x"), pack_id="quantem:mito")
     unbuildable = translate_model_error(
         ModelArchitectureUnavailable(MAINTAINER_TEXT), pack_id="quantem:mito"
     )

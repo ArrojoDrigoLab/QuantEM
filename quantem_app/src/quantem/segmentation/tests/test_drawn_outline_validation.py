@@ -48,9 +48,7 @@ class DrawnOutlineValidationTests(TestCase):
         self.url = f"/api/segmentations/{self.segmentation.id}/segments/"
 
     def _post(self, coords, **extra):
-        return self.client.post(
-            self.url, {"geometry_coords": coords, **extra}, format="json"
-        )
+        return self.client.post(self.url, {"geometry_coords": coords, **extra}, format="json")
 
     def test_a_self_crossing_lasso_is_a_400_naming_what_went_wrong(self):
         # A bowtie: the stroke crosses itself once, and make_valid splits it.
@@ -61,9 +59,7 @@ class DrawnOutlineValidationTests(TestCase):
         self.assertIn("crosses itself", error)
         # It says what to do, not only what is wrong.
         self.assertIn("Redraw", error)
-        self.assertFalse(
-            SegmentObject.objects.filter(segmentation=self.segmentation).exists()
-        )
+        self.assertFalse(SegmentObject.objects.filter(segmentation=self.segmentation).exists())
 
     def test_a_self_touching_ring_that_repairs_cleanly_is_still_accepted(self):
         """Only a repair that *splits* the shape is refused.
@@ -94,9 +90,7 @@ class DrawnOutlineValidationTests(TestCase):
                 # The sentence carries both numbers the user needs to see.
                 self.assertIn("256x256", response.data["error"])
 
-        self.assertFalse(
-            SegmentObject.objects.filter(segmentation=self.segmentation).exists()
-        )
+        self.assertFalse(SegmentObject.objects.filter(segmentation=self.segmentation).exists())
 
     def test_an_outline_partly_over_the_edge_is_kept(self):
         """Objects genuinely run off the edge of a field of view."""
@@ -126,9 +120,7 @@ class DrawnOutlineValidationTests(TestCase):
 
     def test_the_size_is_read_off_the_asset_not_by_opening_the_image(self):
         """Validating a request body must not depend on the file being reachable."""
-        self.assertEqual(
-            segmentation_image_size(self.segmentation), (SIZE, SIZE)
-        )
+        self.assertEqual(segmentation_image_size(self.segmentation), (SIZE, SIZE))
         self.segmentation.asset.logical_width = None
         self.assertIsNone(segmentation_image_size(self.segmentation))
 

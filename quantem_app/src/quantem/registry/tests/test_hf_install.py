@@ -89,7 +89,8 @@ class FakeRepo:
             "family": family,
             "organelle": organelle,
             "architecture": {
-                "encoder": "vit_base_patch16_dinov3_qkvb" if family == "quantem"
+                "encoder": "vit_base_patch16_dinov3_qkvb"
+                if family == "quantem"
                 else "vit_large_patch14_dinov2.lvd142m",
                 "patch_size": 16 if family == "quantem" else 14,
                 "embed_dim": 768 if family == "quantem" else 1024,
@@ -178,8 +179,13 @@ def test_install_converts_verifies_and_records_provenance(repo):
 
     assert cache.installed("quantem:mito")
     root = cache.pack_dir("quantem:mito")
-    for name in (cache.HEAD_NAME, cache.CONFIG_NAME, cache.INDEX_NAME, HF_ENCODER_NAME,
-                 cache.RECORD_NAME):
+    for name in (
+        cache.HEAD_NAME,
+        cache.CONFIG_NAME,
+        cache.INDEX_NAME,
+        HF_ENCODER_NAME,
+        cache.RECORD_NAME,
+    ):
         assert (root / name).exists(), name
 
     record = cache.read_record("quantem:mito")
@@ -196,8 +202,14 @@ def test_install_converts_verifies_and_records_provenance(repo):
     import torch
 
     head = torch.load(str(root / cache.HEAD_NAME), map_location="cpu", weights_only=False)
-    assert set(head) == {"neck", "decoder", "encoder_trainable", "adapters",
-                         "conditioner", "meta_vocab"}
+    assert set(head) == {
+        "neck",
+        "decoder",
+        "encoder_trainable",
+        "adapters",
+        "conditioner",
+        "meta_vocab",
+    }
     assert all(k.startswith("backbone.blocks.") for k in head["encoder_trainable"])
 
     # The synthesised config parses through the real loader.
@@ -235,7 +247,8 @@ def test_omniem_adapters_become_conv_lora_state(repo):
 
     head = torch.load(
         str(cache.pack_dir("omniem:ld") / cache.HEAD_NAME),
-        map_location="cpu", weights_only=False,
+        map_location="cpu",
+        weights_only=False,
     )
     assert all(k.startswith("_conv_lora.") for k in head["encoder_trainable"])
     assert head["adapters"] and all(not k.startswith("_conv_lora") for k in head["adapters"])
@@ -266,8 +279,8 @@ def test_a_digest_mismatch_aborts_naming_both_digests(repo):
         install_pack_from_hf("quantem:mito", export=False)
 
     message = str(excinfo.value)
-    assert "0" * 64 in message          # the expected digest
-    assert real_digest in message       # the actual digest
+    assert "0" * 64 in message  # the expected digest
+    assert real_digest in message  # the actual digest
     assert not cache.installed("quantem:mito")
     assert not cache.pack_dir("quantem:mito").exists()
 
@@ -480,10 +493,12 @@ class TestOrphanBlobGc:
         pack_root = cache.pack_dir("quantem:mito")
         pack_root.mkdir(parents=True)
         (pack_root / cache.RECORD_NAME).write_text(
-            json.dumps({
-                "pack_id": "quantem:mito",
-                "head": {"filename": cache.HEAD_NAME, "sha256": referenced.name},
-            }),
+            json.dumps(
+                {
+                    "pack_id": "quantem:mito",
+                    "head": {"filename": cache.HEAD_NAME, "sha256": referenced.name},
+                }
+            ),
             encoding="utf-8",
         )
 
@@ -707,9 +722,7 @@ class TestCliRouting:
         monkeypatch.setenv("QUANTEM_DATA_DIR", str(tmp_path))
         bundle = tmp_path / "bundle"
         bundle.mkdir()
-        with patch(
-            "quantem.registry.install.install_all_from_bundle", return_value=[]
-        ) as install:
+        with patch("quantem.registry.install.install_all_from_bundle", return_value=[]) as install:
             rc = cli.cmd_models_install(self._args(str(bundle)))
         assert rc == 0
         assert install.call_args.args[0] == bundle

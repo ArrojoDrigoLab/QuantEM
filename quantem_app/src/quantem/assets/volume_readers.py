@@ -231,17 +231,13 @@ class _TiffVolumeSource(VolumeSource):
             # file must not calibrate differently depending on whether it was
             # imported as an image or as a volume.
             if x is None:
-                x, conflict, source = in_plane_pixel_size_nm(
-                    page, "XResolution", res_unit
-                )
+                x, conflict, source = in_plane_pixel_size_nm(page, "XResolution", res_unit)
                 if conflict:
                     conflicts.append(conflict)
                 if x is not None and self._calibration_source is None:
                     self._calibration_source = source
             if y is None:
-                y, conflict, source = in_plane_pixel_size_nm(
-                    page, "YResolution", res_unit
-                )
+                y, conflict, source = in_plane_pixel_size_nm(page, "YResolution", res_unit)
                 if conflict:
                     conflicts.append(conflict)
                 if y is not None and self._calibration_source is None:
@@ -271,9 +267,7 @@ class _TiffVolumeSource(VolumeSource):
         return extra
 
     def _page_index(self, z: int) -> int:
-        idx = [
-            z if ax == self._depth_axis else 0 for ax in self._non_spatial_axes
-        ]
+        idx = [z if ax == self._depth_axis else 0 for ax in self._non_spatial_axes]
         if not idx:
             return 0
         return int(np.ravel_multi_index(idx, self._non_spatial_shape))
@@ -383,9 +377,7 @@ class _PngVolumeSource(VolumeSource):
 
     def read_plane(self, z: int) -> np.ndarray:
         if int(z) != 0:
-            raise IndexError(
-                f"PNG source {self._path} has a single plane; requested plane {z}"
-            )
+            raise IndexError(f"PNG source {self._path} has a single plane; requested plane {z}")
         return _as_2d_plane(_read_png_array(self._path))
 
 
@@ -428,9 +420,7 @@ def _spatial_hw(axes: str, shape: tuple[int, ...]) -> tuple[int, int]:
     return height, width
 
 
-def _plane_from_array(
-    array: np.ndarray, axes: str, depth_axis: str | None, z: int
-) -> np.ndarray:
+def _plane_from_array(array: np.ndarray, axes: str, depth_axis: str | None, z: int) -> np.ndarray:
     """Index a multi-dimensional array down to a single 2D (Y, X) plane."""
 
     axes = axes.upper()
@@ -538,9 +528,9 @@ def _xml_attr(xml: str, name: str):
 #: 1 means the resolution is a unitless aspect ratio and carries no physical
 #: scale, so it must not be converted to nanometres at all.
 _TIFF_RESOLUTION_UNIT_NM: dict[int, float | None] = {
-    1: None,            # no absolute unit
-    2: 25_400_000.0,    # inch
-    3: 10_000_000.0,    # centimetre
+    1: None,  # no absolute unit
+    2: 25_400_000.0,  # inch
+    3: 10_000_000.0,  # centimetre
 }
 
 _TIFF_RESOLUTION_UNIT_NAME = {2: "inch", 3: "centimetre"}
@@ -786,9 +776,7 @@ def in_plane_pixel_size_nm(page, tag_name: str, unit: str | None) -> PixelSizeRe
             )
         return PixelSizeReading(vendor_nm, _join_notes(notes), PIXEL_SIZE_SOURCE_FIBICS)
 
-    return PixelSizeReading(
-        tag_nm, _join_notes(notes), tag_source if tag_nm is not None else None
-    )
+    return PixelSizeReading(tag_nm, _join_notes(notes), tag_source if tag_nm is not None else None)
 
 
 def _resolution_tag_nm(page, tag_name: str, unit: str | None) -> float | None:

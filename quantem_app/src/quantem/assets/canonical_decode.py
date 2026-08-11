@@ -206,9 +206,7 @@ class Conversion:
             "strategy": self.strategy,
             "window": list(self.window) if self.window else None,
             "observed": list(self.observed) if self.observed else None,
-            "robust_interval": (
-                list(self.robust_interval) if self.robust_interval else None
-            ),
+            "robust_interval": (list(self.robust_interval) if self.robust_interval else None),
             "full_range_levels": self.full_range_levels,
             "notice": self.notice,
         }
@@ -273,9 +271,7 @@ def sniff_container(path: Path) -> str:
     for magic in _TIFF_MAGICS:
         if head.startswith(magic):
             return CONTAINER_TIFF
-    raise UnrecognisedContainer(
-        f"{path.name} is neither a PNG nor a TIFF (first bytes {head!r})"
-    )
+    raise UnrecognisedContainer(f"{path.name} is neither a PNG nor a TIFF (first bytes {head!r})")
 
 
 def source_fingerprint(path: Path) -> str:
@@ -585,9 +581,7 @@ def _to_uint8(plane: np.ndarray) -> tuple[np.ndarray, Conversion]:
                 strategy="identity",
                 label="uint8:identity",
             )
-        return _scale_integer(
-            plane, declared_max=2**width - 1, width=width, work=np.float32
-        )
+        return _scale_integer(plane, declared_max=2**width - 1, width=width, work=np.float32)
     raise UnsupportedPixelType(f"unsupported pixel dtype {dtype}")
 
 
@@ -750,9 +744,7 @@ def decode_canonical_plane(path, *, declared: dict | None = None) -> CanonicalPl
     except MemoryError as exc:
         raise ValueError(f"Out of memory: Image is too large to process. {exc}") from exc
     except Exception as exc:
-        raise ValueError(
-            f"Error decoding {container.upper()} to 8-bit grayscale: {exc}"
-        ) from exc
+        raise ValueError(f"Error decoding {container.upper()} to 8-bit grayscale: {exc}") from exc
 
     band, bands = _band0(read.array, read.axes)
     plane, conversion = _to_uint8(band)

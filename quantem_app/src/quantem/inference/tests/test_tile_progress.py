@@ -159,7 +159,9 @@ class SegmenterReportsOntoTheJobRow(TestCase):
         JobReporter(str(job.id), min_interval_seconds=0.0)
         segmenter = inference_segmenter.DinoMitoSegmenter(source_model="quantem:mito")
         loaded = engine.LoadedModel(
-            spec=MODEL_SPECS["quantem:mito"], device="cpu", module=None,
+            spec=MODEL_SPECS["quantem:mito"],
+            device="cpu",
+            module=None,
             forward=lambda tile: np.zeros(tile.shape, dtype=np.float32),
         )
         self.addCleanup(setattr, engine, "load_model", engine.load_model)

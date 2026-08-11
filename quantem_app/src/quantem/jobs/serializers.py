@@ -247,9 +247,7 @@ def aggregate_batch_progress(jobs) -> dict | None:
         "runs_failed": counts["FAILED"],
         "runs_cancelled": counts["CANCELLED"],
         "complete": open_runs == 0,
-        "eta_seconds": (
-            None if (unknown_eta or not etas) else round(max(etas), 1)
-        ),
+        "eta_seconds": (None if (unknown_eta or not etas) else round(max(etas), 1)),
         "runs": runs,
     }
 
@@ -407,9 +405,7 @@ class JobCreateSerializer(serializers.Serializer):
     type = serializers.ChoiceField(choices=sorted(ALLOWED_JOB_TYPES))
     payload = serializers.JSONField(default=dict)
     priority = serializers.ChoiceField(choices=["high", "default"], required=False)
-    resource_class = serializers.ChoiceField(
-        choices=["cpu", "gpu"], required=False
-    )
+    resource_class = serializers.ChoiceField(choices=["cpu", "gpu"], required=False)
     queue_name = serializers.ChoiceField(
         choices=sorted(ALLOWED_QUEUE_NAMES),
         required=False,
@@ -455,11 +451,7 @@ class JobCreateSerializer(serializers.Serializer):
             attrs["queue_name"] = defaults["queue_name"]
         elif queue_name != defaults["queue_name"]:
             raise serializers.ValidationError(
-                {
-                    "queue_name": (
-                        f"{job_type} must use queue_name={defaults['queue_name']}."
-                    )
-                }
+                {"queue_name": (f"{job_type} must use queue_name={defaults['queue_name']}.")}
             )
 
         return attrs

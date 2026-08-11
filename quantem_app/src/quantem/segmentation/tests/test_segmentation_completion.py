@@ -61,9 +61,7 @@ class _CompletionTestBase(TestCase):
         return SegmentObject.objects.create(**defaults)
 
     def _candidates(self, count: int) -> list[SegmentObject]:
-        return [
-            self._segment(index, label_state="CANDIDATE") for index in range(count)
-        ]
+        return [self._segment(index, label_state="CANDIDATE") for index in range(count)]
 
     def _post(self, **body):
         return self.client.post(self.url, data=body, content_type="application/json")
@@ -89,9 +87,7 @@ class CompletionPreviewTests(_CompletionTestBase):
         self.assertEqual(response.data["discard_count"], 32)
         self.assertEqual(response.data["confirmed_count"], 1)
         self.assertEqual(response.data["discard_by_label_state"]["CANDIDATE"], 32)
-        self.assertEqual(
-            response.data["discard_by_source_model"]["quantem:mito"], 32
-        )
+        self.assertEqual(response.data["discard_by_source_model"]["quantem:mito"], 32)
         self.assertTrue(response.data["restorable"])
 
     def test_get_changes_nothing(self):
@@ -146,9 +142,7 @@ class CompletionRequiresAcknowledgementTests(_CompletionTestBase):
         # 40. Deleting eight objects the user was never shown is not an option.
         self._candidates(40)
 
-        response = self._post(
-            discard_unconfirmed=True, acknowledged_discard_count=32
-        )
+        response = self._post(discard_unconfirmed=True, acknowledged_discard_count=32)
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(len(self._live_ids()), 40)
@@ -175,9 +169,7 @@ class CompletionRequiresAcknowledgementTests(_CompletionTestBase):
         confirmed = self._segment(90, label_state="CONFIRMED")
         self._candidates(32)
 
-        response = self._post(
-            discard_unconfirmed=True, acknowledged_discard_count=32
-        )
+        response = self._post(discard_unconfirmed=True, acknowledged_discard_count=32)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self._live_ids(), {confirmed.id})
@@ -186,9 +178,7 @@ class CompletionRequiresAcknowledgementTests(_CompletionTestBase):
     def test_discarding_nothing_is_allowed_and_reported_as_nothing(self):
         self._segment(90, label_state="CONFIRMED")
 
-        response = self._post(
-            discard_unconfirmed=True, acknowledged_discard_count=0
-        )
+        response = self._post(discard_unconfirmed=True, acknowledged_discard_count=0)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["completion"]["discarded_count"], 0)
@@ -249,9 +239,7 @@ class CompletionIsUndoableTests(_CompletionTestBase):
         self._post(discard_unconfirmed=True, acknowledged_discard_count=2)
         self.client.delete(self.url)
 
-        self.assertEqual(
-            SegmentObject.objects.get(id=child.id).base_segment_id, base.id
-        )
+        self.assertEqual(SegmentObject.objects.get(id=child.id).base_segment_id, base.id)
 
     def test_unlocking_a_segmentation_that_kept_everything_restores_nothing(self):
         candidates = self._candidates(3)
@@ -272,9 +260,7 @@ class CompletionIsUndoableTests(_CompletionTestBase):
         self._post(discard_unconfirmed=True, acknowledged_discard_count=5)
 
         self.assertEqual(
-            SegmentationCompletionArchive.objects.filter(
-                segmentation=self.segmentation
-            ).count(),
+            SegmentationCompletionArchive.objects.filter(segmentation=self.segmentation).count(),
             1,
         )
 
@@ -290,9 +276,7 @@ class CompletionIsUndoableTests(_CompletionTestBase):
         candidate = self._segment(0, label_state="CANDIDATE")
         self._post(discard_unconfirmed=True, acknowledged_discard_count=1)
         # A later run happens to write an object under the same id.
-        reused = self._segment(
-            5, label_state="CONFIRMED", id=candidate.id, confidence_score=0.99
-        )
+        reused = self._segment(5, label_state="CONFIRMED", id=candidate.id, confidence_score=0.99)
 
         self.client.delete(self.url)
 
@@ -307,12 +291,8 @@ class CompletionArchiveCeilingTests(_CompletionTestBase):
     def test_an_oversized_discard_is_reported_as_not_restorable(self):
         self._candidates(4)
 
-        with patch(
-            "quantem.segmentation.completion.archive_max_objects", return_value=2
-        ):
-            response = self._post(
-                discard_unconfirmed=True, acknowledged_discard_count=4
-            )
+        with patch("quantem.segmentation.completion.archive_max_objects", return_value=2):
+            response = self._post(discard_unconfirmed=True, acknowledged_discard_count=4)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["completion"]["discarded_count"], 4)
@@ -321,9 +301,7 @@ class CompletionArchiveCeilingTests(_CompletionTestBase):
 
     def test_unlock_after_an_oversized_discard_admits_it_cannot_restore(self):
         self._candidates(4)
-        with patch(
-            "quantem.segmentation.completion.archive_max_objects", return_value=2
-        ):
+        with patch("quantem.segmentation.completion.archive_max_objects", return_value=2):
             self._post(discard_unconfirmed=True, acknowledged_discard_count=4)
 
         response = self.client.delete(self.url)
@@ -335,21 +313,15 @@ class CompletionArchiveCeilingTests(_CompletionTestBase):
     def test_a_byte_ceiling_also_refuses_to_archive(self):
         self._candidates(3)
 
-        with patch(
-            "quantem.segmentation.completion.archive_max_bytes", return_value=10
-        ):
-            response = self._post(
-                discard_unconfirmed=True, acknowledged_discard_count=3
-            )
+        with patch("quantem.segmentation.completion.archive_max_bytes", return_value=10):
+            response = self._post(discard_unconfirmed=True, acknowledged_discard_count=3)
 
         self.assertFalse(response.data["completion"]["restorable"])
 
     def test_the_preview_predicts_that_a_discard_is_not_restorable(self):
         self._candidates(4)
 
-        with patch(
-            "quantem.segmentation.completion.archive_max_objects", return_value=2
-        ):
+        with patch("quantem.segmentation.completion.archive_max_objects", return_value=2):
             preview = completion_preview(self.segmentation)
 
         self.assertFalse(preview["restorable"])
@@ -373,12 +345,8 @@ class CompletionDeletesOnlyWhatItArchivedTests(_CompletionTestBase):
             self._segment(50, label_state="CANDIDATE")
             return rows, complete
 
-        with patch.object(
-            completion_module, "build_snapshot", side_effect=build_then_race
-        ):
-            response = self._post(
-                discard_unconfirmed=True, acknowledged_discard_count=2
-            )
+        with patch.object(completion_module, "build_snapshot", side_effect=build_then_race):
+            response = self._post(discard_unconfirmed=True, acknowledged_discard_count=2)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["completion"]["discarded_count"], 2)

@@ -47,8 +47,7 @@ def _drop_models() -> Iterator[None]:
 def base_model():
     if not registry_cache.installed(PACK_ID):
         pytest.skip(
-            f"{PACK_ID} is not installed; run "
-            "`python -m quantem.registry.install local --all`"
+            f"{PACK_ID} is not installed; run `python -m quantem.registry.install local --all`"
         )
     return engine.load_model(PACK_ID, device="cpu")
 
@@ -66,9 +65,7 @@ def _predict(model) -> np.ndarray:
 
 
 def test_an_adapted_head_loads_onto_the_released_encoder(base_model, adapted_head):
-    adapted = engine.load_adapted_model(
-        PACK_ID, adapted_head, "cpu", adapter_id="test-1"
-    )
+    adapted = engine.load_adapted_model(PACK_ID, adapted_head, "cpu", adapter_id="test-1")
     assert adapted.pack_id == PACK_ID
     assert adapted.adapter_id == "test-1"
     assert adapted.encoder_tier == base_model.encoder_tier

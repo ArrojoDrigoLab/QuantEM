@@ -208,21 +208,15 @@ class AggregateTests(TestCase):
 
     def test_the_eta_is_withheld_while_anything_is_still_queued(self):
         mito = _tiles(_run(segmentation_id="mito"), 100, 200, "RUNNING")
-        Job.objects.filter(id=mito.id).update(
-            progress_detail_json={"eta_seconds": 120.0}
-        )
+        Job.objects.filter(id=mito.id).update(progress_detail_json={"eta_seconds": 120.0})
         _tiles(_run(segmentation_id="nucleus"), 0, 100, "PENDING")
         assert batch_progress_for(mito)["eta_seconds"] is None
 
     def test_the_eta_is_the_slowest_live_run(self):
         mito = _tiles(_run(segmentation_id="mito"), 100, 200, "RUNNING")
         nucleus = _tiles(_run(segmentation_id="nucleus"), 10, 100, "RUNNING")
-        Job.objects.filter(id=mito.id).update(
-            progress_detail_json={"eta_seconds": 120.0}
-        )
-        Job.objects.filter(id=nucleus.id).update(
-            progress_detail_json={"eta_seconds": 400.5}
-        )
+        Job.objects.filter(id=mito.id).update(progress_detail_json={"eta_seconds": 120.0})
+        Job.objects.filter(id=nucleus.id).update(progress_detail_json={"eta_seconds": 400.5})
         assert batch_progress_for(mito)["eta_seconds"] == 400.5
 
     def test_aggregate_of_nothing_is_none(self):

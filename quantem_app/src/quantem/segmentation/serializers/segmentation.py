@@ -430,9 +430,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             # imported rather than repeated: this method chooses which of that
             # function's two branches to publish, and a private copy here would
             # eventually ask for one and be handed the other.
-            labelled=Count(
-                "id", filter=Q(label_state__in=_SUPPRESSING_LABEL_STATES)
-            ),
+            labelled=Count("id", filter=Q(label_state__in=_SUPPRESSING_LABEL_STATES)),
         )
         if counts["labelled"]:
             if not _last_run_added_nothing(obj):
@@ -469,7 +467,9 @@ class SegmentationInstanceParamsSerializer(serializers.Serializer):
 
 class SegmentationInstanceParamsPatchSerializer(serializers.Serializer):
     center_min_distance = serializers.IntegerField(min_value=1, max_value=512, required=False)
-    center_confidence_threshold = serializers.FloatField(min_value=0.0, max_value=1.0, required=False)
+    center_confidence_threshold = serializers.FloatField(
+        min_value=0.0, max_value=1.0, required=False
+    )
     segmentation_threshold = serializers.FloatField(min_value=0.0, max_value=1.0, required=False)
     downsampling_factor = serializers.IntegerField(
         min_value=1,

@@ -225,7 +225,9 @@ def _make_case(name: str, kind: str, dtype: str):
     def case(self):
         self._run_cell(name, kind, dtype)
 
-    case.__name__ = f"test_a_failed_{kind.replace('-', '_')}_{dtype.replace('-', '_')}_import_stays_shut"
+    case.__name__ = (
+        f"test_a_failed_{kind.replace('-', '_')}_{dtype.replace('-', '_')}_import_stays_shut"
+    )
     case.__doc__ = f"{kind}/{dtype}: a failed import can never re-open itself"
     return case
 

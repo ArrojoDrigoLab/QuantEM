@@ -137,9 +137,7 @@ class Adapter(TimeStampedModel):
     #: rows -- the same name for mitochondria and for ER is two different
     #: fine-tunes, and that is deliberate.
     name = models.CharField(max_length=255, blank=True)
-    status = models.CharField(
-        max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING
-    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
     #: Whether every annotated area was trained on, or one was held back.
     training_mode = models.CharField(
         max_length=16, choices=TRAINING_MODE_CHOICES, default=TRAINING_MODE_USE_ALL
@@ -150,9 +148,7 @@ class Adapter(TimeStampedModel):
     #: are required, not optional: an average over images hides the one the model
     #: cannot do, which is the one the user needs to know about.
     cv_results = models.JSONField(default=dict, blank=True)
-    mode = models.CharField(
-        max_length=32, choices=MODE_CHOICES, default=MODE_THRESHOLD_ONLY
-    )
+    mode = models.CharField(max_length=32, choices=MODE_CHOICES, default=MODE_THRESHOLD_ONLY)
     #: Requested hyper-parameters (steps, lr, seed, ...), as submitted.
     params = models.JSONField(default=dict, blank=True)
     #: The full threshold sweep: every threshold tried, the train curve, the
@@ -160,9 +156,7 @@ class Adapter(TimeStampedModel):
     #: crops were fitted. See :class:`quantem.finetune.calibrate.SweepResult`.
     sweep = models.JSONField(default=dict, blank=True)
     calibrated_threshold = models.FloatField(null=True, blank=True)
-    split_mode = models.CharField(
-        max_length=24, choices=SPLIT_CHOICES, default=SPLIT_NO_HELDOUT
-    )
+    split_mode = models.CharField(max_length=24, choices=SPLIT_CHOICES, default=SPLIT_NO_HELDOUT)
     #: Relative to MODELS_DIR; empty for a threshold-only adapter, which has no
     #: weights at all.
     head_path = models.CharField(max_length=1024, blank=True)
@@ -191,8 +185,7 @@ class Adapter(TimeStampedModel):
             # an existing library.
             models.UniqueConstraint(
                 fields=["name", "segmentation_type"],
-                condition=models.Q(segmentation_type__isnull=False)
-                & ~models.Q(name=""),
+                condition=models.Q(segmentation_type__isnull=False) & ~models.Q(name=""),
                 name="unique_finetune_name_per_organelle",
             )
         ]
@@ -260,9 +253,7 @@ class Adapter(TimeStampedModel):
         folds = results.get("folds")
         if not isinstance(folds, list) or not folds:
             return []
-        tiles = sum(
-            int(fold.get("n_tiles") or 0) for fold in folds if isinstance(fold, dict)
-        )
+        tiles = sum(int(fold.get("n_tiles") or 0) for fold in folds if isinstance(fold, dict))
         notes = [
             f"The average below is over {len(folds)} rounds, each scored on the "
             "one area held back from it."

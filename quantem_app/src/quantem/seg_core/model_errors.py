@@ -42,21 +42,18 @@ logger = logging.getLogger(__name__)
 #: unbuildable, pack record missing.
 MODEL_UNAVAILABLE_CLASS_NAMES: frozenset[str] = frozenset(
     {
-        "ModelUnavailableError",       # quantem.inference.engine, base
-        "ModelWeightsNotInstalled",    # ... weights absent
+        "ModelUnavailableError",  # quantem.inference.engine, base
+        "ModelWeightsNotInstalled",  # ... weights absent
         "ModelArchitectureUnavailable",  # ... weights present, nothing can build them
-        "EncoderUnavailable",          # quantem.inference.encoders
-        "PackNotInstalled",            # quantem.registry.cache
+        "EncoderUnavailable",  # quantem.inference.encoders
+        "PackNotInstalled",  # quantem.registry.cache
     }
 )
 
 
 def is_model_unavailable(exc: BaseException) -> bool:
     """True when ``exc`` means "the model is not runnable on this install"."""
-    return any(
-        klass.__name__ in MODEL_UNAVAILABLE_CLASS_NAMES
-        for klass in type(exc).__mro__
-    )
+    return any(klass.__name__ in MODEL_UNAVAILABLE_CLASS_NAMES for klass in type(exc).__mro__)
 
 
 def _install_hint() -> str:

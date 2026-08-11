@@ -475,7 +475,7 @@ def build_timm_encoder(
     sd = _load_state_dict_any(weight_path)
     strip = fe.get("strip_prefix")
     if strip:
-        stripped = {k[len(strip):]: v for k, v in sd.items() if k.startswith(strip)}
+        stripped = {k[len(strip) :]: v for k, v in sd.items() if k.startswith(strip)}
         sd = stripped or sd
     drop = tuple(fe.get("drop_key_prefixes", ("head.",)))
     sd = {k: v for k, v in sd.items() if not any(k.startswith(p) for p in drop)}
@@ -693,13 +693,11 @@ def build_quantem_timm_encoder(
         sd = _load_state_dict_any(weight_path)
         strip = str(fe.get("strip_prefix") or "")
         if strip:
-            stripped = {k[len(strip):]: v for k, v in sd.items() if k.startswith(strip)}
+            stripped = {k[len(strip) :]: v for k, v in sd.items() if k.startswith(strip)}
             sd = stripped or sd
     elif skeleton_state:
         sd = {
-            k[len("backbone."):]: v
-            for k, v in skeleton_state.items()
-            if k.startswith("backbone.")
+            k[len("backbone.") :]: v for k, v in skeleton_state.items() if k.startswith("backbone.")
         }
         if not sd:
             raise EncoderUnavailable(
@@ -835,9 +833,7 @@ def remap_dinov3_overlay(state: dict) -> dict:
     OmniEM LoRA modules) pass through untouched.
     """
     passthrough = {k: v for k, v in state.items() if not k.startswith("backbone.")}
-    backbone = {
-        k[len("backbone."):]: v for k, v in state.items() if k.startswith("backbone.")
-    }
+    backbone = {k[len("backbone.") :]: v for k, v in state.items() if k.startswith("backbone.")}
     remapped = remap_dinov3_state_dict(backbone)
     # A buffer, never a trained head tensor; it is installed from the trunk.
     remapped.pop(_ROPE_PERIODS_KEY, None)
@@ -906,7 +902,7 @@ def build_quantem_timm_encoder_from_dinov3(
     if weight_path is not None:
         src = _dinov3_backbone_state(weight_path, checkpoint_key, prefix)
     elif skeleton_state:
-        src = {k[len(prefix):]: v for k, v in skeleton_state.items() if k.startswith(prefix)}
+        src = {k[len(prefix) :]: v for k, v in skeleton_state.items() if k.startswith(prefix)}
         if not src:
             raise EncoderUnavailable(
                 "no encoder blob installed and the head carries no backbone tensors to "
@@ -923,9 +919,7 @@ def build_quantem_timm_encoder_from_dinov3(
         framework="timm_vit",
         entry_point=_timm_entry_point_for_dinov3(manifest, src),
     )
-    enc = build_quantem_timm_encoder(
-        None, shim, apply_encoder_norm, state_dict=state
-    )
+    enc = build_quantem_timm_encoder(None, shim, apply_encoder_norm, state_dict=state)
     enc.overlay_remap = remap_dinov3_overlay
     return enc
 
@@ -996,7 +990,7 @@ def infer_dinov3_build_kwargs(backbone_sd: dict, base_kwargs: dict | None = None
 def _dinov3_backbone_state(weight_path: str | Path, checkpoint_key: str, prefix: str) -> dict:
     ckpt = torch.load(str(weight_path), map_location="cpu", weights_only=False)
     sd = ckpt.get(checkpoint_key, ckpt) if isinstance(ckpt, dict) else ckpt
-    backbone_sd = {k[len(prefix):]: v for k, v in sd.items() if k.startswith(prefix)}
+    backbone_sd = {k[len(prefix) :]: v for k, v in sd.items() if k.startswith(prefix)}
     if not backbone_sd:
         raise EncoderUnavailable(f"No {prefix!r} keys in {Path(weight_path).name}")
     return backbone_sd
@@ -1034,7 +1028,9 @@ def build_dinov3_encoder(
     if weight_path is not None:
         backbone_sd = _dinov3_backbone_state(weight_path, checkpoint_key, prefix)
     elif skeleton_state:
-        backbone_sd = {k[len(prefix):]: v for k, v in skeleton_state.items() if k.startswith(prefix)}
+        backbone_sd = {
+            k[len(prefix) :]: v for k, v in skeleton_state.items() if k.startswith(prefix)
+        }
         if not backbone_sd:
             raise EncoderUnavailable(
                 "no encoder blob installed and the head carries no backbone tensors to "

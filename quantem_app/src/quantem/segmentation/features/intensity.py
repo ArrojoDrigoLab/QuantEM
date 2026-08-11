@@ -83,9 +83,9 @@ def compute_intensity_features(image: np.ndarray, mask: np.ndarray) -> dict[str,
     if total_time > 0.1:  # Only log if it takes more than 100ms
         logger.debug(
             f"compute_intensity_features timing: "
-            f"extract={t_extract*1000:.1f}ms, "
-            f"stats={t_stats*1000:.1f}ms, "
-            f"total={total_time*1000:.1f}ms, "
+            f"extract={t_extract * 1000:.1f}ms, "
+            f"stats={t_stats * 1000:.1f}ms, "
+            f"total={total_time * 1000:.1f}ms, "
             f"mask_pixels={len(vals)}"
         )
 
@@ -185,10 +185,10 @@ def compute_outside_ring_intensity_features(
     if total_time > 0.1:  # Only log if it takes more than 100ms
         logger.debug(
             f"compute_outside_ring_intensity_features timing: "
-            f"dilate={t_dilate*1000:.1f}ms, "
-            f"extract={t_extract*1000:.1f}ms, "
-            f"stats={t_stats*1000:.1f}ms, "
-            f"total={total_time*1000:.1f}ms, "
+            f"dilate={t_dilate * 1000:.1f}ms, "
+            f"extract={t_extract * 1000:.1f}ms, "
+            f"stats={t_stats * 1000:.1f}ms, "
+            f"total={total_time * 1000:.1f}ms, "
             f"ring_pixels={ring_pixels}, ring_pixels_count={len(ring_vals)}"
         )
 
@@ -199,12 +199,3 @@ def compute_outside_ring_intensity_features(
         "outside_intensity_p50": float(p50),
         "outside_intensity_p90": float(p90),
     }
-
-
-
-
-
-
-
-
-

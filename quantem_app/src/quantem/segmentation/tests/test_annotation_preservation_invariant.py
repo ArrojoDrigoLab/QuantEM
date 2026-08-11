@@ -120,12 +120,8 @@ def _fake_engine():
     spec = get_model_spec("quantem", "mito")
 
     def predict_region(_model, image, *, pixel_size_nm=None, **_kwargs):
-        context = resample.plan_resample(
-            image.shape[:2], pixel_size_nm, spec.canonical_nm
-        )
-        return SimpleNamespace(
-            prob=_model_field(context.model_shape), context=context, plan=None
-        )
+        context = resample.plan_resample(image.shape[:2], pixel_size_nm, spec.canonical_nm)
+        return SimpleNamespace(prob=_model_field(context.model_shape), context=context, plan=None)
 
     return SimpleNamespace(
         load_model=lambda *_a, **_k: SimpleNamespace(device="cpu"),
@@ -174,9 +170,7 @@ class AnnotationPreservationTestCase(TestCase):
     """Shared fixture: one 256 px mito image the fake model finds five blobs in."""
 
     def setUp(self):
-        self.image = create_small_test_image(
-            "Preservation", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Preservation", width=SIZE, height=SIZE, textured=True)
         self.asset = self.image.asset
         self.asset.pixel_size_nm = PIXEL_SIZE_NM
         self.asset.save(update_fields=["pixel_size_nm"])
@@ -295,9 +289,7 @@ class AnnotationPreservationTestCase(TestCase):
             source="MANUAL",
             is_active=False,
         )
-        status = RoiSegmentationStatus.objects.create(
-            image_roi=roi, segmentation=self.segmentation
-        )
+        status = RoiSegmentationStatus.objects.create(image_roi=roi, segmentation=self.segmentation)
         status.set_complete(True)
         status.save()
         return status
@@ -366,9 +358,7 @@ class ObjectsTheUserDecidedAboutTests(AnnotationPreservationTestCase):
 
     def test_a_hand_drawn_object_survives_a_model_run_unchanged(self):
         """What the drawing tool creates: ``source_model="manual"``, CONFIRMED."""
-        drawn = self.annotate_object(
-            1, source_model=SOURCE_MODEL_MANUAL, refined="MANUAL"
-        )
+        drawn = self.annotate_object(1, source_model=SOURCE_MODEL_MANUAL, refined="MANUAL")
         before = _annotation_fingerprint(drawn)
 
         self.run_model()
@@ -427,9 +417,7 @@ class ObjectsTheUserDecidedAboutTests(AnnotationPreservationTestCase):
 
     def test_a_hand_drawn_object_survives_the_include_level_dial_unchanged(self):
         self.run_model()
-        drawn = self.annotate_object(
-            1, source_model=SOURCE_MODEL_MANUAL, refined="MANUAL"
-        )
+        drawn = self.annotate_object(1, source_model=SOURCE_MODEL_MANUAL, refined="MANUAL")
         before = _annotation_fingerprint(drawn)
 
         self.move_the_dial(0.3)
@@ -460,8 +448,7 @@ class AreasTheUserMarkedFinishedTests(AnnotationPreservationTestCase):
         self.run_model()
 
         assert not self.candidates_inside(area.geometry), (
-            "a model run put fresh candidates inside an area the user had "
-            "already marked finished"
+            "a model run put fresh candidates inside an area the user had already marked finished"
         )
 
     def test_a_run_adds_nothing_inside_a_roi_marked_done(self):

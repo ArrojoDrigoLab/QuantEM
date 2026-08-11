@@ -469,9 +469,7 @@ def _convert_tiff_to_png_via_numpy(
     # Convert to PIL Image for PNG conversion
     if progress_callback:
         progress_callback(35.0, "converting to png")
-    logger.info(
-        f"Converting array to PIL Image (channels={channels}, dtype={dtype})"
-    )
+    logger.info(f"Converting array to PIL Image (channels={channels}, dtype={dtype})")
     convert_start = time.time()
 
     if channels > 1:
@@ -496,8 +494,7 @@ def _convert_tiff_to_png_via_numpy(
     if progress_callback:
         progress_callback(70.0, "saving png")
     logger.info(
-        "Saving PNG with compression level %s via Pillow "
-        "(this may take a while for large images)",
+        "Saving PNG with compression level %s via Pillow (this may take a while for large images)",
         PNG_COMPRESS_LEVEL,
     )
     save_start = time.time()
@@ -626,13 +623,9 @@ def load_source_plane_uint8(source_path: Path, metadata: dict) -> np.ndarray:
         # tifffile view or a Pillow-backed asarray can be neither.
         return np.ascontiguousarray(plane, dtype=np.uint8)
     except MemoryError as exc:
-        raise ValueError(
-            f"Out of memory: Image is too large to process. {exc}"
-        ) from exc
+        raise ValueError(f"Out of memory: Image is too large to process. {exc}") from exc
     except Exception as exc:
-        raise ValueError(
-            f"Error decoding {stage} to 8-bit grayscale: {exc}"
-        ) from exc
+        raise ValueError(f"Error decoding {stage} to 8-bit grayscale: {exc}") from exc
 
 
 def save_plane_as_canonical_png(plane: np.ndarray, target_file_path: Path) -> Path:
@@ -695,9 +688,7 @@ def validate_upload_file(uploaded_file: UploadedFile) -> tuple[bool, str | None]
     if file_ext not in UPLOAD_SUFFIXES:
         accepted = ", ".join(UPLOAD_SUFFIXES)
         got = file_ext or "no extension"
-        return False, (
-            f"Unsupported file type '{got}'. QuantEM accepts {accepted} files."
-        )
+        return False, (f"Unsupported file type '{got}'. QuantEM accepts {accepted} files.")
 
     return True, None
 
@@ -822,9 +813,7 @@ def extract_tiff_metadata(tiff_path: Path) -> dict:
         else:
             bit_depth = 8
 
-        pixel_size_nm, pixel_size_caveat, pixel_size_source = _tiff_pixel_size_nm(
-            tiff_path
-        )
+        pixel_size_nm, pixel_size_caveat, pixel_size_source = _tiff_pixel_size_nm(tiff_path)
 
         return {
             "width": int(width),
@@ -839,7 +828,6 @@ def extract_tiff_metadata(tiff_path: Path) -> dict:
         }
     except Exception as e:
         raise ValueError(f"Error reading TIFF file: {str(e)}") from e
-
 
 
 def _tiff_pixel_size_nm(
@@ -873,9 +861,7 @@ def _tiff_pixel_size_nm(
                 if value:
                     return value, None, PIXEL_SIZE_SOURCE_OME
             ij = _imagej_calibration(tif)
-            nm, caveat, source = in_plane_pixel_size_nm(
-                tif.pages[0], "XResolution", ij.get("unit")
-            )
+            nm, caveat, source = in_plane_pixel_size_nm(tif.pages[0], "XResolution", ij.get("unit"))
             return nm, caveat, source
     except Exception:  # pragma: no cover - a malformed tag must not block upload
         logging.getLogger(__name__).debug(
@@ -973,18 +959,14 @@ def convert_tiff_to_png(
             progress_callback=progress_callback,
         )
     except MemoryError as e:
-        logger.error(
-            f"Out of memory during TIFF to PNG conversion: {str(e)}", exc_info=True
-        )
+        logger.error(f"Out of memory during TIFF to PNG conversion: {str(e)}", exc_info=True)
         raise ValueError(f"Out of memory: Image is too large to process. {str(e)}") from e
     except Exception as e:
         # pyvips is an optional accelerator (`pip install quantem-app[vips]`). Its
         # absence is the normal case for a plain pip install, not a fault, so it
         # is logged at debug; anything else is a real degradation and warns.
         if isinstance(e, RuntimeError) and "pyvips is unavailable" in str(e):
-            logger.debug(
-                "pyvips not installed; using the NumPy/Pillow path for %s", tiff_path
-            )
+            logger.debug("pyvips not installed; using the NumPy/Pillow path for %s", tiff_path)
         else:
             logger.warning(
                 "Streaming TIFF->PNG conversion failed for %s; "

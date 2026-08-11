@@ -120,10 +120,9 @@ def _anchor_side_sign(
     anchor_source = safe_difference(geometry, overlap_component)
     anchor_geometry = anchor_source if anchor_source is not None else geometry
     anchor = anchor_geometry.centroid
-    signed_distance = (
-        (float(anchor.x) - center_x) * normal[0]
-        + (float(anchor.y) - center_y) * normal[1]
-    )
+    signed_distance = (float(anchor.x) - center_x) * normal[0] + (
+        float(anchor.y) - center_y
+    ) * normal[1]
     return _sign_with_tolerance(signed_distance)
 
 

@@ -153,9 +153,7 @@ class FeatureWriterAgreementTests(TestCase):
         for key, value in synchronous.items():
             other = queued[key]
             if isinstance(value, float):
-                self.assertAlmostEqual(
-                    value, other, places=6, msg=f"writers disagree about {key}"
-                )
+                self.assertAlmostEqual(value, other, places=6, msg=f"writers disagree about {key}")
             else:
                 self.assertEqual(value, other, f"writers disagree about {key}")
 
@@ -297,9 +295,7 @@ class RemoveAreaKeepsProvenanceAndDropsTheOldProbabilityTests(TestCase):
         self.assertIsNone(response.data["measurement"])
         return response
 
-    @patch.dict(
-        os.environ, {"QUANTEM_ENABLE_SEGMENT_FEATURE_REFRESH_TRIGGERS": "1"}
-    )
+    @patch.dict(os.environ, {"QUANTEM_ENABLE_SEGMENT_FEATURE_REFRESH_TRIGGERS": "1"})
     def test_the_queued_refresh_after_a_cut_keeps_every_provenance_key(self):
         from quantem.jobs.constants import JOB_TYPE_REFRESH_SEGMENT_FEATURES
         from quantem.jobs.models import Job
@@ -386,9 +382,7 @@ class ProbabilityStatisticsAreNeverFabricatedTests(TestCase):
     def _write_map(self, relative_path: str, value: int) -> Path:
         path = storage_path(relative_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        Image.fromarray(
-            np.full((SIZE, SIZE), value, dtype=np.uint8), mode="L"
-        ).save(path)
+        Image.fromarray(np.full((SIZE, SIZE), value, dtype=np.uint8), mode="L").save(path)
         return path
 
     def test_a_missing_map_file_stores_no_statistics_at_all(self):

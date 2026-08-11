@@ -196,9 +196,9 @@ def finished_regions(segmentation: ImageSegmentation) -> list[BaseGeometry]:
 
     payloads = [
         bytes(wkb)
-        for wkb in CompletedROI.objects.filter(
-            segmentation=segmentation
-        ).values_list("geometry_wkb", flat=True)
+        for wkb in CompletedROI.objects.filter(segmentation=segmentation).values_list(
+            "geometry_wkb", flat=True
+        )
         if wkb
     ]
     if payloads:
@@ -217,16 +217,12 @@ def finished_regions(segmentation: ImageSegmentation) -> list[BaseGeometry]:
     rectangles = RoiSegmentationStatus.objects.filter(
         segmentation=segmentation,
         is_complete=True,
-    ).values_list(
-        "image_roi__x", "image_roi__y", "image_roi__width", "image_roi__height"
-    )
+    ).values_list("image_roi__x", "image_roi__y", "image_roi__width", "image_roi__height")
     for x, y, width, height in rectangles:
         if not width or not height:
             continue
         left, top = float(x), float(y)
-        regions.append(
-            shapely_box(left, top, left + float(width), top + float(height))
-        )
+        regions.append(shapely_box(left, top, left + float(width), top + float(height)))
 
     return regions
 
@@ -256,8 +252,7 @@ def drop_inside_finished_regions(
 
     centres = np.empty(len(shapes), dtype=object)
     centres[:] = [
-        shapely.points(float(shape.centroid_xy[0]), float(shape.centroid_xy[1]))
-        for shape in shapes
+        shapely.points(float(shape.centroid_xy[0]), float(shape.centroid_xy[1])) for shape in shapes
     ]
     tree = STRtree(list(regions))
     # ``predicate="intersects"`` on points is containment, and it is evaluated
@@ -379,7 +374,8 @@ def run_extraction(
     if deleted_count:
         logger.info(
             "Deleted %d existing %s generated inferred/candidate segments",
-            deleted_count, segmenter.name,
+            deleted_count,
+            segmenter.name,
         )
 
     protection = build_protection_index(segmentation, source_model)

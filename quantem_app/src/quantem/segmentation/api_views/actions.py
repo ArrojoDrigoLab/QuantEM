@@ -134,11 +134,7 @@ class SegmentationConfigView(APIView):
             return locked
         if not supports_instance_params(segmentation.segmentation_type.internal_name):
             return Response(
-                {
-                    "detail": (
-                        "instance_params are only supported for organelle segmentations."
-                    )
-                },
+                {"detail": ("instance_params are only supported for organelle segmentations.")},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

@@ -51,9 +51,7 @@ def _collect_context_maps(
         if segmentation_id:
             segmentation_ids.add(str(segmentation_id))
 
-    assets_by_id = {
-        str(asset.id): asset for asset in Asset.objects.filter(id__in=asset_ids)
-    }
+    assets_by_id = {str(asset.id): asset for asset in Asset.objects.filter(id__in=asset_ids)}
     segmentations_by_id = {
         str(segmentation.id): segmentation
         for segmentation in ImageSegmentation.objects.filter(
@@ -150,9 +148,7 @@ def _serialize_job_status(
         # `progress` comes from the same block rather than from the column, so
         # this endpoint and `GET /api/jobs/<id>/` cannot answer differently, and
         # a job's percentage cannot disagree with its own tile percentage.
-        **job_progress_block(
-            job, batch=(batches_by_id or {}).get(job.batch_id or "")
-        ),
+        **job_progress_block(job, batch=(batches_by_id or {}).get(job.batch_id or "")),
     }
 
 
@@ -236,8 +232,7 @@ class JobRetryView(APIView):
         job = get_object_or_404(Job, id=job_id)
         if job.status not in MANUAL_RETRY_JOB_STATUSES:
             detail = (
-                f"Only failed or cancelled jobs can be retried; this one is "
-                f"{job.status.lower()}."
+                f"Only failed or cancelled jobs can be retried; this one is {job.status.lower()}."
             )
             if job.status == "RUNNING":
                 # Naming the way out matters: a running job whose worker is gone
@@ -334,9 +329,7 @@ class JobQueueStatusView(APIView):
         queues: dict[str, list[dict]] = {}
         for job in queued_jobs:
             queues.setdefault(job.queue_name, []).append(
-                _serialize_job_status(
-                    job, assets_by_id, segmentations_by_id, batches_by_id
-                )
+                _serialize_job_status(job, assets_by_id, segmentations_by_id, batches_by_id)
             )
 
         queue_payload = [

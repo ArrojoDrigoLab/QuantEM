@@ -72,9 +72,7 @@ class CancelledJobReconcilesTests(TestCase):
         segmentation = _segmentation()
         run = AnalysisRun.objects.create(segmentation=segmentation, status="PENDING")
 
-        reconcile_domain_objects_for_cancelled_job(
-            "run_analysis", {"analysis_run_id": str(run.id)}
-        )
+        reconcile_domain_objects_for_cancelled_job("run_analysis", {"analysis_run_id": str(run.id)})
 
         run.refresh_from_db()
         self.assertEqual(run.status, "FAILED")
@@ -104,9 +102,7 @@ class CancelledJobReconcilesTests(TestCase):
     def test_the_message_says_it_was_cancelled_not_that_it_crashed(self):
         segmentation = _segmentation()
         run = AnalysisRun.objects.create(segmentation=segmentation, status="RUNNING")
-        reconcile_domain_objects_for_cancelled_job(
-            "run_analysis", {"analysis_run_id": str(run.id)}
-        )
+        reconcile_domain_objects_for_cancelled_job("run_analysis", {"analysis_run_id": str(run.id)})
         run.refresh_from_db()
         self.assertIn("Cancelled", run.error)
         self.assertIn("start it again", run.error.lower())
@@ -114,9 +110,7 @@ class CancelledJobReconcilesTests(TestCase):
     def test_a_finished_record_is_left_alone(self):
         segmentation = _segmentation()
         run = AnalysisRun.objects.create(segmentation=segmentation, status="SUCCESS")
-        reconcile_domain_objects_for_cancelled_job(
-            "run_analysis", {"analysis_run_id": str(run.id)}
-        )
+        reconcile_domain_objects_for_cancelled_job("run_analysis", {"analysis_run_id": str(run.id)})
         run.refresh_from_db()
         self.assertEqual(run.status, "SUCCESS")
 
@@ -199,9 +193,7 @@ class PollCancelTests(TestCase):
     """
 
     def _cancelled_job(self, job_type: str, payload: dict) -> Job:
-        job = Job.objects.create(
-            type=job_type, payload_json=payload, status="RUNNING"
-        )
+        job = Job.objects.create(type=job_type, payload_json=payload, status="RUNNING")
         Job.objects.filter(id=job.id).update(cancel_requested=True)
         job.refresh_from_db()
         return job
@@ -237,9 +229,7 @@ class PollCancelTests(TestCase):
         adapter = Adapter.objects.create(
             segmentation=segmentation, base_model="quantem:mito", status="RUNNING"
         )
-        job = self._cancelled_job(
-            "train_organelle_adapter", {"adapter_id": str(adapter.id)}
-        )
+        job = self._cancelled_job("train_organelle_adapter", {"adapter_id": str(adapter.id)})
 
         self._poll_with_live_worker(job)
 

@@ -39,7 +39,7 @@ class StubBackend:
             grey = grey.mean(axis=-1)
         height, width = grey.shape
         # A real embedding is a coarse grid over the image; so is this.
-        coarse = grey[:: _STRIDE, :: _STRIDE].astype(np.float32)
+        coarse = grey[::_STRIDE, ::_STRIDE].astype(np.float32)
         return Embedding(
             features=coarse[None, None, :, :],
             original_size=(int(height), int(width)),

@@ -115,12 +115,8 @@ class DeletePreviewTests(_DeleteTestBase):
 
         self.client.get(self.url)
 
-        self.assertTrue(
-            ImageSegmentation.objects.filter(id=self.segmentation.id).exists()
-        )
-        self.assertEqual(
-            SegmentObject.objects.filter(segmentation=self.segmentation).count(), 3
-        )
+        self.assertTrue(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())
+        self.assertEqual(SegmentObject.objects.filter(segmentation=self.segmentation).count(), 3)
 
 
 class DeleteRefusalTests(_DeleteTestBase):
@@ -148,9 +144,7 @@ class DeleteRefusalTests(_DeleteTestBase):
         self.assertNotIn("/api/", detail)
         self.assertEqual(response.data["job_id"], str(job.id))
         self.assertEqual(response.data["job_type"], "run_segmentation_full_task")
-        self.assertTrue(
-            ImageSegmentation.objects.filter(id=self.segmentation.id).exists()
-        )
+        self.assertTrue(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())
 
     def test_refused_while_locked_by_mark_image_done(self):
         self.segmentation.status_stage = "COMPLETED"
@@ -161,9 +155,7 @@ class DeleteRefusalTests(_DeleteTestBase):
         self.assertEqual(response.status_code, 409)
         self.assertTrue(response.data["locked"])
         self.assertIn("marked done", response.data["detail"])
-        self.assertTrue(
-            ImageSegmentation.objects.filter(id=self.segmentation.id).exists()
-        )
+        self.assertTrue(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())
 
     def test_refused_when_the_acknowledged_count_is_stale(self):
         self._segment(0, label_state="CANDIDATE")
@@ -178,9 +170,7 @@ class DeleteRefusalTests(_DeleteTestBase):
         self.assertEqual(response.status_code, 409)
         self.assertIn("Nothing was deleted", response.data["detail"])
         self.assertEqual(response.data["delete_preview"]["object_count"], 2)
-        self.assertTrue(
-            ImageSegmentation.objects.filter(id=self.segmentation.id).exists()
-        )
+        self.assertTrue(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())
 
 
 class DeleteTests(_DeleteTestBase):
@@ -200,9 +190,7 @@ class DeleteTests(_DeleteTestBase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["deleted"]["object_count"], 3)
-        self.assertFalse(
-            ImageSegmentation.objects.filter(id=self.segmentation.id).exists()
-        )
+        self.assertFalse(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())
         self.assertEqual(SegmentObject.objects.count(), 0)
         self.assertEqual(ProbabilityMap.objects.count(), 0)
         self.assertEqual(SegmentationOverlayState.objects.count(), 0)
@@ -227,9 +215,7 @@ class DeleteTests(_DeleteTestBase):
         # The run's own record is intact; only the reference is gone.
         self.assertEqual(run.export_dir, "D:/somewhere/bundle")
         self.assertTrue(AnalysisRunSerializer(run).data["segmentation_deleted"])
-        self.assertTrue(
-            AnalysisRunSummarySerializer(run).data["segmentation_deleted"]
-        )
+        self.assertTrue(AnalysisRunSummarySerializer(run).data["segmentation_deleted"])
 
     def test_a_surviving_run_does_not_claim_deletion_before_it_happens(self):
         run = AnalysisRun.objects.create(segmentation=self.segmentation)
@@ -248,9 +234,7 @@ class DeleteTests(_DeleteTestBase):
 
         self.assertEqual(recreate.status_code, 201)
         self.assertNotEqual(recreate.data["id"], str(self.segmentation.id))
-        self.assertEqual(
-            ImageSegmentation.objects.filter(asset=self.image.asset).count(), 1
-        )
+        self.assertEqual(ImageSegmentation.objects.filter(asset=self.image.asset).count(), 1)
 
     def test_a_finished_job_does_not_block_deletion(self):
         Job.enqueue(
@@ -262,6 +246,4 @@ class DeleteTests(_DeleteTestBase):
         response = self.client.delete(self.url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(
-            ImageSegmentation.objects.filter(id=self.segmentation.id).exists()
-        )
+        self.assertFalse(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())

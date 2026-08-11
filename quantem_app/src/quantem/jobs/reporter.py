@@ -92,9 +92,7 @@ def _stored_detail(job_id: str) -> dict[str, Any]:
     """This job's ``progress_detail_json`` as it stands. ``{}`` on any trouble."""
     try:
         return dict(
-            Job.objects.filter(id=job_id)
-            .values_list("progress_detail_json", flat=True)
-            .first()
+            Job.objects.filter(id=job_id).values_list("progress_detail_json", flat=True).first()
             or {}
         )
     except Exception:  # pragma: no cover -- a progress read must never fail a run
@@ -113,6 +111,7 @@ def apply_unit_window(done: int, total: int) -> tuple[int, int]:
         return done, total
     base, grand = window
     return base + done, max(grand, base + total)
+
 
 #: Shortest gap between two unit-progress writes for one scope. The first write
 #: (the denominator, at construction) and the last one are never withheld.
@@ -225,10 +224,9 @@ class JobReporter:
             should_update = True
 
         if not should_update:
-            if (
-                progress is not None
-                or message is not None
-            ) and ((now - self._last_throttle_log) >= 10.0):
+            if (progress is not None or message is not None) and (
+                (now - self._last_throttle_log) >= 10.0
+            ):
                 self._last_throttle_log = now
             return
 
@@ -304,9 +302,7 @@ class UnitProgressScope:
         self._started = time.perf_counter()
         # None means "use the module default, whatever it is when I ask", so a
         # test can lift the floor for a loop that runs in microseconds.
-        self._min_interval = (
-            None if min_interval_seconds is None else float(min_interval_seconds)
-        )
+        self._min_interval = None if min_interval_seconds is None else float(min_interval_seconds)
         self._last_write = 0.0
         self._write_seconds = 0.0
         self._writes = 0
@@ -335,7 +331,10 @@ class UnitProgressScope:
             # refusing the run over it would be worse than refusing the number.
             logger.debug(
                 "job %s: unit progress went backwards (%s -> %s %ss); holding",
-                self.job_id, self.done, done, self.label,
+                self.job_id,
+                self.done,
+                done,
+                self.label,
             )
             return
         self.done = done
@@ -373,9 +372,7 @@ class UnitProgressScope:
     def _may_write(self) -> bool:
         """Whether enough wall clock has passed since the last write."""
         interval = (
-            UNIT_WRITE_MIN_INTERVAL_SECONDS
-            if self._min_interval is None
-            else self._min_interval
+            UNIT_WRITE_MIN_INTERVAL_SECONDS if self._min_interval is None else self._min_interval
         )
         return (time.perf_counter() - self._last_write) >= interval
 
@@ -412,9 +409,7 @@ class UnitProgressScope:
         # its reporter after the job concludes, so without this a stray tile
         # report could overwrite a finished run's final count -- and a number
         # written onto a concluded job is a lie, where silence is only silence.
-        Job.objects.filter(id=self.job_id, status__in=OPEN_JOB_STATUSES).update(
-            **updates
-        )
+        Job.objects.filter(id=self.job_id, status__in=OPEN_JOB_STATUSES).update(**updates)
         finished = time.perf_counter()
         self._write_seconds += finished - started
         # From the *end* of the write: a write that took a second has already

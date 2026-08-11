@@ -103,9 +103,7 @@ def resolve_scope(
     if dataset_ids:
         known_datasets = {
             str(value)
-            for value in Dataset.objects.filter(id__in=dataset_ids).values_list(
-                "id", flat=True
-            )
+            for value in Dataset.objects.filter(id__in=dataset_ids).values_list("id", flat=True)
         }
         missing = [value for value in dataset_ids if value not in known_datasets]
         if missing:
@@ -161,10 +159,7 @@ def resolve_scope(
 
         scope.experiment_id = only
         scope.experiment_name = (
-            Experiment.objects.filter(id=only)
-            .values_list("name", flat=True)
-            .first()
-            or ""
+            Experiment.objects.filter(id=only).values_list("name", flat=True).first() or ""
         )
     return scope
 
@@ -192,9 +187,7 @@ def tiles_for_crop(
     if spec is None:
         return 0
     tile = tile_for(spec.tile_size, spec.patch_size)
-    context = resample.plan_resample(
-        crop.valid.shape[:2], crop.pixel_size_nm, spec.canonical_nm
-    )
+    context = resample.plan_resample(crop.valid.shape[:2], crop.pixel_size_nm, spec.canonical_nm)
     gt, valid = masks_to_model_scale(crop.gt, crop.valid, context)
     _gt, valid = pad_masks_to_tile(gt, valid, tile)
     return sum(1 for _ in iter_windows(valid, tile, config=config))
@@ -318,9 +311,7 @@ def plan_folds(
         # Only a by-image split names an image. Under a by-tile split the held
         # out area's image is also in the training set, so attributing the score
         # to that image would read as a generalisation claim it cannot support.
-        held_out_asset_id = (
-            held[0].image_key if split_mode == SPLIT_IMAGE_DISJOINT else None
-        )
+        held_out_asset_id = held[0].image_key if split_mode == SPLIT_IMAGE_DISJOINT else None
         folds.append(
             TrainingFold(
                 index=index,

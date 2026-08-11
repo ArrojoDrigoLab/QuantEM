@@ -13,7 +13,7 @@
 import { formatPixelSizeNm } from "@/shared/pixelSize";
 import { plural } from "@/features/library/components/import/importValidation";
 import { GroupingFields } from "@/features/library/components/grouping/GroupingFields";
-import type { GroupingChoice } from "@/features/library/components/grouping/GroupingPicker";
+import type { GroupingChoice } from "@/features/library/components/grouping/groupingChoices";
 import type { ChosenFile } from "@/features/library/components/import/importValidation";
 import type { ImportScaleState } from "@/features/library/components/import/useImportScale";
 import type { Experiment } from "@/shared/types/common";

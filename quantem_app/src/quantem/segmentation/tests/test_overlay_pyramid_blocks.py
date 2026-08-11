@@ -64,9 +64,7 @@ def _blocks(level_shapes, content_bboxes):
 
 def _total(blocks_by_level) -> int:
     """Blocks visited across both arrays -- the unit the pool gate counts."""
-    return sum(len(blocks) for blocks in blocks_by_level.values()) * len(
-        OVERLAY_ARRAY_KEYS
-    )
+    return sum(len(blocks) for blocks in blocks_by_level.values()) * len(OVERLAY_ARRAY_KEYS)
 
 
 def _indices(blocks_by_level, level: int) -> set[tuple[int, int]]:
@@ -167,9 +165,7 @@ class PyramidBlockSetTests(TestCase):
 
     def test_padding_never_names_a_block_the_level_does_not_have(self):
         """An object hard against the bottom-right corner stays inside the grid."""
-        blocks_by_level = _blocks(
-            self.SHAPES, [(39_900, 39_900, 40_000, 40_000)]
-        )
+        blocks_by_level = _blocks(self.SHAPES, [(39_900, 39_900, 40_000, 40_000)])
 
         self.assertEqual(_indices(blocks_by_level, 1), {(9, 9)})
         for level, blocks in blocks_by_level.items():
@@ -225,9 +221,7 @@ class ReferenceCanvasBlockCountTests(TestCase):
         the objects are, which is the whole point -- it is annotated *extent*
         that sets the cost now, and no longer canvas extent.
         """
-        blocks_by_level = _blocks(
-            self.SHAPES, self._twenty_one_objects(origin=60_000, span=4_000)
-        )
+        blocks_by_level = _blocks(self.SHAPES, self._twenty_one_objects(origin=60_000, span=4_000))
 
         self.assertEqual(_total(blocks_by_level), 26)
         self.assertLess(_total(blocks_by_level), RASTER_POOL_MIN_PYRAMID_BLOCKS)
@@ -240,10 +234,7 @@ class ReferenceCanvasBlockCountTests(TestCase):
         visits the annotated region", and a diagonal smear across 140 000 px
         costs more than a cluster and still nothing like the whole canvas.
         """
-        spread = [
-            (x, x, x + 400, x + 400)
-            for x in range(2_000, 2_000 + 21 * 7_000, 7_000)
-        ]
+        spread = [(x, x, x + 400, x + 400) for x in range(2_000, 2_000 + 21 * 7_000, 7_000)]
         self.assertEqual(len(spread), 21)
 
         blocks_by_level = _blocks(self.SHAPES, spread)
@@ -301,9 +292,7 @@ class PyramidPoolGateTests(TestCase):
             patch.object(mutations.render_module, "open_staged_group", _open),
             patch.object(mutations.render_module, "close_staged_group", _close),
             patch.object(mutations.render_module, "downsample_block", _downsample),
-            patch.object(
-                mutations.render_module, "downsample_block_worker", _worker
-            ),
+            patch.object(mutations.render_module, "downsample_block_worker", _worker),
         ):
             mutations._build_pyramid(
                 "unused",
@@ -370,9 +359,7 @@ class PyramidPoolGateTests(TestCase):
             raise RuntimeError("chunk write failed")
 
         with (
-            patch.object(
-                mutations.render_module, "open_staged_group", lambda _root: group
-            ),
+            patch.object(mutations.render_module, "open_staged_group", lambda _root: group),
             patch.object(
                 mutations.render_module,
                 "close_staged_group",
@@ -400,9 +387,7 @@ class PyramidPoolGateTests(TestCase):
         self.assertEqual(len(pools), 1)
         self.assertEqual(pools[0]["initializer"], mutations.django_pool_initializer)
         self.assertEqual(len(group.blocks), 4228)
-        self.assertEqual(
-            group.closed, 0, "the pool path must not touch the in-process handle"
-        )
+        self.assertEqual(group.closed, 0, "the pool path must not touch the in-process handle")
 
     def test_no_content_does_no_work_and_opens_nothing(self):
         group, pools = self._drive(
@@ -483,8 +468,9 @@ class RestrictedPyramidWritesTheSameBundleTests(TestCase):
             box(2000, 2000, 2300, 2300),
             box(2250, 2250, 2600, 2600),  # overlaps the one above
             box(self.EXTENT - 120, 5000, self.EXTENT, 5300),  # flush right edge
-            box(self.EXTENT - 900, self.EXTENT - 900, self.EXTENT - 600,
-                self.EXTENT - 600),  # opposite corner
+            box(
+                self.EXTENT - 900, self.EXTENT - 900, self.EXTENT - 600, self.EXTENT - 600
+            ),  # opposite corner
             box(6100, 6100, 6300, 6300),  # astride a macro-tile seam
         ]
         SegmentObject.objects.bulk_create(
@@ -504,9 +490,7 @@ class RestrictedPyramidWritesTheSameBundleTests(TestCase):
 
     def test_visiting_only_the_content_blocks_writes_the_same_bytes(self):
         state = mutations.rebuild_overlay_full(self.segmentation)
-        restricted_sha, restricted_files = _sha256_of_tree(
-            get_overlay_active_bundle_path(state)
-        )
+        restricted_sha, restricted_files = _sha256_of_tree(get_overlay_active_bundle_path(state))
         self.assertGreater(restricted_files, 20, "the store came out empty")
 
         exhaustive = mutations._build_pyramid

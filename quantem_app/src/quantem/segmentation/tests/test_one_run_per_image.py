@@ -75,22 +75,16 @@ class RunPlanTests(TestCase):
             {"organelles": "mito,nucleus"},
         )
         chosen = [
-            item
-            for item in response.data["organelles"]
-            if item["organelle"] in {"mito", "nucleus"}
+            item for item in response.data["organelles"] if item["organelle"] in {"mito", "nucleus"}
         ]
-        self.assertEqual(
-            response.data["tiles_total"], sum(item["tiles"] for item in chosen)
-        )
+        self.assertEqual(response.data["tiles_total"], sum(item["tiles"] for item in chosen))
         # Costing the run is free: nothing is created and nothing is queued
         # while the user is still deciding.
         self.assertEqual(Job.objects.count(), 0)
         self.assertEqual(ImageSegmentation.objects.count(), 0)
 
     def test_unticking_everything_leaves_no_total_to_quote(self):
-        response = self.client.get(
-            RUNS_URL.format(asset_id=self.asset.id), {"organelles": ""}
-        )
+        response = self.client.get(RUNS_URL.format(asset_id=self.asset.id), {"organelles": ""})
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.data["tiles_total"])
         self.assertEqual(response.data["download_bytes_total"], 0)
@@ -140,15 +134,11 @@ class RunEnqueueTests(TestCase):
         response = self._start(["mito", "nucleus", "ld"])
         self.assertEqual(response.status_code, 202)
         jobs = list(Job.objects.all())
-        self.assertEqual(
-            [job.type for job in jobs], [JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE]
-        )
+        self.assertEqual([job.type for job in jobs], [JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE])
         self.assertEqual(jobs[0].queue_name, QUEUE_P4_FULL)
         self.assertEqual(len(jobs[0].payload_json["legs"]), 3)
         # Not one full-image job per organelle, which is what this replaces.
-        self.assertFalse(
-            Job.objects.filter(type=JOB_TYPE_RUN_SEGMENTATION_FULL).exists()
-        )
+        self.assertFalse(Job.objects.filter(type=JOB_TYPE_RUN_SEGMENTATION_FULL).exists())
 
     def test_the_single_job_carries_the_summed_tile_plan_while_still_queued(self):
         response = self._start(["mito", "nucleus"])
@@ -372,9 +362,7 @@ class ImageRunDriverTests(TestCase):
         self.assertEqual(outcome["segment_count"], 0)
         self.assertEqual(outcome["stored_output_count"], 14)
         self.assertTrue(outcome["threshold_ready"])
-        self.assertEqual(
-            {item["status"] for item in outcome["organelles"]}, {"SUCCESS"}
-        )
+        self.assertEqual({item["status"] for item in outcome["organelles"]}, {"SUCCESS"})
 
     def test_the_image_is_decoded_once_for_the_whole_run(self):
         from quantem.segmentation import organelle_tasks
@@ -429,10 +417,7 @@ class ImageRunDriverTests(TestCase):
             with self.assertRaises(RuntimeError) as caught:
                 organelle_tasks.run_segmentation_for_image_task(
                     asset_id=str(self.asset.id),
-                    legs=[
-                        {"segmentation_id": leg["segmentation_id"]}
-                        for leg in self.legs
-                    ],
+                    legs=[{"segmentation_id": leg["segmentation_id"]} for leg in self.legs],
                 )
         message = str(caught.exception)
         # Both halves are named: what did not finish, and what did.

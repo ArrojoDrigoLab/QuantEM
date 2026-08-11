@@ -26,9 +26,7 @@ class AdaptApiTests(FinetuneAppTestCase):
 
     def test_crops_endpoint_reports_readiness_and_the_split(self):
         annotated_segmentation("API image two")
-        response = self.client.get(
-            reverse("adapt-crops", args=[self.segmentation.id])
-        )
+        response = self.client.get(reverse("adapt-crops", args=[self.segmentation.id]))
         assert response.status_code == 200
         body = response.json()
         assert body["ready"] is True
@@ -37,7 +35,9 @@ class AdaptApiTests(FinetuneAppTestCase):
         assert body["n_images"] == 2
         assert len(body["crops"]) == 2
         crop = body["crops"][0]
-        assert {"id", "name", "image_key", "width", "height", "n_objects", "annotated_px"} <= set(crop)
+        assert {"id", "name", "image_key", "width", "height", "n_objects", "annotated_px"} <= set(
+            crop
+        )
         # threshold_only is offered whatever the hardware.
         assert "threshold_only" in body["modes"]
 
@@ -81,9 +81,7 @@ class AdaptApiTests(FinetuneAppTestCase):
         assert "Unknown model" in response.json()["error"]
 
     def test_start_refuses_when_nothing_is_marked_complete(self):
-        segmentation = annotated_segmentation(
-            "API start no ROI", with_roi=False, organelle="er"
-        )
+        segmentation = annotated_segmentation("API start no ROI", with_roi=False, organelle="er")
         response = self.client.post(
             reverse("adapt-start", args=[segmentation.id]),
             {"base_model": "quantem:mito"},

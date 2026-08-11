@@ -272,9 +272,7 @@ def write_segments(
     suppressed: set[int] = set()
     if protection is not None and usable:
         mask = protection.suppressed_mask([polygons[position] for position in usable])
-        suppressed = {
-            position for position, dropped in zip(usable, mask, strict=True) if dropped
-        }
+        suppressed = {position for position, dropped in zip(usable, mask, strict=True) if dropped}
 
     batcher = _Batcher(batch_size=int(batch_size))
     loop_started_at = time.perf_counter()
@@ -295,16 +293,12 @@ def write_segments(
                     )
                 )
 
-            if on_status is not None and (
-                idx % progress_interval == 0 or idx == total_extracted
-            ):
+            if on_status is not None and (idx % progress_interval == 0 or idx == total_extracted):
                 on_status(
                     "EXTRACTING_CANDIDATES",
                     70.0 + (29.0 * idx / max(total_extracted, 1)),
                 )
-            if on_detail is not None and (
-                idx % detail_interval == 0 or idx == total_extracted
-            ):
+            if on_detail is not None and (idx % detail_interval == 0 or idx == total_extracted):
                 elapsed = time.perf_counter() - loop_started_at
                 fraction = idx / max(total_extracted, 1)
                 if elapsed > 0 and 0.0 < fraction < 1.0:

@@ -120,6 +120,10 @@ export function SegmentationRightPanel({
       }),
     [removeAreaOverlays, removeMode, rightPersistentOverlays]
   );
+  const idMapOverlays = useMemo(
+    () => (idMapOverlay ? [idMapOverlay] : []),
+    [idMapOverlay]
+  );
 
   return (
     <section className="seg-right confirmed-only">
@@ -203,7 +207,7 @@ export function SegmentationRightPanel({
           persistent: overlayScene.persistent,
           transient: overlayScene.transient,
           rasterLayers: overlayNgffLayers,
-          idMapOverlays: idMapOverlay ? [idMapOverlay] : [],
+          idMapOverlays,
           onRasterRevisionDisplayed: onOverlayRevisionDisplayed,
         }}
         interactions={{

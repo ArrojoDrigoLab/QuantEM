@@ -194,9 +194,7 @@ def handle_run_segmentation_for_image(
             raise ValueError("payload.legs entries must be objects")
         segmentation = _validate_segmentation_payload(raw)
         if str(segmentation.asset_id) != asset_id:
-            raise ValueError(
-                "Every organelle in one run must belong to the same image."
-            )
+            raise ValueError("Every organelle in one run must belong to the same image.")
         legs.append(
             {
                 "segmentation_id": str(segmentation.id),
@@ -271,9 +269,7 @@ def handle_refresh_segment_features(
     if not segment_ids and not segmentation_id:
         # Named the task and its payload fields; this text becomes the failed
         # job's message and is read in Tasks & Queues (I-12, internal-name).
-        raise ValueError(
-            "This measurement task was queued without anything to measure."
-        )
+        raise ValueError("This measurement task was queued without anything to measure.")
 
     swept = False
     if not segment_ids and recompute_features:

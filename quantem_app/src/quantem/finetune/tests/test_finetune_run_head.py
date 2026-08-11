@@ -72,15 +72,11 @@ def _loader(pack_id: str, device: str | None = None):
     "different weights each round" would look identical.
     """
     torch.manual_seed(1234)
-    return engine.LoadedModel(
-        spec=MODEL_SPECS[pack_id], device="cpu", module=StandInModel()
-    )
+    return engine.LoadedModel(spec=MODEL_SPECS[pack_id], device="cpu", module=StandInModel())
 
 
 def _big(name: str, **kwargs):
-    return annotated_segmentation(
-        name, size=BIG, roi=BIG_ROI, obj=BIG_OBJECT, **kwargs
-    )
+    return annotated_segmentation(name, size=BIG, roi=BIG_ROI, obj=BIG_OBJECT, **kwargs)
 
 
 class ScopedRunTests(TestCase):
@@ -152,17 +148,13 @@ class ScopedRunTests(TestCase):
     # -- cross-validation ---------------------------------------------------
 
     def test_cross_validation_reports_every_fold_the_mean_and_each_image(self):
-        result, reporter = self._run(
-            training_mode=TRAINING_MODE_HOLDOUT_1, cv_benchmark=True
-        )
+        result, reporter = self._run(training_mode=TRAINING_MODE_HOLDOUT_1, cv_benchmark=True)
         assert result["rounds"] == 2
         assert result["total_steps"] == 2 * STEPS
 
         cv = result["cv_results"]
         assert [fold["fold"] for fold in cv["folds"]] == [0, 1]
-        assert sorted(str(f["held_out_asset_id"]) for f in cv["folds"]) == sorted(
-            self.asset_ids
-        )
+        assert sorted(str(f["held_out_asset_id"]) for f in cv["folds"]) == sorted(self.asset_ids)
         for fold in cv["folds"]:
             assert fold["n_tiles"] >= 1
             # None is allowed and means "undefined here"; a number must be a
@@ -173,15 +165,11 @@ class ScopedRunTests(TestCase):
         assert set(cv["mean"]) == {"dice", "iou"}
         # Per-image results are required by R13, not optional.
         assert len(cv["per_image"]) == 2
-        assert sorted(row["asset_id"] for row in cv["per_image"]) == sorted(
-            self.asset_ids
-        )
+        assert sorted(row["asset_id"] for row in cv["per_image"]) == sorted(self.asset_ids)
         assert all(row["name"] for row in cv["per_image"])
 
     def test_the_bar_counts_steps_across_every_round(self):
-        _result, reporter = self._run(
-            training_mode=TRAINING_MODE_HOLDOUT_1, cv_benchmark=True
-        )
+        _result, reporter = self._run(training_mode=TRAINING_MODE_HOLDOUT_1, cv_benchmark=True)
         assert len(reporter.scopes) == 2
         assert [scope.detail["round"] for scope in reporter.scopes] == [1, 2]
         assert {scope.detail["total_rounds"] for scope in reporter.scopes} == {2}
@@ -342,8 +330,9 @@ class FailedOverwriteTests(TestCase):
             "overwrite": True,
         }
         boom = RuntimeError("the disk went away")
-        with mock.patch.object(engine, "load_model", side_effect=_loader), mock.patch(
-            "quantem.finetune.job.save_head", side_effect=boom
+        with (
+            mock.patch.object(engine, "load_model", side_effect=_loader),
+            mock.patch("quantem.finetune.job.save_head", side_effect=boom),
         ):
             with pytest.raises(RuntimeError):
                 adapter_job(payload, FakeReporter(), FakeCancel())

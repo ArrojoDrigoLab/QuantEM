@@ -42,9 +42,9 @@ class EncoderSpec:
 
     run_dir: str | None = None
     checkpoint_step: int | None = None
-    feature_layers: Any = "last4"     # "last4" | "last1" | explicit block indices
-    apply_encoder_norm: bool = True   # apply the encoder's final LayerNorm per tap
-    adapt: str = "frozen"             # frozen | lora | lora_ln | last_n | full
+    feature_layers: Any = "last4"  # "last4" | "last1" | explicit block indices
+    apply_encoder_norm: bool = True  # apply the encoder's final LayerNorm per tap
+    adapt: str = "frozen"  # frozen | lora | lora_ln | last_n | full
     adapt_params: dict = field(default_factory=dict)
 
     def resolved_layers(self, depth: int) -> list[int]:

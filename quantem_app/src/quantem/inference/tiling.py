@@ -278,8 +278,8 @@ class BandBlender:
         self._window = hann2d(plan.tile, floor)
         self._acc = np.zeros((plan.tile, plan.width), dtype=np.float32)
         self._wsum = np.zeros((plan.tile, plan.width), dtype=np.float32)
-        self._row = 0                  # index into plan.ys
-        self._buf_y0 = plan.ys[0]      # absolute row of buffer line 0
+        self._row = 0  # index into plan.ys
+        self._buf_y0 = plan.ys[0]  # absolute row of buffer line 0
         self._finished = False
 
     @property
@@ -339,8 +339,8 @@ class BandBlender:
         if keep > 0:
             self._acc[:keep] = self._acc[step:]
             self._wsum[:keep] = self._wsum[step:]
-        self._acc[max(keep, 0):] = 0.0
-        self._wsum[max(keep, 0):] = 0.0
+        self._acc[max(keep, 0) :] = 0.0
+        self._wsum[max(keep, 0) :] = 0.0
         self._buf_y0 = next_y
         self._row += 1
 
@@ -409,12 +409,10 @@ def blend_region_streaming_batched(
         pending.append(tile)
         if len(pending) < size:
             continue
-        done = _blend_batch(blender, pending, predict_tiles, done, total,
-                            on_progress, on_tile)
+        done = _blend_batch(blender, pending, predict_tiles, done, total, on_progress, on_tile)
         pending = []
     if pending:
-        done = _blend_batch(blender, pending, predict_tiles, done, total,
-                            on_progress, on_tile)
+        done = _blend_batch(blender, pending, predict_tiles, done, total, on_progress, on_tile)
     blender.finish()
     if on_progress is not None:
         on_progress(1.0)
@@ -436,9 +434,7 @@ def _blend_batch(
 ) -> int:
     probs = predict_tiles(list(tiles))
     if len(probs) != len(tiles):
-        raise ValueError(
-            f"batched predictor returned {len(probs)} maps for {len(tiles)} windows"
-        )
+        raise ValueError(f"batched predictor returned {len(probs)} maps for {len(tiles)} windows")
     for tile, prob in zip(tiles, probs, strict=True):
         blender.add(tile, prob)
         done += 1
@@ -483,16 +479,12 @@ def blend_region_batched(
     out: np.ndarray | None = None,
 ) -> np.ndarray:
     """:func:`blend_region` with several windows per model call."""
-    target = (
-        np.zeros((plan.height, plan.width), dtype=np.float32) if out is None else out
-    )
+    target = np.zeros((plan.height, plan.width), dtype=np.float32) if out is None else out
     if target.shape != (plan.height, plan.width):
-        raise ValueError(
-            f"out shape {target.shape} != plan ({plan.height}, {plan.width})"
-        )
+        raise ValueError(f"out shape {target.shape} != plan ({plan.height}, {plan.width})")
 
     def sink(y0: int, band: np.ndarray) -> None:
-        target[y0:y0 + band.shape[0]] = band
+        target[y0 : y0 + band.shape[0]] = band
 
     blend_region_streaming_batched(
         plan,
@@ -517,6 +509,6 @@ def memmap_band_sink(
     store = np.memmap(str(path), dtype=dtype, mode="w+", shape=shape)
 
     def sink(y0: int, band: np.ndarray) -> None:
-        store[y0:y0 + band.shape[0]] = band.astype(dtype, copy=False)
+        store[y0 : y0 + band.shape[0]] = band.astype(dtype, copy=False)
 
     return sink, store

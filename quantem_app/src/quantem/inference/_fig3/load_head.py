@@ -126,9 +126,7 @@ def build_and_load_head(
 
     problems: list[str] = []
     for part in ("neck", "decoder"):
-        missing, unexpected = getattr(model, part).load_state_dict(
-            ckpt[part], strict=False
-        )
+        missing, unexpected = getattr(model, part).load_state_dict(ckpt[part], strict=False)
         info[f"{part}_tensors"] = len(ckpt[part])
         if missing or unexpected:
             problems.append(
@@ -157,13 +155,17 @@ def build_and_load_head(
         info["encoder_unplaced"] = len(unplaced)
         if unplaced:
             problems.append(f"encoder: {len(unplaced)} unplaced, e.g. {unplaced[:6]}")
-    elif ckpt.get("adapters") is not None and getattr(model.encoder, "_conv_lora", None) is not None:
+    elif (
+        ckpt.get("adapters") is not None and getattr(model.encoder, "_conv_lora", None) is not None
+    ):
         missing, unexpected = model.encoder._conv_lora.load_state_dict(
             ckpt["adapters"], strict=False
         )
         info["encoder_tensors"] = len(ckpt["adapters"])
         if missing or unexpected:
-            problems.append(f"adapters: missing={list(missing)[:6]} unexpected={list(unexpected)[:6]}")
+            problems.append(
+                f"adapters: missing={list(missing)[:6]} unexpected={list(unexpected)[:6]}"
+            )
 
     # A weight source that ships without the pack's fine-tuned blocks records
     # them as pending_overlay (see encoders.build_quantem_timm_encoder: the HF

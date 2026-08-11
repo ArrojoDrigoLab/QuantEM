@@ -270,9 +270,7 @@ def to_model_scale(
     """
     if context.is_identity:
         return image
-    interpolation = (
-        upscale_interpolation if context.upsamples else downscale_interpolation
-    )
+    interpolation = upscale_interpolation if context.upsamples else downscale_interpolation
     height, width = context.model_shape
     out = cv2.resize(image, (width, height), interpolation=interpolation)
     if image.dtype == np.uint8 and out.dtype != np.uint8:
@@ -383,9 +381,7 @@ def quantize_probability(prob: np.ndarray) -> np.ndarray:
         for start in range(0, int(array.shape[0]), rows):
             # `copy=True`: a float64 input would otherwise be a view, and the
             # in-place arithmetic below would rewrite the caller's array.
-            block = np.array(
-                array[start : start + rows], dtype=np.float64, copy=True
-            )
+            block = np.array(array[start : start + rows], dtype=np.float64, copy=True)
             np.clip(block, 0.0, 1.0, out=block)
             block *= PROB_LEVELS
             block += 0.5
@@ -401,14 +397,10 @@ def dequantize_probability(stored: np.ndarray) -> np.ndarray:
     :class:`~quantem.seg_core.types.InferenceResult` contract promises. It is
     **not** what a threshold reads -- see :func:`binarize_quantized`.
     """
-    return np.asarray(stored, dtype=np.uint8).astype(np.float32) / np.float32(
-        PROB_LEVELS
-    )
+    return np.asarray(stored, dtype=np.uint8).astype(np.float32) / np.float32(PROB_LEVELS)
 
 
-def probability_to_native_uint8(
-    prob: np.ndarray, context: ResampleContext
-) -> np.ndarray:
+def probability_to_native_uint8(prob: np.ndarray, context: ResampleContext) -> np.ndarray:
     """Step 3 of the pipeline in one call: back to native, then to uint8.
 
     The returned array is *the authority* for this image: the run thresholds it,
@@ -491,9 +483,7 @@ class NativeProbabilityMap:
     quantization: str = QUANTIZATION_ID
 
     @classmethod
-    def from_model_grid(
-        cls, prob: np.ndarray, context: ResampleContext
-    ) -> NativeProbabilityMap:
+    def from_model_grid(cls, prob: np.ndarray, context: ResampleContext) -> NativeProbabilityMap:
         """Build the stored map from what the model predicted. Steps 3 and 4."""
         return cls(
             data=probability_to_native_uint8(prob, context),

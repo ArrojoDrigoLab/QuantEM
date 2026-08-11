@@ -148,9 +148,7 @@ def compute_regionprops_features(mask: np.ndarray) -> dict[str, float]:
     """
     # Validate input
     if mask.ndim != 2:
-        raise ValueError(
-            f"Expected 2D mask array, got {mask.ndim}D array with shape {mask.shape}"
-        )
+        raise ValueError(f"Expected 2D mask array, got {mask.ndim}D array with shape {mask.shape}")
 
     # Convert to boolean if needed
     binary_mask = (mask > 127).astype(bool) if mask.dtype != bool else mask
@@ -245,10 +243,10 @@ def compute_regionprops_features(mask: np.ndarray) -> dict[str, float]:
     if total_time > 0.1:  # Only log if it takes more than 100ms
         logger.debug(
             f"compute_regionprops_features timing: "
-            f"label={t_label*1000:.1f}ms, "
-            f"regionprops={t_regionprops*1000:.1f}ms, "
-            f"extract={t_extract*1000:.1f}ms, "
-            f"total={total_time*1000:.1f}ms, "
+            f"label={t_label * 1000:.1f}ms, "
+            f"regionprops={t_regionprops * 1000:.1f}ms, "
+            f"extract={t_extract * 1000:.1f}ms, "
+            f"total={total_time * 1000:.1f}ms, "
             f"mask_shape={mask.shape}, area={area}"
         )
 

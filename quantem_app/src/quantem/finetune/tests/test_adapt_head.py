@@ -73,9 +73,7 @@ class TestFreezing:
     def test_only_the_neck_and_decoder_are_trainable(self):
         model = TinyModel()
         params, count = freeze_to_head(model)
-        assert count == sum(
-            p.numel() for m in (model.neck, model.decoder) for p in m.parameters()
-        )
+        assert count == sum(p.numel() for m in (model.neck, model.decoder) for p in m.parameters())
         assert all(not p.requires_grad for p in model.encoder.parameters())
         assert len(params) == 4  # weight + bias, neck and decoder
 
@@ -113,9 +111,7 @@ class TestTrainHead:
         before_encoder = model.encoder.weight.detach().clone()
         before_decoder = model.decoder.weight.detach().clone()
 
-        result = train_head(
-            model, _patches(), config=AdaptConfig(steps=25, lr=1e-2, seed=0)
-        )
+        result = train_head(model, _patches(), config=AdaptConfig(steps=25, lr=1e-2, seed=0))
 
         assert result.steps == 25
         assert torch.equal(model.encoder.weight, before_encoder)
@@ -126,9 +122,7 @@ class TestTrainHead:
 
     def test_the_loss_goes_down(self):
         model = TinyModel()
-        result = train_head(
-            model, _patches(8), config=AdaptConfig(steps=60, lr=1e-2, seed=0)
-        )
+        result = train_head(model, _patches(8), config=AdaptConfig(steps=60, lr=1e-2, seed=0))
         assert np.mean(result.losses[-10:]) < np.mean(result.losses[:10])
 
     def test_progress_is_reported_with_an_eta(self):

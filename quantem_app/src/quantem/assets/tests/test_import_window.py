@@ -126,9 +126,9 @@ def _source_cases() -> list[tuple[str, np.ndarray, bool]]:
     base = make_em_like_array(_WIDTH, _HEIGHT, seed=11)
     sixteen_bit = (base.astype(np.uint32) * 257).astype(np.uint16)
     thirty_two_bit = (base.astype(np.uint64) * 16843009).astype(np.uint32)
-    rgb = np.stack(
-        [base, np.roll(base, 7, axis=1), np.roll(base, 13, axis=0)], axis=-1
-    ).astype(np.uint8)
+    rgb = np.stack([base, np.roll(base, 7, axis=1), np.roll(base, 13, axis=0)], axis=-1).astype(
+        np.uint8
+    )
     stack = np.stack([base, np.roll(base, 3, axis=0), 255 - base]).astype(np.uint8)
     return [
         ("8-bit grayscale TIFF", base, False),
@@ -303,16 +303,12 @@ class WindowReadAgreementTests(TestCase):
     def test_readers_still_work_with_no_pyramid_at_all(self):
         """The pyramid is a fast path, not a dependency."""
 
-        array = (make_em_like_array(320, 240, seed=14).astype(np.uint32) * 257).astype(
-            np.uint16
-        )
+        array = (make_em_like_array(320, 240, seed=14).astype(np.uint32) * 257).astype(np.uint16)
         asset = _stage_upload(array)
         openable = get_asset_openable(asset)
         self.assertIsNone(_published_root(openable))
 
-        expected = load_source_plane_uint8(
-            openable.path, {"channels": 1, "bit_depth": 16}
-        )
+        expected = load_source_plane_uint8(openable.path, {"channels": 1, "bit_depth": 16})
         full, _ = load_image_array(openable)
 
         np.testing.assert_array_equal(full, expected)
@@ -329,15 +325,11 @@ class WindowReadAgreementTests(TestCase):
         TIFF is a saturated crop of an image the viewer will never show.
         """
 
-        array = (make_em_like_array(400, 300, seed=25).astype(np.uint32) * 257).astype(
-            np.uint16
-        )
+        array = (make_em_like_array(400, 300, seed=25).astype(np.uint32) * 257).astype(np.uint16)
         asset = _stage_upload(array)
         openable = get_asset_openable(asset)
         self.assertIsNone(_published_root(openable))
-        expected = load_source_plane_uint8(
-            openable.path, {"channels": 1, "bit_depth": 16}
-        )
+        expected = load_source_plane_uint8(openable.path, {"channels": 1, "bit_depth": 16})
 
         roi = create_roi_image_from_image(openable, x=60, y=40, width=180, height=120)
 
@@ -432,9 +424,7 @@ class EncodingWindowIsRealTests(TestCase):
             return real_save(plane, target_file_path)
 
         with (
-            patch.object(
-                asset_tasks, "save_plane_as_canonical_png", _save_only_after_registration
-            ),
+            patch.object(asset_tasks, "save_plane_as_canonical_png", _save_only_after_registration),
             patch.object(ngff_module, "publish", _publish_and_release_the_png),
         ):
             prepare_asset_renditions(str(asset.id))
@@ -559,9 +549,7 @@ class FailedImportIsNotOpenableTests(TestCase):
     def test_the_retry_after_such_a_failure_still_recovers(self):
         asset = _stage_upload(make_em_like_array(_WIDTH, _HEIGHT, seed=23))
         source = np.asarray(
-            load_source_plane_uint8(
-                get_asset_openable(asset).path, {"channels": 1, "bit_depth": 8}
-            )
+            load_source_plane_uint8(get_asset_openable(asset).path, {"channels": 1, "bit_depth": 8})
         )
 
         with patch.object(

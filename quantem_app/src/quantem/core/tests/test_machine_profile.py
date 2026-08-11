@@ -179,13 +179,13 @@ def test_the_core_count_can_only_lower_the_counts(cores):
 @pytest.mark.parametrize(
     ("ram", "cores"),
     [
-        (None, None),          # a container that reports neither
-        (None, 4),             # cgroup with no memory limit and no sysconf
-        (0, 0),                # a probe that returned zeroes
-        (-1, -4),              # a probe that returned nonsense
-        ("8589934592", "4"),   # strings, e.g. an env override read raw
-        (8.5 * GIB, 4.0),      # floats
-        (None, 10**9),         # an absurd core count
+        (None, None),  # a container that reports neither
+        (None, 4),  # cgroup with no memory limit and no sysconf
+        (0, 0),  # a probe that returned zeroes
+        (-1, -4),  # a probe that returned nonsense
+        ("8589934592", "4"),  # strings, e.g. an env override read raw
+        (8.5 * GIB, 4.0),  # floats
+        (None, 10**9),  # an absurd core count
     ],
 )
 def test_an_unreadable_machine_degrades_to_the_floor_instead_of_raising(ram, cores):
@@ -263,11 +263,11 @@ def test_detection_reads_this_machine():
 @pytest.mark.parametrize(
     ("contents", "expected"),
     [
-        ("4294967296\n", 4 * GIB),          # a 4 GB container
-        ("max\n", None),                    # cgroup v2, no limit set
-        ("9223372036854771712\n", None),    # cgroup v1's spelling of no limit
-        ("", None),                         # an empty file
-        ("not-a-number", None),             # a kernel we do not understand
+        ("4294967296\n", 4 * GIB),  # a 4 GB container
+        ("max\n", None),  # cgroup v2, no limit set
+        ("9223372036854771712\n", None),  # cgroup v1's spelling of no limit
+        ("", None),  # an empty file
+        ("not-a-number", None),  # a kernel we do not understand
     ],
 )
 def test_a_container_ceiling_is_read_from_the_cgroup(monkeypatch, tmp_path, contents, expected):
@@ -390,10 +390,10 @@ def test_the_overlay_raster_pool_reads_its_worker_count_from_the_profile():
 #: *module* scope runs before the entry point has executed a single statement,
 #: so anything on this closure that imports numpy has already lost.
 BOOT_PATH_ENTRY_MODULES = (
-    "quantem",            # every `import quantem.x` runs this first
+    "quantem",  # every `import quantem.x` runs this first
     "quantem._pytest_env",  # -p plugin, the earliest import under pytest
-    "quantem.cli",        # the console script and the frozen server
-    "quantem.core",       # DJANGO_SETTINGS_MODULE's package
+    "quantem.cli",  # the console script and the frozen server
+    "quantem.core",  # DJANGO_SETTINGS_MODULE's package
     "quantem.jobs.pool",  # unpickled in a spawned pool child before its work
 )
 
@@ -588,9 +588,7 @@ def test_the_cli_pins_threads_when_it_prepares_the_process():
     """
     path = SRC_ROOT / "cli.py"
     tree = ast.parse(_read(path), filename=str(path))
-    functions = {
-        node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
-    }
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
 
     prepare = functions.get("_prepare_env")
     assert prepare is not None, "quantem/cli.py no longer has _prepare_env"
@@ -903,8 +901,11 @@ def _measure_import_commit(tmp_path: Path, *, pinned: bool, profile_name: str | 
     env = _child_env(tmp_path)
     if profile_name:
         env["QUANTEM_MACHINE_PROFILE"] = profile_name
-    source = textwrap.dedent(_COMMIT_PROBE) + f"pin = {pinned!r}\n" + textwrap.dedent(
-        """
+    source = (
+        textwrap.dedent(_COMMIT_PROBE)
+        + f"pin = {pinned!r}\n"
+        + textwrap.dedent(
+            """
         if pin:
             from quantem.core.machine import configure_process
             profile = configure_process()
@@ -927,6 +928,7 @@ def _measure_import_commit(tmp_path: Path, *, pinned: bool, profile_name: str | 
             "cpu_count": os.cpu_count(),
         }))
         """
+        )
     )
     completed = subprocess.run(
         [sys.executable, "-c", source],
@@ -1089,8 +1091,7 @@ def test_quantem_serve_prints_the_machine_profile(tmp_path):
             if banner[-1].startswith("machine profile: "):
                 break
         assert any(line.startswith("machine profile: ") for line in banner), (
-            "quantem serve did not print the machine profile. Banner was: "
-            f"{banner!r}"
+            f"quantem serve did not print the machine profile. Banner was: {banner!r}"
         )
         line = next(x for x in banner if x.startswith("machine profile: "))
         assert " cores)" in line and "raster workers" in line, line

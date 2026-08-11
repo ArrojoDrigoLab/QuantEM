@@ -198,6 +198,4 @@ class FeatureRefreshSweepTests(TestCase):
             )
             self.assertEqual(response.status_code, 200, response.data)
 
-        self.assertEqual(
-            Job.objects.filter(type=JOB_TYPE_REFRESH_SEGMENT_FEATURES).count(), 1
-        )
+        self.assertEqual(Job.objects.filter(type=JOB_TYPE_REFRESH_SEGMENT_FEATURES).count(), 1)

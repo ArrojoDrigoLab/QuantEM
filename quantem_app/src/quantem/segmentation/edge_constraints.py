@@ -97,11 +97,6 @@ def constraints_satisfied(
     for x_val, y_val in exclude_points:
         x_idx = int(round(x_val))
         y_idx = int(round(y_val))
-        if (
-            0 <= y_idx < mask.shape[0]
-            and 0 <= x_idx < mask.shape[1]
-            and mask[y_idx, x_idx] == 1
-        ):
+        if 0 <= y_idx < mask.shape[0] and 0 <= x_idx < mask.shape[1] and mask[y_idx, x_idx] == 1:
             return False
     return True
-

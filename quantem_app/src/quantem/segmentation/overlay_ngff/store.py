@@ -108,7 +108,6 @@ def _write_group_metadata(store_root: Path) -> None:
     zarr_root.attrs["labels"] = list(OVERLAY_ARRAY_KEYS)
 
 
-
 def _retry_on_windows_lock(op: Callable[[], Any], *, attempts: int = 5) -> Any:
     """Run ``op``, retrying briefly on a Windows sharing violation.
 
@@ -211,9 +210,7 @@ def _create_empty_label_store(
     width, height = segmentation_dimensions(segmentation)
     level_shapes = _level_shapes(width, height)
     arrays = {
-        array_key: _create_array_pyramid(
-            zarr_root, array_key=array_key, level_shapes=level_shapes
-        )
+        array_key: _create_array_pyramid(zarr_root, array_key=array_key, level_shapes=level_shapes)
         for array_key in OVERLAY_ARRAY_KEYS
     }
     _write_group_metadata(store_root)

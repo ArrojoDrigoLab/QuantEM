@@ -192,9 +192,7 @@ class ActiveInstallTests(TestCase):
         job = self._live_job(job_status="RUNNING")
 
         with patch.object(cache, "installed", return_value=False):
-            response = self.client.post(
-                "/api/models/omniem:mito/install/", {}, format="json"
-            )
+            response = self.client.post("/api/models/omniem:mito/install/", {}, format="json")
 
         assert response.status_code == 409
         body = response.json()
@@ -213,9 +211,7 @@ class ActiveInstallTests(TestCase):
         job = self._live_job(job_status="PENDING")
 
         with patch.object(cache, "installed", return_value=False):
-            response = self.client.post(
-                "/api/models/omniem:mito/install/", {}, format="json"
-            )
+            response = self.client.post("/api/models/omniem:mito/install/", {}, format="json")
 
         assert response.status_code == 409
         assert response.json()["job_id"] == str(job.id)
@@ -240,9 +236,7 @@ class ActiveInstallTests(TestCase):
         self._live_job(pack_id="omniem:er", job_status="RUNNING")
 
         with patch.object(cache, "installed", return_value=False):
-            response = self.client.post(
-                "/api/models/omniem:mito/install/", {}, format="json"
-            )
+            response = self.client.post("/api/models/omniem:mito/install/", {}, format="json")
 
         assert response.status_code == 202
         assert Job.objects.filter(type=INSTALL_JOB_TYPE).count() == 2
@@ -251,9 +245,7 @@ class ActiveInstallTests(TestCase):
         self._live_job(job_status="FAILED")
 
         with patch.object(cache, "installed", return_value=False):
-            response = self.client.post(
-                "/api/models/omniem:mito/install/", {}, format="json"
-            )
+            response = self.client.post("/api/models/omniem:mito/install/", {}, format="json")
 
         assert response.status_code == 202
 
@@ -264,9 +256,7 @@ class ModelInstallTests(TestCase):
         self.client = APIClient()
 
     def _install(self, pack_id="quantem:mito", **body):
-        return self.client.post(
-            f"/api/models/{pack_id}/install/", body, format="json"
-        )
+        return self.client.post(f"/api/models/{pack_id}/install/", body, format="json")
 
     def test_an_unknown_pack_is_a_404_that_names_the_known_ones(self):
         response = self._install("quantem:golgi")

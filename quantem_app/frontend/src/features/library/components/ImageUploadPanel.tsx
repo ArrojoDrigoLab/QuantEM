@@ -140,7 +140,7 @@ import {
   chosenName,
   isChosen,
   type GroupingChoice,
-} from "@/features/library/components/grouping/GroupingPicker";
+} from "@/features/library/components/grouping/groupingChoices";
 import type { AssetDetail, UploadImageOptions } from "@/shared/types/images";
 
 export interface ImageUploadPanelHandle {

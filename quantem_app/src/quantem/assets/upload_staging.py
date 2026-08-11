@@ -291,9 +291,7 @@ def _discard_upload_bytes(path: Path, what: str) -> bool:
     return True
 
 
-def discard_upload_if_unreferenced(
-    path: Path, *, require_upload_name: bool = True
-) -> bool:
+def discard_upload_if_unreferenced(path: Path, *, require_upload_name: bool = True) -> bool:
     """Release upload bytes that nothing points at. ``True`` if they went.
 
     The question asked is the one that decides whether the file can ever be
@@ -339,9 +337,7 @@ def discard_upload_if_unreferenced(
         return False
     if upload_is_referenced(path) is not False:
         return False
-    return _discard_upload_bytes(
-        path, "staged upload whose import did not complete"
-    )
+    return _discard_upload_bytes(path, "staged upload whose import did not complete")
 
 
 class StagedFileUploadHandler(TemporaryFileUploadHandler):
@@ -468,8 +464,7 @@ def _owned_uploads() -> tuple[set[Path], set[str]] | None:
             if resolved.parent == uploads:
                 referenced.add(resolved)
         asset_ids = {
-            str(asset_id)
-            for asset_id in Asset.objects.values_list("id", flat=True).iterator()
+            str(asset_id) for asset_id in Asset.objects.values_list("id", flat=True).iterator()
         }
         return referenced, asset_ids
     except Exception:

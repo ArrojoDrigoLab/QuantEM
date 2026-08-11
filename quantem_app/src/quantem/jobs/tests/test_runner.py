@@ -92,6 +92,7 @@ class JobRunnerFailureHandlingTests(TestCase):
         )
 
         with patch("quantem.jobs.registry.get_handler") as get_handler:
+
             def failing_handler(payload, reporter, cancel):
                 raise RuntimeError("simulated full-run failure")
 
@@ -115,6 +116,7 @@ class JobRunnerFailureHandlingTests(TestCase):
         )
 
         with patch("quantem.jobs.registry.get_handler") as get_handler:
+
             def failing_handler(payload, reporter, cancel):
                 raise RuntimeError("simulated adaptation failure")
 
@@ -137,6 +139,7 @@ class JobRunnerFailureHandlingTests(TestCase):
         )
 
         with patch("quantem.jobs.registry.get_handler") as get_handler:
+
             def failing_handler(payload, reporter, cancel):
                 raise RuntimeError("simulated upload failure")
 
@@ -158,6 +161,7 @@ class JobRunnerFailureHandlingTests(TestCase):
         Job.objects.filter(id=job.id).update(attempts=1)
 
         with patch("quantem.jobs.registry.get_handler") as get_handler:
+
             def failing_handler(payload, reporter, cancel):
                 raise RuntimeError("simulated overlay failure")
 

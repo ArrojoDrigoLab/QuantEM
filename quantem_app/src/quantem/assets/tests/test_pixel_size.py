@@ -45,9 +45,7 @@ class TiffPixelSizeTests(SimpleTestCase):
     def test_inch_resolution(self):
         # 2540 px/inch -> 10 um/px -> 10000 nm
         p = _write(self.tmp / "in.tif", resolution=(2540, 2540), unit="INCH")
-        self.assertAlmostEqual(
-            extract_tiff_metadata(p)["pixel_size_nm"], 10000.0, places=3
-        )
+        self.assertAlmostEqual(extract_tiff_metadata(p)["pixel_size_nm"], 10000.0, places=3)
 
     def test_unitless_resolution_is_refused(self):
         """ResolutionUnit=1 is an aspect ratio, not a scale. Inventing nanometres

@@ -238,9 +238,7 @@ class UnitProgressTests(_ClearsTheActiveReporter, TestCase):
         with _every_write_allowed():
             with reporter.unit_scope(total=10, label=UNIT_TILE) as scope:
                 scope.set(10)
-            Job.objects.filter(id=job.id).update(
-                status="SUCCESS", progress_units_done=10
-            )
+            Job.objects.filter(id=job.id).update(status="SUCCESS", progress_units_done=10)
             with reporter.unit_scope(total=99, label=UNIT_TILE) as stray:
                 stray.set(7)
         job.refresh_from_db()

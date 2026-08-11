@@ -90,9 +90,7 @@ class Command(BaseCommand):
         confirmed_only = bool(options.get("confirmed_only"))
         apply_changes = bool(options.get("apply"))
 
-        segmentations = ImageSegmentation.objects.select_related("asset").order_by(
-            "created_at"
-        )
+        segmentations = ImageSegmentation.objects.select_related("asset").order_by("created_at")
         if segmentation_id:
             segmentations = segmentations.filter(id=segmentation_id)
             if not segmentations.exists():
@@ -112,9 +110,7 @@ class Command(BaseCommand):
 
             seen = changed = unmeasured = 0
             batch: list[SegmentObject] = []
-            for segment in objects.order_by("created_at").iterator(
-                chunk_size=BATCH_SIZE
-            ):
+            for segment in objects.order_by("created_at").iterator(chunk_size=BATCH_SIZE):
                 batch.append(segment)
                 if len(batch) < BATCH_SIZE:
                     continue
@@ -174,9 +170,7 @@ class Command(BaseCommand):
         ``worst`` is the largest ``old / new`` area ratio seen, which is how the
         dry run reports the size of the correction.
         """
-        before = {
-            str(segment.id): (segment.features or {}).get("area") for segment in batch
-        }
+        before = {str(segment.id): (segment.features or {}).get("area") for segment in batch}
         if apply_changes:
             measured, unmeasured = self._apply(segmentation, batch)
         else:
@@ -206,10 +200,7 @@ class Command(BaseCommand):
     ) -> tuple[dict[str, float], int]:
         outcome = measure_segments(segmentation, batch)
         return (
-            {
-                str(segment.id): (segment.features or {}).get("area")
-                for segment in batch
-            },
+            {str(segment.id): (segment.features or {}).get("area") for segment in batch},
             len(outcome.unmeasured),
         )
 

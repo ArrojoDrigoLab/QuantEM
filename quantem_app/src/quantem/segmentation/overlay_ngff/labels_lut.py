@@ -143,9 +143,7 @@ def allocate_labels(
     if not new_objects:
         return {}
     used = set(
-        SegmentationOverlayLabel.objects.filter(overlay_state=state).values_list(
-            "label", flat=True
-        )
+        SegmentationOverlayLabel.objects.filter(overlay_state=state).values_list("label", flat=True)
     )
     assigned: dict[Any, int] = {}
     rows: list[SegmentationOverlayLabel] = []
@@ -185,9 +183,7 @@ def _resolve_live_objects(
     state: SegmentationOverlayState,
 ) -> tuple[list[SegmentationOverlayLabel], dict[Any, SegmentObject]]:
     rows = list(
-        SegmentationOverlayLabel.objects.filter(overlay_state=state).only(
-            "label", "object_uuid"
-        )
+        SegmentationOverlayLabel.objects.filter(overlay_state=state).only("label", "object_uuid")
     )
     object_ids = [row.object_uuid for row in rows]
     objects: dict[Any, SegmentObject] = {}

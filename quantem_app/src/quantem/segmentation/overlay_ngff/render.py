@@ -73,11 +73,7 @@ def geometry_to_rings(geometry: BaseGeometry | None) -> list[tuple[np.ndarray, l
         exterior = np.asarray(exterior_coords, dtype=np.float32)
         if exterior.ndim != 2 or exterior.shape[0] < 3:
             continue
-        holes = [
-            np.asarray(ring, dtype=np.float32)
-            for ring in interior_rings
-            if len(ring) >= 3
-        ]
+        holes = [np.asarray(ring, dtype=np.float32) for ring in interior_rings if len(ring) >= 3]
         rings.append((exterior[:, :2], [hole[:, :2] for hole in holes]))
     return rings
 
@@ -188,8 +184,7 @@ def mode_downsample_2x2(arr: np.ndarray) -> np.ndarray:
             count += ((other == candidate) & (other != 0)).astype(count.dtype)
         is_foreground = candidate != 0
         take = is_foreground & (
-            (count > best_cnt)
-            | ((count == best_cnt) & ((best_val == 0) | (candidate < best_val)))
+            (count > best_cnt) | ((count == best_cnt) & ((best_val == 0) | (candidate < best_val)))
         )
         best_val = np.where(take, candidate, best_val)
         best_cnt = np.where(take, count, best_cnt)
@@ -301,11 +296,7 @@ def downsample_block_worker(task: tuple[str, str, int, tuple[int, int, int, int]
 def iter_level0_chunks(width: int, height: int) -> list[tuple[int, int]]:
     max_chunk_x = max(0, math.ceil(width / OVERLAY_CHUNK_SIZE))
     max_chunk_y = max(0, math.ceil(height / OVERLAY_CHUNK_SIZE))
-    return [
-        (chunk_x, chunk_y)
-        for chunk_y in range(max_chunk_y)
-        for chunk_x in range(max_chunk_x)
-    ]
+    return [(chunk_x, chunk_y) for chunk_y in range(max_chunk_y) for chunk_x in range(max_chunk_x)]
 
 
 def chunk_bounds(

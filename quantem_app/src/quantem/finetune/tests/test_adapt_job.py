@@ -73,9 +73,7 @@ class ThresholdOnlyAdaptTests(TestCase):
         from quantem.finetune.tests.fixtures import square
         from quantem.segmentation.models import CompletedROI, SegmentObject
 
-        CompletedROI.objects.create(
-            segmentation=segmentation, geometry=square(190, 20, 250, 90)
-        )
+        CompletedROI.objects.create(segmentation=segmentation, geometry=square(190, 20, 250, 90))
         polygon = square(200, 30, 230, 60)
         SegmentObject.objects.create(
             segmentation=segmentation,

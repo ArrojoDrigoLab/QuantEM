@@ -66,8 +66,7 @@ SHIPPED_STRING = (
 
 #: Also seen on a card in the same session, truncated by the layout.
 SHIPPED_MODULE_STRING = (
-    "(or, if the console script is not on your PATH: python -m "
-    "quantem.registry.instal"
+    "(or, if the console script is not on your PATH: python -m quantem.registry.instal"
 )
 
 
@@ -86,9 +85,7 @@ def _assert_clean(pairs, surface: str, *, user_supplied=()) -> None:
     ]
     if violations:
         report = "\n".join(f"  {v}" for v in violations)
-        raise AssertionError(
-            f"I-12: {len(violations)} shell/CLI defect(s) in {surface}:\n{report}"
-        )
+        raise AssertionError(f"I-12: {len(violations)} shell/CLI defect(s) in {surface}:\n{report}")
 
 
 def _assert_no_terminal_copy(pairs, surface: str) -> None:
@@ -135,8 +132,7 @@ class DetectorTests(SimpleTestCase):
             "Mitochondria 62% \u00b7 531 of 858 tiles \u00b7 about 4 min",
             "quantem:mito cannot run on this machine.",
             "QuantEM \u2014 Mitochondria",
-            "Encoder and head trained by the Arrojo e Drigo Lab on the QuantEM "
-            "EM corpus.",
+            "Encoder and head trained by the Arrojo e Drigo Lab on the QuantEM EM corpus.",
             "This run found 0 objects at include level 0.50.",
             "Could not reach the QuantEM model repository "
             "(https://huggingface.co/ArrojoeDrigoLab/quantem).",
@@ -272,7 +268,10 @@ def _unavailable(name: str) -> Exception:
 def test_status_error_never_carries_the_maintainers_command():
     """The labeling header renders this verbatim. It used to be terminal copy."""
     pairs = [
-        (f"translate_model_error[{name}]", translate_model_error(_unavailable(name), pack_id=PACK_ID))
+        (
+            f"translate_model_error[{name}]",
+            translate_model_error(_unavailable(name), pack_id=PACK_ID),
+        )
         for name in sorted(MODEL_UNAVAILABLE_CLASS_NAMES)
     ]
 
@@ -381,9 +380,7 @@ class ServedResponseTests(TestCase):
             progress_total_bytes = 4096
 
         with patch.object(catalogue, "active_install_job", lambda pack_id: _Job()):
-            response = self.client.post(
-                f"/api/models/{PACK_ID}/install/", {}, format="json"
-            )
+            response = self.client.post(f"/api/models/{PACK_ID}/install/", {}, format="json")
 
         assert response.status_code == 409
         self._check(response.json(), "POST install (409 conflict)")
@@ -466,6 +463,4 @@ def test_the_frontend_does_not_hardcode_terminal_copy():
             if terminal in text:
                 offenders.append(f"{path.relative_to(src)}: {terminal!r}")
 
-    assert not offenders, "I-12: terminal copy hardcoded in the frontend:\n" + "\n".join(
-        offenders
-    )
+    assert not offenders, "I-12: terminal copy hardcoded in the frontend:\n" + "\n".join(offenders)

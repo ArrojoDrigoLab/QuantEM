@@ -58,15 +58,11 @@ def _loader(pack_id: str, device: str | None = None):
     without it the reload check would be comparing two different models.
     """
     torch.manual_seed(1234)
-    return engine.LoadedModel(
-        spec=MODEL_SPECS[pack_id], device="cpu", module=StandInModel()
-    )
+    return engine.LoadedModel(spec=MODEL_SPECS[pack_id], device="cpu", module=StandInModel())
 
 
 def _big_segmentation(name: str):
-    return annotated_segmentation(
-        name, size=BIG, roi=BIG_ROI, obj=BIG_OBJECT
-    )
+    return annotated_segmentation(name, size=BIG, roi=BIG_ROI, obj=BIG_OBJECT)
 
 
 class HeadModeJobTests(TestCase):

@@ -86,12 +86,8 @@ def _fake_engine():
     spec = get_model_spec("quantem", "mito")
 
     def predict_region(_model, image, *, pixel_size_nm=None, **_kwargs):
-        context = resample.plan_resample(
-            image.shape[:2], pixel_size_nm, spec.canonical_nm
-        )
-        return SimpleNamespace(
-            prob=_model_field(context.model_shape), context=context, plan=None
-        )
+        context = resample.plan_resample(image.shape[:2], pixel_size_nm, spec.canonical_nm)
+        return SimpleNamespace(prob=_model_field(context.model_shape), context=context, plan=None)
 
     return SimpleNamespace(
         load_model=lambda *_a, **_k: SimpleNamespace(device="cpu"),
@@ -111,9 +107,7 @@ def _segmenter(threshold: float = 0.5) -> DinoMitoSegmenter:
 
 class IncludeLevelDialTestCase(TestCase):
     def setUp(self):
-        self.image = create_small_test_image(
-            "Dial", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Dial", width=SIZE, height=SIZE, textured=True)
         asset = self.image.asset
         asset.pixel_size_nm = PIXEL_SIZE_NM
         asset.save(update_fields=["pixel_size_nm"])
@@ -121,9 +115,7 @@ class IncludeLevelDialTestCase(TestCase):
             asset=asset, segmentation_type=get_or_create_mitochondria_type()
         )
         SegmentationConfig.objects.get_or_create(segmentation=self.segmentation)
-        self.url = reverse(
-            "segmentation-include-level", args=[str(self.segmentation.id)]
-        )
+        self.url = reverse("segmentation-include-level", args=[str(self.segmentation.id)])
 
     def run_the_model(self, threshold: float = 0.5) -> int:
         segmenter = _segmenter(threshold)
@@ -202,9 +194,7 @@ class TheWorkerTests(IncludeLevelDialTestCase):
         at_half = self.live_candidates()
         assert at_half == 0, "running the model must not create candidates"
 
-        with patch.object(
-            DinoMitoSegmenter, "load_models", side_effect=AssertionError("loaded")
-        ):
+        with patch.object(DinoMitoSegmenter, "load_models", side_effect=AssertionError("loaded")):
             outcome = self.work_the_job(0.25)
 
         assert outcome["segment_count"] == self.live_candidates()
@@ -218,9 +208,11 @@ class TheWorkerTests(IncludeLevelDialTestCase):
 
         self.work_the_job(0.3)
 
-        latest = SegmentationResultVersion.objects.filter(
-            segmentation=self.segmentation
-        ).order_by("-version").first()
+        latest = (
+            SegmentationResultVersion.objects.filter(segmentation=self.segmentation)
+            .order_by("-version")
+            .first()
+        )
         assert latest is not None
         assert latest.version > first
         assert latest.include_level == 0.3, (
@@ -290,9 +282,7 @@ class WhenTheDialCannotMoveTests(IncludeLevelDialTestCase):
     """Two ways the map is unusable, and they must not read the same."""
 
     def test_a_map_that_was_never_stored_says_running_once_fixes_it(self):
-        assert not ProbabilityMap.objects.filter(
-            segmentation=self.segmentation
-        ).exists()
+        assert not ProbabilityMap.objects.filter(segmentation=self.segmentation).exists()
 
         readiness = stored_map_readiness(
             segmentation=self.segmentation,
@@ -347,9 +337,7 @@ class WhenTheDialCannotMoveTests(IncludeLevelDialTestCase):
         with self.assertRaises(StoredMapUnavailable):
             from quantem.seg_core.db.inference import replay_stored_probability_map
 
-            replay_stored_probability_map(
-                segmenter, self.segmentation, threshold=0.5
-            )
+            replay_stored_probability_map(segmenter, self.segmentation, threshold=0.5)
 
         self.run_the_model(0.5)
         assert (
@@ -372,8 +360,7 @@ class WhenTheDialCannotMoveTests(IncludeLevelDialTestCase):
         from quantem.core.error_codes import ErrorCode, classify_exception
 
         assert (
-            classify_exception(StoredMapUnavailable("no map"))
-            is ErrorCode.PROBABILITY_MAP_MISSING
+            classify_exception(StoredMapUnavailable("no map")) is ErrorCode.PROBABILITY_MAP_MISSING
         )
 
 
@@ -435,9 +422,7 @@ class TheRouteTests(IncludeLevelDialTestCase):
                     self.url, {"include_level": level}, content_type="application/json"
                 )
                 assert response.status_code == 400
-                assert not Job.objects.filter(
-                    type=JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL
-                ).exists()
+                assert not Job.objects.filter(type=JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL).exists()
 
     def test_no_stored_map_is_refused_at_the_door_rather_than_queued_to_fail(self):
         """A task that is certain to go red is worse than a refusal.
@@ -453,9 +438,7 @@ class TheRouteTests(IncludeLevelDialTestCase):
         body = response.json()
         assert body["detail"] == NO_STORED_MAP_MESSAGE
         assert body["error_code"] == "probability_map_missing"
-        assert not Job.objects.filter(
-            type=JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL
-        ).exists()
+        assert not Job.objects.filter(type=JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL).exists()
 
     def test_a_map_from_an_older_build_is_refused_with_its_own_sentence(self):
         self.run_the_model(0.5)

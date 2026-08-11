@@ -175,9 +175,7 @@ def test_without_the_watchdog_the_orphan_is_reproduced(tmp_path):
     orphan_survived = False
     try:
         _force_kill(parent)
-        orphan_survived = (
-            _wait_until_gone(worker_pid, SURVIVAL_OBSERVATION_SECONDS) is None
-        )
+        orphan_survived = _wait_until_gone(worker_pid, SURVIVAL_OBSERVATION_SECONDS) is None
     finally:
         if _process_is_alive(worker_pid):
             subprocess.run(
@@ -257,9 +255,7 @@ class TestTheWorkerSetupIsNotDuplicated:
         They had already diverged: only the pool copy installs the watchdog.
         """
         calls: list[str] = []
-        monkeypatch.setattr(
-            runner, "django_pool_initializer", lambda: calls.append("initializer")
-        )
+        monkeypatch.setattr(runner, "django_pool_initializer", lambda: calls.append("initializer"))
 
         runner._setup_django()
 
@@ -276,8 +272,7 @@ class TestTheWorkerSetupIsNotDuplicated:
             for node in ast.walk(tree)
             if isinstance(node, ast.Assign)
             for target in node.targets
-            if isinstance(target, ast.Name)
-            and target.id == "WORKER_PROCESS_ENV_VAR"
+            if isinstance(target, ast.Name) and target.id == "WORKER_PROCESS_ENV_VAR"
         ]
         assert not redeclared, (
             "jobs/runner.py declares WORKER_PROCESS_ENV_VAR again at line(s) "

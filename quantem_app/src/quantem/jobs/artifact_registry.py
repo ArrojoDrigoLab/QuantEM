@@ -71,9 +71,7 @@ def _asset_file_path(asset_id: str, *, required: bool = True) -> StoragePath | N
 def _segmentation_image_path(segmentation_id: str) -> StoragePath | None:
     ImageSegmentation = _model("segmentation.ImageSegmentation")
     segmentation = (
-        ImageSegmentation.objects.select_related("asset")
-        .filter(id=segmentation_id)
-        .first()
+        ImageSegmentation.objects.select_related("asset").filter(id=segmentation_id).first()
     )
     if segmentation is None or not getattr(segmentation, "asset_id", None):
         return None
@@ -107,9 +105,7 @@ def _asset_ngff_path(asset_id: str, *, required: bool = False) -> StoragePath:
 
 def _segmentation_ngff_path(segmentation_id: str, *, required: bool = False) -> StoragePath | None:
     ImageSegmentation = _model("segmentation.ImageSegmentation")
-    segmentation = (
-        ImageSegmentation.objects.filter(id=segmentation_id).only("asset_id").first()
-    )
+    segmentation = ImageSegmentation.objects.filter(id=segmentation_id).only("asset_id").first()
     if segmentation is None or not getattr(segmentation, "asset_id", None):
         return None
     return _asset_ngff_path(str(segmentation.asset_id), required=required)
@@ -145,9 +141,9 @@ def _analysis_export_dir(analysis_run_id: str, *, required: bool = False) -> Sto
 def _probability_map_paths(segmentation_id: str) -> list[StoragePath]:
     ProbabilityMap = _model("segmentation.ProbabilityMap")
     paths: list[StoragePath] = []
-    for raw_value in ProbabilityMap.objects.filter(
-        segmentation_id=segmentation_id
-    ).values_list("file_path", flat=True):
+    for raw_value in ProbabilityMap.objects.filter(segmentation_id=segmentation_id).values_list(
+        "file_path", flat=True
+    ):
         raw_text = str(raw_value or "").strip()
         if raw_text:
             paths.append(StoragePath(validate_storage_relpath(raw_text), required=False))

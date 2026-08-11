@@ -106,9 +106,7 @@ class AnalysisRunDetailView(APIView):
     """One analysis run and everything it measured."""
 
     def get(self, request, run_id):
-        run = get_object_or_404(
-            AnalysisRun.objects.select_related("segmentation"), id=run_id
-        )
+        run = get_object_or_404(AnalysisRun.objects.select_related("segmentation"), id=run_id)
         return Response(AnalysisRunSerializer(run).data, status=status.HTTP_200_OK)
 
 
@@ -140,9 +138,7 @@ class AnalysisRunExportView(APIView):
         except (OSError, ValueError):
             candidate = None
         if candidate is None or not _is_within(candidate, resolved_base):
-            logger.warning(
-                "Refused export path %r outside run %s's directory.", name, run.id
-            )
+            logger.warning("Refused export path %r outside run %s's directory.", name, run.id)
             return Response(
                 {"error": "That file is not part of this analysis's export bundle."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -153,9 +149,11 @@ class AnalysisRunExportView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        content_type = EXPORT_CONTENT_TYPES.get(
-            candidate.suffix.lower()
-        ) or mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+        content_type = (
+            EXPORT_CONTENT_TYPES.get(candidate.suffix.lower())
+            or mimetypes.guess_type(candidate.name)[0]
+            or "application/octet-stream"
+        )
         return FileResponse(
             candidate.open("rb"),
             as_attachment=True,

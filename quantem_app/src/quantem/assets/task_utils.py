@@ -55,6 +55,7 @@ from .pyramid_authority import (
 
 logger = logging.getLogger(__name__)
 
+
 def _open_generation_level_cache_clear() -> None:
     """Drop the open-array cache.
 
@@ -176,7 +177,10 @@ def load_image_array(image) -> tuple[np.ndarray, float]:
     load_elapsed = time.time() - load_start
     logger.info(
         "Loaded image array from %s: shape=%s, dtype=%s (took %.2f seconds)",
-        source, image_array.shape, image_array.dtype, load_elapsed,
+        source,
+        image_array.shape,
+        image_array.dtype,
+        load_elapsed,
     )
     return image_array, load_elapsed
 

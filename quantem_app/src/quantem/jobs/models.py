@@ -160,9 +160,7 @@ class Job(models.Model):
     ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=128)
-    priority = models.CharField(
-        max_length=16, choices=PRIORITY_CHOICES, default="default"
-    )
+    priority = models.CharField(max_length=16, choices=PRIORITY_CHOICES, default="default")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="PENDING")
     progress = models.FloatField(default=0.0)
     # Byte-level progress, for jobs whose work is moving bytes (model pack
@@ -208,9 +206,7 @@ class Job(models.Model):
     result_json = models.JSONField(null=True, blank=True)
     error_traceback = models.TextField(blank=True)
     cancel_requested = models.BooleanField(default=False)
-    resource_class = models.CharField(
-        max_length=16, choices=RESOURCE_CHOICES, default="cpu"
-    )
+    resource_class = models.CharField(max_length=16, choices=RESOURCE_CHOICES, default="cpu")
     queue_name = models.CharField(max_length=64, default="default")
     tags = models.JSONField(default=list, blank=True)
     claimed_at = models.DateTimeField(null=True, blank=True)
@@ -260,9 +256,7 @@ class Job(models.Model):
             return "", 0
         prefix = f"asset:{key}:"
         open_batch = (
-            cls.objects.filter(
-                batch_id__startswith=prefix, status__in=OPEN_JOB_STATUSES
-            )
+            cls.objects.filter(batch_id__startswith=prefix, status__in=OPEN_JOB_STATUSES)
             .order_by("created_at")
             .values_list("batch_id", flat=True)
             .first()

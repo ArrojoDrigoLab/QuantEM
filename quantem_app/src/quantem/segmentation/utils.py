@@ -142,9 +142,7 @@ def polygon_to_mask(polygon: Polygon, image_shape: tuple[int, int]) -> np.ndarra
         coords = polygon.exterior.coords
     except (AttributeError, IndexError, TypeError):
         # If coordinate access fails, return empty mask
-        logger.warning(
-            "Failed to extract coordinates from polygon, returning empty mask"
-        )
+        logger.warning("Failed to extract coordinates from polygon, returning empty mask")
         return np.zeros((height, width), dtype=bool)
 
     # Convert to matplotlib Path format (list of (x, y) tuples)
@@ -188,9 +186,7 @@ def polygon_to_mask_in_roi(
         return np.zeros((height, width), dtype=bool)
 
     try:
-        path_coords = [
-            (float(coord[0] - roi_x), float(coord[1] - roi_y)) for coord in coords
-        ]
+        path_coords = [(float(coord[0] - roi_x), float(coord[1] - roi_y)) for coord in coords]
     except (IndexError, TypeError):
         return np.zeros((height, width), dtype=bool)
 
@@ -228,12 +224,8 @@ def tile_mask_to_polygon(
 
     # Calculate actual tile region (without padding)
     tile_height, tile_width = tile_mask.shape
-    actual_tile_height = min(
-        tile_height, int((full_height * downsample_factor) - y_offset)
-    )
-    actual_tile_width = min(
-        tile_width, int((full_width * downsample_factor) - x_offset)
-    )
+    actual_tile_height = min(tile_height, int((full_height * downsample_factor) - y_offset))
+    actual_tile_width = min(tile_width, int((full_width * downsample_factor) - x_offset))
 
     # Extract actual tile region
     actual_tile_mask = tile_mask[:actual_tile_height, :actual_tile_width]
@@ -300,8 +292,7 @@ def tile_mask_to_polygon(
     for ring in polygon_rings(bbox_tile):
         # Handle both 2D (x, y) and 3D (x, y, z) coordinates by taking only first two
         translated_ring = [
-            (float(coord[0] + x_offset_full), float(coord[1] + y_offset_full))
-            for coord in ring
+            (float(coord[0] + x_offset_full), float(coord[1] + y_offset_full)) for coord in ring
         ]
         bbox_rings.append(translated_ring)
     bbox_full = Polygon(bbox_rings[0], bbox_rings[1:])
@@ -441,10 +432,7 @@ def compute_regionprops_features(mask: np.ndarray) -> dict:
         # Approximate perimeter as sum of edge lengths
         perimeter = float(
             np.sum(
-                np.sqrt(
-                    np.diff(largest_contour[:, 0]) ** 2
-                    + np.diff(largest_contour[:, 1]) ** 2
-                )
+                np.sqrt(np.diff(largest_contour[:, 0]) ** 2 + np.diff(largest_contour[:, 1]) ** 2)
             )
         )
     else:
@@ -453,32 +441,20 @@ def compute_regionprops_features(mask: np.ndarray) -> dict:
     return {
         "area": float(props.area),
         "perimeter": perimeter,
-        "eccentricity": (
-            float(props.eccentricity) if hasattr(props, "eccentricity") else 0.0
-        ),
+        "eccentricity": (float(props.eccentricity) if hasattr(props, "eccentricity") else 0.0),
         "solidity": float(props.solidity) if hasattr(props, "solidity") else 0.0,
         "extent": float(props.extent) if hasattr(props, "extent") else 0.0,
         "major_axis_length": (
             float(props.axis_major_length)
             if hasattr(props, "axis_major_length")
-            else (
-                float(props.major_axis_length)
-                if hasattr(props, "major_axis_length")
-                else 0.0
-            )
+            else (float(props.major_axis_length) if hasattr(props, "major_axis_length") else 0.0)
         ),
         "minor_axis_length": (
             float(props.axis_minor_length)
             if hasattr(props, "axis_minor_length")
-            else (
-                float(props.minor_axis_length)
-                if hasattr(props, "minor_axis_length")
-                else 0.0
-            )
+            else (float(props.minor_axis_length) if hasattr(props, "minor_axis_length") else 0.0)
         ),
-        "orientation": (
-            float(props.orientation) if hasattr(props, "orientation") else 0.0
-        ),
+        "orientation": (float(props.orientation) if hasattr(props, "orientation") else 0.0),
     }
 
 
@@ -554,6 +530,7 @@ def compute_intensity_features(
         features["intensity_contrast"] = 0.0
 
     return features
+
 
 def convert_probability_map_to_uint8_png(
     input_path: Path, output_path: Path, channel_index: int = 0

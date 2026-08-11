@@ -62,9 +62,7 @@ def _derive_seed(seed: int, image_key: str, replicate: int) -> int:
     return int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "big")
 
 
-def sample_uniform_in_mask(
-    mask: np.ndarray, n: int, rng: np.random.Generator
-) -> np.ndarray:
+def sample_uniform_in_mask(mask: np.ndarray, n: int, rng: np.random.Generator) -> np.ndarray:
     """``n`` uniformly random integer ``(x, y)`` positions inside ``mask``.
 
     Rejection sampling, batched by the mask's fill fraction so the expected
@@ -181,11 +179,7 @@ def csr_null(
 
         def metric(pts: np.ndarray) -> dict[str, float]:
             a = assign_points(pts, comp, areas=areas)
-            return {
-                f"enrichment_{k}": v
-                for k, v in a.enrichment.items()
-                if v is not None
-            }
+            return {f"enrichment_{k}": v for k, v in a.enrichment.items() if v is not None}
 
     observed_assignment = assign_points(points_xy, comp, areas=areas)
     n = observed_assignment.n_on_tissue
@@ -267,9 +261,7 @@ def self_check(comp: CompartmentSet, *, image_key: str = "selfcheck") -> dict[st
     # count. Sizing off the image instead would let a 2 %-area compartment land
     # ~25 points and fail the check on sampling noise alone, which says nothing
     # about whether the normalisation is biased.
-    smallest = min(
-        (f for f in areas.fractions.values() if f > 0), default=1.0
-    )
+    smallest = min((f for f in areas.fractions.values() if f > 0), default=1.0)
     # ...but never more points than the tissue has pixels. Sampling is uniform
     # over a finite pixel set, so past ``tissue_px`` draws the estimate has
     # already converged on the exact area fraction the check compares against;

@@ -43,9 +43,7 @@ def readable_points(points_xy: np.ndarray) -> np.ndarray:
     return np.isfinite(pts[:, 0]) & np.isfinite(pts[:, 1])
 
 
-def out_of_image(
-    xs: np.ndarray, ys: np.ndarray, shape: tuple[int, int]
-) -> np.ndarray:
+def out_of_image(xs: np.ndarray, ys: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
     """Boolean per coordinate: the position is not inside the image.
 
     The bound is ``[-1, w]`` rather than ``[0, w - 1]``: pixel indices run to
@@ -150,9 +148,7 @@ class AreaFractions:
     areas_um2: dict[str, float] | None
 
 
-def area_fractions(
-    comp: CompartmentSet, *, pixel_size_nm: float | None = None
-) -> AreaFractions:
+def area_fractions(comp: CompartmentSet, *, pixel_size_nm: float | None = None) -> AreaFractions:
     """Area of each compartment as a fraction of tissue area.
 
     ``cytoplasm`` is derived as ``tissue AND NOT nucleus`` when a nucleus mask is
@@ -182,9 +178,7 @@ def area_fractions(
     areas_px = {name: int(m.sum()) for name, m in restricted.items()}
     if "nucleus" in areas_px and "cytoplasm" not in areas_px:
         areas_px["cytoplasm"] = total - areas_px["nucleus"]
-    fractions = {
-        name: (px / total if total else 0.0) for name, px in areas_px.items()
-    }
+    fractions = {name: (px / total if total else 0.0) for name, px in areas_px.items()}
 
     um2 = None
     tissue_um2 = None

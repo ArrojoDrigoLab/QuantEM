@@ -54,9 +54,7 @@ def save_probability_map_upload(
     prob_maps_dir = PROB_MAPS_DIR / str(segmentation.id)
     prob_maps_dir.mkdir(parents=True, exist_ok=True)
 
-    temp_file_path = (
-        prob_maps_dir / f"temp_{uuid.uuid4()}{Path(uploaded_file.name).suffix}"
-    )
+    temp_file_path = prob_maps_dir / f"temp_{uuid.uuid4()}{Path(uploaded_file.name).suffix}"
     with open(temp_file_path, "wb") as f:
         for chunk in uploaded_file.chunks():
             f.write(chunk)

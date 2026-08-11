@@ -77,9 +77,7 @@ class MovingBetweenExperimentsTests(TestCase):
         self.liver = Dataset.objects.create(experiment=self.fasted, name="Liver 24h")
         self.kidney = Dataset.objects.create(experiment=self.fed, name="Kidney 24h")
         self.asset = _asset()
-        apply_grouping(
-            [self.asset], experiment=self.fasted, datasets=[self.liver]
-        )
+        apply_grouping([self.asset], experiment=self.fasted, datasets=[self.liver])
 
     def test_the_move_drops_the_datasets_the_new_experiment_cannot_hold(self):
         outcome = apply_grouping([self.asset], experiment=self.fed)
@@ -95,9 +93,7 @@ class MovingBetweenExperimentsTests(TestCase):
         apply_grouping([self.asset], experiment=self.fed, datasets=[self.kidney])
 
         self.asset.refresh_from_db()
-        self.assertEqual(
-            [dataset.name for dataset in self.asset.datasets.all()], ["Kidney 24h"]
-        )
+        self.assertEqual([dataset.name for dataset in self.asset.datasets.all()], ["Kidney 24h"])
 
     def test_clearing_the_experiment_clears_the_datasets_with_it(self):
         """An image with no experiment cannot be in any dataset."""
@@ -114,9 +110,7 @@ class MovingBetweenExperimentsTests(TestCase):
 
         self.asset.refresh_from_db()
         self.assertEqual(self.asset.experiment_id, self.fasted.id)
-        self.assertEqual(
-            [dataset.name for dataset in self.asset.datasets.all()], ["Liver 24h"]
-        )
+        self.assertEqual([dataset.name for dataset in self.asset.datasets.all()], ["Liver 24h"])
         self.assertEqual(outcome.assets_changed, 0)
 
     def test_a_dataset_from_the_wrong_experiment_is_refused_and_rolled_back(self):
@@ -125,9 +119,7 @@ class MovingBetweenExperimentsTests(TestCase):
 
         self.asset.refresh_from_db()
         self.assertEqual(self.asset.experiment_id, self.fasted.id)
-        self.assertEqual(
-            [dataset.name for dataset in self.asset.datasets.all()], ["Liver 24h"]
-        )
+        self.assertEqual([dataset.name for dataset in self.asset.datasets.all()], ["Liver 24h"])
 
     def test_a_failed_bulk_assignment_lands_nothing_at_all(self):
         """Half a bulk write is worse than none: nothing says which half."""
@@ -152,7 +144,7 @@ class MovingBetweenExperimentsTests(TestCase):
 
 
 class ResolvingNamesTests(TestCase):
-    """"Pick an existing one or type a new name", server side."""
+    """ "Pick an existing one or type a new name", server side."""
 
     def test_a_typed_name_creates_the_experiment(self):
         experiment = resolve_experiment(experiment_name="  Fasted cohort  ")

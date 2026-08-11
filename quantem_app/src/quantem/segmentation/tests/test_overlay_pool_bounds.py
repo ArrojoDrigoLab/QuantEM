@@ -122,9 +122,7 @@ class _RecordingExecutor:
     # -- bookkeeping --------------------------------------------------------
     @staticmethod
     def _result_bytes(value) -> int:
-        return sum(
-            int(part.nbytes) for part in value if isinstance(part, np.ndarray)
-        )
+        return sum(int(part.nbytes) for part in value if isinstance(part, np.ndarray))
 
     def _hold(self, future: Future, value) -> None:
         self._held[id(future)] = self._result_bytes(value)
@@ -219,12 +217,8 @@ def _run_rasterizer(function, *, tiles: int, workers: int):
     arrays = {"labels": [sink], "border": [sink]}
     with (
         patch.object(mutations, "ProcessPoolExecutor", _RecordingExecutor),
-        patch.object(
-            mutations, "raster_process_pool_size", lambda: workers, create=True
-        ),
-        patch.object(
-            mutations.render_module, "rasterize_tile_worker", _stand_in_worker
-        ),
+        patch.object(mutations, "raster_process_pool_size", lambda: workers, create=True),
+        patch.object(mutations.render_module, "rasterize_tile_worker", _stand_in_worker),
     ):
         function(arrays, _stand_in_payloads(tiles), use_pool=True)
     assert len(_RecordingExecutor.instances) == 1
@@ -429,9 +423,7 @@ class OverlayBundleIsByteIdenticalTests(TestCase):
 
     def test_the_windowed_rebuild_writes_the_same_bytes_as_the_unbounded_one(self):
         state = mutations.rebuild_overlay_full(self.segmentation)
-        windowed_sha, windowed_files = _sha256_of_tree(
-            get_overlay_active_bundle_path(state)
-        )
+        windowed_sha, windowed_files = _sha256_of_tree(get_overlay_active_bundle_path(state))
         self.assertGreater(windowed_files, 100, "the store came out suspiciously empty")
 
         with patch.object(mutations, "_rasterize_level0", _legacy_rasterize_level0):
@@ -635,8 +627,7 @@ def _run_capped_child(script: Path, work: Path, *, arm: str, headroom_mb: int) -
     return {
         "ok": False,
         "arm": arm,
-        "error": f"child exited {completed.returncode}: "
-        f"{completed.stderr.strip()[-400:]}",
+        "error": f"child exited {completed.returncode}: {completed.stderr.strip()[-400:]}",
     }
 
 
@@ -668,12 +659,8 @@ def test_the_parent_survives_a_cap_the_unbounded_backlog_does_not(tmp_path):
     script = tmp_path / "capped_child.py"
     script.write_text(textwrap.dedent(CAPPED_CHILD), encoding="utf-8")
 
-    windowed = _run_capped_child(
-        script, tmp_path / "windowed", arm="windowed", headroom_mb=400
-    )
-    unbounded = _run_capped_child(
-        script, tmp_path / "unbounded", arm="unbounded", headroom_mb=400
-    )
+    windowed = _run_capped_child(script, tmp_path / "windowed", arm="windowed", headroom_mb=400)
+    unbounded = _run_capped_child(script, tmp_path / "unbounded", arm="unbounded", headroom_mb=400)
     unbounded_uncapped = _run_capped_child(
         script, tmp_path / "unbounded_roomy", arm="unbounded", headroom_mb=4000
     )

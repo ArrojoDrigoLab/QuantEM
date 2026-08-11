@@ -129,9 +129,7 @@ class ResultVersionAdvancesTests(ResultVersionTestCase):
         self._pass(10, 50, 90)
 
         self.assertEqual(self._version(), 1)
-        self.assertEqual(
-            sorted(self._live().values_list("run_version", flat=True)), [1, 1, 1]
-        )
+        self.assertEqual(sorted(self._live().values_list("run_version", flat=True)), [1, 1, 1])
         row = SegmentationResultVersion.objects.get(segmentation=self.segmentation)
         self.assertEqual(row.version, 1)
         self.assertEqual(row.object_count, 3)
@@ -142,9 +140,7 @@ class ResultVersionAdvancesTests(ResultVersionTestCase):
         self._pass(12, 52, 92, run_id="second")
 
         self.assertEqual(self._version(), 2)
-        self.assertEqual(
-            sorted(self._live().values_list("run_version", flat=True)), [2, 2, 2]
-        )
+        self.assertEqual(sorted(self._live().values_list("run_version", flat=True)), [2, 2, 2])
         self.assertEqual(
             sorted(
                 SegmentationResultVersion.objects.filter(
@@ -162,9 +158,7 @@ class ResultVersionAdvancesTests(ResultVersionTestCase):
         self.assertEqual(self._version(), 10)
         self.assertEqual(
             list(
-                SegmentationResultVersion.objects.filter(
-                    segmentation=self.segmentation
-                )
+                SegmentationResultVersion.objects.filter(segmentation=self.segmentation)
                 .order_by("version")
                 .values_list("version", flat=True)
             ),
@@ -190,9 +184,7 @@ class ResultVersionAdvancesTests(ResultVersionTestCase):
 
         self.assertEqual(self._version(), 1)
         self.assertFalse(
-            SegmentationResultVersion.objects.filter(
-                segmentation=self.segmentation
-            ).exists()
+            SegmentationResultVersion.objects.filter(segmentation=self.segmentation).exists()
         )
 
     def test_a_pass_that_finds_nothing_still_numbers_the_emptiness(self):
@@ -273,9 +265,7 @@ class StaleQualityEstimateTests(ResultVersionTestCase):
     """The consequence the invariant is actually about."""
 
     def _spot_check(self, n: int = 12) -> dict:
-        response = self.client.get(
-            f"/api/segmentations/{self.segmentation.id}/spot-check/?n={n}"
-        )
+        response = self.client.get(f"/api/segmentations/{self.segmentation.id}/spot-check/?n={n}")
         self.assertEqual(response.status_code, 200, response.content)
         return response.json()
 

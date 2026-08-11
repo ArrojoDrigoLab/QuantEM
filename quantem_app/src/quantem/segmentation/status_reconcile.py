@@ -118,12 +118,9 @@ def reconcile_segmentation_status(segmentation: ImageSegmentation) -> bool:
     segmentation.status_stage = "CANDIDATES_READY" if has_objects else "UNSTARTED"
     segmentation.status_progress = 100.0 if has_objects else 0.0
     segmentation.status_error = ABANDONED_RUN_MESSAGE
-    segmentation.save(
-        update_fields=["status_stage", "status_progress", "status_error"]
-    )
+    segmentation.save(update_fields=["status_stage", "status_progress", "status_error"])
     logger.info(
-        "Segmentation %s was left at %s by a run with no job behind it; "
-        "corrected to %s.",
+        "Segmentation %s was left at %s by a run with no job behind it; corrected to %s.",
         segmentation.id,
         previous_stage,
         segmentation.status_stage,

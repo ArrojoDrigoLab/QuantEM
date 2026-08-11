@@ -53,18 +53,18 @@ class BlobRef:
 class ModelPack:
     """One installable (family, organelle) model."""
 
-    id: str                       # e.g. "quantem:mito"
+    id: str  # e.g. "quantem:mito"
     family: Family
     organelle: Organelle
     version: str
     title: str
-    encoder: BlobRef | None       # None when the head embeds a full fine-tuned encoder
+    encoder: BlobRef | None  # None when the head embeds a full fine-tuned encoder
     head: BlobRef
     #: Input is resampled to this pixel size before inference. None = native
     #: resolution. From the released resolved_config.yaml: 8.0 for mito and LD,
     #: 25.0 for nucleus, null for ER.
     canonical_nm: float | None
-    tile_size: int                # 512 (patch 16) or 518 (patch 14)
+    tile_size: int  # 512 (patch 16) or 518 (patch 14)
     default_threshold: float = DEFAULT_THRESHOLD
     licence: str = "see NOTICE"
     licence_url: str | None = None
@@ -128,13 +128,13 @@ MEASURED_SIZES: dict[str, int] = {
     # trunk is 227.7 MB fp16: the Models screen advertised "631.7 MB to
     # install" for a 364 MB download -- a 74% overstatement on the one screen
     # whose job is to tell the user the cost before they commit.
-    "quantem_vitb_encoder": 227_685_512,   # quantem-vitb-trunk.safetensors
+    "quantem_vitb_encoder": 227_685_512,  # quantem-vitb-trunk.safetensors
     "omniem_vitl_encoder": 1_217_509_768,  # omniem-vitl.safetensors
     "mito_quantem_head": 136_541_856,
     "ld_quantem_head": 136_541_848,
     "nucleus_quantem_head": 136_541_864,
-    "er_quantem_head": 465_028_184,   # adapt: full -- embeds a whole fine-tuned ViT-B
-    "mito_omniem_head": 25_730_696,   # LoRA r=8
+    "er_quantem_head": 465_028_184,  # adapt: full -- embeds a whole fine-tuned ViT-B
+    "mito_omniem_head": 25_730_696,  # LoRA r=8
     "ld_omniem_head": 25_730_688,
     "nucleus_omniem_head": 25_730_704,
     "er_omniem_head": 135_200_976,
@@ -143,14 +143,62 @@ MEASURED_SIZES: dict[str, int] = {
 #: Per-model architecture facts, transcribed from the eight released
 #: ``resolved_config.yaml`` files. Verified to match the manuscript exactly.
 ARCHITECTURE: dict[str, dict[str, Any]] = {
-    "quantem:mito":    {"neck": "naive_1x1", "decoder": "affinity_mws", "adapt": "last_n", "canonical_nm": 8.0,  "tile": 512},
-    "quantem:ld":      {"neck": "naive_1x1", "decoder": "affinity_mws", "adapt": "last_n", "canonical_nm": 8.0,  "tile": 512},
-    "quantem:nucleus": {"neck": "naive_1x1", "decoder": "affinity_mws", "adapt": "last_n", "canonical_nm": 25.0, "tile": 512},
-    "quantem:er":      {"neck": "resnet34_detail", "decoder": "upernet", "adapt": "full",  "canonical_nm": None, "tile": 512},
-    "omniem:mito":     {"neck": "naive_1x1", "decoder": "affinity_mws", "adapt": "lora8",  "canonical_nm": 8.0,  "tile": 518},
-    "omniem:ld":       {"neck": "naive_1x1", "decoder": "affinity_mws", "adapt": "lora8",  "canonical_nm": 8.0,  "tile": 518},
-    "omniem:nucleus":  {"neck": "naive_1x1", "decoder": "affinity_mws", "adapt": "lora8",  "canonical_nm": 25.0, "tile": 518},
-    "omniem:er":       {"neck": "resnet34_detail", "decoder": "dpt",     "adapt": "lora8",  "canonical_nm": None, "tile": 518},
+    "quantem:mito": {
+        "neck": "naive_1x1",
+        "decoder": "affinity_mws",
+        "adapt": "last_n",
+        "canonical_nm": 8.0,
+        "tile": 512,
+    },
+    "quantem:ld": {
+        "neck": "naive_1x1",
+        "decoder": "affinity_mws",
+        "adapt": "last_n",
+        "canonical_nm": 8.0,
+        "tile": 512,
+    },
+    "quantem:nucleus": {
+        "neck": "naive_1x1",
+        "decoder": "affinity_mws",
+        "adapt": "last_n",
+        "canonical_nm": 25.0,
+        "tile": 512,
+    },
+    "quantem:er": {
+        "neck": "resnet34_detail",
+        "decoder": "upernet",
+        "adapt": "full",
+        "canonical_nm": None,
+        "tile": 512,
+    },
+    "omniem:mito": {
+        "neck": "naive_1x1",
+        "decoder": "affinity_mws",
+        "adapt": "lora8",
+        "canonical_nm": 8.0,
+        "tile": 518,
+    },
+    "omniem:ld": {
+        "neck": "naive_1x1",
+        "decoder": "affinity_mws",
+        "adapt": "lora8",
+        "canonical_nm": 8.0,
+        "tile": 518,
+    },
+    "omniem:nucleus": {
+        "neck": "naive_1x1",
+        "decoder": "affinity_mws",
+        "adapt": "lora8",
+        "canonical_nm": 25.0,
+        "tile": 518,
+    },
+    "omniem:er": {
+        "neck": "resnet34_detail",
+        "decoder": "dpt",
+        "adapt": "lora8",
+        "canonical_nm": None,
+        "tile": 518,
+    },
 }
 
 #: Encoder normalisation, from each family's ``checkpoint_index.json``. These do

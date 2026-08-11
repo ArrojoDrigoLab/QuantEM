@@ -5,7 +5,6 @@ This module provides functions to select a maximal non-overlapping set of
 inferred segments based on regression scores, using a simple greedy algorithm.
 """
 
-
 from django.db.models import Q
 from shapely.geometry.base import BaseGeometry
 
@@ -93,12 +92,7 @@ def select_non_overlapping_inferred_segments(
 
         intersects = False
         for (other_minx, other_miny, other_maxx, other_maxy), other in accepted:
-            if (
-                other_maxx < min_x
-                or other_minx > max_x
-                or other_maxy < min_y
-                or other_miny > max_y
-            ):
+            if other_maxx < min_x or other_minx > max_x or other_maxy < min_y or other_miny > max_y:
                 continue
             if other.intersects(geometry):
                 intersects = True

@@ -71,9 +71,7 @@ class HeadSizeRuleTests(FinetuneAppTestCase):
         assert verdict is not None
         assert verdict.ok is False
         # The sentence UX_PLAN §2.3 asks for, verbatim.
-        assert verdict.reason == (
-            "Your checked area is 1.1 µm across; this needs about 1.9 µm."
-        )
+        assert verdict.reason == ("Your checked area is 1.1 µm across; this needs about 1.9 µm.")
 
     def test_a_large_checked_area_passes(self):
         segmentation = annotated_segmentation(
@@ -170,9 +168,7 @@ class StartRefusalTests(FinetuneAppTestCase):
         )
         before = Job.objects.count()
 
-        response = self._start(
-            segmentation, base_model="omniem:mito", mode="head"
-        )
+        response = self._start(segmentation, base_model="omniem:mito", mode="head")
 
         assert response.status_code == 400
         assert response.json()["error"] == (
@@ -197,9 +193,7 @@ class LatestRunTests(FinetuneAppTestCase):
         self.segmentation = annotated_segmentation("Latest")
 
     def test_nothing_run_yet(self):
-        body = self.client.get(
-            reverse("adapt-latest", args=[self.segmentation.id])
-        ).json()
+        body = self.client.get(reverse("adapt-latest", args=[self.segmentation.id])).json()
         assert body == {"adapter": None, "job_id": None}
 
     def test_the_most_recent_run_and_its_job_are_found_without_browser_storage(self):
@@ -209,9 +203,7 @@ class LatestRunTests(FinetuneAppTestCase):
             format="json",
         ).json()
 
-        body = self.client.get(
-            reverse("adapt-latest", args=[self.segmentation.id])
-        ).json()
+        body = self.client.get(reverse("adapt-latest", args=[self.segmentation.id])).json()
         assert body["adapter"]["id"] == started["adapter_id"]
         assert body["job_id"] == started["job_id"]
         assert body["adapter"]["status"] == "PENDING"
@@ -231,9 +223,7 @@ class LatestRunTests(FinetuneAppTestCase):
         ).json()
         assert second["adapter_id"] != first["adapter_id"]
 
-        body = self.client.get(
-            reverse("adapt-latest", args=[self.segmentation.id])
-        ).json()
+        body = self.client.get(reverse("adapt-latest", args=[self.segmentation.id])).json()
         assert body["adapter"]["id"] == second["adapter_id"]
 
 
@@ -289,9 +279,12 @@ class ApplyAndRerunJobTests(FinetuneAppTestCase):
         # Applying writes no object. The re-run is a separate, stated-cost act,
         # so the result says it has not happened rather than implying it has.
         assert block["rerun_pending"] is block["changes_objects"]
-        assert SegmentObject.objects.filter(
-            segmentation=self.segmentation, label_state="CONFIRMED"
-        ).count() == 1
+        assert (
+            SegmentObject.objects.filter(
+                segmentation=self.segmentation, label_state="CONFIRMED"
+            ).count()
+            == 1
+        )
 
     def test_calibration_finishes_well_inside_the_two_seconds_the_panel_promises(self):
         # The panel says "usually about a second" before the button is pressed

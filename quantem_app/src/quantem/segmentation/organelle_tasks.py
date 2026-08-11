@@ -70,6 +70,7 @@ def _pixel_size_step(pixel_size_nm: float | None) -> str:
         "the objects back."
     )
 
+
 #: Label states that suppress a new candidate landing on top of them. See
 #: :func:`quantem.seg_core.db.extraction.extract_and_save_segments`: a candidate
 #: overlapping a CONFIRMED object by >=30%, or an EXCLUDED one by >=80%, is
@@ -282,9 +283,11 @@ def _build_segmenter_kwargs(
 
 def _pack_id_for(segmenter) -> str | None:
     spec = getattr(segmenter, "model_spec", None)
-    return getattr(spec, "pack_id", None) or normalize_source_model(
-        getattr(segmenter, "source_model", None)
-    ) or None
+    return (
+        getattr(spec, "pack_id", None)
+        or normalize_source_model(getattr(segmenter, "source_model", None))
+        or None
+    )
 
 
 def _fail_segmentation(
@@ -382,18 +385,14 @@ def _make_status_callback(
         final_progress = progress >= 100.0
         interval_elapsed = (now - last_saved_monotonic) >= _STATUS_MIN_INTERVAL_SECONDS
 
-        should_save = stage_changed or final_progress or (
-            progress_changed and interval_elapsed
-        )
+        should_save = stage_changed or final_progress or (progress_changed and interval_elapsed)
         if not should_save:
             return
 
         segmentation.status_stage = stage
         segmentation.status_progress = progress
         segmentation.status_error = ""
-        segmentation.save(
-            update_fields=["status_stage", "status_progress", "status_error"]
-        )
+        segmentation.save(update_fields=["status_stage", "status_progress", "status_error"])
 
         if reporter is not None:
             if include_detail_message and message:
@@ -423,9 +422,7 @@ def _make_detail_callback(reporter):
 
         now = time.monotonic()
         same_message = cleaned == last_message
-        interval_elapsed = (
-            now - last_sent_monotonic
-        ) >= _DETAIL_MIN_INTERVAL_SECONDS
+        interval_elapsed = (now - last_sent_monotonic) >= _DETAIL_MIN_INTERVAL_SECONDS
         if same_message and not interval_elapsed:
             return
 
@@ -586,9 +583,7 @@ def _run_segmentation(
             run_finished_at=utc_timestamp(),
         )
         stored_count = len(written)
-        if not stored_count and not bool(
-            getattr(segmenter, "persist_probability_maps", True)
-        ):
+        if not stored_count and not bool(getattr(segmenter, "persist_probability_maps", True)):
             raise RuntimeError(
                 "The model finished, but its threshold result could not be saved. "
                 "No candidates were changed. Check available disk space and try again."
@@ -699,15 +694,11 @@ def _publish_legs(reporter, legs: list[dict]) -> None:
         from quantem.jobs.models import Job  # noqa: PLC0415
 
         detail = dict(
-            Job.objects.filter(id=job_id)
-            .values_list("progress_detail_json", flat=True)
-            .first()
+            Job.objects.filter(id=job_id).values_list("progress_detail_json", flat=True).first()
             or {}
         )
         detail["legs"] = legs
-        Job.objects.filter(id=job_id).update(
-            progress_detail_json=detail, updated_at=timezone.now()
-        )
+        Job.objects.filter(id=job_id).update(progress_detail_json=detail, updated_at=timezone.now())
     except Exception:
         logger.debug("could not publish per-organelle progress", exc_info=True)
 
@@ -762,8 +753,7 @@ def _plan_legs(asset_shape, raw_legs: list[dict]) -> list[dict]:
                 "name": segmentation.segmentation_type.long_name,
                 "source_model": source_model,
                 "tiles": tiles,
-                "grid": _leg_pack_grid(segmenter) if segmenter is not None else
-                (float("inf"), 0),
+                "grid": _leg_pack_grid(segmenter) if segmenter is not None else (float("inf"), 0),
                 "requested_seq": index,
             }
         )
@@ -866,9 +856,7 @@ def run_segmentation_for_image_task(
                 asset_id,
             )
             failures.append((leg["name"], exc))
-            leg_rows[index] = _leg_row(
-                leg, status="FAILED", units_done=window.walked
-            )
+            leg_rows[index] = _leg_row(leg, status="FAILED", units_done=window.walked)
             results.append(
                 {
                     "segmentation_id": leg["segmentation_id"],
@@ -884,9 +872,7 @@ def run_segmentation_for_image_task(
             # A leg that finished walked its whole plan, whatever the last
             # progress sample happened to catch.
             window.note_walked(int(leg["tiles"] or 0))
-            leg_rows[index] = _leg_row(
-                leg, status="SUCCESS", units_done=window.walked
-            )
+            leg_rows[index] = _leg_row(leg, status="SUCCESS", units_done=window.walked)
             results.append(
                 {
                     "segmentation_id": leg["segmentation_id"],
@@ -904,9 +890,7 @@ def run_segmentation_for_image_task(
         "asset_id": str(asset_id),
         "organelles": results,
         "segment_count": sum(int(item.get("segment_count") or 0) for item in results),
-        "stored_output_count": sum(
-            int(item.get("stored_output_count") or 0) for item in results
-        ),
+        "stored_output_count": sum(int(item.get("stored_output_count") or 0) for item in results),
         "threshold_ready": not failures,
         "units_total": grand_total,
         "units_done": window.base,

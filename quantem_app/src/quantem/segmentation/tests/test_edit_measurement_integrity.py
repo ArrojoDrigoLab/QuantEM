@@ -175,9 +175,7 @@ class UnmeasurableEditTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertIsNone(response.data["measurement"])
         for piece in SegmentObject.objects.filter(segmentation=self.segmentation):
-            self.assertAlmostEqual(
-                piece.features["area"], piece.geometry.area, delta=400
-            )
+            self.assertAlmostEqual(piece.features["area"], piece.geometry.area, delta=400)
 
     def test_the_cleared_objects_are_findable_again_once_the_image_is_back(self):
         """Clearing is what makes the failure recoverable.
@@ -199,9 +197,7 @@ class UnmeasurableEditTests(TestCase):
             compute_segment_features_task(segment_id)
 
         for piece in SegmentObject.objects.filter(segmentation=self.segmentation):
-            self.assertAlmostEqual(
-                piece.features["area"], piece.geometry.area, delta=400
-            )
+            self.assertAlmostEqual(piece.features["area"], piece.geometry.area, delta=400)
         self.assertEqual(_unmeasured_segment_ids(str(self.segmentation.id)), [])
 
     def test_a_drawn_object_that_cannot_be_measured_says_so_on_create(self):
@@ -275,9 +271,7 @@ class MeasureSegmentsOutcomeTests(TestCase):
             _square_polygon(40, 40, 120, 120), mean_prob=0.82, mean_prob_dino=0.79
         )
 
-        outcome = measure_segments(
-            self.segmentation, [segment], geometry_changed=True
-        )
+        outcome = measure_segments(self.segmentation, [segment], geometry_changed=True)
 
         self.assertTrue(outcome.ok)
         self.assertEqual(outcome.updated, 1)

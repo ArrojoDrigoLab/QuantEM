@@ -28,7 +28,7 @@ except Exception:  # pragma: no cover - let the real import error surface
 
 if not _installed:  # pragma: no cover - only before the app is wired up
     warnings.warn(
-        f"Skipping {DB_BACKED_TESTS}: add \"quantem.analysis\" to "
+        f'Skipping {DB_BACKED_TESTS}: add "quantem.analysis" to '
         "INSTALLED_APPS in quantem/core/settings.py to run it.",
         stacklevel=1,
     )

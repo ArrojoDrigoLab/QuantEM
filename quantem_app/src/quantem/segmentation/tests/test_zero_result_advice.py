@@ -107,9 +107,7 @@ class ZeroResultAdviceTests(TestCase):
 
         self.assertFalse(outcome["found_objects"])
         self.assertEqual(outcome["segment_count"], 0)
-        self.assertNotIn(
-            "Lower the detection threshold", " ".join(outcome["next_steps"])
-        )
+        self.assertNotIn("Lower the detection threshold", " ".join(outcome["next_steps"]))
         self.assertIn("no new objects", message)
 
     def test_a_run_that_found_objects_is_unchanged(self):
@@ -161,9 +159,7 @@ class ZeroResultReachesAScreenTests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
-        self.image = create_small_test_image(
-            "Zero result on screen", width=SIZE, height=SIZE
-        )
+        self.image = create_small_test_image("Zero result on screen", width=SIZE, height=SIZE)
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
             segmentation_type=get_or_create_mitochondria_type(),
@@ -172,9 +168,7 @@ class ZeroResultReachesAScreenTests(TestCase):
         )
 
     def _notice(self, segmentation=None):
-        return ImageSegmentationSerializer(segmentation or self.segmentation).data[
-            "run_notice"
-        ]
+        return ImageSegmentationSerializer(segmentation or self.segmentation).data["run_notice"]
 
     def _object(self, label_state: str = "CANDIDATE") -> SegmentObject:
         polygon = Polygon(((10, 10), (40, 10), (40, 40), (10, 40), (10, 10)))
@@ -235,12 +229,8 @@ class ZeroResultReachesAScreenTests(TestCase):
         self.assertIsNone(self._notice(tissue))
 
     def test_it_arrives_on_the_list_endpoint_the_screens_read(self):
-        response = self.client.get(
-            f"/api/assets/{self.image.asset.id}/segmentations/"
-        )
+        response = self.client.get(f"/api/assets/{self.image.asset.id}/segmentations/")
         self.assertEqual(response.status_code, 200, response.data)
-        payload = next(
-            row for row in response.data if row["id"] == str(self.segmentation.id)
-        )
+        payload = next(row for row in response.data if row["id"] == str(self.segmentation.id))
         self.assertEqual(payload["status_stage"], "CANDIDATES_READY")
         self.assertIsNotNone(payload["run_notice"])

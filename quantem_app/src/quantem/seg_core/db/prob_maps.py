@@ -118,9 +118,7 @@ def prob_map_file_exists(
         return False
     return not (
         roi_id is None
-        and _is_stale_composite_full_cache(
-            segmentation, model_name, prefix, file_path
-        )
+        and _is_stale_composite_full_cache(segmentation, model_name, prefix, file_path)
     )
 
 
@@ -160,11 +158,7 @@ def save_probability_map(
     # authority for the image -- re-deriving it here would be a second, subtly
     # different decision about the same pixels.
     prob_array = np.asarray(prob_data)
-    prob_uint8 = (
-        prob_array
-        if prob_array.dtype == np.uint8
-        else quantize_probability(prob_array)
-    )
+    prob_uint8 = prob_array if prob_array.dtype == np.uint8 else quantize_probability(prob_array)
     img = Image.fromarray(prob_uint8, mode="L")
     img.save(file_path)
 

@@ -29,9 +29,7 @@ def load_probability_map_float(
         pil_image = pil_image.convert("L")
     prob_data_uint8 = np.array(pil_image, dtype=np.uint8)
     if prob_data_uint8.ndim != 2:
-        raise ValueError(
-            f"Expected 2D probability map, got shape {prob_data_uint8.shape}"
-        )
+        raise ValueError(f"Expected 2D probability map, got shape {prob_data_uint8.shape}")
 
     offset = (0, 0)
     roi_meta = prob_map.metadata.get("roi") if prob_map.metadata else None
@@ -103,9 +101,7 @@ def rasterize_polygon_in_bbox(
     rr_bbox, cc_bbox = np.where(mask)
     rr_full = rr_bbox + y0
     cc_full = cc_bbox + x0
-    valid_mask = (
-        (rr_full >= 0) & (rr_full < height) & (cc_full >= 0) & (cc_full < width)
-    )
+    valid_mask = (rr_full >= 0) & (rr_full < height) & (cc_full >= 0) & (cc_full < width)
     rr_full = rr_full[valid_mask]
     cc_full = cc_full[valid_mask]
     return rr_full, cc_full

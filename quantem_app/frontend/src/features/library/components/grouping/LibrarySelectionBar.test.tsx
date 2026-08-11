@@ -1,10 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  LibrarySelectionBar,
-  datasetsLostBy,
-} from "@/features/library/components/grouping/LibrarySelectionBar";
+import { LibrarySelectionBar } from "@/features/library/components/grouping/LibrarySelectionBar";
+import { datasetsLostBy } from "@/features/library/components/grouping/librarySelection";
 import { assignAssetGrouping } from "@/shared/api/assets";
 import type { Experiment } from "@/shared/types/common";
 import type { HomeEntry } from "@/shared/types/images";

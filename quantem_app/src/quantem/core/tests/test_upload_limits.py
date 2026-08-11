@@ -149,9 +149,7 @@ def test_the_body_limit_clears_the_largest_real_image_by_a_wide_margin():
     """
     limit = settings.QUANTEM_MAX_UPLOAD_BYTES
 
-    assert limit > WAITRESS_DEFAULT_MAX_BODY, (
-        "the whole point is to beat waitress's 1 GiB default"
-    )
+    assert limit > WAITRESS_DEFAULT_MAX_BODY, "the whole point is to beat waitress's 1 GiB default"
     assert limit - 1 > LARGEST_KNOWN_IMAGE_BYTES
     assert limit >= LARGEST_KNOWN_IMAGE_BYTES * 8
     # Not "unlimited" either: a garbage Content-Length must still be refused

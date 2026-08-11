@@ -23,21 +23,17 @@ import {
   KEEP_GROUP,
   chosenName,
   type GroupingChoice,
-} from "@/features/library/components/grouping/GroupingPicker";
+} from "@/features/library/components/grouping/groupingChoices";
+import {
+  datasetsLostBy,
+  sharedExperimentId,
+} from "@/features/library/components/grouping/librarySelection";
 import type { Experiment } from "@/shared/types/common";
 import type {
   AssetGroupingRequest,
   AssetGroupingResult,
   HomeEntry,
 } from "@/shared/types/images";
-
-/** The experiment every selected image is in, or `""` when they differ. */
-function sharedExperimentId(entries: HomeEntry[]): string {
-  const first = entries[0]?.experiment_id ?? "";
-  return entries.every((entry) => (entry.experiment_id ?? "") === first)
-    ? first
-    : "";
-}
 
 /**
  * How many of these images would be taken out of a dataset by this change.
@@ -47,21 +43,6 @@ function sharedExperimentId(entries: HomeEntry[]): string {
  * it is in at least one dataset and its experiment is about to become something
  * else -- including "no experiment", which empties the datasets too.
  */
-export function datasetsLostBy(
-  entries: HomeEntry[],
-  experiment: GroupingChoice
-): number {
-  if (experiment.kind === "keep") return 0;
-  const targetId = experiment.kind === "existing" ? experiment.id : "";
-  return entries.filter((entry) => {
-    const inDatasets = (entry.dataset_ids ?? []).length > 0;
-    if (!inDatasets) return false;
-    // A brand new experiment is by definition not the one they are in now.
-    if (experiment.kind === "new") return true;
-    return (entry.experiment_id ?? "") !== targetId;
-  }).length;
-}
-
 function describeOutcome(result: AssetGroupingResult): string {
   const filed =
     result.assets_changed === 1
@@ -214,5 +195,3 @@ export function LibrarySelectionBar({
     </div>
   );
 }
-
-export { sharedExperimentId };

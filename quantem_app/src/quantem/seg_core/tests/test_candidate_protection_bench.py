@@ -105,9 +105,7 @@ class _FixtureMixin:
     source_model = "quantem:mito"
 
     def make_segmentation(self) -> ImageSegmentation:
-        image = create_image_from_test_tiff(
-            "Candidate protection fixture", width=64, height=64
-        )
+        image = create_image_from_test_tiff("Candidate protection fixture", width=64, height=64)
         return ImageSegmentation.objects.create(
             asset=image.asset,
             segmentation_type=get_or_create_mitochondria_type(),
@@ -153,9 +151,7 @@ class ProtectionIsUnchangedTests(_FixtureMixin, TestCase):
 
     def _oracle_geometries(self):
         confirmed = load_protected_geometries(
-            SegmentObject.objects.filter(
-                segmentation=self.segmentation, label_state="CONFIRMED"
-            )
+            SegmentObject.objects.filter(segmentation=self.segmentation, label_state="CONFIRMED")
         )
         excluded = load_protected_geometries(
             SegmentObject.objects.filter(
@@ -182,9 +178,7 @@ class ProtectionIsUnchangedTests(_FixtureMixin, TestCase):
 
         one_at_a_time = build_protection_index(self.segmentation, self.source_model)
         scalar_retained = {
-            key
-            for key, polygon in candidates.items()
-            if not one_at_a_time.suppresses(polygon)
+            key for key, polygon in candidates.items() if not one_at_a_time.suppresses(polygon)
         }
         self.assertEqual(
             scalar_retained,
@@ -199,41 +193,31 @@ class ProtectionIsUnchangedTests(_FixtureMixin, TestCase):
         keys = list(candidates)
         batched = build_protection_index(self.segmentation, self.source_model)
         mask = batched.suppressed_mask([candidates[key] for key in keys])
-        batched_retained = {
-            key for key, dropped in zip(keys, mask, strict=True) if not dropped
-        }
+        batched_retained = {key for key, dropped in zip(keys, mask, strict=True) if not dropped}
         self.assertEqual(batched_retained, oracle_retained)
         self.assertEqual(batched.stats(), one_at_a_time.stats())
 
     def test_seeded_random_overlaps_agree_object_for_object(self):
         rng = random.Random(20260810)
         confirmed = [
-            square(rng.uniform(0, 900), rng.uniform(0, 900), rng.uniform(8, 60))
-            for _ in range(400)
+            square(rng.uniform(0, 900), rng.uniform(0, 900), rng.uniform(8, 60)) for _ in range(400)
         ]
         excluded = [
-            square(rng.uniform(0, 900), rng.uniform(0, 900), rng.uniform(8, 60))
-            for _ in range(200)
+            square(rng.uniform(0, 900), rng.uniform(0, 900), rng.uniform(8, 60)) for _ in range(200)
         ]
         self.bulk_label(self.segmentation, confirmed, label_state="CONFIRMED")
         self.bulk_label(self.segmentation, excluded, label_state="EXCLUDED")
 
         candidates = {
-            f"cand-{i}": square(
-                rng.uniform(0, 900), rng.uniform(0, 900), rng.uniform(8, 60)
-            )
+            f"cand-{i}": square(rng.uniform(0, 900), rng.uniform(0, 900), rng.uniform(8, 60))
             for i in range(800)
         }
         self._assert_same_decisions(candidates)
 
     def test_boundary_and_awkward_shapes_agree(self):
         # A confirmed 10x10 at the origin and an excluded 10x10 at x=100.
-        self.bulk_label(
-            self.segmentation, [square(0, 0, 10.0)], label_state="CONFIRMED"
-        )
-        self.bulk_label(
-            self.segmentation, [square(100, 0, 10.0)], label_state="EXCLUDED"
-        )
+        self.bulk_label(self.segmentation, [square(0, 0, 10.0)], label_state="CONFIRMED")
+        self.bulk_label(self.segmentation, [square(100, 0, 10.0)], label_state="EXCLUDED")
         # An excluded object belonging to a different model protects nothing.
         self.bulk_label(
             self.segmentation,
@@ -270,9 +254,7 @@ class ProtectionIsUnchangedTests(_FixtureMixin, TestCase):
         self._assert_same_decisions(candidates)
 
     def test_an_unreadable_stored_geometry_is_skipped_by_both(self):
-        self.bulk_label(
-            self.segmentation, [square(0, 0, 10.0)], label_state="CONFIRMED"
-        )
+        self.bulk_label(self.segmentation, [square(0, 0, 10.0)], label_state="CONFIRMED")
         broken = SegmentObject.objects.create(
             segmentation=self.segmentation,
             geometry=square(50, 50, 10.0),
@@ -294,20 +276,14 @@ class ProtectionIsUnchangedTests(_FixtureMixin, TestCase):
         self.assertEqual(index.confirmed_count, 1)
 
     def test_stats_attribute_each_drop_to_the_decision_that_caused_it(self):
-        self.bulk_label(
-            self.segmentation, [square(0, 0, 10.0)], label_state="CONFIRMED"
-        )
-        self.bulk_label(
-            self.segmentation, [square(100, 0, 10.0)], label_state="EXCLUDED"
-        )
+        self.bulk_label(self.segmentation, [square(0, 0, 10.0)], label_state="CONFIRMED")
+        self.bulk_label(self.segmentation, [square(100, 0, 10.0)], label_state="EXCLUDED")
         index = build_protection_index(self.segmentation, self.source_model)
 
         self.assertTrue(index.suppresses(square(1, 0, 10.0)))
         self.assertTrue(index.suppresses(square(101, 0, 10.0)))
         self.assertFalse(index.suppresses(square(900, 900, 10.0)))
-        self.assertEqual(
-            index.stats(), {"confirmed_hits": 1, "excluded_hits": 1}
-        )
+        self.assertEqual(index.stats(), {"confirmed_hits": 1, "excluded_hits": 1})
 
     def test_the_objects_that_reach_the_database_are_the_same_objects(self):
         """The end of the acceptance: identity of rows written, not a count.
@@ -383,9 +359,7 @@ class ProtectionIsUnchangedTests(_FixtureMixin, TestCase):
         )
         self.assertEqual(written, oracle_retained)
         self.assertEqual(result.written, len(oracle_retained))
-        self.assertEqual(
-            result.suppressed, len(candidates) - len(oracle_retained)
-        )
+        self.assertEqual(result.suppressed, len(candidates) - len(oracle_retained))
 
     def test_the_thresholds_are_unchanged(self):
         """Moving either threshold changes every user's candidate set.
@@ -416,8 +390,7 @@ class ProtectionBudgetTests(_FixtureMixin, TestCase):
         # A proofread image: confirmed objects on a 60 x 50 grid at 100 px pitch,
         # which is roughly a 30 MP field at this object density.
         confirmed = [
-            square(100.0 * (i % 60), 100.0 * (i // 60), 20.0)
-            for i in range(self.CONFIRMED)
+            square(100.0 * (i % 60), 100.0 * (i // 60), 20.0) for i in range(self.CONFIRMED)
         ]
         self.bulk_label(self.segmentation, confirmed, label_state="CONFIRMED")
 

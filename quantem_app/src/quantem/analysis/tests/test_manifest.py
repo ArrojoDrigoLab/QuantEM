@@ -108,9 +108,7 @@ class ManifestTestCase(TestCase):
     n_manual = 2
 
     def setUp(self) -> None:
-        self.image = create_small_test_image(
-            "Manifest Image", width=IMAGE_SIZE, height=IMAGE_SIZE
-        )
+        self.image = create_small_test_image("Manifest Image", width=IMAGE_SIZE, height=IMAGE_SIZE)
         self.asset = self.image.asset
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.asset, segmentation_type=get_or_create_mitochondria_type()
@@ -329,9 +327,7 @@ class SummaryNoteUnitTests(TestCase):
 
 class ProvenanceHelperTests(TestCase):
     def test_a_missing_file_is_null_with_a_reason_not_an_exception(self):
-        info = provenance.file_identity(
-            Path(STORAGE_DIR) / "does-not-exist.tif", what="the image"
-        )
+        info = provenance.file_identity(Path(STORAGE_DIR) / "does-not-exist.tif", what="the image")
         assert info["sha256"] is None
         assert "not present" in info["unavailable"]["sha256"]
 
@@ -607,9 +603,7 @@ class ProofreadingRecordTests(ManifestTestCase):
         self._review(self.ROI)
         _, out, got = self._run()
 
-        reviewed = got["manifest"]["models"]["compartments"][0]["proofreading"][
-            "reviewed_area"
-        ]
+        reviewed = got["manifest"]["models"]["compartments"][0]["proofreading"]["reviewed_area"]
         assert reviewed["n_regions"] == 1
         assert reviewed["image_px"] == IMAGE_SIZE * IMAGE_SIZE
         assert 0.7 < reviewed["reviewed_fraction"] < 0.8
@@ -627,13 +621,11 @@ class ProofreadingRecordTests(ManifestTestCase):
         assert "over the whole image" in named[0]
 
     def test_no_completed_area_is_unknown_with_a_reason_and_never_zero(self):
-        """"Nobody marked a region" and "a person reviewed none of it" are
+        """ "Nobody marked a region" and "a person reviewed none of it" are
         different facts, and only one of them is knowable here."""
         _, out, got = self._run()
 
-        reviewed = got["manifest"]["models"]["compartments"][0]["proofreading"][
-            "reviewed_area"
-        ]
+        reviewed = got["manifest"]["models"]["compartments"][0]["proofreading"]["reviewed_area"]
         assert reviewed["reviewed_px"] is None
         assert "unknown rather than zero" in reviewed["unavailable"]["reviewed_px"]
         assert self._rows(out, "image_summary.csv")[0]["reviewed_fraction"] == ""
@@ -695,9 +687,7 @@ class ImpossibleCalibrationTests(TestCase):
         return service.AnalysisInputs(
             image_key="probe",
             pixel_size_nm=pixel_size_nm,
-            compartments=CompartmentSet(
-                masks={"mito": mask}, tissue=np.ones((10, 10), bool)
-            ),
+            compartments=CompartmentSet(masks={"mito": mask}, tissue=np.ones((10, 10), bool)),
             object_features={"a": {"area": 16.0, "perimeter": 16.0}},
         )
 
@@ -733,9 +723,7 @@ class ImpossibleCalibrationTests(TestCase):
         assert (result["objects"]["density"] or {}).get("per_um2") is None
 
     def test_area_fractions_refuses_a_non_positive_scale_directly(self):
-        comp = CompartmentSet(
-            masks={"mito": np.ones((4, 4), bool)}, tissue=np.ones((4, 4), bool)
-        )
+        comp = CompartmentSet(masks={"mito": np.ones((4, 4), bool)}, tissue=np.ones((4, 4), bool))
 
         assert area_fractions(comp, pixel_size_nm=-5.0).tissue_um2 is None
         assert area_fractions(comp, pixel_size_nm=0.0).tissue_um2 is None
@@ -923,9 +911,7 @@ class NoPointOnTissueBundleTests(ManifestTestCase):
     def test_the_reader_is_told_why_in_words(self):
         _, _, got = self._off_tissue_run()
 
-        named = [
-            c for c in got["result"]["caveats"] if "undefined rather than zero" in c
-        ]
+        named = [c for c in got["result"]["caveats"] if "undefined rather than zero" in c]
         assert named, got["result"]["caveats"]
         assert "None of the 3 points is on the tissue mask" in named[0]
 
@@ -1128,7 +1114,7 @@ class SizeFloorAppliesToOneProvenanceTests(ManifestTestCase):
     SMALL_PX = 36.0
 
     def _draw_one_below_the_floor(self):
-        side = self.SMALL_PX ** 0.5
+        side = self.SMALL_PX**0.5
         self._segment(
             _square(150, 150, side=side),
             {**MANUAL_FEATURES, "area": self.SMALL_PX},

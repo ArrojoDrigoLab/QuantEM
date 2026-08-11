@@ -16,9 +16,7 @@ from .models import AnalysisRun
 from .service import run_for_segmentation
 
 
-def run_job(
-    payload: dict[str, Any], reporter: JobReporter, cancel: CancelToken
-) -> dict[str, Any]:
+def run_job(payload: dict[str, Any], reporter: JobReporter, cancel: CancelToken) -> dict[str, Any]:
     """Execute the ``AnalysisRun`` named in ``payload["analysis_run_id"]``.
 
     Cancellation is checked at every progress step rather than inside the

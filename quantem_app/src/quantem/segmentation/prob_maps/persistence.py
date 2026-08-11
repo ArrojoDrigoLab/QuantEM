@@ -390,9 +390,7 @@ def replay_provenance_problem(metadata: dict[str, object]) -> str | None:
         )
     quantization = metadata.get("quantization")
     if quantization != QUANTIZATION_ID:
-        return (
-            f"quantisation recorded as {quantization!r}, not {QUANTIZATION_ID!r}"
-        )
+        return f"quantisation recorded as {quantization!r}, not {QUANTIZATION_ID!r}"
     interpolation = metadata.get("resample_interpolation")
     if not isinstance(interpolation, str) or not interpolation.strip():
         return "no interpolator recorded for the crossing back to native pixels"
@@ -584,8 +582,7 @@ def load_stored_native_map(
     problem = replay_provenance_problem(metadata)
     if problem is not None:
         logger.info(
-            "Refusing to reuse the stored probability map for segmentation %s "
-            "(%s) at %s: %s",
+            "Refusing to reuse the stored probability map for segmentation %s (%s) at %s: %s",
             segmentation.id,
             model_name,
             relative_path,

@@ -124,9 +124,7 @@ class UploadsDirectoryTestCase(TestCase):
 
     def post_upload(self, filename: str, body: bytes, fields: dict | None = None):
         payload = {
-            "file": SimpleUploadedFile(
-                filename, body, content_type="application/octet-stream"
-            ),
+            "file": SimpleUploadedFile(filename, body, content_type="application/octet-stream"),
             **(fields or {}),
         }
         return self.client.post("/api/assets/upload/", payload)
@@ -178,16 +176,11 @@ class RejectedUploadLeavesNoBytesTests(UploadsDirectoryTestCase):
                         f"{label} at {size} B: {response.content[:300]!r}",
                     )
                     after = _snapshot()
-                    added = {
-                        name: n
-                        for name, n in after.items()
-                        if before.get(name) != n
-                    }
+                    added = {name: n for name, n in after.items() if before.get(name) != n}
                     self.assertEqual(
                         added,
                         {},
-                        f"{label} at {size} B left {sum(added.values())} bytes "
-                        f"behind: {added}",
+                        f"{label} at {size} B left {sum(added.values())} bytes behind: {added}",
                     )
                     self.assertEqual(
                         Asset.objects.count(),
@@ -249,15 +242,9 @@ class AcceptedUploadTests(UploadsDirectoryTestCase):
                 payload = _readable_tiff(size)
                 before = _snapshot()
                 response = self.post_upload(f"scan_{size}.tif", payload)
-                self.assertEqual(
-                    response.status_code, 201, response.content[:300]
-                )
+                self.assertEqual(response.status_code, 201, response.content[:300])
                 asset_id = response.json()["id"]
-                added = {
-                    name: n
-                    for name, n in _snapshot().items()
-                    if before.get(name) != n
-                }
+                added = {name: n for name, n in _snapshot().items() if before.get(name) != n}
                 self.assertEqual(
                     added,
                     {f"{asset_id}.tif": len(payload)},
@@ -295,9 +282,7 @@ class MixedSessionAccountingTests(UploadsDirectoryTestCase):
             refused_again = self.post_upload("acquisition.mrc", _noise(size))
             self.assertEqual(refused_again.status_code, 400)
 
-        added = {
-            name: n for name, n in _snapshot().items() if self.before.get(name) != n
-        }
+        added = {name: n for name, n in _snapshot().items() if self.before.get(name) != n}
         self.assertEqual(added, expected)
         self.assertEqual(
             sum(added.values()),
@@ -504,9 +489,7 @@ class ConcurrentStagingTests(UploadsDirectoryTestCase):
         # the life of the process, which is the leak this module exists to stop.
         from quantem.assets.upload_staging import _live_paths
 
-        staged = [
-            StagedUploadedFile("scan.tif", "image/tiff", 0, "utf-8") for _ in range(5)
-        ]
+        staged = [StagedUploadedFile("scan.tif", "image/tiff", 0, "utf-8") for _ in range(5)]
         paths = [Path(item.temporary_file_path()) for item in staged]
         for item in staged:
             item.write(b"body")

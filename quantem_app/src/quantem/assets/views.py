@@ -84,9 +84,7 @@ def _grouping_filter(assets, request):
     what a multi-select sends. ``none`` may be mixed in with real ids, so
     "these two experiments, plus everything not yet filed" is one request.
     """
-    experiments = [
-        value for value in request.query_params.getlist("experiment") if value
-    ]
+    experiments = [value for value in request.query_params.getlist("experiment") if value]
     if experiments:
         named = [value for value in experiments if value != UNASSIGNED]
         matcher = Q(experiment_id__in=named) if named else Q()
@@ -175,9 +173,7 @@ class AssetUploadView(APIView):
         if "file" not in request.FILES:
             return Response(
                 {
-                    "error": (
-                        'No file provided. Use multipart/form-data with "file" field.'
-                    ),
+                    "error": ('No file provided. Use multipart/form-data with "file" field.'),
                     "supported_upload_formats": list(UPLOAD_SUFFIXES),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -253,9 +249,7 @@ class AssetDetailView(APIView):
 
     def patch(self, request, asset_id):
         try:
-            return Response(
-                update_asset(get_active_asset(asset_id), request.data or {})
-            )
+            return Response(update_asset(get_active_asset(asset_id), request.data or {}))
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -271,17 +265,13 @@ class AssetProcessedPngView(APIView):
         asset = get_active_asset(asset_id)
         openable = get_asset_openable(asset)
         if not openable.file_path:
-            return Response(
-                {"error": "No preview available"}, status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"error": "No preview available"}, status=status.HTTP_404_NOT_FOUND)
         file_path = getattr(openable, "path", None) or resolve_stored_path(
             openable.file_path,
             relative_to=DATA_DIR,
         )
         if not file_path.exists():
-            return Response(
-                {"error": "Preview file not found"}, status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"error": "Preview file not found"}, status=status.HTTP_404_NOT_FOUND)
         return FileResponse(open(file_path, "rb"), content_type="image/png")
 
 
@@ -374,8 +364,7 @@ class SystemHandshakeView(APIView):
 #: asset, because the viewer polls both.
 _UNAVAILABLE_MESSAGES = {
     Reason.TERMINAL_FAILURE: (
-        "This image's import failed, so it has no pyramid to view. "
-        "Re-import the file to try again."
+        "This image's import failed, so it has no pyramid to view. Re-import the file to try again."
     ),
     Reason.CANCELLED: (
         "This image's import was cancelled, so it has no pyramid to view. "

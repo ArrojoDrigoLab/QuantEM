@@ -307,19 +307,15 @@ def separated_outlines_payload(
             continue
 
         sentence = (
-            f"segments[{index}] crosses itself: it encloses {areas} separate "
-            f"areas rather than one."
+            f"segments[{index}] crosses itself: it encloses {areas} separate areas rather than one."
         )
         if kept == areas:
             sentence += (
-                f" All {areas} were kept, each as its own object."
-                if kept > 1
-                else " It was kept."
+                f" All {areas} were kept, each as its own object." if kept > 1 else " It was kept."
             )
         elif kept == 0:
             sentence += (
-                " None of them could be stored: every piece spans 1 pixel or "
-                "less in one dimension."
+                " None of them could be stored: every piece spans 1 pixel or less in one dimension."
             )
         else:
             dropped = areas - kept

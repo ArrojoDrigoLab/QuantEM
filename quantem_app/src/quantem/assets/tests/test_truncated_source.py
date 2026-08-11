@@ -232,9 +232,7 @@ class CheckIsCheapTests(TestCase):
         path.write_bytes(payload)
         try:
             with open(path, "rb") as handle:
-                uploaded = UploadedFile(
-                    handle, "cell.png", "image/png", len(payload), None
-                )
+                uploaded = UploadedFile(handle, "cell.png", "image/png", len(payload), None)
                 tracemalloc.start()
                 try:
                     verify_source_is_complete(uploaded)

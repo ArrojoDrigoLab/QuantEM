@@ -60,9 +60,7 @@ from quantem.segmentation.views import (
 
 # Create router and register viewsets
 router = DefaultRouter()
-router.register(
-    r"segmentation-types", SegmentationTypeViewSet, basename="segmentation-type"
-)
+router.register(r"segmentation-types", SegmentationTypeViewSet, basename="segmentation-type")
 
 urlpatterns = [
     # Router includes (more general routes)

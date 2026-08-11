@@ -44,15 +44,9 @@ class JobQueueStatusViewTests(TestCase):
         completed_older = self._create_job(
             status="SUCCESS", finished_at=now - timedelta(minutes=12)
         )
-        completed_newer = self._create_job(
-            status="SUCCESS", finished_at=now - timedelta(minutes=3)
-        )
-        failed_older = self._create_job(
-            status="FAILED", finished_at=now - timedelta(minutes=10)
-        )
-        failed_newer = self._create_job(
-            status="CANCELLED", finished_at=now - timedelta(minutes=1)
-        )
+        completed_newer = self._create_job(status="SUCCESS", finished_at=now - timedelta(minutes=3))
+        failed_older = self._create_job(status="FAILED", finished_at=now - timedelta(minutes=10))
+        failed_newer = self._create_job(status="CANCELLED", finished_at=now - timedelta(minutes=1))
         self._create_job(status="RUNNING")
         self._create_job(status="PENDING")
 
@@ -67,9 +61,7 @@ class JobQueueStatusViewTests(TestCase):
 
         completed_ids = [item["id"] for item in payload["completed"]]
         failed_ids = [item["id"] for item in payload["failed"]]
-        self.assertEqual(
-            completed_ids[:2], [str(completed_newer.id), str(completed_older.id)]
-        )
+        self.assertEqual(completed_ids[:2], [str(completed_newer.id), str(completed_older.id)])
         self.assertEqual(failed_ids[:2], [str(failed_newer.id), str(failed_older.id)])
         self.assertIsNotNone(payload["completed"][0]["finished_at"])
         self.assertIsNotNone(payload["failed"][0]["finished_at"])

@@ -161,17 +161,13 @@ class DinoOrganelleSegmenter(BaseSegmenter):
             raise ValueError(f"Invalid organelle: {self.ORGANELLE!r}")
         self._organelle = ORGANELLES[self.ORGANELLE]
         self._family = parse_family(source_model, default=DEFAULT_FAMILY)
-        self._source_model = source_model or source_model_value(
-            self._family, self.ORGANELLE
-        )
+        self._source_model = source_model or source_model_value(self._family, self.ORGANELLE)
         self._spec = get_model_spec(self._family, self.ORGANELLE)
         self._device = device
         self._fg_threshold = (
             float(fg_threshold) if fg_threshold is not None else self._spec.threshold
         )
-        self._min_area = (
-            int(min_area) if min_area is not None else self._organelle.default_min_area
-        )
+        self._min_area = int(min_area) if min_area is not None else self._organelle.default_min_area
         # Supplied by quantem.segmentation.organelle_tasks from
         # ``Asset.pixel_size_nm``. When it is None the image is genuinely
         # uncalibrated: a model with a ``canonical_nm`` then runs at native
@@ -247,9 +243,7 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         """
         value = float(threshold)
         if not (0.0 <= value <= 1.0):
-            raise ValueError(
-                f"threshold must be a probability in [0, 1]; got {threshold!r}"
-            )
+            raise ValueError(f"threshold must be a probability in [0, 1]; got {threshold!r}")
         self._fg_threshold = value
 
     @property
@@ -402,9 +396,7 @@ class DinoOrganelleSegmenter(BaseSegmenter):
             # makes "thresholds run uniformly on the same stored map" true of
             # the cached path as well as the fresh one.
             self.adopt_native_probability_map(
-                resample.NativeProbabilityMap(
-                    data=resample.quantize_probability(cached)
-                )
+                resample.NativeProbabilityMap(data=resample.quantize_probability(cached))
             )
             # The array itself is handed back untouched, as the BaseSegmenter
             # contract requires; the quantised copy above is what the threshold
@@ -453,13 +445,9 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         # grid and is quantised, in one call, before anything is decided about
         # it. The model-scale float is dropped here -- it is not the authority
         # for anything downstream, and on a 50 MP image it is 200 MB.
-        native = resample.NativeProbabilityMap.from_model_grid(
-            prediction.prob, prediction.context
-        )
+        native = resample.NativeProbabilityMap.from_model_grid(prediction.prob, prediction.context)
         if native.shape != tuple(image.shape[:2]):
-            raise ValueError(
-                f"prob map shape {native.shape} != image {tuple(image.shape[:2])}"
-            )
+            raise ValueError(f"prob map shape {native.shape} != image {tuple(image.shape[:2])}")
         self.adopt_native_probability_map(native)
         report(DL_MODEL_NAME, 1.0)
         return {DL_MODEL_NAME: native.as_float()}
@@ -479,9 +467,7 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         """
         return self._native_prob
 
-    def adopt_native_probability_map(
-        self, native: resample.NativeProbabilityMap
-    ) -> None:
+    def adopt_native_probability_map(self, native: resample.NativeProbabilityMap) -> None:
         """Use this stored map as the authority for the next extraction.
 
         Called by :meth:`run_dl_inference` with what the model just produced,
@@ -512,9 +498,7 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         native_shape = tuple(prob.shape[:2])
         if native is not None and native.shape == native_shape:
             return native.foreground(self._fg_threshold)
-        return resample.binarize_quantized(
-            resample.quantize_probability(prob), self._fg_threshold
-        )
+        return resample.binarize_quantized(resample.quantize_probability(prob), self._fg_threshold)
 
     def extract_instances(
         self,

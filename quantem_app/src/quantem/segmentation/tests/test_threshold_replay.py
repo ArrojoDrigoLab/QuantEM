@@ -57,7 +57,7 @@ from quantem.segmentation.type_service import get_or_create_mitochondria_type
 from quantem.testing import create_small_test_image
 
 SIZE = 256
-PIXEL_SIZE_NM = 5.0          # the mito head is 8 nm: a 1.6x upsample back
+PIXEL_SIZE_NM = 5.0  # the mito head is 8 nm: a 1.6x upsample back
 MITO_INTERNAL_NAME = "quantem_internal_mito"
 SOURCE_MODEL = "quantem:mito"
 
@@ -85,9 +85,7 @@ def _model_field(shape: tuple[int, int]) -> np.ndarray:
     for row_frac, col_frac, sigma, peak in blobs:
         centre_row = row_frac * height
         centre_col = col_frac * width
-        squared = ((rows - centre_row) ** 2 + (cols - centre_col) ** 2) / (
-            2.0 * sigma * sigma
-        )
+        squared = ((rows - centre_row) ** 2 + (cols - centre_col) ** 2) / (2.0 * sigma * sigma)
         field = np.maximum(field, peak * np.exp(-squared))
     # A little smooth background so quantisation and interpolation have
     # something to disagree about if they are going to.
@@ -106,12 +104,8 @@ def _fake_engine():
     spec = get_model_spec("quantem", "mito")
 
     def predict_region(_model, image, *, pixel_size_nm=None, **_kwargs):
-        context = resample.plan_resample(
-            image.shape[:2], pixel_size_nm, spec.canonical_nm
-        )
-        return SimpleNamespace(
-            prob=_model_field(context.model_shape), context=context, plan=None
-        )
+        context = resample.plan_resample(image.shape[:2], pixel_size_nm, spec.canonical_nm)
+        return SimpleNamespace(prob=_model_field(context.model_shape), context=context, plan=None)
 
     return SimpleNamespace(
         load_model=lambda *_a, **_k: SimpleNamespace(device="cpu"),
@@ -163,9 +157,7 @@ class ThresholdReplayTests(TestCase):
     """Fresh run vs replay, at five thresholds, on one resampled image."""
 
     def setUp(self):
-        self.image = create_small_test_image(
-            "Replay", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Replay", width=SIZE, height=SIZE, textured=True)
         asset = self.image.asset
         asset.pixel_size_nm = PIXEL_SIZE_NM
         asset.save(update_fields=["pixel_size_nm"])
@@ -247,7 +239,7 @@ class ThresholdReplayTests(TestCase):
         )
 
     def test_the_stored_file_holds_exactly_the_bytes_the_run_thresholded(self):
-        """"Threshold the stored map" is only true if the store is lossless.
+        """ "Threshold the stored map" is only true if the store is lossless.
 
         The run thresholds an array in memory; the dial thresholds what came
         back off disk. If PNG storage moved a single level the two would part
@@ -261,9 +253,7 @@ class ThresholdReplayTests(TestCase):
             self.segmentation, DL_MODEL_NAME, segmenter.prob_map_prefix, None
         )
         assert from_disk is not None
-        assert np.array_equal(
-            resample.quantize_probability(from_disk), in_memory.data
-        )
+        assert np.array_equal(resample.quantize_probability(from_disk), in_memory.data)
 
         stored = load_stored_native_map(
             segmentation=self.segmentation,
@@ -295,9 +285,7 @@ class ThresholdReplayTests(TestCase):
         """A replayed candidate set was made at the dial's threshold."""
         self._fresh_run(0.5)
         segmenter = _segmenter(0.3)
-        replay_stored_probability_map(
-            segmenter, self.segmentation, threshold=0.3
-        )
+        replay_stored_probability_map(segmenter, self.segmentation, threshold=0.3)
         metadata = segmenter.get_probability_map_metadata(DL_MODEL_NAME)
         assert metadata["threshold"] == pytest.approx(0.3)
         assert metadata["threshold_level"] == resample.threshold_level(0.3)
@@ -314,9 +302,7 @@ class ThresholdReplayTests(TestCase):
         """
         self._fresh_run(0.5)
         segmenter = _segmenter(0.6)
-        with patch.object(
-            DinoMitoSegmenter, "load_models", side_effect=AssertionError("loaded")
-        ):
+        with patch.object(DinoMitoSegmenter, "load_models", side_effect=AssertionError("loaded")):
             result, _image = replay_stored_probability_map(
                 segmenter, self.segmentation, threshold=0.6
             )
@@ -324,13 +310,9 @@ class ThresholdReplayTests(TestCase):
 
     def test_no_stored_map_says_so_instead_of_inventing_one(self):
         """Nothing to replay is a different answer from "found nothing"."""
-        assert not ProbabilityMap.objects.filter(
-            segmentation=self.segmentation
-        ).exists()
+        assert not ProbabilityMap.objects.filter(segmentation=self.segmentation).exists()
         with pytest.raises(StoredMapUnavailable) as caught:
-            replay_stored_probability_map(
-                _segmenter(0.5), self.segmentation, threshold=0.5
-            )
+            replay_stored_probability_map(_segmenter(0.5), self.segmentation, threshold=0.5)
         assert "running the model again" in str(caught.value)
 
     def test_a_map_that_does_not_fit_the_image_is_refused(self):
@@ -353,9 +335,7 @@ class ThresholdReplayTests(TestCase):
             ),
             pytest.raises(StoredMapUnavailable) as caught,
         ):
-            replay_stored_probability_map(
-                _segmenter(0.5), self.segmentation, threshold=0.5
-            )
+            replay_stored_probability_map(_segmenter(0.5), self.segmentation, threshold=0.5)
         assert "run again" in str(caught.value)
         assert record.id  # the row itself is left alone for a human to look at
 
@@ -379,12 +359,8 @@ class StoredMapQuantisationTests(TestCase):
     def _store(self, array) -> np.ndarray:
         from quantem.seg_core.db.prob_maps import save_probability_map
 
-        save_probability_map(
-            self.segmentation, DL_MODEL_NAME, array, "mito", "mito_generated"
-        )
-        read_back = load_prob_map_from_path(
-            self.segmentation, DL_MODEL_NAME, "mito", None
-        )
+        save_probability_map(self.segmentation, DL_MODEL_NAME, array, "mito", "mito_generated")
+        read_back = load_prob_map_from_path(self.segmentation, DL_MODEL_NAME, "mito", None)
         return resample.quantize_probability(read_back)
 
     def test_a_float_map_is_rounded_to_nearest_not_truncated(self):
@@ -419,9 +395,7 @@ class ReplayEquivalenceWithoutResamplingTests(TestCase):
     """
 
     def setUp(self):
-        self.image = create_small_test_image(
-            "Replay ER", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Replay ER", width=SIZE, height=SIZE, textured=True)
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
             segmentation_type=get_or_create_mitochondria_type(),
@@ -439,9 +413,7 @@ class ReplayEquivalenceWithoutResamplingTests(TestCase):
         assert native.interpolation == resample.NO_RESAMPLE
 
         for threshold in (0.1, 0.3, 0.5, 0.7, 0.9):
-            previous = resample.mask_to_native(
-                postprocess.binarize(field, threshold), context
-            )
+            previous = resample.mask_to_native(postprocess.binarize(field, threshold), context)
             assert np.array_equal(previous, native.foreground(threshold)), (
                 f"the native-scale path changed at t={threshold}"
             )

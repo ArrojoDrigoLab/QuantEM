@@ -33,9 +33,7 @@ class OrganelleApplyFullImageViewTests(TestCase):
         SegmentationConfig.objects.create(segmentation=self.segmentation)
 
     def test_apply_full_image_enqueues_unified_full_job(self):
-        response = self.client.post(
-            f"/api/segmentations/{self.segmentation.id}/apply-full-image/"
-        )
+        response = self.client.post(f"/api/segmentations/{self.segmentation.id}/apply-full-image/")
 
         self.assertEqual(response.status_code, 202)
         queued = Job.objects.get(id=response.data["job_id"])
@@ -66,9 +64,7 @@ class OrganelleApplyFullImageViewTests(TestCase):
         self.assertIn("quantem_internal_mito", detail)
         self.assertIn("quantem:mito", detail)
         self.assertIn("omniem:mito", detail)
-        self.assertEqual(
-            response.data["valid_source_models"], ["quantem:mito", "omniem:mito"]
-        )
+        self.assertEqual(response.data["valid_source_models"], ["quantem:mito", "omniem:mito"])
         self.assertFalse(Job.objects.exists(), "nothing may be queued on a refusal")
 
     def test_apply_full_image_refuses_a_pack_for_another_organelle(self):
@@ -117,13 +113,11 @@ class OrganelleApplyFullImageViewTests(TestCase):
             },
         )
 
-        response = self.client.post(
-            f"/api/segmentations/{self.segmentation.id}/apply-full-image/"
-        )
+        response = self.client.post(f"/api/segmentations/{self.segmentation.id}/apply-full-image/")
         self.assertEqual(response.status_code, 409)
 
     def test_the_conflict_names_the_blocking_job_and_how_to_clear_it(self):
-        """"A task is already queued or running" on its own is a dead end: the
+        """ "A task is already queued or running" on its own is a dead end: the
         user cannot clear what the message will not name.
 
         What names it changed in wave 0c (finding V12). It used to be the job's
@@ -143,9 +137,7 @@ class OrganelleApplyFullImageViewTests(TestCase):
             queue_name=QUEUE_P4_FULL,
         )
 
-        response = self.client.post(
-            f"/api/segmentations/{self.segmentation.id}/apply-full-image/"
-        )
+        response = self.client.post(f"/api/segmentations/{self.segmentation.id}/apply-full-image/")
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["job_id"], str(blocking.id))
@@ -171,9 +163,7 @@ class OrganelleApplyFullImageViewTests(TestCase):
             queue_name=QUEUE_P4_FULL,
         )
 
-        response = self.client.post(
-            f"/api/segmentations/{self.segmentation.id}/rerun-roi/"
-        )
+        response = self.client.post(f"/api/segmentations/{self.segmentation.id}/rerun-roi/")
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["job_id"], str(running.id))
@@ -188,9 +178,7 @@ class SegmentationConfigViewTests(TestCase):
             asset=self.image.asset,
             segmentation_type=get_or_create_mitochondria_type(),
         )
-        self.mito_config = SegmentationConfig.objects.create(
-            segmentation=self.mito_segmentation
-        )
+        self.mito_config = SegmentationConfig.objects.create(segmentation=self.mito_segmentation)
 
         self.er_segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
@@ -199,9 +187,7 @@ class SegmentationConfigViewTests(TestCase):
         self.er_config = SegmentationConfig.objects.create(segmentation=self.er_segmentation)
 
     def test_get_config_for_supported_type_returns_defaults_and_capability_flag(self):
-        response = self.client.get(
-            f"/api/segmentations/{self.mito_segmentation.id}/config/"
-        )
+        response = self.client.get(f"/api/segmentations/{self.mito_segmentation.id}/config/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["supports_instance_params"], True)
         self.assertEqual(
@@ -215,9 +201,7 @@ class SegmentationConfigViewTests(TestCase):
         )
 
     def test_get_config_for_er_reports_not_supported(self):
-        response = self.client.get(
-            f"/api/segmentations/{self.er_segmentation.id}/config/"
-        )
+        response = self.client.get(f"/api/segmentations/{self.er_segmentation.id}/config/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["supports_instance_params"], False)
         self.assertIsNone(response.data["instance_params"])
@@ -420,9 +404,7 @@ class SegmentationCompleteViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.segmentation.refresh_from_db()
         self.assertEqual(self.segmentation.status_stage, "COMPLETED")
-        self.assertEqual(
-            SegmentObject.objects.filter(segmentation=self.segmentation).count(), 4
-        )
+        self.assertEqual(SegmentObject.objects.filter(segmentation=self.segmentation).count(), 4)
         self.assertEqual(response.data["completion"]["discarded_count"], 0)
         self.assertFalse(response.data["completion"]["discarded_unconfirmed"])
 

@@ -42,9 +42,9 @@ def _disc(cx, cy, r, shape=(H, W)):
 
 def _comp():
     tissue = np.zeros((H, W), dtype=bool)
-    tissue[20:180, 20:180] = True          # 160x160 = 25,600 px
-    nucleus = _disc(70, 70, 30)            # inside tissue
-    mito = _disc(140, 140, 20)             # inside tissue, in cytoplasm
+    tissue[20:180, 20:180] = True  # 160x160 = 25,600 px
+    nucleus = _disc(70, 70, 30)  # inside tissue
+    mito = _disc(140, 140, 20)  # inside tissue, in cytoplasm
     return CompartmentSet(
         masks={"nucleus": nucleus, "mito": mito},
         tissue=tissue,
@@ -60,9 +60,7 @@ class TestAreaFractions:
         # nucleus disc r=30 -> ~pi*900 = 2827 px, over 25600 tissue px
         assert 0.10 < af.fractions["nucleus"] < 0.12
         # cytoplasm is derived as tissue minus nucleus
-        assert af.fractions["cytoplasm"] == pytest.approx(
-            1.0 - af.fractions["nucleus"]
-        )
+        assert af.fractions["cytoplasm"] == pytest.approx(1.0 - af.fractions["nucleus"])
 
     def test_calibrated_areas(self):
         af = area_fractions(_comp(), pixel_size_nm=10.0)
@@ -184,9 +182,7 @@ class TestUnreadableCoordinates:
         """Pixel indices stop at w - 1; the image does not. A centroid at 99.6
         on a 100 px image is inside it under either coordinate convention."""
         comp = self._origin_compartment()
-        a = assign_points(
-            np.array([[99.6, 99.6], [100.0, 0.0], [-0.4, 50.0]]), comp
-        )
+        a = assign_points(np.array([[99.6, 99.6], [100.0, 0.0], [-0.4, 50.0]]), comp)
         assert a.n_out_of_bounds == 0
 
     def test_membership_masks_stay_aligned_with_the_input_rows(self):
@@ -228,9 +224,7 @@ class TestNoPointOnTissue:
 
     def test_the_null_has_no_statistic_to_report_either(self):
         comp = self._centre_tissue()
-        null = csr_null(
-            np.array([[1.0, 1.0], [2.0, 3.0]]), comp, image_key="k", replicates=5
-        )
+        null = csr_null(np.array([[1.0, 1.0], [2.0, 3.0]]), comp, image_key="k", replicates=5)
         # The default metric drops undefined enrichments, so there is nothing
         # to compare -- rather than an observed 0.0 against a null of zeros.
         assert null.observed == {}
@@ -242,8 +236,8 @@ class TestDistances:
         mask = _disc(100, 100, 30)
         pts = np.array([[100.0, 100.0], [100.0, 160.0]])
         r = distance_to_boundary(pts, mask, pixel_size_nm=10.0)
-        assert r.distances_nm[0] < 0      # centre, inside
-        assert r.distances_nm[1] > 0      # well outside
+        assert r.distances_nm[0] < 0  # centre, inside
+        assert r.distances_nm[1] > 0  # well outside
         assert r.inside.tolist() == [True, False]
 
     def test_distance_scales_with_pixel_size(self):
@@ -255,9 +249,7 @@ class TestDistances:
 
     def test_pixel_size_is_required(self):
         with pytest.raises(ValueError, match="pixel_size_nm"):
-            distance_to_boundary(
-                np.array([[1.0, 1.0]]), _disc(100, 100, 30), pixel_size_nm=0
-            )
+            distance_to_boundary(np.array([[1.0, 1.0]]), _disc(100, 100, 30), pixel_size_nm=0)
 
     def test_bands_partition_the_points(self):
         mask = _disc(100, 100, 30)
@@ -268,9 +260,7 @@ class TestDistances:
         assert len(r.band_labels) == len(r.band_counts)
 
     def test_empty_inputs_do_not_raise(self):
-        r = distance_to_boundary(
-            np.empty((0, 2)), _disc(100, 100, 30), pixel_size_nm=10.0
-        )
+        r = distance_to_boundary(np.empty((0, 2)), _disc(100, 100, 30), pixel_size_nm=10.0)
         assert r.n == 0 and r.median_nm is None
 
 
@@ -327,9 +317,7 @@ class TestDistancesReadTheSamePointsAsTheAssignment:
         assert sum(f for f in r.band_fractions if f) == pytest.approx(1.0)
         assert r.median_nm is not None and np.isfinite(r.median_nm)
 
-    @pytest.mark.parametrize(
-        "point", [[1e30, 1e30], [1e300, 1e300], [np.nan, 1.0], [-np.inf, 5.0]]
-    )
+    @pytest.mark.parametrize("point", [[1e30, 1e30], [1e300, 1e300], [np.nan, 1.0], [-np.inf, 5.0]])
     def test_both_functions_report_the_same_population_from_one_array(self, point):
         comp = self._comp_with_mito()
         pts = np.array([[100.0, 100.0], point], dtype=float)
@@ -354,7 +342,7 @@ class TestDistancesReadTheSamePointsAsTheAssignment:
     def test_nearest_neighbour_excludes_self(self):
         pts = np.array([[0.0, 0.0], [3.0, 4.0]])
         d = nearest_neighbour_nm(pts, pixel_size_nm=100.0)
-        assert d[0] == pytest.approx(500.0)   # 5 px * 100 nm
+        assert d[0] == pytest.approx(500.0)  # 5 px * 100 nm
 
 
 class TestMonteCarlo:
@@ -421,10 +409,8 @@ class TestMonteCarlo:
         # A compartment small enough to ask for far more than the cap still
         # cannot make the check unbounded.
         sliver = np.zeros((H, W), dtype=bool)
-        sliver[100, 100:102] = True          # 2 px out of 40,000
-        big = CompartmentSet(
-            masks={"sliver": sliver}, tissue=np.ones((H, W), dtype=bool)
-        )
+        sliver[100, 100:102] = True  # 2 px out of 40,000
+        big = CompartmentSet(masks={"sliver": sliver}, tissue=np.ones((H, W), dtype=bool))
         capped = self_check(big)
         assert capped["n_points"] <= SELF_CHECK_MAX_POINTS
         assert capped["n_points"] >= SELF_CHECK_MIN_POINTS
@@ -441,12 +427,8 @@ class TestMonteCarlo:
         """
         sliver = np.zeros((H, W), dtype=bool)
         sliver[100:120, 100:120] = True  # 400 px of 40,000
-        comp = CompartmentSet(
-            masks={"mito": sliver}, tissue=np.ones((H, W), dtype=bool)
-        )
-        null = csr_null(
-            np.array([[110.0, 110.0]]), comp, image_key="one", replicates=20, seed=3
-        )
+        comp = CompartmentSet(masks={"mito": sliver}, tissue=np.ones((H, W), dtype=bool))
+        null = csr_null(np.array([[110.0, 110.0]]), comp, image_key="one", replicates=20, seed=3)
 
         assert null.observed["enrichment_mito"] > 1.0  # the point is in it
         assert null.null_sd["enrichment_mito"] == 0.0  # and the null is flat
@@ -528,9 +510,7 @@ class TestMonteCarlo:
             shapes.append(p.shape)
             return {"n_points": float(len(p))}
 
-        r = csr_null(
-            pts, comp, image_key="img", metric=counting_metric, replicates=4, seed=1
-        )
+        r = csr_null(pts, comp, image_key="img", metric=counting_metric, replicates=4, seed=1)
 
         # One observed call plus one per replicate, all the same size and width.
         assert len(shapes) == 5
@@ -549,9 +529,7 @@ class TestMonteCarlo:
         r = csr_null(pts, comp, image_key="img", replicates=6, seed=3)
         direct = assign_points(pts, comp)
 
-        assert r.observed["enrichment_nucleus"] == pytest.approx(
-            direct.enrichment["nucleus"]
-        )
+        assert r.observed["enrichment_nucleus"] == pytest.approx(direct.enrichment["nucleus"])
 
 
 class VerifyNullTests:
@@ -688,7 +666,7 @@ class TestService:
         r = run_analysis(self._inputs(tmp_path, pixel_size_nm=None))
         assert r["calibrated"] is False
         assert any("Pixel size" in c for c in r["caveats"])
-        assert "distances" not in r      # cannot express nm without calibration
+        assert "distances" not in r  # cannot express nm without calibration
 
     def test_a_skipped_distance_analysis_is_named_not_merely_absent(self, tmp_path):
         """The user asked for distances, the job succeeded, and the section was
@@ -712,9 +690,7 @@ class TestService:
         r = run_analysis(self._inputs(tmp_path, with_points=False))
 
         assert "distances" not in r
-        assert any(
-            "Distance-to-mito was requested but skipped" in c for c in r["caveats"]
-        )
+        assert any("Distance-to-mito was requested but skipped" in c for c in r["caveats"])
 
     def test_an_empty_tissue_mask_is_a_caveat_not_a_crash(self, tmp_path):
         """``self_check`` always drew >= 5,000 points, and sampling inside an

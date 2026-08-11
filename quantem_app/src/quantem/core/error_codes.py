@@ -160,9 +160,7 @@ _CLASS_NAMES: dict[ErrorCode, frozenset[str]] = {
             "MemoryError",
         }
     ),
-    ErrorCode.CANCELLED: frozenset(
-        {"JobCancelled", "CancelledError", "KeyboardInterrupt"}
-    ),
+    ErrorCode.CANCELLED: frozenset({"JobCancelled", "CancelledError", "KeyboardInterrupt"}),
     ErrorCode.DUPLICATE_IMAGE: frozenset({"DuplicateImportError"}),
     ErrorCode.PROBABILITY_MAP_MISSING: frozenset(
         {"ProbabilityMapMissing", "ProbabilityMapNotStored"}

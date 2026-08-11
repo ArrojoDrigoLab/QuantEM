@@ -470,9 +470,7 @@ def adapted_entries() -> list[dict[str, Any]]:
             "heldout_dice": adapter.heldout_dice,
             "split_mode": adapter.split_mode,
             "mode": adapter.mode,
-            "segmentation_id": (
-                str(adapter.segmentation_id) if adapter.segmentation_id else None
-            ),
+            "segmentation_id": (str(adapter.segmentation_id) if adapter.segmentation_id else None),
             "applied_at": adapter.applied_at,
         }
         for adapter in rows
@@ -557,9 +555,7 @@ def storage_block() -> dict[str, Any]:
         return {"models_dir": None, "local_source_example": None}
     return {
         "models_dir": str(models_dir),
-        "local_source_example": str(
-            models_dir.parent.parent / _RELEASE_DIRNAME_EXAMPLE
-        ),
+        "local_source_example": str(models_dir.parent.parent / _RELEASE_DIRNAME_EXAMPLE),
     }
 
 

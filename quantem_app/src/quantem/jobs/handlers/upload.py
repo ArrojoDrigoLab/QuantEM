@@ -80,9 +80,7 @@ def handle_ensure_image_ngff(
 
 
 @job_handler(JOB_TYPE_UPLOAD_IMAGE_PIPELINE)
-def handle_upload_image_pipeline(
-    payload: dict, reporter: JobReporter, cancel: CancelToken
-) -> dict:
+def handle_upload_image_pipeline(payload: dict, reporter: JobReporter, cancel: CancelToken) -> dict:
     cancel.check_cancelled()
     asset = _asset_for_payload(payload)
     if asset is None:

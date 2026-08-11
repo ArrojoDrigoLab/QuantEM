@@ -13,10 +13,12 @@
 import { useCallback } from "react";
 import {
   GroupingPicker,
-  chosenId,
-  type GroupingChoice,
   type GroupingOption,
 } from "@/features/library/components/grouping/GroupingPicker";
+import {
+  chosenId,
+  type GroupingChoice,
+} from "@/features/library/components/grouping/groupingChoices";
 import { datasetsFor } from "@/features/library/components/grouping/useExperiments";
 import type { Experiment } from "@/shared/types/common";
 

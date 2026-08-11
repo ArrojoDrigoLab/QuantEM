@@ -98,11 +98,7 @@ def union_geometries(geometries: Iterable[BaseGeometry | None]) -> BaseGeometry 
     """``Union(...)`` aggregate replacement -- a shapely union of fetched rows."""
     from shapely.ops import unary_union
 
-    parts = [
-        geometry
-        for geometry in geometries
-        if geometry is not None and not geometry.is_empty
-    ]
+    parts = [geometry for geometry in geometries if geometry is not None and not geometry.is_empty]
     if not parts:
         return None
     merged = unary_union(parts)

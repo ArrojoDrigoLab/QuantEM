@@ -68,9 +68,7 @@ def serialize_experiment(experiment: Experiment) -> dict[str, Any]:
     grouped_ids: set = set()
     for dataset in datasets:
         grouped_ids.update(
-            dataset.assets.filter(
-                lifecycle_status="ACTIVE"
-            ).values_list("id", flat=True)
+            dataset.assets.filter(lifecycle_status="ACTIVE").values_list("id", flat=True)
         )
     return {
         "id": str(experiment.id),
@@ -95,9 +93,7 @@ class ExperimentWriteSerializer(serializers.Serializer):
     def validate_name(self, value: str) -> str:
         name = value.strip()
         if not name:
-            raise serializers.ValidationError(
-                "An experiment needs a name. Type one and try again."
-            )
+            raise serializers.ValidationError("An experiment needs a name. Type one and try again.")
         clashes = Experiment.objects.filter(name__iexact=name)
         if self.instance is not None:
             clashes = clashes.exclude(id=self.instance.id)
@@ -128,9 +124,7 @@ class DatasetWriteSerializer(serializers.Serializer):
     def validate_name(self, value: str) -> str:
         name = value.strip()
         if not name:
-            raise serializers.ValidationError(
-                "A dataset needs a name. Type one and try again."
-            )
+            raise serializers.ValidationError("A dataset needs a name. Type one and try again.")
         return name
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
@@ -138,21 +132,17 @@ class DatasetWriteSerializer(serializers.Serializer):
         if self.instance is None:
             if not experiment_id:
                 raise serializers.ValidationError(
-                    "A dataset lives inside an experiment. Choose one, then "
-                    "name the dataset."
+                    "A dataset lives inside an experiment. Choose one, then name the dataset."
                 )
             if not Experiment.objects.filter(id=experiment_id).exists():
                 raise serializers.ValidationError(
-                    "That experiment is no longer in the library. Refresh and "
-                    "pick another one."
+                    "That experiment is no longer in the library. Refresh and pick another one."
                 )
             experiment_filter = {"experiment_id": experiment_id}
         else:
             experiment_filter = {"experiment_id": self.instance.experiment_id}
 
-        clashes = Dataset.objects.filter(
-            name__iexact=attrs["name"], **experiment_filter
-        )
+        clashes = Dataset.objects.filter(name__iexact=attrs["name"], **experiment_filter)
         if self.instance is not None:
             clashes = clashes.exclude(id=self.instance.id)
         if clashes.exists():

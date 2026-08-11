@@ -596,7 +596,9 @@ def resolve_pyramid(target, *, intent: Intent = Intent.READ) -> PublishedPyramid
         logger.warning(
             "Asset %s names published generation %s but %s is not on disk; "
             "treating it as unbuilt so it is rebuilt rather than served.",
-            asset.id, generation, root,
+            asset.id,
+            generation,
+            root,
         )
         return Unavailable(Reason.NEVER_BUILT, "the published pyramid is no longer on disk")
 
@@ -883,19 +885,17 @@ def publish(ticket: BuildTicket, manifest: dict) -> bool:
     state["published_at"] = timezone.now().isoformat()
     metadata["pyramid"] = state
 
-    updated = (
-        Rendition.objects.filter(
-            asset_id=ticket.asset_id,
-            type=Rendition.TYPE_NGFF,
-            metadata__pyramid__attempt_token=ticket.attempt_token,
-            metadata__pyramid__published_generation=ticket.from_generation,
-            metadata__pyramid__outcome__in=list(_PUBLISHABLE_OUTCOMES),
-        ).update(
-            metadata=metadata,
-            stored_path=ticket.root.relative_to(NGFF_TMP_DIR).as_posix(),
-            path_exists=True,
-            is_directory=True,
-        )
+    updated = Rendition.objects.filter(
+        asset_id=ticket.asset_id,
+        type=Rendition.TYPE_NGFF,
+        metadata__pyramid__attempt_token=ticket.attempt_token,
+        metadata__pyramid__published_generation=ticket.from_generation,
+        metadata__pyramid__outcome__in=list(_PUBLISHABLE_OUTCOMES),
+    ).update(
+        metadata=metadata,
+        stored_path=ticket.root.relative_to(NGFF_TMP_DIR).as_posix(),
+        path_exists=True,
+        is_directory=True,
     )
     if updated:
         logger.info(
@@ -922,7 +922,8 @@ def discard_generation(ticket: BuildTicket) -> None:
     except OSError as exc:
         logger.info(
             "Could not delete the superseded generation %s yet (%s); the sweeper will.",
-            ticket.root, exc,
+            ticket.root,
+            exc,
         )
 
 

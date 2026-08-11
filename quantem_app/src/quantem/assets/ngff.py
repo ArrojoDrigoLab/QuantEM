@@ -463,8 +463,7 @@ def _write_levels_from_plane(
         write_elapsed = time.time() - write_start
 
         logger.info(
-            "Image %s: NGFF level %s %sx%s completed in %.2fs "
-            "(downsample=%.2fs zarr_write=%.2fs)",
+            "Image %s: NGFF level %s %sx%s completed in %.2fs (downsample=%.2fs zarr_write=%.2fs)",
             image.id,
             level_idx,
             int(level_array.shape[2]),
@@ -701,14 +700,19 @@ def build_pyramid(
     write_owner_for_ticket(ticket)
     logger.info(
         "Image %s: generation %s initialised with %d levels in %.2fs",
-        image.id, ticket.generation_id, len(arrays), time.time() - started,
+        image.id,
+        ticket.generation_id,
+        len(arrays),
+        time.time() - started,
     )
     _write_levels_from_plane(image, plane, arrays, progress_callback=progress_callback)
     manifest = _manifest_for(ticket.root, arrays, source_fingerprint=fingerprint)
     seal_generation(ticket.root, manifest)
     logger.info(
         "Image %s: generation %s written and sealed in %.2fs",
-        image.id, ticket.generation_id, time.time() - started,
+        image.id,
+        ticket.generation_id,
+        time.time() - started,
     )
     return manifest
 
@@ -750,7 +754,9 @@ def build_volume_pyramid(ticket: BuildTicket, image, source_path: Path) -> dict:
     seal_generation(ticket.root, manifest)
     logger.info(
         "Image %s: 3D generation %s written in %.2fs",
-        image.id, ticket.generation_id, time.time() - started,
+        image.id,
+        ticket.generation_id,
+        time.time() - started,
     )
     return manifest
 
@@ -817,5 +823,3 @@ def regenerate_ngff_from_plane(
     """
 
     return build_and_publish(image, plane, progress_callback=progress_callback)
-
-

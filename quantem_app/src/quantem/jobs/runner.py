@@ -94,10 +94,7 @@ def _detect_accelerator_devices() -> list[str]:
 
     try:
         if torch.cuda.is_available():
-            return [
-                f"cuda:{index}"
-                for index in range(max(0, int(torch.cuda.device_count())))
-            ]
+            return [f"cuda:{index}" for index in range(max(0, int(torch.cuda.device_count())))]
     except Exception:
         pass
 
@@ -498,9 +495,7 @@ class JobRunner:
         daemons anyway, so they are skipped.
         """
         workers: list[object] = [job.process for job in self.running.values()]
-        workers.extend(
-            worker for pool in self.gpu_workers.values() for worker in pool
-        )
+        workers.extend(worker for pool in self.gpu_workers.values() for worker in pool)
         terminated = []
         for worker in workers:
             terminate = getattr(worker, "terminate", None)
@@ -520,9 +515,7 @@ class JobRunner:
                 with contextlib.suppress(Exception):
                     join(timeout=SHUTDOWN_JOIN_SECONDS)
         if terminated:
-            logger.info(
-                "Stopped %d job worker process(es) on shutdown.", len(terminated)
-            )
+            logger.info("Stopped %d job worker process(es) on shutdown.", len(terminated))
 
     def _next_gpu_device_name(self) -> str | None:
         if not self.gpu_devices:
@@ -534,17 +527,13 @@ class JobRunner:
         if job_type == JOB_TYPE_UPLOAD_IMAGE_PIPELINE:
             active_cpu = sum(1 for job in self.running.values() if job.resource_class == "cpu")
             active_upload = sum(
-                1
-                for job in self.running.values()
-                if job.job_type == JOB_TYPE_UPLOAD_IMAGE_PIPELINE
+                1 for job in self.running.values() if job.job_type == JOB_TYPE_UPLOAD_IMAGE_PIPELINE
             )
             cpu_remaining = max(0, self.cpu_slots - active_cpu)
             upload_remaining = max(0, self.upload_pipeline_slots - active_upload)
             return min(cpu_remaining, upload_remaining)
         if resource_class == "gpu":
-            active = sum(
-                1 for job in self.running.values() if job.resource_class == "gpu"
-            )
+            active = sum(1 for job in self.running.values() if job.resource_class == "gpu")
             return max(0, self.gpu_slots - active)
         active = sum(1 for job in self.running.values() if job.resource_class == "cpu")
         return max(0, self.cpu_slots - active)
@@ -577,9 +566,7 @@ class JobRunner:
                 return worker
 
         if len(workers) >= self.gpu_slots:
-            raise RuntimeError(
-                f"No idle GPU workers are available for pool {GPU_POOL_KEY}."
-            )
+            raise RuntimeError(f"No idle GPU workers are available for pool {GPU_POOL_KEY}.")
 
         worker = PersistentJobWorker(
             self.ctx,
@@ -594,9 +581,7 @@ class JobRunner:
             if self.inline_sync:
                 run_job_in_subprocess(job_id)
                 return
-            thread = threading.Thread(
-                target=run_job_in_subprocess, args=(job_id,), daemon=True
-            )
+            thread = threading.Thread(target=run_job_in_subprocess, args=(job_id,), daemon=True)
             thread.start()
             self.running[job_id] = RunningJob(thread, resource_class, job_type)
             return
@@ -622,9 +607,7 @@ class JobRunner:
             )
             if should_heartbeat:
                 running.last_heartbeat = now_monotonic
-                Job.objects.filter(id=job_id, status="RUNNING").update(
-                    heartbeat_at=timezone.now()
-                )
+                Job.objects.filter(id=job_id, status="RUNNING").update(heartbeat_at=timezone.now())
             if (
                 job
                 and job.cancel_requested

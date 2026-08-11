@@ -41,9 +41,7 @@ from quantem.core.error_codes import (
 )
 
 _SRC = Path(__file__).resolve().parents[2]
-_FAILURES_TS = (
-    _SRC.parents[1] / "frontend" / "src" / "shared" / "copy" / "failures.ts"
-)
+_FAILURES_TS = _SRC.parents[1] / "frontend" / "src" / "shared" / "copy" / "failures.ts"
 
 #: Not scanned for emitted codes. ``tests`` is excluded on purpose: a test may
 #: legitimately post an unknown code to prove the client tolerates one, and a
@@ -118,10 +116,7 @@ def _emitted_codes() -> list[tuple[str, str]]:
             value: ast.AST | None = None
             if isinstance(node, ast.Dict):
                 for key, item in zip(node.keys, node.values, strict=True):
-                    if (
-                        isinstance(key, ast.Constant)
-                        and key.value == ERROR_CODE_FIELD
-                    ):
+                    if isinstance(key, ast.Constant) and key.value == ERROR_CODE_FIELD:
                         resolved = _resolved(item, constants)
                         if resolved is not None:
                             found.append((f"{rel}:{node.lineno}", resolved))
@@ -129,8 +124,7 @@ def _emitted_codes() -> list[tuple[str, str]]:
             if isinstance(node, ast.keyword) and node.arg == ERROR_CODE_FIELD:
                 value = node.value
             elif isinstance(node, ast.Assign) and any(
-                getattr(target, "attr", getattr(target, "id", None))
-                == ERROR_CODE_FIELD
+                getattr(target, "attr", getattr(target, "id", None)) == ERROR_CODE_FIELD
                 for target in node.targets
             ):
                 value = node.value
@@ -157,9 +151,7 @@ def test_the_scanner_finds_the_codes_that_were_already_on_the_wire():
 
 def test_every_emitted_code_is_in_the_catalogue():
     known = {str(code) for code in ErrorCode}
-    unknown = [
-        (where, code) for where, code in _emitted_codes() if code not in known
-    ]
+    unknown = [(where, code) for where, code in _emitted_codes() if code not in known]
 
     if unknown:
         report = "\n".join(f"  {where}: {code!r}" for where, code in unknown)
@@ -180,9 +172,7 @@ def _ts_source() -> str:
 
 
 def _ts_listed_codes(source: str) -> list[str]:
-    block = re.search(
-        r"export const FAILURE_CODES = \[(.*?)\] as const;", source, re.S
-    )
+    block = re.search(r"export const FAILURE_CODES = \[(.*?)\] as const;", source, re.S)
     assert block, "FAILURE_CODES is not where this test expects it"
     return re.findall(r'"([a-z0-9_]+)"', block.group(1))
 
@@ -202,8 +192,7 @@ def _ts_copy_entries(source: str) -> dict[str, str]:
     assert block, "FAILURE_COPY is not where this test expects it"
     body = block.group(1)
     keys = [
-        (match.group(1), match.start())
-        for match in re.finditer(r"^  ([a-z0-9_]+): \{", body, re.M)
+        (match.group(1), match.start()) for match in re.finditer(r"^  ([a-z0-9_]+): \{", body, re.M)
     ]
     entries: dict[str, str] = {}
     for index, (name, start) in enumerate(keys):
@@ -231,9 +220,7 @@ def test_every_code_has_copy_and_an_in_app_action(code: str):
     # An action is a control in this application: a hash route, or a named
     # control the surface renders. A code whose "action" is advice to go and
     # read something is the failure this whole package exists to remove.
-    assert 'href: "#/' in entry or "control:" in entry, (
-        f"{code!r} has no in-app action"
-    )
+    assert 'href: "#/' in entry or "control:" in entry, f"{code!r} has no in-app action"
 
 
 def test_no_copy_string_tells_the_user_to_type_a_command():
@@ -265,15 +252,9 @@ class ModelWeightsNotInstalled(Exception):
 
 
 def test_it_classifies_the_failures_it_claims_to():
-    assert (
-        classify_exception(ModelWeightsNotInstalled("no pack"))
-        is ErrorCode.MODEL_NOT_INSTALLED
-    )
+    assert classify_exception(ModelWeightsNotInstalled("no pack")) is ErrorCode.MODEL_NOT_INSTALLED
     assert classify_exception(MemoryError()) is ErrorCode.OUT_OF_MEMORY
-    assert (
-        classify_exception(OSError(28, "No space left on device"))
-        is ErrorCode.DISK_FULL
-    )
+    assert classify_exception(OSError(28, "No space left on device")) is ErrorCode.DISK_FULL
 
 
 def test_an_ordinary_bug_gets_no_code():
@@ -301,6 +282,4 @@ def test_a_code_serialises_as_its_own_string():
     """``StrEnum``, so a serialiser needs no special case for it."""
     import json
 
-    assert json.dumps({"error_code": ErrorCode.CANCELLED}) == (
-        '{"error_code": "cancelled"}'
-    )
+    assert json.dumps({"error_code": ErrorCode.CANCELLED}) == ('{"error_code": "cancelled"}')

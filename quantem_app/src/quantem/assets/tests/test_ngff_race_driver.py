@@ -93,7 +93,13 @@ def _make_asset(source: Path):
 
 def _spawn(mode: str, *args) -> subprocess.Popen:
     return subprocess.Popen(
-        [sys.executable, "-m", __spec__.name if __spec__ else __name__, mode, *[str(a) for a in args]],
+        [
+            sys.executable,
+            "-m",
+            __spec__.name if __spec__ else __name__,
+            mode,
+            *[str(a) for a in args],
+        ],
         env=dict(os.environ),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -250,9 +256,7 @@ def _hard_kill(child: subprocess.Popen) -> None:
     the first attempt.
     """
 
-    subprocess.run(
-        ["taskkill", "/PID", str(child.pid), "/T", "/F"], capture_output=True, text=True
-    )
+    subprocess.run(["taskkill", "/PID", str(child.pid), "/T", "/F"], capture_output=True, text=True)
     try:
         child.wait(timeout=30)
         return
@@ -307,9 +311,7 @@ def mode_concurrent_enqueue(clients: str, workdir: str) -> dict:
     exits = [child.wait(timeout=300) for child in children]
 
     jobs = list(
-        Job.objects.filter(
-            type=JOB_TYPE_ENSURE_IMAGE_NGFF, payload_json__asset_id=str(asset.id)
-        )
+        Job.objects.filter(type=JOB_TYPE_ENSURE_IMAGE_NGFF, payload_json__asset_id=str(asset.id))
     )
     return {
         "mode": "concurrent_enqueue",

@@ -61,9 +61,7 @@ def _border_max(arr, y0: int, y1: int, x0: int, x1: int) -> int:
 
 def _label_for_object(state: SegmentationOverlayState, object_uuid) -> int:
     """Look up the dense label assigned to an object's uuid for this bundle."""
-    row = SegmentationOverlayLabel.objects.get(
-        overlay_state=state, object_uuid=object_uuid
-    )
+    row = SegmentationOverlayLabel.objects.get(overlay_state=state, object_uuid=object_uuid)
     return int(row.label)
 
 
@@ -84,9 +82,7 @@ class SegmentationOverlayManifestTests(TestCase):
         )
 
     def test_manifest_endpoint_queues_initial_build(self):
-        response = self.client.get(
-            f"/api/segmentations/{self.segmentation.id}/overlay-manifest/"
-        )
+        response = self.client.get(f"/api/segmentations/{self.segmentation.id}/overlay-manifest/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "BUILDING")
@@ -97,9 +93,7 @@ class SegmentationOverlayManifestTests(TestCase):
         self.assertEqual(response.data["label_dtype"], "uint32")
         self.assertIsNotNone(response.data["lut_url"])
         self.assertNotIn("channel_indices", response.data)
-        self.assertTrue(
-            Job.objects.filter(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY).exists()
-        )
+        self.assertTrue(Job.objects.filter(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY).exists())
 
     def test_manifest_endpoint_requeues_dirty_valid_overlay(self):
         state = rebuild_overlay_full(self.segmentation, desired_revision=1)
@@ -117,9 +111,7 @@ class SegmentationOverlayManifestTests(TestCase):
             ]
         )
 
-        response = self.client.get(
-            f"/api/segmentations/{self.segmentation.id}/overlay-manifest/"
-        )
+        response = self.client.get(f"/api/segmentations/{self.segmentation.id}/overlay-manifest/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "BUILDING")
@@ -139,16 +131,13 @@ class SegmentationOverlayManifestTests(TestCase):
                 200,
             )
         # Differently cased: normalised, so it must not start a third build.
-        self.assertEqual(
-            self.client.get(url, {"source_model": "QuantEM:Nucleus"}).status_code, 200
-        )
+        self.assertEqual(self.client.get(url, {"source_model": "QuantEM:Nucleus"}).status_code, 200)
 
         jobs = list(Job.objects.filter(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY))
         self.assertEqual(
             len(jobs),
             2,
-            "expected exactly one rebuild per bundle: the aggregate and "
-            "quantem:nucleus",
+            "expected exactly one rebuild per bundle: the aggregate and quantem:nucleus",
         )
         self.assertEqual(
             sorted(job.payload_json.get("source_model", "") for job in jobs),
@@ -232,9 +221,7 @@ class SegmentationOverlayRebuildStateTests(TestCase):
             nonlocal mutated
             if not mutated:
                 mutated = True
-                current_state = SegmentationOverlayState.objects.get(
-                    segmentation=self.segmentation
-                )
+                current_state = SegmentationOverlayState.objects.get(segmentation=self.segmentation)
                 current_state.status = SegmentationOverlayState.STATUS_DIRTY
                 current_state.desired_revision = 2
                 current_state.pending_full_rebuild = True
@@ -299,9 +286,7 @@ class SegmentationOverlayRebuildStateTests(TestCase):
             nonlocal mutated
             if not mutated:
                 mutated = True
-                current_state = SegmentationOverlayState.objects.get(
-                    segmentation=self.segmentation
-                )
+                current_state = SegmentationOverlayState.objects.get(segmentation=self.segmentation)
                 current_state.status = SegmentationOverlayState.STATUS_DIRTY
                 current_state.desired_revision = 2
                 current_state.dirty_chunk_runs = [later_dirty_run]
@@ -517,9 +502,7 @@ class SegmentationOverlaySparseChunkTests(TestCase):
         chunk_w = min(256, int(labels0.shape[1]))
         # Decode using the same codec the labels array was created with
         # (Blosc zstd, level 5, byte-shuffle) and assert all-background zeros.
-        decoded = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE).decode(
-            response.content
-        )
+        decoded = Blosc(cname="zstd", clevel=5, shuffle=Blosc.SHUFFLE).decode(response.content)
         chunk = np.frombuffer(decoded, dtype=np.uint32).reshape((chunk_h, chunk_w))
         self.assertEqual(int(chunk.max()), 0)
 
@@ -619,12 +602,8 @@ class SegmentationOverlayRasterizationTests(TestCase):
         )
 
     def test_touching_segments_keep_visible_border_channel(self):
-        left = self._create_segment(
-            Polygon(((10, 10), (22, 10), (22, 22), (10, 22), (10, 10)))
-        )
-        right = self._create_segment(
-            Polygon(((22, 10), (34, 10), (34, 22), (22, 22), (22, 10)))
-        )
+        left = self._create_segment(Polygon(((10, 10), (22, 10), (22, 22), (10, 22), (10, 10))))
+        right = self._create_segment(Polygon(((22, 10), (34, 10), (34, 22), (22, 22), (22, 10))))
 
         state = rebuild_overlay_full(self.segmentation, desired_revision=0)
         labels0 = _open_labels_level0(state)
@@ -645,10 +624,7 @@ class SegmentationOverlayRasterizationTests(TestCase):
 
     def test_extract_polygons_ignores_non_polygon_iterables(self):
         geometry = shapely_wkt.loads(
-            "GEOMETRYCOLLECTION("
-            "POLYGON((0 0, 4 0, 4 4, 0 4, 0 0)),"
-            "LINESTRING(4 0, 8 0)"
-            ")"
+            "GEOMETRYCOLLECTION(POLYGON((0 0, 4 0, 4 4, 0 4, 0 0)),LINESTRING(4 0, 8 0))"
         )
 
         polygons = extract_polygons(geometry)

@@ -93,9 +93,7 @@ def _assert_clean(pairs, surface: str) -> None:
     violations = [v for where, text in pairs for v in find_violations(text, where)]
     if violations:
         report = "\n".join(f"  {v}" for v in violations)
-        raise AssertionError(
-            f"I-12: {len(violations)} defect(s) in {surface}:\n{report}"
-        )
+        raise AssertionError(f"I-12: {len(violations)} defect(s) in {surface}:\n{report}")
 
 
 class TheGateWouldHaveCaughtWhatShipped(TestCase):
@@ -105,16 +103,14 @@ class TheGateWouldHaveCaughtWhatShipped(TestCase):
         for shipped in (
             "failed: ModelWeightsNotInstalled: Model pack 'quantem:er' is not "
             "installed. Install it on the Models screen.",
-            "failed: ValueError: Error decoding PNG to 8-bit grayscale: image "
-            "file is truncated",
+            "failed: ValueError: Error decoding PNG to 8-bit grayscale: image file is truncated",
         ):
             kinds = {v.kind for v in find_violations(shipped)}
             assert "exception-class" in kinds, (shipped, kinds)
 
     def test_the_message_the_queue_writes_now_is_not_one(self):
         exc = _ModelWeightsNotInstalled(
-            "Model pack 'quantem:er' is not installed. Install it on the "
-            "Models screen."
+            "Model pack 'quantem:er' is not installed. Install it on the Models screen."
         )
         assert find_violations(failure_message(exc)) == []
         assert "ModelWeightsNotInstalled" not in failure_message(exc)
@@ -175,8 +171,7 @@ class TheQueueEndpointsAreClean(TestCase):
             status="FAILED",
             message=failure_message(
                 _ModelWeightsNotInstalled(
-                    "Model pack 'quantem:er' is not installed. Install it on "
-                    "the Models screen."
+                    "Model pack 'quantem:er' is not installed. Install it on the Models screen."
                 )
             ),
         )

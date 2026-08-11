@@ -32,9 +32,7 @@ class ExperimentApiTests(TestCase):
         self.assertEqual(response.data, [])
 
     def test_creating_one_returns_it_with_its_counts(self):
-        response = self.client.post(
-            "/api/experiments/", {"name": "Fasted cohort"}, format="json"
-        )
+        response = self.client.post("/api/experiments/", {"name": "Fasted cohort"}, format="json")
 
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["name"], "Fasted cohort")
@@ -44,9 +42,7 @@ class ExperimentApiTests(TestCase):
     def test_a_duplicate_name_is_refused_in_words_a_person_can_act_on(self):
         Experiment.objects.create(name="Fasted cohort")
 
-        response = self.client.post(
-            "/api/experiments/", {"name": "fasted cohort"}, format="json"
-        )
+        response = self.client.post("/api/experiments/", {"name": "fasted cohort"}, format="json")
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("already an experiment", response.data["detail"])
@@ -89,9 +85,7 @@ class ExperimentApiTests(TestCase):
         self.assertFalse(Dataset.objects.filter(id=dataset.id).exists())
 
     def test_one_that_is_gone_answers_with_a_sentence_not_a_stack_trace(self):
-        response = self.client.get(
-            "/api/experiments/00000000-0000-0000-0000-000000000001/"
-        )
+        response = self.client.get("/api/experiments/00000000-0000-0000-0000-000000000001/")
 
         self.assertEqual(response.status_code, 404)
         self.assertIn("no longer in the library", response.data["detail"])
@@ -141,9 +135,7 @@ class DatasetApiTests(TestCase):
         self.assertEqual(response.data["experiment"], str(self.experiment.id))
 
     def test_a_dataset_with_no_experiment_is_refused(self):
-        response = self.client.post(
-            "/api/datasets/", {"name": "Liver 24h"}, format="json"
-        )
+        response = self.client.post("/api/datasets/", {"name": "Liver 24h"}, format="json")
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("lives inside an experiment", response.data["detail"])
@@ -237,9 +229,7 @@ class AssignmentApiTests(TestCase):
         self.assertEqual(body["experiment"]["name"], "Starved cohort")
         self.first.refresh_from_db()
         self.assertEqual(self.first.experiment.name, "Starved cohort")
-        self.assertEqual(
-            [d.name for d in self.first.datasets.all()], ["Liver 6h"]
-        )
+        self.assertEqual([d.name for d in self.first.datasets.all()], ["Liver 6h"])
 
     def test_clearing_puts_an_image_back_in_the_unassigned_bucket(self):
         self._assign(
@@ -265,9 +255,7 @@ class AssignmentApiTests(TestCase):
             }
         )
 
-        body = self._assign(
-            {"asset_ids": [str(self.first.id)], "experiment": str(self.fed.id)}
-        )
+        body = self._assign({"asset_ids": [str(self.first.id)], "experiment": str(self.fed.id)})
 
         self.assertEqual(body["dataset_links_dropped"], 1)
         self.assertEqual(body["datasets_left"], ["Liver 24h"])
@@ -296,9 +284,7 @@ class AssignmentApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_an_empty_selection_is_refused_in_words(self):
-        response = self.client.post(
-            "/api/assets/grouping/", {"asset_ids": []}, format="json"
-        )
+        response = self.client.post("/api/assets/grouping/", {"asset_ids": []}, format="json")
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("at least one image", response.data["detail"])
@@ -365,9 +351,7 @@ class LibraryFilterTests(TestCase):
         second = Dataset.objects.create(experiment=self.fasted, name="Liver 48h")
         self.filed.datasets.add(second)
 
-        self.assertEqual(
-            self._names({"dataset": [str(self.liver.id), str(second.id)]}), ["Filed"]
-        )
+        self.assertEqual(self._names({"dataset": [str(self.liver.id), str(second.id)]}), ["Filed"])
 
 
 class ImportAssignmentTests(TestCase):
@@ -390,9 +374,7 @@ class ImportAssignmentTests(TestCase):
         self.assertEqual(Experiment.objects.count(), 0)
 
     def test_a_typed_experiment_and_dataset_are_created_and_attached(self):
-        response = self._upload(
-            experiment_name="Fasted cohort", dataset_name="Liver 24h"
-        )
+        response = self._upload(experiment_name="Fasted cohort", dataset_name="Liver 24h")
 
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["experiment_name"], "Fasted cohort")
@@ -421,9 +403,7 @@ class ImportAssignmentTests(TestCase):
         self.assertEqual(Asset.objects.count(), 0)
 
     def test_an_experiment_id_that_is_gone_refuses_the_import_in_words(self):
-        response = self._upload(
-            experiment_id="00000000-0000-0000-0000-000000000001"
-        )
+        response = self._upload(experiment_id="00000000-0000-0000-0000-000000000001")
 
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("no longer in the library", response.data["error"])

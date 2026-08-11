@@ -62,9 +62,7 @@ class _TempDirMixin:
     def temp_dir(self) -> Path:
         # `TMPDIR`/`TEMP`/`TMP` are pointed at repo scratch by the suite's
         # `_pytest_env` plugin, so this never lands on the system drive.
-        return Path(
-            self.enterContext(tempfile.TemporaryDirectory(ignore_cleanup_errors=True))
-        )
+        return Path(self.enterContext(tempfile.TemporaryDirectory(ignore_cleanup_errors=True)))
 
 
 class DescribeFailureTests(_TempDirMixin, TestCase):

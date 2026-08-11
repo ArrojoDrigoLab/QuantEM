@@ -31,16 +31,12 @@ TRUE_AREA = 400.0
 
 
 def _square(x: float, y: float, side: float) -> Polygon:
-    return Polygon(
-        ((x, y), (x + side, y), (x + side, y + side), (x, y + side), (x, y))
-    )
+    return Polygon(((x, y), (x + side, y), (x + side, y + side), (x, y + side), (x, y)))
 
 
 class RemeasureCommandTests(TestCase):
     def setUp(self):
-        self.image = create_small_test_image(
-            "Remeasure", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Remeasure", width=SIZE, height=SIZE, textured=True)
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
             segmentation_type=get_or_create_mitochondria_type(),

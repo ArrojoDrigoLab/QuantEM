@@ -46,9 +46,7 @@ def installed_pack():
     has nothing to do with what broke -- and "no runnable base model" has its own
     test below, which asserts it fires rather than asserting it does not.
     """
-    return mock.patch(
-        "quantem.finetune.run_views._runnable_reason", return_value=None
-    )
+    return mock.patch("quantem.finetune.run_views._runnable_reason", return_value=None)
 
 
 class NamedRunTests(TestCase):
@@ -63,9 +61,7 @@ class NamedRunTests(TestCase):
             segmentation.asset.experiment = self.experiment
             segmentation.asset.save(update_fields=["experiment"])
             for area in AREAS[:2]:
-                CompletedROI.objects.create(
-                    segmentation=segmentation, geometry=square(*area)
-                )
+                CompletedROI.objects.create(segmentation=segmentation, geometry=square(*area))
             self.segmentations.append(segmentation)
         self.asset_ids = [str(s.asset_id) for s in self.segmentations]
 
@@ -87,9 +83,7 @@ class NamedRunTests(TestCase):
         assert adapter.name == "Fasted mitochondria"
         assert adapter.segmentation_type_id == _mito().id
         assert str(adapter.experiment_id) == str(self.experiment.id)
-        assert sorted(str(a.id) for a in adapter.scope_assets.all()) == sorted(
-            self.asset_ids
-        )
+        assert sorted(str(a.id) for a in adapter.scope_assets.all()) == sorted(self.asset_ids)
 
     def test_a_run_opened_from_a_labeling_view_remembers_where_it_came_from(self):
         """``active_adapter_for`` has a second, older way in, and it still works.
@@ -235,9 +229,7 @@ class NamedRunTests(TestCase):
         from quantem.finetune.tests.fixtures import FakeCancel, FakeReporter
 
         adapter_id = self._start().json()["adapter_id"]
-        Adapter.objects.filter(id=adapter_id).update(
-            head_path="adapters/keep/head.pt"
-        )
+        Adapter.objects.filter(id=adapter_id).update(head_path="adapters/keep/head.pt")
         payload = {
             "adapter_id": adapter_id,
             "segmentation_type_id": str(_mito().id),
@@ -295,9 +287,7 @@ class ProgressEndpointTests(TestCase):
         )
 
     def _body(self):
-        response = self.client.get(
-            f"/api/finetune/runs/{self.adapter.id}/progress/"
-        )
+        response = self.client.get(f"/api/finetune/runs/{self.adapter.id}/progress/")
         assert response.status_code == 200
         return response.json()
 

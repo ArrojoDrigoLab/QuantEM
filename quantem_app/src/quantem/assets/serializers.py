@@ -83,9 +83,7 @@ def format_image_metadata_summary(
 ) -> str:
     dimension_summary = _format_dimension_summary(width, height, depth)
     pixel_size_summary = _format_pixel_size_summary(pixel_size_nm, pixel_size_nm_z)
-    return ", ".join(
-        part for part in [dimension_summary, pixel_size_summary] if part
-    )
+    return ", ".join(part for part in [dimension_summary, pixel_size_summary] if part)
 
 
 def _isoformat(value) -> str | None:
@@ -110,12 +108,8 @@ def _renditions_full_first(asset) -> list:
     """
     cache = getattr(asset, "_prefetched_objects_cache", {})
     prefetched = cache.get("renditions")
-    renditions = (
-        list(prefetched) if prefetched is not None else list(asset.renditions.all())
-    )
-    return [r for r in renditions if r.type == "FULL"] + [
-        r for r in renditions if r.type != "FULL"
-    ]
+    renditions = list(prefetched) if prefetched is not None else list(asset.renditions.all())
+    return [r for r in renditions if r.type == "FULL"] + [r for r in renditions if r.type != "FULL"]
 
 
 def file_declared_pixel_size_nm(asset) -> float | None:
@@ -261,9 +255,7 @@ def serialize_asset_grouping(asset) -> dict[str, Any]:
     """
     datasets = _asset_datasets(asset)
     return {
-        "experiment_id": (
-            str(asset.experiment_id) if asset.experiment_id else None
-        ),
+        "experiment_id": (str(asset.experiment_id) if asset.experiment_id else None),
         "experiment_name": asset.experiment.name if asset.experiment_id else None,
         "dataset_ids": [str(dataset.id) for dataset in datasets],
         "dataset_names": [dataset.name for dataset in datasets],
@@ -286,9 +278,7 @@ def serialize_asset_entry(asset) -> dict[str, Any]:
         "width": asset.logical_width,
         "height": asset.logical_height,
         "depth": asset.logical_depth,
-        "stored_depth": (
-            openable.stored_depth if openable is not None else asset.logical_depth
-        ),
+        "stored_depth": (openable.stored_depth if openable is not None else asset.logical_depth),
         "pixel_size_nm": asset.pixel_size_nm,
         "pixel_size_nm_z": asset.pixel_size_nm_z,
         # What the file declared, so the library card can tell "read from file"
@@ -329,9 +319,7 @@ def serialize_rendition(rendition) -> dict[str, Any]:
     return {
         "id": str(rendition.id),
         "type": rendition.type,
-        "derived_from": (
-            str(rendition.derived_from_id) if rendition.derived_from_id else None
-        ),
+        "derived_from": (str(rendition.derived_from_id) if rendition.derived_from_id else None),
         "storage_root": rendition.storage_root,
         "stored_path": rendition.stored_path,
         "path_exists": rendition.path_exists,
@@ -356,9 +344,7 @@ def serialize_asset_detail(asset) -> dict[str, Any]:
             "file_path": openable.file_path if openable is not None else "",
             "channels": asset.channels,
             "bit_depth": asset.bit_depth,
-            "renditions": [
-                serialize_rendition(rendition) for rendition in asset.renditions.all()
-            ],
+            "renditions": [serialize_rendition(rendition) for rendition in asset.renditions.all()],
         }
     )
     return payload

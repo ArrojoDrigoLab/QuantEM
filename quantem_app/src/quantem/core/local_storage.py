@@ -79,14 +79,10 @@ def validate_storage_relpath(raw_value: str | Path) -> str:
     if not normalized:
         raise StorageError("Storage-relative paths must not be blank.")
     if path_value_is_absolute_like(normalized):
-        raise StorageError(
-            f"Storage-relative path must not be absolute: {raw_value!r}"
-        )
+        raise StorageError(f"Storage-relative path must not be absolute: {raw_value!r}")
     parts = [part for part in normalized.split("/") if part not in {"", "."}]
     if not parts or any(part == ".." for part in parts):
-        raise StorageError(
-            f"Storage-relative path must stay under storage root: {raw_value!r}"
-        )
+        raise StorageError(f"Storage-relative path must stay under storage root: {raw_value!r}")
     return "/".join(parts)
 
 

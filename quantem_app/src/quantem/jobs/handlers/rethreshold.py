@@ -179,9 +179,7 @@ def handle_reextract_at_include_level(
     run_identity = run_identity_from_segmenter(
         segmenter,
         run_id=str(
-            stored_metadata.get("run_id")
-            or getattr(reporter, "job_id", "")
-            or "include-level"
+            stored_metadata.get("run_id") or getattr(reporter, "job_id", "") or "include-level"
         ),
         pack_id_fallback=source_model or segmenter.name,
         native_pixel_size_nm=_asset_pixel_size_nm(segmentation),

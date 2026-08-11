@@ -255,11 +255,15 @@ def compute_segment_features(
     t_mask = time.time() - t0
 
     if not np.any(mask):
-        timing = {
-            "extract": t_extract,
-            "rasterize": t_mask,
-            "total": t_extract + t_mask,
-        } if return_timing else None
+        timing = (
+            {
+                "extract": t_extract,
+                "rasterize": t_mask,
+                "total": t_extract + t_mask,
+            }
+            if return_timing
+            else None
+        )
         return {}, timing
 
     # If downsampling was used, we need to handle feature computation carefully

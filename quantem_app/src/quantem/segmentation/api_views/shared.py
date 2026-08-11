@@ -64,6 +64,7 @@ def get_segmentation_target_image(segmentation: ImageSegmentation):
             raise ValueError("Segmentation asset has no local full/subset rendition") from exc
     raise ValueError("Segmentation has no target asset")
 
+
 def active_segmentation_job(
     segmentation: ImageSegmentation,
     *,

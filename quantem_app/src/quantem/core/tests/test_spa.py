@@ -112,9 +112,7 @@ class LocalOnlyMiddlewareTests(TestCase):
             "http://[::1]:9000",
         ):
             with self.subTest(origin=origin):
-                response = self.client.get(
-                    "/api/system/status/", headers={"origin": origin}
-                )
+                response = self.client.get("/api/system/status/", headers={"origin": origin})
                 self.assertEqual(response.status_code, 200)
 
     def test_foreign_origin_is_refused(self):

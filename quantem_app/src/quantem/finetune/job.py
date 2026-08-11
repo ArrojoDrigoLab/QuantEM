@@ -71,9 +71,7 @@ MODES = (MODE_THRESHOLD_ONLY, MODE_HEAD)
 #: Said when an overwrite fails. The point of the sentence is that nothing was
 #: lost: the previous weights were never touched, because a new head is written
 #: beside the live one and only moved over it once the run has finished.
-OVERWRITE_SAFE_SUFFIX = (
-    " The previous version of this fine-tune is untouched and still in use."
-)
+OVERWRITE_SAFE_SUFFIX = " The previous version of this fine-tune is untouched and still in use."
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +170,7 @@ def _split_for_scoring(
 ) -> tuple[list[AnnotatedCrop], list[AnnotatedCrop], str]:
     train, heldout, mode = plan_split(list(crops))
     if not train:
-        raise ValueError(
-            "No annotated region has a probability map to calibrate against."
-        )
+        raise ValueError("No annotated region has a probability map to calibrate against.")
     return train, heldout, mode
 
 
@@ -361,15 +357,12 @@ def _published_threshold(base_model: str) -> float | None:
     return float(spec.threshold) if spec is not None else None
 
 
-def _run_threshold_only(
-    reporter: Any, *, crop_set: Any, base_model: str
-) -> dict:
+def _run_threshold_only(reporter: Any, *, crop_set: Any, base_model: str) -> dict:
     """The always-available rung: one scalar, fit on the training crops."""
     usable = [c for c in crop_set.crops if c.prob is not None]
     if not usable:
         raise ValueError(
-            "No probability map covers the completed area. Run the model on this "
-            "image first."
+            "No probability map covers the completed area. Run the model on this image first."
         )
     train, heldout, split_mode = _split_for_scoring(usable)
 
@@ -424,9 +417,7 @@ def _run_head(
     spec = model.spec
 
     # Everything past this point happens on the grid the model predicts on.
-    scaled = {
-        c.name: to_model_scale_crop(c, canonical_nm=spec.canonical_nm) for c in usable
-    }
+    scaled = {c.name: to_model_scale_crop(c, canonical_nm=spec.canonical_nm) for c in usable}
 
     cancel.check_cancelled()
     reporter.update(progress=12.0, message="scoring the base model")
@@ -497,9 +488,7 @@ def _run_head(
     # onto it: a run that dies while saving must leave whatever was there
     # loadable. An unrecorded run gets a unique scratch path -- this used to be
     # a single shared ``unsaved`` folder, so two of them overwrote each other.
-    head_file = (
-        staged_head_path(adapter_id) if adapter_id else unsaved_head_path()
-    )
+    head_file = staged_head_path(adapter_id) if adapter_id else unsaved_head_path()
     final_head = adapter_head_path(adapter_id) if adapter_id else head_file
     save_head(
         model.module,
@@ -617,9 +606,7 @@ def _fold_metrics(
     }
 
 
-def _cv_results(
-    folds: list[dict[str, Any]], names: dict[str, str]
-) -> dict[str, Any]:
+def _cv_results(folds: list[dict[str, Any]], names: dict[str, str]) -> dict[str, Any]:
     """Fold rows, the mean over them, and the per-image breakdown R13 requires.
 
     The mean is over the folds that produced a number. Per-image rows are
@@ -718,9 +705,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
     _stage(reporter, STAGE_PREPARING, "reading the annotations you chose")
 
     try:
-        crop_set = require_crops_for_scope(
-            segmentation_type_id, asset_ids, load_em=True
-        )
+        crop_set = require_crops_for_scope(segmentation_type_id, asset_ids, load_em=True)
     except CompletedRoiRequired as exc:
         reporter.log("warning", str(exc))
         raise
@@ -731,9 +716,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
     if not usable:
         raise ValueError("No annotated region could be read from its image.")
 
-    folds, split_mode = plan_folds(
-        usable, training_mode=training_mode, cv_benchmark=cv_benchmark
-    )
+    folds, split_mode = plan_folds(usable, training_mode=training_mode, cv_benchmark=cv_benchmark)
     total_rounds = len(folds)
     total_steps = config.steps * total_rounds
     tile_count = count_tiles(usable, base_model, config=config)
@@ -743,9 +726,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
     model = engine.load_model(base_model)
     engine.clear_model_cache()
     spec = model.spec
-    scaled = {
-        c.name: to_model_scale_crop(c, canonical_nm=spec.canonical_nm) for c in usable
-    }
+    scaled = {c.name: to_model_scale_crop(c, canonical_nm=spec.canonical_nm) for c in usable}
     tile = tile_for(spec.tile_size, spec.patch_size)
 
     # The "before" number, from this code over these pixels, so the improvement
@@ -791,17 +772,20 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         reporter.update(message=message)
         # One window per round, offset into the grand total, so the bar and the
         # ETA are over the whole run rather than restarting every fold.
-        with unit_window(base_units, total_steps), _unit_scope(
-            reporter,
-            total=config.steps,
-            label=UNIT_STEP,
-            stage=STAGE_TRAINING,
-            detail={
-                "round": index + 1,
-                "total_rounds": total_rounds,
-                "tiles": tile_count,
-            },
-        ) as steps_done:
+        with (
+            unit_window(base_units, total_steps),
+            _unit_scope(
+                reporter,
+                total=config.steps,
+                label=UNIT_STEP,
+                stage=STAGE_TRAINING,
+                detail={
+                    "round": index + 1,
+                    "total_rounds": total_rounds,
+                    "tiles": tile_count,
+                },
+            ) as steps_done,
+        ):
 
             def on_progress(progress: AdaptProgress, sink=steps_done) -> None:
                 sink.set(progress.step + 1)
@@ -827,9 +811,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
             heldout_crops=_scoring_crops(fold.heldout, adapted_probs, scaled),
         )
         if fold.heldout:
-            fold_rows.append(
-                _fold_metrics(fold, adapted_probs, scaled, sweep.calibrated_threshold)
-            )
+            fold_rows.append(_fold_metrics(fold, adapted_probs, scaled, sweep.calibrated_threshold))
         shipped_fold = fold
 
     assert sweep is not None and training is not None  # one round always runs
@@ -917,9 +899,7 @@ def _cancelled(cancel: Any) -> bool:
 
 def _predict(engine: Any, model: Any, crop: AnnotatedCrop) -> np.ndarray:
     """Probability for one crop, at model scale."""
-    prediction = engine.predict_region(
-        model, crop.em, pixel_size_nm=crop.pixel_size_nm
-    )
+    prediction = engine.predict_region(model, crop.em, pixel_size_nm=crop.pixel_size_nm)
     return prediction.prob
 
 

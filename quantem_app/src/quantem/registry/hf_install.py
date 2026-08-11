@@ -249,9 +249,7 @@ def install_pack_from_hf(
     try:
         check()
         say(f"{pack_id}: converting the published artifacts into a pack")
-        convert_artifacts_to_pack(
-            pack_id, card, head_path, trunk_path, staging, revision=rev
-        )
+        convert_artifacts_to_pack(pack_id, card, head_path, trunk_path, staging, revision=rev)
 
         exported = False
         export_error: str | None = None
@@ -265,7 +263,10 @@ def install_pack_from_hf(
         check()
         say(f"{pack_id}: recording digests")
         record, written, reused = _record_and_store(
-            pack_id, card, staging, rev,
+            pack_id,
+            card,
+            staging,
+            rev,
             trunk_info=trunk_info,
             trunk_path=trunk_path,
             exported=exported,
@@ -335,13 +336,13 @@ def convert_artifacts_to_pack(
     adapters: dict[str, Any] = {}
     for key, value in tensors.items():
         if key.startswith("neck."):
-            neck[key[len("neck."):]] = value
+            neck[key[len("neck.") :]] = value
         elif key.startswith("decoder."):
-            decoder[key[len("decoder."):]] = value
+            decoder[key[len("decoder.") :]] = value
         elif key.startswith("encoder."):
-            encoder[key[len("encoder."):]] = value
+            encoder[key[len("encoder.") :]] = value
         elif key.startswith("adapters."):
-            adapters[key[len("adapters."):]] = value
+            adapters[key[len("adapters.") :]] = value
         else:
             raise InstallError(
                 f"{pack_id}: unexpected key {key!r} in {card.head_file}; the published "
@@ -365,13 +366,9 @@ def convert_artifacts_to_pack(
     adapters_out: dict[str, Any] | None = None
     if family == "quantem":
         if adapters:
-            raise InstallError(
-                f"{pack_id}: unexpected adapters in a {adaptation} QuantEM head."
-            )
+            raise InstallError(f"{pack_id}: unexpected adapters in a {adaptation} QuantEM head.")
         if adaptation == "last_n":
-            got_blocks = {
-                int(k.split(".")[1]) for k in encoder if k.startswith("blocks.")
-            }
+            got_blocks = {int(k.split(".")[1]) for k in encoder if k.startswith("blocks.")}
             missing = set(_QUANTEM_OVERLAY_BLOCKS) - got_blocks
             if missing:
                 raise InstallError(
@@ -381,8 +378,7 @@ def convert_artifacts_to_pack(
                 )
         if not encoder:
             raise InstallError(
-                f"{pack_id}: {card.head_file} carries no encoder tensors for a "
-                f"{adaptation} pack."
+                f"{pack_id}: {card.head_file} carries no encoder tensors for a {adaptation} pack."
             )
         encoder_trainable = {f"backbone.{k}": v for k, v in encoder.items()}
     else:
@@ -566,7 +562,9 @@ def _export_in_staging(pack_id: str, staging: Path) -> tuple[bool, str | None]:
         )
         logger.info(
             "Exported %s from HF install: max|diff|=%.3e dynamic=%s",
-            pack_id, result.max_abs_diff, result.dynamic_spatial,
+            pack_id,
+            result.max_abs_diff,
+            result.dynamic_spatial,
         )
         return True, None
     except Exception as exc:  # noqa: BLE001 -- reported, never swallowed
@@ -619,8 +617,7 @@ def _record_and_store(
             f"verified-against-hugging-face: {card.head_file} was re-hashed after download "
             f"and matched the sha256 in its published model card at {hf.HF_REPO_ID}@{revision}"
             + (
-                f"; {trunk_info.filename} matched the repository's LFS object id at that "
-                "revision"
+                f"; {trunk_info.filename} matched the repository's LFS object id at that revision"
                 if trunk_info is not None
                 else ""
             )
@@ -710,7 +707,11 @@ def _rename_with_retry(pack_id: str, staging: Path, final_root: Path) -> None:
                 "%s: promoting the staged pack failed (%s); something -- typically "
                 "an antivirus or indexer scanning the fresh files -- still holds a "
                 "handle. Attempt %d/%d, retrying in %.1f s.",
-                pack_id, exc, attempt, attempts, delay,
+                pack_id,
+                exc,
+                attempt,
+                attempts,
+                delay,
             )
             time.sleep(delay)
     try:

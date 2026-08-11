@@ -117,7 +117,9 @@ def refine_mask_with_edges(
         logger.info("Edge refinement reverted: empty mask.")
         return (seed_polygon, stats) if return_stats else seed_polygon
 
-    score = compute_edge_score(patch, contrast_method=contrast_method, blur_sigma=1.0, grad_weight=0.8, dark_weight=0.2)
+    score = compute_edge_score(
+        patch, contrast_method=contrast_method, blur_sigma=1.0, grad_weight=0.8, dark_weight=0.2
+    )
 
     points = resample_polyline(coords_patch, step=1.0)
     if len(points) < 5:
@@ -126,7 +128,9 @@ def refine_mask_with_edges(
         return (seed_polygon, stats) if return_stats else seed_polygon
 
     signed = signed_distance(patch_mask)
-    _, inside_normals = compute_normals(points, patch_polygon, mask=patch_mask, signed_distance=signed)
+    _, inside_normals = compute_normals(
+        points, patch_polygon, mask=patch_mask, signed_distance=signed
+    )
     outward_normals = [(-nx, -ny) for nx, ny in inside_normals]
 
     num_points = len(points) - 1
@@ -154,7 +158,9 @@ def refine_mask_with_edges(
     offsets_arr = np.array(offsets, dtype=np.float32)
     moved_mask = np.abs(offsets_arr) >= 0.5
     moved_fraction = float(np.mean(moved_mask)) if moved_mask.size else 0.0
-    maxed_fraction = float(np.mean(np.abs(offsets_arr) >= (max_offset_px - 1e-3)) if offsets_arr.size else 0.0)
+    maxed_fraction = float(
+        np.mean(np.abs(offsets_arr) >= (max_offset_px - 1e-3)) if offsets_arr.size else 0.0
+    )
     median_offset = float(np.median(offsets_arr)) if offsets_arr.size else 0.0
 
     base_scores = []
@@ -225,7 +231,9 @@ def refine_mask_with_edges(
 
     include_patch = [(x - x0, y - y0) for x, y in include_points]
     exclude_patch = [(x - x0, y - y0) for x, y in exclude_points]
-    constraint_ok = constraints_satisfied(refined_patch_polygon, patch.shape, include_patch, exclude_patch)
+    constraint_ok = constraints_satisfied(
+        refined_patch_polygon, patch.shape, include_patch, exclude_patch
+    )
 
     if not constraint_ok and (include_points or exclude_points):
         forced_bounds: dict[int, tuple[float | None, float | None]] = {}
@@ -241,10 +249,13 @@ def refine_mask_with_edges(
                 and 0 <= x_idx < refined_patch_mask.shape[1]
                 and not refined_patch_mask[y_idx, x_idx]
             ):
-                    dists = [(idx, (points[idx][0] - x_val) ** 2 + (points[idx][1] - y_val) ** 2) for idx in range(num_points)]
-                    nearest = min(dists, key=lambda item: item[1])[0] if dists else None
-                    if nearest is not None:
-                        forced_bounds[nearest] = (0.0, None)
+                dists = [
+                    (idx, (points[idx][0] - x_val) ** 2 + (points[idx][1] - y_val) ** 2)
+                    for idx in range(num_points)
+                ]
+                nearest = min(dists, key=lambda item: item[1])[0] if dists else None
+                if nearest is not None:
+                    forced_bounds[nearest] = (0.0, None)
         for x_val, y_val in exclude_patch:
             x_idx = int(round(x_val))
             y_idx = int(round(y_val))
@@ -253,10 +264,13 @@ def refine_mask_with_edges(
                 and 0 <= x_idx < refined_patch_mask.shape[1]
                 and refined_patch_mask[y_idx, x_idx]
             ):
-                    dists = [(idx, (points[idx][0] - x_val) ** 2 + (points[idx][1] - y_val) ** 2) for idx in range(num_points)]
-                    nearest = min(dists, key=lambda item: item[1])[0] if dists else None
-                    if nearest is not None:
-                        forced_bounds[nearest] = (None, 0.0)
+                dists = [
+                    (idx, (points[idx][0] - x_val) ** 2 + (points[idx][1] - y_val) ** 2)
+                    for idx in range(num_points)
+                ]
+                nearest = min(dists, key=lambda item: item[1])[0] if dists else None
+                if nearest is not None:
+                    forced_bounds[nearest] = (None, 0.0)
 
         if forced_bounds:
             offsets = run_offset_dp(unary, t_values, smoothness_weight, forced_bounds)
@@ -268,7 +282,9 @@ def refine_mask_with_edges(
                 logger.info("Edge refinement reverted: constraint polygon build failed.")
                 return (seed_polygon, stats) if return_stats else seed_polygon
             refined_patch_mask = polygon_to_mask(refined_patch_polygon, patch.shape).astype(bool)
-            constraint_ok = constraints_satisfied(refined_patch_polygon, patch.shape, include_patch, exclude_patch)
+            constraint_ok = constraints_satisfied(
+                refined_patch_polygon, patch.shape, include_patch, exclude_patch
+            )
 
         if not constraint_ok:
             stats.update({"reverted": True, "revert_reason": "point_constraints"})
@@ -294,7 +310,10 @@ def refine_mask_with_edges(
         return (seed_polygon, stats) if return_stats else seed_polygon
 
     stats["refined"] = refined_polygon.wkt != seed_polygon.wkt
-    logger.info("Edge refinement applied.", extra={"refined": stats["refined"], "score_improvement": score_improvement})
+    logger.info(
+        "Edge refinement applied.",
+        extra={"refined": stats["refined"], "score_improvement": score_improvement},
+    )
 
     if return_stats:
         return refined_polygon, stats

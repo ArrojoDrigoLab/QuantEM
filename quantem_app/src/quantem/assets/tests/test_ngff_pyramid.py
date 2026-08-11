@@ -149,9 +149,7 @@ class _LegacyPyramid:
                     chunk_x, chunk_y, width=level_width, height=level_height
                 )
                 region = pil_image.crop((x_min, y_min, x_max, y_max))
-                level0_array[0, y_min:y_max, x_min:x_max] = np.asarray(
-                    region, dtype=np.uint8
-                )
+                level0_array[0, y_min:y_max, x_min:x_max] = np.asarray(region, dtype=np.uint8)
         finally:
             pil_image.close()
 
@@ -254,9 +252,7 @@ class PyramidEquivalenceTests(TestCase):
                     f"level count changed for {width}x{height}",
                 )
                 self.assertEqual(len(legacy_levels), len(_level_shapes(height, width)))
-                for idx, (legacy, new) in enumerate(
-                    zip(legacy_levels, new_levels, strict=True)
-                ):
+                for idx, (legacy, new) in enumerate(zip(legacy_levels, new_levels, strict=True)):
                     self.assertEqual(legacy.shape, new.shape, f"level {idx} shape")
                     np.testing.assert_array_equal(
                         new,
@@ -296,9 +292,7 @@ class PyramidEquivalenceTests(TestCase):
                 attrs = json.loads(attrs_path.read_text(encoding="utf-8"))
                 multiscale = attrs["multiscales"][0]
                 self.assertEqual(multiscale["version"], "0.4")
-                self.assertEqual(
-                    [axis["name"] for axis in multiscale["axes"]], ["c", "y", "x"]
-                )
+                self.assertEqual([axis["name"] for axis in multiscale["axes"]], ["c", "y", "x"])
                 expected_shapes = _level_shapes(height, width)
                 self.assertEqual(len(multiscale["datasets"]), len(expected_shapes))
                 for idx, dataset in enumerate(multiscale["datasets"]):
@@ -369,9 +363,9 @@ class BoxMeanKernelTests(TestCase):
 
         region = blocks.transpose(1, 0, 2).reshape(2, 1021 * 2)
         fast = _downsample_region(region, target_height=1, target_width=1021)
-        slow = np.rint(
-            region.reshape(1, 2, 1021, 2).mean(axis=(1, 3)).astype(np.float64)
-        ).astype(np.uint8)
+        slow = np.rint(region.reshape(1, 2, 1021, 2).mean(axis=(1, 3)).astype(np.float64)).astype(
+            np.uint8
+        )
         np.testing.assert_array_equal(fast, slow)
 
     def test_agrees_with_the_float_mean_on_random_regions(self):
@@ -427,9 +421,7 @@ class SourcePlaneTests(TestCase):
             shutil.rmtree(scratch, ignore_errors=True)
 
     def test_eight_bit_grayscale(self):
-        self._assert_plane_matches_legacy_png(
-            make_em_like_array(133, 97), photometric="minisblack"
-        )
+        self._assert_plane_matches_legacy_png(make_em_like_array(133, 97), photometric="minisblack")
 
     def test_sixteen_bit_grayscale_uses_native_bit_depth_scaling(self):
         rng = np.random.default_rng(5)
@@ -490,9 +482,7 @@ class SourcePlaneTests(TestCase):
             rng = np.random.default_rng(17)
             values = rng.integers(0, 65536, size=(29, 31), dtype=np.uint16)
             png_path = scratch / "source.png"
-            Image.fromarray(values.astype(np.uint32), mode="I").convert("I;16").save(
-                str(png_path)
-            )
+            Image.fromarray(values.astype(np.uint32), mode="I").convert("I;16").save(str(png_path))
             plane = load_source_plane_uint8(png_path, {})
             with Image.open(png_path) as opened:
                 raw = np.asarray(opened, dtype=np.uint16)
@@ -504,9 +494,7 @@ class SourcePlaneTests(TestCase):
             shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _stage_upload(
-    array: np.ndarray, *, name: str = "import.tif", as_png: bool = False
-) -> Asset:
+def _stage_upload(array: np.ndarray, *, name: str = "import.tif", as_png: bool = False) -> Asset:
     """Create the asset/rendition pair the upload endpoint creates."""
 
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -676,9 +664,7 @@ class PrepareAssetRenditionsTests(TestCase):
         def _write_all_but_the_last_level(image, plane_arg, arrays, **kwargs):
             real_write(image, plane_arg, arrays[:-1], **kwargs)
 
-        with patch.object(
-            ngff_module, "_write_levels_from_plane", _write_all_but_the_last_level
-        ):
+        with patch.object(ngff_module, "_write_levels_from_plane", _write_all_but_the_last_level):
             with self.assertRaises(RuntimeError) as caught:
                 build_pyramid(ticket, openable, plane)
         self.assertIn("chunk files", str(caught.exception))
@@ -686,9 +672,7 @@ class PrepareAssetRenditionsTests(TestCase):
 
         resolved = resolve_pyramid(asset, intent=Intent.SERVE)
         self.assertIsInstance(resolved, PublishedPyramid)
-        self.assertEqual(
-            resolved.root, good, "a half-built generation replaced the published one"
-        )
+        self.assertEqual(resolved.root, good, "a half-built generation replaced the published one")
         rebuilt = np.asarray(zarr.open_array(str(resolved.root / "0"), mode="r")[0])
         np.testing.assert_array_equal(rebuilt, array)
 
@@ -743,9 +727,7 @@ class PrepareAssetRenditionsTests(TestCase):
                 response = self.client.get(f"{base}/0/0.{chunk_y}.{chunk_x}")
                 self.assertEqual(response.status_code, 200)
                 raw = codec.decode(b"".join(response.streaming_content))
-                tile = np.frombuffer(raw, dtype=np.uint8).reshape(
-                    NGFF_CHUNK_SIZE, NGFF_CHUNK_SIZE
-                )
+                tile = np.frombuffer(raw, dtype=np.uint8).reshape(NGFF_CHUNK_SIZE, NGFF_CHUNK_SIZE)
                 y0 = chunk_y * NGFF_CHUNK_SIZE
                 x0 = chunk_x * NGFF_CHUNK_SIZE
                 y1 = min(1537, y0 + NGFF_CHUNK_SIZE)

@@ -60,9 +60,7 @@ class VendoredSourceTests(SimpleTestCase):
     def test_the_two_changed_files_say_so(self):
         for name in ("__init__.py", "predictor.py"):
             text = (VENDOR / name).read_text(encoding="utf-8")
-            self.assertIn(
-                "QUANTEM:", text, f"{name} differs from upstream without saying where"
-            )
+            self.assertIn("QUANTEM:", text, f"{name} differs from upstream without saying where")
 
     def test_no_vendored_file_imports_a_top_level_segment_anything(self):
         """The one functional edit, checked across the whole vendored tree.
@@ -72,9 +70,7 @@ class VendoredSourceTests(SimpleTestCase):
         matches its own explanation and fails on correct code.
         """
         for path in sorted(VENDOR.rglob("*.py")):
-            for number, line in enumerate(
-                path.read_text(encoding="utf-8").splitlines(), start=1
-            ):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
                 statement = line.split("#", 1)[0].strip()
                 self.assertFalse(
                     statement.startswith(("import segment_anything", "from segment_anything")),

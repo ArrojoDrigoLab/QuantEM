@@ -178,9 +178,7 @@ def sweep_threshold(
 
     scored = [(t, d) for t, d in zip(thrs, curve, strict=True) if d is not None]
     if not scored:
-        raise ValueError(
-            "no annotated region contains foreground; Dice is undefined everywhere"
-        )
+        raise ValueError("no annotated region contains foreground; Dice is undefined everywhere")
     best_thr, best_train = max(scored, key=lambda kv: kv[1])
 
     heldout_cal = mean_dice(heldout_crops, best_thr) if heldout_crops else None

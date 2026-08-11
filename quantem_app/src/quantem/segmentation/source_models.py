@@ -186,8 +186,7 @@ def infer_source_model_from_features(
                 if definition.model_family == model_family:
                     return definition.value
         if any(
-            features.get(f"{marker}_generated")
-            for marker in ("mito", "er", "nucleus", "lipid")
+            features.get(f"{marker}_generated") for marker in ("mito", "er", "nucleus", "lipid")
         ):
             return default_source_model_for_organelle(segmentation_type_internal_name)
 

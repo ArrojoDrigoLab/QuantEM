@@ -79,9 +79,7 @@ class Sam1Backend:
 
         path = checkpoint_path()
         if not path.is_file():
-            raise CheckpointMissing(
-                f"{CHECKPOINT.display_name} has not been downloaded yet."
-            )
+            raise CheckpointMissing(f"{CHECKPOINT.display_name} has not been downloaded yet.")
 
         self.device = select_device()
         model = sam_model_registry[CHECKPOINT.architecture]()

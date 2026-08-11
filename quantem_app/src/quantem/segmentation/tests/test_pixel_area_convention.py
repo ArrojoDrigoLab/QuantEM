@@ -82,9 +82,7 @@ def _square_coords(x0: int, y0: int, side: int) -> list[list[int]]:
 
 
 def _square(x: float, y: float, side: float) -> Polygon:
-    return Polygon(
-        ((x, y), (x + side, y), (x + side, y + side), (x, y + side), (x, y))
-    )
+    return Polygon(((x, y), (x + side, y), (x + side, y + side), (x, y + side), (x, y)))
 
 
 def _circularity(features: dict) -> float:
@@ -113,11 +111,17 @@ class RasterConventionTests(TestCase):
         """
         left = fill_ring(
             np.array(_square_coords(20, 20, 20), dtype=float),
-            x0=0, y0=0, x1=SIZE, y1=SIZE,
+            x0=0,
+            y0=0,
+            x1=SIZE,
+            y1=SIZE,
         )
         right = fill_ring(
             np.array(_square_coords(40, 20, 20), dtype=float),
-            x0=0, y0=0, x1=SIZE, y1=SIZE,
+            x0=0,
+            y0=0,
+            x1=SIZE,
+            y1=SIZE,
         )
         self.assertFalse((left & right).any(), "the shared edge was painted twice")
         self.assertEqual(int((left | right).sum()), 800)
@@ -223,12 +227,18 @@ class DrawnObjectMeasurementTests(TestCase):
     def test_the_drawn_area_is_the_shapely_area_of_what_was_sent(self):
         """Not just for squares: whatever geometry arrives, ``area`` is its area."""
         coords = [
-            [40, 40], [140, 60], [180, 150], [90, 190], [30, 120],
+            [40, 40],
+            [140, 60],
+            [180, 150],
+            [90, 190],
+            [30, 120],
         ]
         (segment,) = self._confirm_batch([coords])
         drawn = Polygon([(float(x), float(y)) for x, y in coords]).area
         self.assertAlmostEqual(
-            segment.features["area"] / drawn, 1.0, delta=0.01,
+            segment.features["area"] / drawn,
+            1.0,
+            delta=0.01,
             msg=f"stored {segment.features['area']} for a polygon of area {drawn}",
         )
 
@@ -257,16 +267,10 @@ class DrawnObjectMeasurementTests(TestCase):
 
         self.assertEqual(model.features["area"], 100)
         self.assertEqual(drawn.features["area"], 100.0)
-        self.assertAlmostEqual(
-            drawn.features["perimeter"], model.features["perimeter"], places=6
-        )
-        self.assertAlmostEqual(
-            _circularity(drawn.features), _circularity(model.features), places=6
-        )
+        self.assertAlmostEqual(drawn.features["perimeter"], model.features["perimeter"], places=6)
+        self.assertAlmostEqual(_circularity(drawn.features), _circularity(model.features), places=6)
         for key in ("eccentricity", "solidity", "elongation", "feret_diameter_max"):
-            self.assertAlmostEqual(
-                drawn.features[key], model.features[key], places=6, msg=key
-            )
+            self.assertAlmostEqual(drawn.features[key], model.features[key], places=6, msg=key)
 
     def test_the_single_segment_endpoint_agrees_with_confirm_batch(self):
         response = self.client.post(
@@ -336,9 +340,7 @@ class OverlayAndCompositionTests(TestCase):
 
     def setUp(self):
         self.client = APIClient()
-        self.image = create_small_test_image(
-            "Composition", width=SIZE, height=SIZE, textured=True
-        )
+        self.image = create_small_test_image("Composition", width=SIZE, height=SIZE, textured=True)
         self.asset = self.image.asset
         self.segmentation = ImageSegmentation.objects.create(
             asset=self.asset, segmentation_type=get_or_create_mitochondria_type()
@@ -380,7 +382,10 @@ class OverlayAndCompositionTests(TestCase):
         rings = geometry_to_rings(_square(40, 40, 20))
         labels, _border = rasterize_region(
             [{"label": 7, "priority": 0, "area": 0.0, "rings": rings}],
-            x0=0, y0=0, x1=SIZE, y1=SIZE,
+            x0=0,
+            y0=0,
+            x1=SIZE,
+            y1=SIZE,
         )
         self.assertEqual(int((labels == 7).sum()), 400)
 
@@ -413,11 +418,7 @@ class OverlayAndCompositionTests(TestCase):
         composition = run.results["composition"]
         self.assertEqual(composition["tissue_px"], 160 * 160)
         self.assertEqual(composition["areas_px"]["mito"], 3 * 400)
-        self.assertAlmostEqual(
-            composition["area_fractions"]["mito"], 1200 / 25600.0, places=9
-        )
+        self.assertAlmostEqual(composition["area_fractions"]["mito"], 1200 / 25600.0, places=9)
 
-        manifest = json.loads(
-            (Path(run.export_dir) / "manifest.json").read_text(encoding="utf-8")
-        )
+        manifest = json.loads((Path(run.export_dir) / "manifest.json").read_text(encoding="utf-8"))
         self.assertTrue(manifest["models"]["compartments"])

@@ -73,9 +73,7 @@ class LocalOnlyMiddleware:
             return self.get_response(request)
 
         logger.warning("Rejected a request from a non-local origin: %s", origin)
-        return HttpResponseForbidden(
-            "QuantEM only answers requests from this machine."
-        )
+        return HttpResponseForbidden("QuantEM only answers requests from this machine.")
 
 
 #: What to say for each way a request can be refused before the view that would
@@ -91,8 +89,7 @@ _UNREADABLE_REQUEST_COPY: tuple[tuple[type[Exception], str], ...] = (
     ),
     (
         TooManyFieldsSent,
-        "That request had more fields in it than QuantEM accepts. Nothing was "
-        "changed.",
+        "That request had more fields in it than QuantEM accepts. Nothing was changed.",
     ),
     (
         RequestDataTooBig,

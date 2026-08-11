@@ -12,7 +12,5 @@ def segmentation_dimensions(segmentation: ImageSegmentation) -> tuple[int, int]:
     width = int(asset.logical_width or 0)
     height = int(asset.logical_height or 0)
     if width <= 0 or height <= 0:
-        raise ValueError(
-            f"Segmentation {segmentation.id} asset {asset.id} is missing dimensions."
-        )
+        raise ValueError(f"Segmentation {segmentation.id} asset {asset.id} is missing dimensions.")
     return width, height

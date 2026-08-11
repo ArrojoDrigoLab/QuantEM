@@ -111,9 +111,7 @@ class DomainObjectReconciliationTests(TestCase):
         self.assertIsNotNone(run.finished_at)
 
     def test_an_adapter_does_not_stay_pending_with_an_empty_error(self):
-        adapter = Adapter.objects.create(
-            segmentation=self.segmentation, base_model="quantem:mito"
-        )
+        adapter = Adapter.objects.create(segmentation=self.segmentation, base_model="quantem:mito")
 
         reconcile_domain_objects_for_failed_job(
             JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
@@ -258,6 +256,7 @@ class RetryAttemptSupersedesOlderErrorsTests(TestCase):
         )
 
         with patch("quantem.jobs.registry.get_handler") as get_handler:
+
             def failing_handler(payload, reporter, cancel):
                 raise RuntimeError("the pack is broken today")
 
@@ -282,9 +281,7 @@ class RetryAttemptSupersedesOlderErrorsTests(TestCase):
             payload_json={"segmentation_id": str(self.segmentation.id)},
             message="running",
         )
-        Job.objects.filter(id=job.id).update(
-            heartbeat_at=timezone.now() - timedelta(hours=1)
-        )
+        Job.objects.filter(id=job.id).update(heartbeat_at=timezone.now() - timedelta(hours=1))
 
         JobScheduler()._recover_orphaned_jobs()
 
@@ -306,6 +303,7 @@ class RetryAttemptSupersedesOlderErrorsTests(TestCase):
         )
 
         with patch("quantem.jobs.registry.get_handler") as get_handler:
+
             def failing_handler(payload, reporter, cancel):
                 raise RuntimeError("terminal failure")
 
@@ -335,9 +333,7 @@ class RetryAttemptSupersedesOlderErrorsTests(TestCase):
 
         # The success write in quantem.analysis.service sets error="" -- pinned
         # here so the retry note cannot outlive the retry that succeeded.
-        AnalysisRun.objects.filter(id=run.id).update(
-            status=AnalysisRun.STATUS_SUCCESS, error=""
-        )
+        AnalysisRun.objects.filter(id=run.id).update(status=AnalysisRun.STATUS_SUCCESS, error="")
         run.refresh_from_db()
         self.assertEqual(run.error, "")
 
@@ -403,10 +399,9 @@ class StaleFailureSupersededByCrashTests(TestCase):
         job = self._job(attempts=1, max_attempts=1)  # terminal: no retry
 
         with patch("quantem.jobs.registry.get_handler") as get_handler:
+
             def dies_before_writing(payload, reporter, cancel):
-                raise ValueError(
-                    "No segmenter registered for type: quantem_internal_mito"
-                )
+                raise ValueError("No segmenter registered for type: quantem_internal_mito")
 
             get_handler.return_value = dies_before_writing
             run_job_in_subprocess(str(job.id))
@@ -426,6 +421,7 @@ class StaleFailureSupersededByCrashTests(TestCase):
         handler_message = "Model pack 'omniem:mito' is not installed. Install it."
 
         with patch("quantem.jobs.registry.get_handler") as get_handler:
+
             def concludes_then_raises(payload, reporter, cancel):
                 ImageSegmentation.objects.filter(id=self.segmentation.id).update(
                     status_stage="FAILED", status_error=handler_message
@@ -443,9 +439,7 @@ class StaleFailureSupersededByCrashTests(TestCase):
     def test_the_dead_worker_reap_supersedes_the_stale_error(self):
         """The scheduler's orphan reap: worker gone, nothing recorded."""
         job = self._job(attempts=1, max_attempts=1)
-        Job.objects.filter(id=job.id).update(
-            heartbeat_at=timezone.now() - timedelta(hours=1)
-        )
+        Job.objects.filter(id=job.id).update(heartbeat_at=timezone.now() - timedelta(hours=1))
 
         JobScheduler()._recover_orphaned_jobs()
 

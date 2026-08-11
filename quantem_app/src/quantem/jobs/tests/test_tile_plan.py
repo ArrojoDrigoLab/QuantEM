@@ -93,9 +93,7 @@ def _montage_asset() -> Asset:
 
 
 def _segmentation(asset: Asset, type_factory) -> ImageSegmentation:
-    return ImageSegmentation.objects.create(
-        asset=asset, segmentation_type=type_factory()
-    )
+    return ImageSegmentation.objects.create(asset=asset, segmentation_type=type_factory())
 
 
 def _queue_full_run(segmentation: ImageSegmentation, source_model: str) -> Job:
@@ -147,17 +145,13 @@ class ThePlanIsOnTheRowBeforeTheRunStarts(TestCase):
             source_model="quantem:nucleus",
             pixel_size_nm=MONTAGE_NM,
         )
-        at_run_time = _estimate_model_tile_count(
-            segmenter, (MONTAGE_HEIGHT, MONTAGE_WIDTH)
-        )
+        at_run_time = _estimate_model_tile_count(segmenter, (MONTAGE_HEIGHT, MONTAGE_WIDTH))
 
         assert job.progress_units_total == at_run_time == NUCLEUS_TILES
 
     def test_an_roi_run_plans_the_crop_and_not_the_whole_image(self):
         segmentation = _segmentation(self.asset, get_or_create_mitochondria_type)
-        roi = ImageROI.objects.create(
-            asset=self.asset, x=0, y=0, width=1024, height=1024
-        )
+        roi = ImageROI.objects.create(asset=self.asset, x=0, y=0, width=1024, height=1024)
 
         job = Job.enqueue(
             job_type=JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -256,18 +250,14 @@ class TheWaveCountsWorkTheUserAskedFor(TestCase):
         self.nucleus = _queue_full_run(
             _segmentation(self.asset, get_or_create_nucleus_type), "quantem:nucleus"
         )
-        self.er = _queue_full_run(
-            _segmentation(self.asset, get_or_create_er_type), "quantem:er"
-        )
+        self.er = _queue_full_run(_segmentation(self.asset, get_or_create_er_type), "quantem:er")
 
     def _rollup(self) -> dict:
         self.mito.refresh_from_db()
         return batch_progress_for(self.mito)
 
     def _set(self, job: Job, done: int, status: str) -> None:
-        Job.objects.filter(id=job.id).update(
-            progress_units_done=done, status=status
-        )
+        Job.objects.filter(id=job.id).update(progress_units_done=done, status=status)
 
     def test_the_whole_wave_is_in_the_denominator_the_moment_it_is_queued(self):
         rollup = self._rollup()
@@ -334,9 +324,7 @@ class TheWaveCountsWorkTheUserAskedFor(TestCase):
         the wave says it cannot draw a bar rather than drawing one over a
         denominator that is missing a run.
         """
-        Job.objects.filter(id=self.er.id).update(
-            progress_units_total=None, progress_unit_label=""
-        )
+        Job.objects.filter(id=self.er.id).update(progress_units_total=None, progress_unit_label="")
         self._set(self.mito, 19, "RUNNING")
 
         rollup = self._rollup()

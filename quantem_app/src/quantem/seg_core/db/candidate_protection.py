@@ -75,11 +75,7 @@ def load_protected_geometries(queryset) -> list[BaseGeometry]:
     same skip the per-row ``try``/``except`` performed, at a twentieth of the
     cost.
     """
-    payloads = [
-        bytes(wkb)
-        for wkb in queryset.values_list("geometry_wkb", flat=True)
-        if wkb
-    ]
+    payloads = [bytes(wkb) for wkb in queryset.values_list("geometry_wkb", flat=True) if wkb]
     if not payloads:
         return []
     parsed = shapely.from_wkb(payloads, on_invalid="ignore")
@@ -87,8 +83,7 @@ def load_protected_geometries(queryset) -> list[BaseGeometry]:
     unreadable = len(payloads) - len(geometries)
     if unreadable:
         logger.warning(
-            "Skipping %d unreadable segment geometries; they protect nothing on "
-            "this pass.",
+            "Skipping %d unreadable segment geometries; they protect nothing on this pass.",
             unreadable,
         )
     return geometries
@@ -165,24 +160,18 @@ class _ProtectedLayer:
         candidates = polygons.take(left)
         neighbours = self._geometries.take(right)
         try:
-            intersection_areas = shapely.area(
-                shapely.intersection(candidates, neighbours)
-            )
+            intersection_areas = shapely.area(shapely.intersection(candidates, neighbours))
         except Exception:
             intersection_areas = self._pairwise_areas(candidates, neighbours)
 
         pair_hit = _ratio_at_least(
             intersection_areas, shapely.area(candidates), self.threshold
-        ) | _ratio_at_least(
-            intersection_areas, self._areas.take(right), self.threshold
-        )
+        ) | _ratio_at_least(intersection_areas, self._areas.take(right), self.threshold)
         hit[left[pair_hit]] = True
         return hit
 
     @staticmethod
-    def _pairwise_areas(
-        candidates: np.ndarray, neighbours: np.ndarray
-    ) -> np.ndarray:
+    def _pairwise_areas(candidates: np.ndarray, neighbours: np.ndarray) -> np.ndarray:
         """Intersection areas one pair at a time, so one bad pair costs one pair.
 
         GEOS refusing on a single stored geometry must not cost the user the
@@ -191,15 +180,12 @@ class _ProtectedLayer:
         area, which is the same as the ``continue`` it used to take.
         """
         areas = np.zeros(candidates.size, dtype=float)
-        for position, (candidate, neighbour) in enumerate(
-            zip(candidates, neighbours, strict=True)
-        ):
+        for position, (candidate, neighbour) in enumerate(zip(candidates, neighbours, strict=True)):
             try:
                 areas[position] = candidate.intersection(neighbour).area
             except Exception:
                 logger.warning(
-                    "Skipping an unusable geometry pair while protecting labeled "
-                    "objects.",
+                    "Skipping an unusable geometry pair while protecting labeled objects.",
                     exc_info=True,
                 )
         return areas

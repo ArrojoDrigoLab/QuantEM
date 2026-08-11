@@ -55,9 +55,7 @@ class UserFeedbackCreateSerializer(serializers.Serializer):
     def validate(self, attrs):
         input_type = attrs.get("input_type", UserFeedback.INPUT_TYPE_POINT)
         if input_type != UserFeedback.INPUT_TYPE_POINT:
-            raise serializers.ValidationError(
-                {"input_type": "Only point feedback is supported."}
-            )
+            raise serializers.ValidationError({"input_type": "Only point feedback is supported."})
         if attrs.get("point") is None:
             raise serializers.ValidationError(
                 {"point": "point is required when input_type='point'."}

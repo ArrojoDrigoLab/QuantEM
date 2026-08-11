@@ -123,7 +123,9 @@ def _link_or_copy(src: Path, dst: Path) -> None:
         shutil.copy2(src, dst)
 
 
-def store_blob(src: Path, *, on_progress: cache.HashProgress | None = None) -> tuple[str, int, bool]:
+def store_blob(
+    src: Path, *, on_progress: cache.HashProgress | None = None
+) -> tuple[str, int, bool]:
     """Hash ``src`` and put it in the content-addressed store.
 
     Returns ``(sha256, size_bytes, reused)``. ``reused`` is True when a blob
@@ -654,7 +656,9 @@ def _already_installed(pack_id: str) -> InstalledPack:
 
 def _report(results: list[InstalledPack]) -> int:
     for r in results:
-        print(f"{r.pack_id:18s} head={r.head_sha256[:16]}  encoder={(r.encoder_sha256 or '-')[:16]}")
+        print(
+            f"{r.pack_id:18s} head={r.head_sha256[:16]}  encoder={(r.encoder_sha256 or '-')[:16]}"
+        )
     total = sum(r.bytes_written for r in results)
     print(f"\n{len(results)} pack(s) installed under {cache.packs_root()}")
     print(f"{total / 1e9:.2f} GB of new blobs ({sum(r.reused_blobs for r in results)} reused)")
@@ -788,23 +792,33 @@ def main(argv: list[str] | None = None) -> int:
     )
     loc.add_argument("packs", nargs="*", help="pack ids, e.g. quantem:mito")
     loc.add_argument("--all", action="store_true", help="install all eight released packs")
-    loc.add_argument("--heads-root", default=None,
-                     help="directory holding <organelle>_<family>/head.pt "
-                          f"(or ${HEADS_ROOT_ENV_VAR}); required, no default")
-    loc.add_argument("--weights-root", default=None,
-                     help="directory holding <run_id>/checkpoint_index.json "
-                          f"(or ${WEIGHTS_ROOT_ENV_VAR}); required, no default")
-    loc.add_argument("--search-dir", action="append",
-                     help="extra directory to find encoder weight files in (repeatable; "
-                          f"or ${SEARCH_DIRS_ENV_VAR})")
+    loc.add_argument(
+        "--heads-root",
+        default=None,
+        help="directory holding <organelle>_<family>/head.pt "
+        f"(or ${HEADS_ROOT_ENV_VAR}); required, no default",
+    )
+    loc.add_argument(
+        "--weights-root",
+        default=None,
+        help="directory holding <run_id>/checkpoint_index.json "
+        f"(or ${WEIGHTS_ROOT_ENV_VAR}); required, no default",
+    )
+    loc.add_argument(
+        "--search-dir",
+        action="append",
+        help="extra directory to find encoder weight files in (repeatable; "
+        f"or ${SEARCH_DIRS_ENV_VAR})",
+    )
     loc.add_argument("--force", action="store_true", help="reinstall packs already present")
     loc.set_defaults(func=_cmd_local)
 
     lst = sub.add_parser("list", parents=[common], help="show installed packs")
     lst.set_defaults(func=_cmd_list)
 
-    ver = sub.add_parser("verify", parents=[common],
-                         help="re-hash installed packs against their records")
+    ver = sub.add_parser(
+        "verify", parents=[common], help="re-hash installed packs against their records"
+    )
     ver.add_argument("packs", nargs="*")
     ver.set_defaults(func=_cmd_verify)
 
