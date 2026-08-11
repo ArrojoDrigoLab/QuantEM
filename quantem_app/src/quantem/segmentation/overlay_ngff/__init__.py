@@ -17,8 +17,10 @@ from .dirty import (
 from .labels_lut import build_label_lut_binary, build_label_lut_json
 from .manifest import build_overlay_manifest, ensure_overlay_manifest
 from .mutations import (
+    OverlayRenderPoolError,
     apply_partial_overlay_update,
     build_overlay_mutation_response,
+    overlay_jobs_for_bundle,
     overlay_rebuild_policy,
     queue_full_overlay_rebuild,
     queue_overlay_rebuild,
@@ -42,6 +44,7 @@ from .store import encode_zero_chunk, get_overlay_chunk_shape, parse_overlay_chu
 
 __all__ = [
     "DirtyBBox",
+    "OverlayRenderPoolError",
     "OverlayStoreError",
     "apply_partial_overlay_update",
     "build_label_lut_binary",
@@ -62,6 +65,7 @@ __all__ = [
     "labels_lut",
     "merge_dirty_bboxes",
     "normalize_overlay_source_model",
+    "overlay_jobs_for_bundle",
     "overlay_rebuild_policy",
     "parse_overlay_chunk_path",
     "queue_full_overlay_rebuild",

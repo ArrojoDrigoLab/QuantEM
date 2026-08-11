@@ -1,4 +1,31 @@
-"""Label-oriented segment API views."""
+"""Label-oriented segment API views.
+
+**No answer in this module paints the overlay inside the request.** Keeping an
+object, removing one, un-marking one, clearing the manual labels: each registers
+the edit, bumps the revision and leaves the raster to the rebuild queue, which
+is what ``allow_sync_partial=False`` says at every call site below.
+
+Why, in the reviewer's terms. Proofreading is a rhythm -- hover, key, hover, key
+-- and every one of those keys used to open the bundle's zarr store, paint the
+dirty tile, rewrite every pyramid level above it and close the store again,
+*before the response was written*. Measured on a 1024x1024 fixture with one
+object that is 185 ms at p95 and 12.8 s for a hundred answers; on a real
+gigapixel image with two source bundles it was 543 ms and 54 s. The picture was
+correct a frame sooner and the person was slower for the rest of the session.
+
+It also cost correctness, not only time. Two answers arriving together took the
+synchronous path together, so two writers rewrote one store at once, and on
+Windows the colliding rename inside zarr's atomic write surfaced as an HTTP 500:
+7 of 24 simultaneous confirms, each of them a red toast over an answer the
+reviewer had in fact given.
+
+Nothing is lost by deferring. ``desired_revision`` still advances on the answer,
+the dirty region is still recorded, and the queued rebuild still applies it; the
+client already distinguishes "applied" from "desired" and holds its optimistic
+overlay until the bundle catches up. A *geometry* edit -- a drawn outline, a
+reshape, a cut -- keeps the synchronous path, because it changes pixels the user
+is looking at and is a deliberate single gesture rather than a stream.
+"""
 
 from __future__ import annotations
 
@@ -75,6 +102,7 @@ class SegmentLabelUpdateView(APIView):
             segment.segmentation,
             dirty_bbox=merge_dirty_bboxes(segment.segmentation, [segment.geometry]),
             source_model=normalize_source_model(request.data.get("source_model")),
+            allow_sync_partial=False,
         )
 
         if label_changed and (
@@ -235,6 +263,7 @@ class SegmentBatchLabelUpdateView(APIView):
                         geometries_by_segmentation.get(seg_id, []),
                     ),
                     source_model=active_source_model,
+                    allow_sync_partial=False,
                 )
 
         return Response(
@@ -275,6 +304,7 @@ class SegmentationClearManualLabelsView(APIView):
                 segmentation,
                 dirty_bbox=merge_dirty_bboxes(segmentation, manual_bboxes)
                 or full_image_dirty_bbox(segmentation),
+                allow_sync_partial=False,
             )
         else:
             overlay = None

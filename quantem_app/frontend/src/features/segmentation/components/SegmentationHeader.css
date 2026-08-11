@@ -257,19 +257,37 @@
   cursor: not-allowed;
 }
 
+/* The percentage the run button reports, and the only number on this header
+   that moves while a run goes.
+ *
+ * It was `color: #d1fae5` with no background: a pale mint on the #f5f5f5
+ * header, measured at **1.04:1**, which is not a legibility problem so much as
+ * an absence -- "Running... 30%" was on screen and unreadable at arm's length.
+ * A dark mint on plain #f5f5f5 would have fixed the ratio and invented a colour
+ * this header does not use, so it takes the tinted-chip shape every other
+ * status on this header already has (`.source-model-provenance`,
+ * `.header-model-blocked`, `.header-adapter-notice`), in the cyan the header
+ * reserves for a fact about *this run*: #155e75 on #ecfeff -> **6.99:1**,
+ * measured, the same pair as `.header-adapter-notice`. */
 .apply-full-progress {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid #67c3d4;
+  border-radius: 999px;
+  background: #ecfeff;
   font-size: 12px;
-  color: #d1fae5;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #155e75;
 }
 
 .apply-full-spinner {
   width: 12px;
   height: 12px;
-  border: 2px solid rgba(209, 250, 229, 0.35);
-  border-top-color: #d1fae5;
+  border: 2px solid rgba(21, 94, 117, 0.3);
+  border-top-color: #155e75;
   border-radius: 50%;
   animation: apply-full-spin 0.8s linear infinite;
 }

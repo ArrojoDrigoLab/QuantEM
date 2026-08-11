@@ -8,6 +8,7 @@ import importlib
 import logging
 from functools import lru_cache
 
+from django.conf import settings
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from rest_framework import status
@@ -20,18 +21,23 @@ from quantem.core.local_storage import resolve_stored_path
 
 from .asset_mutations import (
     create_uploaded_asset,
-    enqueue_ngff_for_asset,
+    normalise_import_grouping,
     tombstone_asset,
     update_asset,
 )
-from .asset_openable import (
-    asset_ngff_ready,
-    get_asset_ngff_path,
-    get_asset_openable,
-)
+from .asset_openable import get_asset_openable
 from .asset_resolver import active_asset_queryset, get_active_asset
 from .ngff import render_lowest_resolution_ngff_png_from_root
+from .pyramid_authority import (
+    Intent,
+    Reason,
+    Unavailable,
+    failure_detail,
+    request_lazy_build,
+    resolve_pyramid,
+)
 from .serializers import serialize_asset_detail, serialize_asset_entry
+from .upload_staging import staged_upload_handlers
 from .utils import UPLOAD_SUFFIXES
 
 logger = logging.getLogger(__name__)
@@ -61,8 +67,52 @@ def _truthy(value) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "on"}
 
 
+#: What a caller sends to mean "the images that are in none of them".
+#:
+#: Unassigned is a bucket, not a gap. It is the state every existing library is
+#: in and the state an image returns to when its experiment is deleted, so the
+#: filter has to be able to name it -- and it cannot be named by an id, because
+#: there is no row to have one. A literal is the only thing left, and it is
+#: spelled out here rather than at three call sites.
+UNASSIGNED = "none"
+
+
+def _grouping_filter(assets, request):
+    """Narrow to one experiment or dataset, or to the images in neither.
+
+    Repeated parameters are a union (``?experiment=a&experiment=b``), which is
+    what a multi-select sends. ``none`` may be mixed in with real ids, so
+    "these two experiments, plus everything not yet filed" is one request.
+    """
+    experiments = [
+        value for value in request.query_params.getlist("experiment") if value
+    ]
+    if experiments:
+        named = [value for value in experiments if value != UNASSIGNED]
+        matcher = Q(experiment_id__in=named) if named else Q()
+        if UNASSIGNED in experiments:
+            matcher = matcher | Q(experiment__isnull=True)
+        assets = assets.filter(matcher)
+
+    datasets = [value for value in request.query_params.getlist("dataset") if value]
+    if datasets:
+        named = [value for value in datasets if value != UNASSIGNED]
+        matcher = Q(datasets__id__in=named) if named else Q()
+        if UNASSIGNED in datasets:
+            matcher = matcher | Q(datasets__isnull=True)
+        # ``distinct`` because a many-to-many join returns one row per matching
+        # membership, so an image in two of the chosen datasets would otherwise
+        # be counted and rendered twice.
+        assets = assets.filter(matcher).distinct()
+    return assets
+
+
 def _filtered_asset_queryset(request):
-    assets = active_asset_queryset().prefetch_related("renditions")
+    assets = (
+        active_asset_queryset()
+        .select_related("experiment")
+        .prefetch_related("renditions", "datasets")
+    )
     search = str(request.query_params.get("search") or "").strip()
     if search:
         assets = assets.filter(
@@ -70,6 +120,7 @@ def _filtered_asset_queryset(request):
             | Q(original_filename__icontains=search)
             | Q(notes__icontains=search)
         )
+    assets = _grouping_filter(assets, request)
     ordering = str(request.query_params.get("ordering") or "display_name")
     return assets.order_by(*ASSET_ORDERINGS.get(ordering, ASSET_ORDERINGS["display_name"]))
 
@@ -97,7 +148,10 @@ class AssetUploadView(APIView):
     ``/api/system/status/`` carries the same list for the file picker.
 
     The fields it reads are exactly ``file``, ``display_name``,
-    ``pixel_size_nm``, ``notes`` and the four ``segment_*`` flags. That list is
+    ``pixel_size_nm``, ``notes``, the four ``segment_*`` flags, and the four
+    optional grouping fields (``experiment_id``/``experiment_name`` and
+    ``dataset_id``/``dataset_name``, each an id to use or a name to create).
+    That list is
     written down because the client was posting a ``tag_names`` field this view
     never looked at, behind an import-form box labelled "Tags": there is no tag
     field on :class:`~quantem.assets.models.Asset` and no tag model anywhere in
@@ -111,6 +165,13 @@ class AssetUploadView(APIView):
 
     def post(self, request, *args, **kwargs):
         del args, kwargs
+        # Before anything touches request.FILES, which is what parses the body.
+        # Django's default handler would write the image to the system
+        # temporary directory for save_uploaded_file_to_path to copy into the
+        # staging directory; this one writes it into the staging directory
+        # once. See quantem.assets.upload_staging for the measurements and for
+        # why the copy cannot just become a rename on Windows.
+        request.upload_handlers = staged_upload_handlers(request)
         if "file" not in request.FILES:
             return Response(
                 {
@@ -122,11 +183,23 @@ class AssetUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
+            # Where in the library this image goes, if anywhere. All four
+            # fields may be absent, and absent is the ordinary case -- see
+            # `normalise_import_grouping`, which refuses only the one
+            # combination that cannot mean anything (a dataset with no
+            # experiment) and does so before any bytes are claimed.
+            grouping = normalise_import_grouping(
+                experiment_id=request.data.get("experiment_id"),
+                experiment_name=request.data.get("experiment_name"),
+                dataset_id=request.data.get("dataset_id"),
+                dataset_name=request.data.get("dataset_name"),
+            )
             payload = create_uploaded_asset(
                 uploaded_file=request.FILES["file"],
                 display_name=request.data.get("display_name", None),
                 pixel_size_nm=request.data.get("pixel_size_nm", None),
                 notes=request.data.get("notes", None),
+                grouping=grouping,
                 segment_mito=_truthy(request.data.get("segment_mito")),
                 segment_er=_truthy(request.data.get("segment_er")),
                 segment_nucleus=_truthy(request.data.get("segment_nucleus")),
@@ -213,17 +286,25 @@ class AssetProcessedPngView(APIView):
 
 
 class AssetNgffThumbnailView(APIView):
+    """The dashboard preview, rendered from the published generation.
+
+    Routed through the authority like everything else, which also closes the
+    verifier's FINDING 6 for free: this view used to answer 200 for a FAILED,
+    unopenable asset because it resolved a path on disk rather than asking
+    whether the asset was openable.
+    """
+
     def get(self, request, asset_id):
         del request
         asset = get_active_asset(asset_id)
-        ngff_path = get_asset_ngff_path(asset)
-        if ngff_path is None:
+        resolved = resolve_pyramid(asset, intent=Intent.SERVE)
+        if isinstance(resolved, Unavailable):
             return Response(
-                {"error": "NGFF thumbnail not available"},
+                {"error": "NGFF thumbnail not available", "reason": resolved.reason.value},
                 status=status.HTTP_404_NOT_FOUND,
             )
         try:
-            png_bytes = render_lowest_resolution_ngff_png_from_root(ngff_path)
+            png_bytes = render_lowest_resolution_ngff_png_from_root(resolved.root)
         except Exception:
             return Response(
                 {"error": "NGFF thumbnail not available"},
@@ -236,9 +317,10 @@ class SystemStatusView(APIView):
     """
     API view for system status information.
 
-    Returns CUDA availability and the image formats this build can import, so
-    the upload UI's file filter is driven by the backend rather than a
-    hard-coded list that can drift from what the readers accept.
+    Returns CUDA availability, the image formats this build can import, and the
+    largest upload it will accept -- so the upload UI's file filter and its size
+    check are both driven by the backend rather than by hard-coded numbers that
+    can drift from what the server actually does.
     """
 
     def get(self, request):
@@ -257,6 +339,17 @@ class SystemStatusView(APIView):
             {
                 "cuda_available": cuda_available,
                 "supported_upload_formats": list(UPLOAD_SUFFIXES),
+                # The size half of the same contract. ``quantem serve`` hands
+                # this number to waitress as ``max_request_body_size``, and a
+                # request over it is refused from the headers alone -- which
+                # arrives at the browser as an aborted connection partway
+                # through the upload, with no way to tell it apart from the
+                # network dropping. Publishing the limit is what lets the client
+                # refuse an impossible file in the file picker, instantly and by
+                # name, instead of after a long upload that was never going to
+                # be accepted. Bytes, and an integer: a float would arrive in
+                # JavaScript as a value that cannot be compared exactly.
+                "max_upload_bytes": int(settings.QUANTEM_MAX_UPLOAD_BYTES),
             }
         )
 
@@ -275,27 +368,87 @@ class SystemHandshakeView(APIView):
         )
 
 
+#: What the client is told for each reason the authority can give. The two
+#: NGFF routes share this table so they cannot drift apart again -- guarding one
+#: of them only ever changed which URL the viewer used to re-open a failed
+#: asset, because the viewer polls both.
+_UNAVAILABLE_MESSAGES = {
+    Reason.TERMINAL_FAILURE: (
+        "This image's import failed, so it has no pyramid to view. "
+        "Re-import the file to try again."
+    ),
+    Reason.CANCELLED: (
+        "This image's import was cancelled, so it has no pyramid to view. "
+        "Re-import the file to try again."
+    ),
+    Reason.NO_ASSET: "This image is no longer in the library.",
+}
+
+
+def _ngff_unavailable_response(asset, unavailable: Unavailable) -> JsonResponse:
+    """One answer per reason, for both NGFF routes.
+
+    * ``NEVER_BUILT`` -> 202 and *one* lazy build, collapsed by
+      :func:`~quantem.assets.pyramid_authority.request_lazy_build`.
+    * ``BUILDING`` -> 202 and **no enqueue at all**. Something that can publish
+      is already running; adding a second job only creates the lease fight that
+      made the import report the wrong error.
+    * ``GEOMETRY_MISMATCH`` / ``STALE_DECODER`` -> 202 and a rebuild: the store
+      that exists is not this picture, or not this decoder's pixels.
+    * ``TERMINAL_FAILURE`` / ``CANCELLED`` -> 409 naming the state and carrying
+      the import's own error sentence, so the client can say why instead of
+      spinning on a "queued" that will never arrive. 409 rather than 404
+      because the store is not missing in the "wrong URL" sense; it is
+      unavailable because of the state this asset is in.
+    """
+
+    reason = unavailable.reason
+    if reason in {Reason.TERMINAL_FAILURE, Reason.CANCELLED, Reason.NO_ASSET}:
+        return JsonResponse(
+            {
+                "asset_id": str(asset.id),
+                "ngff_status": "unavailable",
+                "reason": reason.value,
+                "preprocess_stage": asset.preprocess_stage,
+                "detail": _UNAVAILABLE_MESSAGES[reason],
+                "preprocess_error": failure_detail(asset),
+            },
+            status=409,
+        )
+
+    job = None
+    if reason is not Reason.BUILDING:
+        job = request_lazy_build(asset)
+    return JsonResponse(
+        {
+            "asset_id": str(asset.id),
+            "ngff_status": "building" if reason is Reason.BUILDING else "queued",
+            "reason": reason.value,
+            "job_id": str(job.id) if job is not None else None,
+        },
+        status=202,
+    )
+
+
 def asset_ngff_root(request, asset_id):
-    """Ensure and serve NGFF root metadata for a canonical asset."""
+    """Serve the published generation's NGFF root metadata, or say why not."""
 
     asset = get_active_asset(asset_id)
     get_asset_openable(asset)
     try:
-        ngff_root_path = get_asset_ngff_path(asset)
-        if ngff_root_path is None or not asset_ngff_ready(asset):
-            job = enqueue_ngff_for_asset(asset)
-            return JsonResponse(
-                {
-                    "asset_id": str(asset.id),
-                    "ngff_status": "queued",
-                    "job_id": str(job.id),
-                },
-                status=202,
-            )
-        attrs_path = ngff_root_path / ".zattrs"
+        resolved = resolve_pyramid(asset, intent=Intent.SERVE)
+        if isinstance(resolved, Unavailable):
+            return _ngff_unavailable_response(asset, resolved)
+        attrs_path = resolved.file_path(".zattrs")
         if not attrs_path.exists():
             raise Http404(f"NGFF metadata not found for asset {asset_id}")
-        return FileResponse(open(attrs_path, "rb"), content_type="application/json")
+        # The ETag names the generation a viewer is reading, so it can notice a
+        # rebuild and reload rather than mixing chunks from two pyramids.
+        return FileResponse(
+            open(attrs_path, "rb"),
+            content_type="application/json",
+            headers={"ETag": f'"{resolved.generation_id}"'},
+        )
     except Http404:
         raise
     except Exception as e:
@@ -304,28 +457,21 @@ def asset_ngff_root(request, asset_id):
 
 
 def asset_ngff_file(request, asset_id, ngff_path):
-    """Serve files from a canonical asset NGFF zarr store."""
+    """Serve one file out of the published generation of an asset's pyramid."""
 
     asset = get_active_asset(asset_id)
     get_asset_openable(asset)
     try:
-        ngff_root_path = get_asset_ngff_path(asset)
-        if ngff_root_path is None or not asset_ngff_ready(asset):
-            job = enqueue_ngff_for_asset(asset)
-            return JsonResponse(
-                {
-                    "asset_id": str(asset.id),
-                    "ngff_status": "queued",
-                    "job_id": str(job.id),
-                },
-                status=202,
-            )
+        resolved = resolve_pyramid(asset, intent=Intent.SERVE)
+        if isinstance(resolved, Unavailable):
+            return _ngff_unavailable_response(asset, resolved)
+
         relative_path = str(ngff_path).lstrip("/")
         if not relative_path:
             raise Http404("Invalid NGFF path")
 
-        file_path = (ngff_root_path / relative_path).resolve()
-        expected_root = ngff_root_path.resolve()
+        file_path = resolved.file_path(relative_path).resolve()
+        expected_root = resolved.root.resolve()
 
         try:
             file_path.relative_to(expected_root)
@@ -346,7 +492,11 @@ def asset_ngff_file(request, asset_id, ngff_path):
             if file_path.name in {".zattrs", ".zarray", ".zgroup", ".zmetadata"}
             else "application/octet-stream"
         )
-        return FileResponse(open(file_path, "rb"), content_type=content_type)
+        return FileResponse(
+            open(file_path, "rb"),
+            content_type=content_type,
+            headers={"ETag": f'"{resolved.generation_id}"'},
+        )
     except Http404:
         raise
     except Exception as e:

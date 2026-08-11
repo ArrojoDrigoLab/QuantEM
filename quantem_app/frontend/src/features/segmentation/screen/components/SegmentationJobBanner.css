@@ -1,0 +1,14 @@
+/* The labeling screen's skin for the shared run-progress rows.
+   Only colours: the geometry and the wording live in the shared component, so
+   this panel and the Tasks drawer cannot end up saying different things about
+   the same run. The palette is the banner's own amber, which is already on
+   #fef9c3, so the bars read as part of the notice rather than as a widget
+   dropped into it. */
+.segmentation-run-progress {
+  --run-progress-text: #78350f;
+  --run-progress-name: #7c2d12;
+  --run-progress-track: #fde68a;
+  --run-progress-fill: #b45309;
+  --run-progress-warning: #b91c1c;
+  --run-progress-download: #6d28d9;
+}

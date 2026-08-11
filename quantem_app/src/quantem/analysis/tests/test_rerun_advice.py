@@ -75,9 +75,14 @@ class TheAdviceIsTrueTests(RerunAdviceTestCase):
     def test_it_names_the_route_that_does_work(self):
         caveats = self._caveats()
 
-        self.assertIn("/labels/clear", caveats)
-        self.assertIn("No screen offers that yet", caveats)
-        self.assertIn("re-importing the image", caveats)
+        # It used to name the endpoint (``POST /api/segmentations/
+        # <segmentation_id>/labels/clear``) and add "No screen offers that
+        # yet". Invariant I-12 forbids the first and the labeling header's
+        # "Discard objects and re-run..." button falsified the second.
+        self.assertIn("Discard objects and re-run", caveats)
+        self.assertNotIn("/labels/clear", caveats)
+        self.assertNotIn("No screen offers that yet", caveats)
+        self.assertIn("Re-importing the image", caveats)
 
     def test_the_recalibration_caveat_stops_short_of_the_same_promise(self):
         """It also ended on a bare "Re-run inference before reporting"."""
@@ -104,13 +109,13 @@ class TheAdviceIsTrueTests(RerunAdviceTestCase):
         )
         self.assertIn("Set the image's pixel size and re-run inference", scale)
         self.assertIn("Re-running inference is not by itself enough", scale)
-        self.assertIn("/labels/clear", scale)
+        self.assertIn("Discard objects and re-run", scale)
 
     def test_a_correct_run_is_told_none_of_this(self):
         caveats = self._caveats(uncalibrated=False)
 
         self.assertNotIn("Re-running inference is not by itself enough", caveats)
-        self.assertNotIn("/labels/clear", caveats)
+        self.assertNotIn("Discard objects and re-run", caveats)
 
     def test_a_pack_that_skipped_no_resample_is_told_none_of_it_either(self):
         """quantem:er declares no canonical_nm, so its uncalibrated run is the
@@ -127,7 +132,7 @@ class TheAdviceIsTrueTests(RerunAdviceTestCase):
         _run, got = self._run(er, compartments={"er": str(er.id)})
 
         caveats = " ".join(got["result"]["caveats"])
-        self.assertNotIn("/labels/clear", caveats)
+        self.assertNotIn("Discard objects and re-run", caveats)
         self.assertNotIn("Re-running inference is not by itself enough", caveats)
 
 

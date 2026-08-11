@@ -1,0 +1,40 @@
+.sam-box-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sam-box-tool-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sam-box-tool-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.75;
+}
+
+.sam-box-tool-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #ff8f8f;
+}
+
+.sam-box-tool-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sam-box-tool-progress {
+  width: 100%;
+  height: 6px;
+}
+
+.sam-box-tool-download {
+  align-self: flex-start;
+}

@@ -57,6 +57,20 @@ LOGS_DIR = STORAGE_DIR / "logs"
 #: see the LOGGING block in :mod:`quantem.core.settings`). Named here so the
 #: CLI can announce the same path the settings module writes to.
 SERVER_LOG_PATH = LOGS_DIR / "quantem-server.log"
+
+
+def file_logging_enabled() -> bool:
+    """Whether this process will actually write :data:`SERVER_LOG_PATH`.
+
+    One process, one writer: a spawned job worker inherits the server's whole
+    environment, flag included, but rotation renames the file and on Windows
+    that rename fails while another process holds it open. Shared with the CLI
+    so that ``quantem serve`` cannot promise a log file it will never write.
+    """
+    flag = os.environ.get("QUANTEM_LOG_TO_FILE")
+    if flag is None or flag.strip().lower() not in {"1", "true", "yes", "on"}:
+        return False
+    return os.environ.get("QUANTEM_JOB_WORKER") != "1"
 CACHE_DIR = STORAGE_DIR / "cache"
 MODELS_DIR = STORAGE_DIR / "models"
 DATA_DIR = STORAGE_DIR / "data"

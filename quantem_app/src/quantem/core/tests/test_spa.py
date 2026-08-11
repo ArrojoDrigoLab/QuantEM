@@ -1,6 +1,6 @@
 """Serving the built frontend from the local server.
 
-This is what makes ``pip install quantem && quantem`` a whole application rather
+This is what makes ``pip install quantem-app && quantem-app`` a whole application rather
 than an API with no UI, so its edges are worth pinning.
 """
 

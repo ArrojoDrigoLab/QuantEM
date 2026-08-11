@@ -19,6 +19,12 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.13", "3.12", "3.11"]
 
+    # Windows runners default stdout to cp1252, which cannot encode the check mark
+    # npe2 prints on success ("UnicodeEncodeError: 'charmap' codec can't encode
+    # character '✔'"). Any step here may print non-ASCII, so set it job-wide.
+    env:
+      PYTHONIOENCODING: utf-8
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,17 +32,23 @@ jobs:
           python-version: ${{ matrix.python }}
 
       # CPU-only torch: CI never needs CUDA, and the CUDA wheels are ~2.5 GB. Only Linux
-      # defaults to a CUDA build, so only Linux needs the CPU index. The Windows and macOS
-      # wheels on PyPI are already CPU-only, and the CPU index's Windows wheel is missing
-      # the Intel runtime its c10.dll links against — importing torch then dies with
-      # "WinError 1114: a DLL initialization routine failed".
+      # defaults to a CUDA build, so only Linux needs the CPU index; the Windows and macOS
+      # wheels on PyPI are already CPU-only.
+      #
+      # torchvision is installed *here*, in the same resolve as torch, rather than being
+      # left to arrive later as a dependency of timm. Installing only torch from the CPU
+      # index gets `torch 2.13.0+cpu`, and pip then satisfies timm's requirement from PyPI
+      # with `torchvision 0.28.0` — the CUDA build. The two disagree about the operator
+      # table, and importing torchvision (or timm, which imports it) dies with
+      # "RuntimeError: operator torchvision::nms does not exist". Matched, both carry the
+      # +cpu local version and import cleanly.
       - name: Install torch (CPU)
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
-            pip install torch --index-url https://download.pytorch.org/whl/cpu
+            pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           else
-            pip install torch
+            pip install torch torchvision
           fi
 
       - name: Install packages
@@ -72,7 +84,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      # torch and torchvision together, for the same reason as the test job above.
+      - run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e ./quantem-core[test]
       # Nothing may touch the network at import, and a missing artifact must fail with an
       # actionable message rather than a stack trace.

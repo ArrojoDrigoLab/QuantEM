@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
-import { TOAST_AUTO_DISMISS_MS } from "@/shared/ui/toast";
+/**
+ * The labeling screen's own UI state, composed from its two halves.
+ *
+ * The mode state and the toast slot were one 96-line hook and are now
+ * `screen/state/modes.ts` and `screen/state/toasts.ts`. Adding a mode and
+ * adding a message are different jobs done by different packages, and they were
+ * colliding on the same `useEffect` that resets both when the segmentation
+ * changes — that reset is now one line in each file. The return shape is
+ * unchanged, so every caller and `useSegmentationScreenUiState.test.tsx` are
+ * untouched.
+ */
+
+import { useSegmentationModes } from "@/features/segmentation/screen/state/modes";
+import { useSegmentationToast } from "@/features/segmentation/screen/state/toasts";
 
 interface UseSegmentationScreenUiStateArgs {
   currentSegmentationId: string | null;
@@ -8,89 +20,21 @@ interface UseSegmentationScreenUiStateArgs {
 export function useSegmentationScreenUiState({
   currentSegmentationId,
 }: UseSegmentationScreenUiStateArgs) {
-  const [leftNavigateMode, setLeftNavigateMode] = useState(true);
-  const [showConfirmedPanel, setShowConfirmedPanel] = useState(true);
-  const [uncertainLimit, setUncertainLimit] = useState(50);
-  /**
-   * The one transient message slot on this screen.
-   *
-   * `tone` exists because not everything worth saying here is a failure. A
-   * self-crossing outline now stores every lobe it encloses and the server says
-   * so in the response ("segments[0] crosses itself: it encloses 2 separate
-   * areas rather than one"); the drawing succeeded exactly as asked, and
-   * reporting it in the red error toast would read as though it had not. One
-   * slot rather than two, so a notice and an error cannot stack on top of each
-   * other in the same corner.
-   */
-  const [toast, setToast] = useState<{
-    id: string;
-    message: string;
-    tone: "error" | "notice";
-  } | null>(null);
-
-  const pushToast = useCallback((message: string, tone: "error" | "notice") => {
-    setToast({
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      message,
-      tone,
-    });
-  }, []);
-
-  const showErrorToast = useCallback(
-    (message: string) => pushToast(message, "error"),
-    [pushToast]
-  );
-
-  /** Something the user should know about an action that worked. */
-  const showNoticeToast = useCallback(
-    (message: string) => pushToast(message, "notice"),
-    [pushToast]
-  );
-
-  const dismissToast = useCallback(() => {
-    setToast(null);
-  }, []);
-
-  const toggleLeftNavigateMode = useCallback(() => {
-    setLeftNavigateMode((previous) => !previous);
-  }, []);
-
-  /**
-   * Turn Navigate off.
-   *
-   * Called when the user picks a drawing tool or enters Correct: while Navigate
-   * is on the interaction router drops every labeling click and drag, so the
-   * first stroke after choosing a tool silently did nothing.
-   */
-  const exitNavigateMode = useCallback(() => {
-    setLeftNavigateMode(false);
-  }, []);
-
-  useEffect(() => {
-    setLeftNavigateMode(true);
-    setToast(null);
-  }, [currentSegmentationId]);
-
-  useEffect(() => {
-    if (!toast) return undefined;
-    const timeout = window.setTimeout(() => {
-      setToast((current) => (current?.id === toast.id ? null : current));
-    }, TOAST_AUTO_DISMISS_MS);
-    return () => window.clearTimeout(timeout);
-  }, [toast]);
+  const modes = useSegmentationModes({ currentSegmentationId });
+  const toast = useSegmentationToast({ currentSegmentationId });
 
   return {
-    leftNavigateMode,
-    setLeftNavigateMode,
-    toggleLeftNavigateMode,
-    exitNavigateMode,
-    showConfirmedPanel,
-    setShowConfirmedPanel,
-    uncertainLimit,
-    setUncertainLimit,
-    toast,
-    showErrorToast,
-    showNoticeToast,
-    dismissToast,
+    leftNavigateMode: modes.leftNavigateMode,
+    setLeftNavigateMode: modes.setLeftNavigateMode,
+    toggleLeftNavigateMode: modes.toggleLeftNavigateMode,
+    exitNavigateMode: modes.exitNavigateMode,
+    showConfirmedPanel: modes.showConfirmedPanel,
+    setShowConfirmedPanel: modes.setShowConfirmedPanel,
+    uncertainLimit: modes.uncertainLimit,
+    setUncertainLimit: modes.setUncertainLimit,
+    toast: toast.toast,
+    showErrorToast: toast.showErrorToast,
+    showNoticeToast: toast.showNoticeToast,
+    dismissToast: toast.dismissToast,
   };
 }

@@ -4,6 +4,8 @@ import type { Point } from "@/utils/geometry";
 import { OrthographicView } from "@deck.gl/core";
 import type { ImageViewerProps } from "@/viewer/imageViewerTypes";
 import type { ViewerIdMapOverlaySpec } from "@/viewer/types";
+import { ScaleBar } from "@/viewer/components/ScaleBar";
+import { ViewControls } from "@/viewer/components/ViewControls";
 import { ViewerCursorOverlay } from "@/viewer/components/internal/ViewerCursorOverlay";
 import { ViewerSvgOverlay } from "@/viewer/components/internal/ViewerSvgOverlay";
 import { ViewerZSlider } from "@/viewer/components/internal/ViewerZSlider";
@@ -152,6 +154,7 @@ export function ImageViewer({
     localViewport: viewportState.localViewport,
     disablePan: viewport?.disablePan ?? false,
     resolvedImageWidth,
+    resolvedImageHeight,
     setViewport: viewportState.setViewport,
     onImageClick: interactions?.onImageClick,
     onImagePress: interactions?.onImagePress,
@@ -190,15 +193,21 @@ export function ImageViewer({
     ]
   );
 
+  const showControls = viewport?.showControls ?? true;
   const containerClass = `image-viewer ${className || ""} ${brushMode ? "brush-active" : ""}`.trim();
   const cursorStyle =
-    brushMode || highlighting?.cursorMode === "target"
-      ? "none"
-      : highlighting?.hoverCursor
-        ? "pointer"
-        : viewport?.disablePan
-          ? "crosshair"
-          : "";
+    // Holding space says "I am moving the image", and it outranks every tool
+    // cursor: the pointer has to stop looking like a brush the moment the
+    // gesture stops being a stroke.
+    pointerInteractions.panKeyHeld && !viewport?.disablePan
+      ? "grab"
+      : brushMode || highlighting?.cursorMode === "target"
+        ? "none"
+        : highlighting?.hoverCursor
+          ? "pointer"
+          : viewport?.disablePan
+            ? "crosshair"
+            : "";
 
   return (
     <div ref={containerRef} className={containerClass} style={{ cursor: cursorStyle }}>
@@ -240,6 +249,26 @@ export function ImageViewer({
         onChange={setZIndex}
         planeIndices={image.zPlaneIndices}
       />
+      {showControls && (
+        <div className="viewer-canvas-bar">
+          <ViewControls
+            onFit={viewportState.fitImage}
+            onOneToOne={viewportState.zoomOneToOne}
+            onReset={viewportState.resetView}
+          />
+          {/*
+            Taking left-drag away from panning is only fair if the canvas says
+            where panning went. Shown exactly when a tool owns the left button,
+            so it is absent on a viewer where dragging still moves the image.
+          */}
+          {!pointerInteractions.leftDragPans && !viewport?.disablePan && (
+            <span className="viewer-pan-hint">
+              Hold space or the middle button to move the image
+            </span>
+          )}
+          <ScaleBar metrics={viewportState.metrics} pixelSizeNm={image.pixelSizeNm} />
+        </div>
+      )}
     </div>
   );
 }

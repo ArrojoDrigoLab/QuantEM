@@ -97,6 +97,47 @@ _SIGNAL_NOTES: dict[int, str] = {
 }
 
 
+#: What a job says when its exception had nothing sayable in it. A bare
+#: ``KeyError('asset_id')`` is a fact about a dict, not a sentence, and the
+#: traceback keeps every bit of it for whoever is debugging.
+UNEXPLAINED_FAILURE_MESSAGE = (
+    "This one stopped before it finished and did not say why. Nothing already "
+    "saved was lost; run it again, and if it keeps happening the details are "
+    "in the log file beside your data."
+)
+
+
+def failure_message(exc: BaseException) -> str:
+    """What a person is told when a job fails.
+
+    The queue used to write ``f"failed: {exc.__class__.__name__}: {exc}"``, and
+    the Tasks drawer renders ``Job.message`` verbatim, so a user watching a run
+    was handed::
+
+        failed: ModelWeightsNotInstalled: Model pack 'quantem:er' is not
+        installed. Install it on the Models screen.
+        failed: ValueError: Error decoding PNG to 8-bit grayscale: image file
+        is truncated
+
+    The *sentences* are the app's own copy. The ``failed: <ClassName>:`` in
+    front of them is the name of a Python class, which invariant I-12 forbids
+    in anything a user reads and which tells them nothing: the row is already
+    badged FAILED, and no reader has ever been helped by knowing which class
+    the exception was. The class name is not lost -- it is in
+    ``error_traceback``, and in the log, where a maintainer looks and a user
+    does not.
+
+    An exception whose text is not a sentence (a bare key, a lone number, an
+    empty message) is replaced rather than shown: quoting ``'asset_id'`` at
+    somebody is not more honest than saying the run stopped without explaining
+    itself, it is only more confusing.
+    """
+    text = str(exc).strip()
+    if not text or " " not in text:
+        return UNEXPLAINED_FAILURE_MESSAGE
+    return text
+
+
 def worker_exit_message(exit_code: int | None) -> str:
     """What to tell a user whose worker process disappeared.
 
@@ -165,11 +206,34 @@ def domain_status_recorded(exc: BaseException) -> bool:
     return bool(getattr(exc, _DOMAIN_STATUS_RECORDED_ATTR, False))
 
 
+def _payload_segmentation_ids(payload: dict) -> list[str]:
+    """Every segmentation a job was carrying.
+
+    One for a single-organelle run; several for the one-run-per-image job, whose
+    payload lists its organelles in ``legs``. A multi-organelle job that dies
+    without its handler writing anything -- the worker was killed, the machine
+    slept -- would otherwise leave every one of its organelles stuck at
+    "Running" for ever, because the reconciler could only find the singular key.
+    """
+    payload = payload or {}
+    ids = []
+    single = str(payload.get("segmentation_id") or "").strip()
+    if single:
+        ids.append(single)
+    for leg in payload.get("legs") or []:
+        if not isinstance(leg, dict):
+            continue
+        leg_id = str(leg.get("segmentation_id") or "").strip()
+        if leg_id and leg_id not in ids:
+            ids.append(leg_id)
+    return ids
+
+
 def _reconcile_segmentation(
     payload: dict, error_message: str, *, supersede_stale_failure: bool = False
 ) -> None:
-    segmentation_id = str((payload or {}).get("segmentation_id") or "").strip()
-    if not segmentation_id:
+    segmentation_ids = _payload_segmentation_ids(payload)
+    if not segmentation_ids:
         return
     model = apps.get_model("segmentation", "ImageSegmentation")
     # COMPLETED is always protected (the completion lock). FAILED is protected
@@ -183,13 +247,26 @@ def _reconcile_segmentation(
         if supersede_stale_failure
         else _CONCLUDED_SEGMENTATION_STAGES
     )
+    if len(segmentation_ids) > 1:
+        # A multi-organelle run: one job, several organelles, each with its own
+        # outcome. An organelle that reached ``CANDIDATES_READY`` produced real
+        # objects that are already on screen, and the job's error is about a
+        # *different* organelle -- writing it over the finished one would say
+        # the mitochondria failed because the nucleus model was missing. The
+        # single-organelle case is untouched: there, the job's failure and the
+        # segmentation's are the same event.
+        protected = protected | {"CANDIDATES_READY"}
     updated = (
-        model.objects.filter(id=segmentation_id)
+        model.objects.filter(id__in=segmentation_ids)
         .exclude(status_stage__in=protected)
         .update(status_stage="FAILED", status_error=error_message)
     )
     if updated:
-        logger.info("Marked segmentation %s failed with its job.", segmentation_id)
+        logger.info(
+            "Marked %d segmentation(s) failed with their job: %s.",
+            updated,
+            ", ".join(segmentation_ids),
+        )
 
 
 def _reconcile_analysis_run(
@@ -492,8 +569,10 @@ def reconcile_domain_objects_for_removed_job(
 __all__ = [
     "CANCELLED_DETAIL",
     "REMOVED_FROM_QUEUE_DETAIL",
+    "UNEXPLAINED_FAILURE_MESSAGE",
     "WINDOWS_EXIT_CODE_NOTES",
     "domain_status_recorded",
+    "failure_message",
     "mark_domain_status_recorded",
     "reconcile_domain_objects_for_cancelled_job",
     "reconcile_domain_objects_for_failed_job",

@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,8 @@ import {
   markSegmentationComplete,
   unlockSegmentation,
 } from "@/shared/api/segmentations/annotations";
+import { getJobQueueStatus } from "@/shared/api/jobs";
+import type { JobQueueItem, JobQueueStatus } from "@/shared/types/jobs";
 
 function RouterWrapper({ children }: PropsWithChildren) {
   return <MemoryRouter>{children}</MemoryRouter>;
@@ -159,5 +161,147 @@ describe("useSegmentationProcessingState", () => {
     expect(unlockSegmentation).toHaveBeenCalledWith("seg-1");
     expect(refreshSegmentViews).toHaveBeenCalledWith({ deferOverlayRefresh: true });
     expect(refetchSegmentations).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * What the run panel is given after a run stops.
+ *
+ * Cancelling the only run in a wave closes the wave, and the panel's job list
+ * kept a concluded run only while its wave was still open. So one poll after
+ * the cancel the row left the panel and took the tile count with it -- on the
+ * screen the user pressed Cancel from.
+ */
+describe("the jobs the run panel is given", () => {
+  const CANCELLED_RUN: JobQueueItem = {
+    id: "job-cancelled",
+    type: "run_segmentation_full_task",
+    task_label: "Run full-image segmentation",
+    status: "CANCELLED",
+    progress: 32.1,
+    message: "cancelled",
+    cancel_requested: true,
+    queue_name: "p4_full",
+    resource_class: "gpu",
+    created_at: "2026-01-01T00:00:00Z",
+    started_at: "2026-01-01T00:00:10Z",
+    finished_at: new Date(Date.now() - 20_000).toISOString(),
+    image: { id: "img-1", display_name: "Image 1" },
+    segmentation: { id: "seg-1", name: "Mitochondria" },
+    progress_stage: "inference",
+    unit_progress: {
+      done: 18,
+      total: 56,
+      label: "tile",
+      percent: 32.1,
+      stage: "inference",
+      eta_seconds: null,
+    },
+    download: null,
+    // The wave closed with the run: nothing else in it is open, so there is no
+    // rollup and `batch_id` alone cannot keep the row alive.
+    batch_id: "asset:img-1:abc",
+    batch_progress: null,
+  };
+
+  function statusWithStopped(job: JobQueueItem): JobQueueStatus {
+    return {
+      running: [],
+      queues: [],
+      failed: [job],
+      completed: [],
+      worker: { scheduler_in_process: true },
+      generated_at: "2026-01-01T00:00:30Z",
+    };
+  }
+
+  function renderProcessingState() {
+    return renderHook(
+      () =>
+        useSegmentationProcessingState({
+          currentSegmentation: makeSegmentation(),
+          activeSourceModel: null,
+          supportsPointFeedback: false,
+          supportsInstanceParams: false,
+          currentInstanceParams: null,
+          refetchSegmentations: vi.fn(async () => {}),
+          refreshSegmentViews: vi.fn(async () => {}),
+        }),
+      { wrapper: RouterWrapper }
+    );
+  }
+
+  beforeEach(() => {
+    setupSegmentationScreenTest();
+  });
+
+  it("keeps a run that was just cancelled, wave open or not", async () => {
+    vi.mocked(getJobQueueStatus).mockResolvedValue(statusWithStopped(CANCELLED_RUN));
+
+    const { result } = renderProcessingState();
+
+    await waitFor(() => {
+      expect(result.current.processingJobs).toHaveLength(1);
+    });
+    expect(result.current.processingJobs[0].id).toBe("job-cancelled");
+    expect(result.current.shouldShowProcessingStatus).toBe(true);
+  });
+
+  it("keeps a run that just failed", async () => {
+    vi.mocked(getJobQueueStatus).mockResolvedValue(
+      statusWithStopped({
+        ...CANCELLED_RUN,
+        id: "job-failed",
+        status: "FAILED",
+        cancel_requested: false,
+        message: "failed",
+      })
+    );
+
+    const { result } = renderProcessingState();
+
+    await waitFor(() => {
+      expect(result.current.processingJobs.map((job) => job.id)).toEqual([
+        "job-failed",
+      ]);
+    });
+  });
+
+  it("lets a stopped run stop being news", async () => {
+    // Not forever: an hour-old cancellation on a screen with nothing running is
+    // history, and history belongs in the Tasks drawer.
+    vi.mocked(getJobQueueStatus).mockResolvedValue(
+      statusWithStopped({
+        ...CANCELLED_RUN,
+        finished_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      })
+    );
+
+    const { result } = renderProcessingState();
+
+    await waitFor(() => {
+      expect(result.current.segmentationRois).not.toBeUndefined();
+    });
+    expect(result.current.processingJobs).toHaveLength(0);
+  });
+
+  it("still drops a run that succeeded once its wave is done", async () => {
+    // A finished run only stays while its wave is open -- that behaviour is
+    // deliberate and the linger must not quietly extend to it.
+    vi.mocked(getJobQueueStatus).mockResolvedValue({
+      running: [],
+      queues: [],
+      failed: [],
+      completed: [{ ...CANCELLED_RUN, id: "job-done", status: "SUCCESS" }],
+      worker: { scheduler_in_process: true },
+      generated_at: "2026-01-01T00:00:30Z",
+    });
+
+    const { result } = renderProcessingState();
+
+    await waitFor(() => {
+      expect(result.current.segmentationRois).not.toBeUndefined();
+    });
+    expect(result.current.processingJobs).toHaveLength(0);
   });
 });

@@ -6,8 +6,12 @@
  * collapsed import panel and an empty state that pointed at a button that was
  * not visible. This shows on first launch and can be reopened from the header.
  *
- * The pixel-size step is called out because it is the one that silently decides
- * whether any of the downstream numbers can carry physical units.
+ * One line per step, naming the step and nothing else. Caveats that used to
+ * live here -- what happens without a pixel size, which device inference picks,
+ * how a confirmed area treats unconfirmed pixels -- belong in the dialog where
+ * the user is making that choice, not in an overview they read once. Several of
+ * them were also describing internal decisions rather than anything the reader
+ * has to act on.
  */
 
 import { Button, Panel } from "@/shared/ui/design";
@@ -21,28 +25,23 @@ interface WorkflowStep {
 const STEPS: WorkflowStep[] = [
   {
     title: "1. Import",
-    body:
-      "Add a TIFF or PNG from this machine. If the file declares a pixel size it is read automatically; if not, type one. Without a pixel size every measurement stays in pixels.",
+    body: "Add a local image.",
   },
   {
     title: "2. View and segment",
-    body:
-      "Open the image, pick an organelle and a model, and run it. Segmentation runs locally — on the GPU if there is one, otherwise on the CPU.",
+    body: "Pick an organelle and model size.",
   },
   {
     title: "3. Proofread",
-    body:
-      "Confirm and reject objects, and draw or erase to correct them. Then mark a confirmed area: inside it, anything you have not confirmed counts as background.",
+    body: "Confirm objects or modify segmentation outputs.",
   },
   {
     title: "4. Analyse",
-    body:
-      "Measure composition, object statistics, point enrichment and distances. Runs that ran on an uncalibrated image are labelled as such and report no µm².",
+    body: "Measure composition and object statistics.",
   },
   {
-    title: "5. Adapt (optional)",
-    body:
-      "Fine-tune a model on your own confirmed areas. The held-out score is always shown with the split mode that produced it.",
+    title: "5. Fine-tune (optional)",
+    body: "Fine-tune a model on your own confirmed areas.",
   },
 ];
 
@@ -54,9 +53,6 @@ export function WorkflowGuide({ onDismiss }: { onDismiss: () => void }) {
           <h2 className="m-0 text-base font-semibold text-slate-950">
             How QuantEM works
           </h2>
-          <p className="m-0 mt-1 text-sm text-slate-500">
-            Everything runs on this machine. Nothing is uploaded anywhere.
-          </p>
         </div>
         <Button
           size="sm"

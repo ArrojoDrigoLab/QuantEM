@@ -128,6 +128,40 @@ export interface AdaptCrop {
   pixel_size_nm?: number | null;
   /** False when no probability map covers this crop: threshold-only cannot use it. */
   has_probability?: boolean;
+  /**
+   * The image this checked area is on, by the name the user gave it.
+   *
+   * `image_key` is the asset uuid and `name` is derived from it (`4f3a91c2_0`),
+   * so neither can be shown to a reader. Crops are pooled across every image
+   * with the same organelle segmented, so naming them is the difference between
+   * "I'll learn from 3 areas" and a sentence the user can check.
+   */
+  image_name?: string;
+  /** True when this checked area is on the image currently open. */
+  is_this_image?: boolean;
+}
+
+/**
+ * Whether the chosen pack can cut a training window out of what has been checked.
+ *
+ * Pack-specific, because the rule is the pack's own tile size against its
+ * canonical resolution — so the crops endpoint only answers it when told which
+ * pack (`?base_model=`). `ok: false` is a certainty, not a guess: below this
+ * size head training produces zero training steps.
+ */
+export interface HeadSizePreflight {
+  base_model: string;
+  ok: boolean;
+  /** Span of the largest checked area, in nanometres. Null when unmeasurable. */
+  largest_nm: number | null;
+  /** Span head training needs, in nanometres, for that same area. */
+  required_nm: number | null;
+  largest_px: number;
+  required_px: number;
+  /** How many checked areas were measured. */
+  n_areas: number;
+  /** The sentence to show. Null when the geometry is fine. */
+  reason: string | null;
 }
 
 export interface AdaptCropsResponse {
@@ -138,6 +172,20 @@ export interface AdaptCropsResponse {
   /** Hard stops. A completed ROI is the one that cannot be worked around. */
   blockers: string[];
   warnings: string[];
+  /** True when at least one checked area has a stored probability map. */
+  has_probability?: boolean;
+  /**
+   * Reasons that stop **one** rung rather than everything.
+   *
+   * `blockers` is what stops the whole page; this is what greys a single
+   * button. Matching my cut-off to your marks needs a stored probability map to
+   * sweep; head training computes its own but needs a physically larger checked
+   * area. Reporting them apart is what keeps one rung reachable when the other
+   * is not — and it is what lets the panel refuse *before* anything is queued.
+   */
+  mode_blockers?: Partial<Record<AdaptMode, string[]>>;
+  /** The size verdict behind `mode_blockers.head`; null when no pack was named. */
+  head_size?: HeadSizePreflight | null;
   /** Known before the run so the UI can badge the fitted crops up front. */
   train_crop_names: string[];
   heldout_crop_names: string[];
@@ -152,6 +200,15 @@ export interface AdaptStartPayload {
   lr?: number;
   seed?: number;
   name?: string;
+  /**
+   * Use the result the moment it exists, rather than fitting it and leaving the
+   * user to find a separate Apply.
+   *
+   * Opt-in per request: a run started to *look* at the numbers must not
+   * silently become the model. It stamps the adapter and nothing else — no
+   * object is written, moved or deleted by applying.
+   */
+  apply_and_rerun?: boolean;
 }
 
 export interface AdaptStartResponse {
@@ -182,6 +239,23 @@ export interface AdapterSweep {
   heldout_crop_names: string[];
 }
 
+/**
+ * What running the model again would do, and what it would not.
+ *
+ * Returned by the apply endpoint because the two are one decision from the
+ * user's side. `preservation` is a description of the extraction code, not a
+ * reassurance: a re-run deletes only the model's own previous guesses and drops
+ * any new guess that lands on an object the user kept or removed.
+ */
+export interface RerunAdvice {
+  include_level: number | null;
+  previous_include_level: number | null;
+  changes_objects: boolean;
+  preserves_manual_work: boolean;
+  summary: string;
+  preservation: string;
+}
+
 export interface Adapter {
   id: string;
   base_model: string;
@@ -196,6 +270,14 @@ export interface Adapter {
   heldout_crop_names: string[];
   sweep: AdapterSweep | Record<string, never>;
   calibrated_threshold: number | null;
+  /**
+   * The pack's published cut-off, so a new one can be reported as a change.
+   *
+   * Without it the panel can print "0.45" and not "was 0.50", and a bare
+   * number says nothing about which way the model moved. Optional because an
+   * older backend omits it.
+   */
+  default_threshold?: number | null;
   heldout_dice: number | null;
   /** True once the saved head was reloaded onto a fresh encoder and re-scored. */
   verified_reload: boolean;
@@ -204,6 +286,243 @@ export interface Adapter {
   created_at: string;
   error: string;
   caveats: string[];
+  /** Present only on the apply response, which is where it is computed. */
+  rerun_advice?: RerunAdvice;
+}
+
+/**
+ * The most recent run for a segmentation, from the server.
+ *
+ * This is how the panel reattaches after a reload. It replaces a `localStorage`
+ * pointer that was invisible on a second machine, invisible after a cleared
+ * browser store, and — because it was written once and never cleared on
+ * success — the reason a second run could not be started at all.
+ */
+export interface AdaptLatestResponse {
+  adapter: Adapter | null;
+  /** The queue row behind it, when the queue still has one. */
+  job_id: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Fine-tuning over a scope of images (owner ruling R13, round-3 contract §4).
+//
+// The types above describe the older single-segmentation "Improve" flow, which
+// still ships and still uses them. These describe the flow that trains one
+// organelle across a *selection* of datasets and images: the scope tree the
+// dialog renders, the preview it totals, the run it starts, and the run's
+// progress, result and opt-in application.
+//
+// Nothing here is derived client-side that the server also computes. The count,
+// the default mode and the eligibility verdict all arrive decided, precisely so
+// the dialog and the endpoint that refuses a bad request cannot drift apart.
+// ---------------------------------------------------------------------------
+
+/** An experiment named just enough to put on screen. */
+export interface FineTuneExperimentRef {
+  id: string;
+  name: string;
+}
+
+/**
+ * One image in the scope tree, with what it contributes.
+ *
+ * `annotation_count` is `confirmed_areas + done_rois`: the plain number of
+ * annotated regions, **not** the number of training tiles one is cut into. The
+ * owner's example is a dataset where two images have three annotations each and
+ * a third has one, and the dialog shows 7.
+ */
+export interface FineTuneScopeImage {
+  id: string;
+  name: string;
+  confirmed_areas: number;
+  done_rois: number;
+  annotation_count: number;
+}
+
+export interface FineTuneScopeDataset {
+  id: string;
+  name: string;
+  /** Every image in the dataset, annotated or not. */
+  image_count: number;
+  annotated_image_count: number;
+  /** The dataset's own total. Authoritative when the whole dataset is picked. */
+  annotation_count: number;
+  images: FineTuneScopeImage[];
+}
+
+export interface FineTuneScopeExperiment {
+  id: string;
+  name: string;
+  datasets: FineTuneScopeDataset[];
+  /** In this experiment, in no dataset. */
+  ungrouped_images: FineTuneScopeImage[];
+}
+
+/**
+ * `GET /api/finetune/scope/` — the whole tree in one call.
+ *
+ * `unassigned_images` is a sibling of `experiments`, not an experiment with a
+ * null id: images in no experiment are their own group, and the
+ * same-experiment rule treats that group as one.
+ */
+export interface FineTuneScopeResponse {
+  experiments: FineTuneScopeExperiment[];
+  unassigned_images: FineTuneScopeImage[];
+}
+
+/** What a selection is on the wire: datasets expand, then union with assets. */
+export interface FineTuneScopeSelectionPayload {
+  segmentation_type: string;
+  asset_ids: string[];
+  dataset_ids: string[];
+}
+
+export interface FineTunePreviewImage {
+  asset_id: string;
+  name: string;
+  confirmed_areas: number;
+  done_rois: number;
+  tiles: number;
+}
+
+/**
+ * How the training data is split.
+ *
+ * Two values on the wire; three choices on screen, because hold-out with
+ * cross-validation benchmarking is a different decision from hold-out without
+ * it and pairing a radio with a checkbox made it possible to tick the checkbox
+ * under "use all", where it means nothing.
+ */
+export type FineTuneMode = "use_all" | "holdout_1";
+
+/**
+ * `POST /api/finetune/preview/` — everything the dialog needs before it can
+ * offer the button.
+ *
+ * `eligible` and `blockers` are the same verdict `POST /runs/` enforces with a
+ * 400, sent ahead of time so a user never reaches one.
+ */
+export interface FineTunePreviewResponse {
+  experiment: FineTuneExperimentRef | null;
+  asset_count: number;
+  annotation_count: number;
+  confirmed_areas: number;
+  done_rois: number;
+  tile_count: number;
+  per_image: FineTunePreviewImage[];
+  /** Chosen by the server from `tile_count`; the dialog honours it, never re-derives it. */
+  default_mode: FineTuneMode;
+  eligible: boolean;
+  blockers: string[];
+}
+
+export interface FineTuneRunPayload {
+  name: string;
+  /** Non-null replaces that fine-tune in place; null is a new one, and a name collision is a 409. */
+  overwrite_adapter_id: string | null;
+  segmentation_type: string;
+  base_model: string;
+  asset_ids: string[];
+  dataset_ids: string[];
+  mode: FineTuneMode;
+  cv_benchmark: boolean;
+}
+
+export interface FineTuneRunResponse {
+  adapter_id: string;
+  job_id: string;
+}
+
+export type FineTuneStage = "preparing" | "training" | "evaluating" | "saving";
+
+export type FineTuneRunStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
+
+/**
+ * `GET /api/finetune/runs/<id>/progress/`.
+ *
+ * `percent` is computed server-side so the bar and the words beside it divide
+ * by the same thing. `eta_seconds` is null until a round, or a tenth of the
+ * steps, has actually finished — an absent estimate is rendered as "estimating"
+ * and never as zero.
+ */
+export interface FineTuneProgress {
+  status: FineTuneRunStatus;
+  stage: FineTuneStage | string;
+  step: number;
+  total_steps: number;
+  round: number;
+  total_rounds: number;
+  percent: number | null;
+  eta_seconds: number | null;
+  message: string;
+  error: string;
+}
+
+export interface FineTuneCvFold {
+  fold: number;
+  held_out_asset_id: string;
+  dice: number | null;
+  iou: number | null;
+  n_tiles: number;
+}
+
+export interface FineTuneCvPerImage {
+  asset_id: string;
+  name: string;
+  dice: number | null;
+  iou: number | null;
+  n_tiles: number;
+}
+
+/** Per-image results are required, not optional: a mean alone hides the outlier. */
+export interface FineTuneCvResults {
+  folds: FineTuneCvFold[];
+  mean: { dice: number | null; iou: number | null };
+  per_image: FineTuneCvPerImage[];
+}
+
+/** `GET /api/finetune/runs/<id>/` — the adapter row, plus what CV measured. */
+export type FineTuneRunDetail = Adapter & {
+  cv_results?: FineTuneCvResults | Record<string, never>;
+  training_mode?: FineTuneMode;
+  cv_benchmark?: boolean;
+  experiment?: FineTuneExperimentRef | null;
+};
+
+/**
+ * A row in the overwrite dropdown.
+ *
+ * `experiment` is typed loosely because §4.7 of the contract names the field
+ * without giving its shape; {@link fineTuneExperimentName} reads either form.
+ */
+export interface FineTuneAdapterSummary {
+  id: string;
+  name: string;
+  base_model: string;
+  status: AdapterStatus;
+  created_at: string;
+  experiment: FineTuneExperimentRef | string | null;
+  asset_count: number;
+}
+
+export interface FineTuneApplyQueued {
+  asset_id: string;
+  segmentation_id: string;
+  job_id: string;
+}
+
+/** `POST /api/finetune/runs/<id>/apply/` — never automatic; the user clicks. */
+export interface FineTuneApplyResponse {
+  queued: FineTuneApplyQueued[];
+}
+
+/** The experiment's name, whichever of the two shapes §4.7 turns out to send. */
+export function fineTuneExperimentName(
+  value: FineTuneExperimentRef | string | null | undefined
+): string | null {
+  if (!value) return null;
+  return typeof value === "string" ? value : value.name;
 }
 
 /**
@@ -226,5 +545,23 @@ export interface AdapterJobResult {
   reloaded_heldout_dice?: number | null;
   warnings?: string[];
   caveats?: string[];
+  /**
+   * Whether the run put its own result to work, and what is still outstanding.
+   *
+   * `rerun_pending` is the honest half: applying costs nothing and changes
+   * nothing on screen, so the objects the user is looking at are still the ones
+   * found at the old include level until the model is run again.
+   */
+  apply_and_rerun?: {
+    requested: boolean;
+    applied: boolean;
+    applied_at: string | null;
+    include_level: number | null;
+    previous_include_level: number | null;
+    changes_objects: boolean;
+    rerun_pending: boolean;
+    preserves_manual_work: boolean;
+    preservation: string;
+  };
   [key: string]: unknown;
 }

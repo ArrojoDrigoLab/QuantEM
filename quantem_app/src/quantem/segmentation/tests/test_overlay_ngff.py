@@ -412,7 +412,7 @@ class SegmentationOverlaySyncPartialTests(TestCase):
             features={"sam_score": 0.9},
         )
 
-    def test_label_update_rebuilds_dirty_chunks_synchronously(self):
+    def test_label_update_defers_the_raster_and_recolours_immediately(self):
         rebuild_overlay_full(self.segmentation, desired_revision=0)
 
         response = self.client.post(
@@ -422,12 +422,18 @@ class SegmentationOverlaySyncPartialTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        # A small geometry-touching edit on a valid, coherent bundle still routes
-        # through the synchronous partial path; the label's raster pixel is
-        # unchanged (state lives in the LUT), so this asserts both the dense label
-        # survived and the LUT now resolves the confirmed colour.
-        self.assertEqual(response.data["overlay"]["rebuild_mode"], "sync_partial")
-        self.assertTrue(response.data["overlay"]["sync_applied"])
+        # An answer registers the edit and leaves the raster to the queue (see
+        # api_views.segments.labels): the response is not waiting on a disk
+        # write. What the reviewer sees is still correct at once, because the
+        # colour comes from the LUT rather than the raster -- so this asserts
+        # both that the dense label survived and that the LUT already resolves
+        # the confirmed colour, with `applied_revision` still behind.
+        self.assertEqual(response.data["overlay"]["rebuild_mode"], "async_partial")
+        self.assertFalse(response.data["overlay"]["sync_applied"])
+        self.assertGreater(
+            response.data["overlay"]["desired_revision"],
+            response.data["overlay"]["applied_revision"],
+        )
 
         state = SegmentationOverlayState.objects.get(
             segmentation=self.segmentation, candidate_source_model=""

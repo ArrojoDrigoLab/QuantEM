@@ -4,14 +4,20 @@
 ``dinov3``, run ``python -m quantem.inference.export`` -- and those reached the
 job's error message and the segmentation's ``status_error``, where an end user
 read them as their own next steps. They are not: the user's fix is to reinstall
-from a release bundle, which is what the CLI and the Models screen already say.
+the pack, which is a button on the Models screen.
+
+Replacing one command with another is not the fix either, and for a while that
+is what this module did: it swapped the maintainer's command for
+``INSTALL_INSTRUCTIONS``, the *terminal* copy, and a verifier then found that
+text rendered verbatim in the labeling header (F2, 2026-08-10). What
+``status_error`` may carry is the app copy, and only the app copy.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from quantem.registry.cache import INSTALL_COMMAND, INSTALL_INSTRUCTIONS
+from quantem.registry.cache import INSTALL_HINT, TERMINAL_ONLY_COPY
 from quantem.seg_core.model_errors import (
     is_model_unavailable,
     translate_model_error,
@@ -90,11 +96,15 @@ def test_maintainer_advice_never_reaches_the_user(exc):
 def test_every_model_failure_gives_the_one_shared_answer(exc):
     message = translate_model_error(exc, pack_id="quantem:mito")
 
-    # The same strings the CLI and the Models screen use, so a user is never
-    # given two different answers to the same question.
-    assert INSTALL_COMMAND in message
-    assert INSTALL_INSTRUCTIONS in message
+    # The same string the Models screen uses, so a user is never given two
+    # different answers to the same question -- and the *app's* string, not the
+    # terminal's. This message is written into ``status_error`` and rendered
+    # verbatim in the labeling header and the viewer's overlay card, and until
+    # 2026-08-10 it put `quantem models install <pack id>` on all three (I-12).
+    assert INSTALL_HINT in message
     assert "quantem:mito" in message
+    for terminal in TERMINAL_ONLY_COPY:
+        assert terminal not in message, terminal
 
 
 def test_missing_weights_and_an_unbuildable_pack_read_differently():
@@ -114,4 +124,4 @@ def test_it_still_says_something_useful_without_a_pack_id():
     message = translate_model_error(ModelWeightsNotInstalled("x"))
 
     assert "The model for this run" in message
-    assert INSTALL_COMMAND in message
+    assert INSTALL_HINT in message

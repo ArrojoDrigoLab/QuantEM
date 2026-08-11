@@ -20,6 +20,16 @@
 //! fallback to `%LOCALAPPDATA%`: an unwritable data directory is a hard error
 //! that names the override.
 //!
+//! `TEMP`/`TMP` go with them, into `<data dir>\data\tmp`. Without that, an
+//! import wrote the whole image to the user's `%TEMP%` on C: -- twice, once by
+//! the web server buffering the request body and once by Django staging the
+//! upload -- and then copied it across volumes into the data directory. That
+//! is the "nothing is written to C:" rule broken by the shipped build, and
+//! roughly 2 GiB of pointless I/O on a 1 GiB image. The path deliberately
+//! matches `quantem.core.config.TMP_DIR`, so the staged upload is a sibling of
+//! its destination and the move is a rename; a test on the Python side asserts
+//! the two agree.
+//!
 //! **Process lifetime (Windows).** The sidecar is placed in a Job Object with
 //! `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. The job handle lives as long as this
 //! process; when the shell exits -- cleanly, killed, or crashed -- the OS
@@ -171,8 +181,9 @@ fn find_sidecar(app: &tauri::AppHandle) -> Option<PathBuf> {
 static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// `QUANTEM_DATA_DIR` if set and non-empty (the explicit override), otherwise
-/// `<exe dir>\data`. Returns the directory and whether it came from the
-/// override.
+/// `<exe dir>\data` -- except on macOS, where app translocation makes that
+/// unusable and the location is `~/Library/Application Support/QuantEM`.
+/// Returns the directory and whether it came from the override.
 fn resolve_data_dir() -> Result<(PathBuf, bool), String> {
     if let Some(v) = env::var_os("QUANTEM_DATA_DIR") {
         if !v.is_empty() {
@@ -188,13 +199,36 @@ fn resolve_data_dir() -> Result<(PathBuf, bool), String> {
             return Ok((p, true));
         }
     }
-    let exe =
-        env::current_exe().map_err(|e| format!("cannot locate the QuantEM executable: {e}"))?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| "the QuantEM executable has no parent directory".to_string())?
-        .join("data");
-    Ok((dir, false))
+    // macOS is the one platform where storage-beside-the-executable cannot
+    // work. Gatekeeper's app translocation runs a quarantined app from a
+    // randomised read-only mount under /private/var/folders, so the bundle's
+    // own directory is not writable on exactly the first launch that matters --
+    // and the mount path changes between launches, so anything written before
+    // the user clears quarantine would be orphaned where they will never find
+    // it. This mirrors the same branch in `quantem.cli.default_data_dir`; the
+    // two must agree, because whichever resolves first exports
+    // QUANTEM_DATA_DIR for the other.
+    #[cfg(target_os = "macos")]
+    {
+        let home = env::var_os("HOME")
+            .ok_or_else(|| "cannot locate the home directory ($HOME is unset).".to_string())?;
+        let dir = PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("QuantEM");
+        return Ok((dir, false));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let exe = env::current_exe()
+            .map_err(|e| format!("cannot locate the QuantEM executable: {e}"))?;
+        let dir = exe
+            .parent()
+            .ok_or_else(|| "the QuantEM executable has no parent directory".to_string())?
+            .join("data");
+        Ok((dir, false))
+    }
 }
 
 /// Create the directory and prove it is writable. No silent fallback: the
@@ -307,6 +341,26 @@ fn main() {
             // The sidecar and its spawned workers inherit this; an explicit
             // QUANTEM_DATA_DIR set by the user is what produced `dir` anyway.
             env::set_var("QUANTEM_DATA_DIR", dir);
+            // Temp files too -- the sidecar's web server spools a large upload
+            // here before Django ever sees it, and the default is the user's
+            // %TEMP% on C:. Same path as quantem.core.config.TMP_DIR, so a
+            // staged upload is a sibling of where it is going. Only exported
+            // if the directory could actually be created: pointing TEMP at a
+            // path that does not exist breaks every temporary file in the
+            // process, which is worse than leaving it on C:.
+            let temp = dir.join("data").join("tmp");
+            match std::fs::create_dir_all(&temp) {
+                Ok(()) => {
+                    env::set_var("TEMP", &temp);
+                    env::set_var("TMP", &temp);
+                    env::set_var("TMPDIR", &temp);
+                }
+                Err(e) => log_line(&format!(
+                    "[shell] WARNING: cannot create {} ({e}); temp files stay in the \
+                     system temp directory",
+                    temp.display()
+                )),
+            }
             // Belt (env var, honoured by WebView2 when no explicit folder is
             // passed) and braces (`data_directory` on the window builder in
             // setup, which is what tauri actually passes to WebView2 -- without

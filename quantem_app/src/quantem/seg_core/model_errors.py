@@ -9,12 +9,20 @@ a maintainer building a release -- but it travelled straight through
 :mod:`quantem.segmentation.organelle_tasks` into the job's error message and the
 segmentation's ``status_error``, where an end user read it as their instructions.
 
-The CLI and the Models screen both give the right answer to that user
-(:data:`quantem.registry.cache.INSTALL_HINT` /
-:data:`~quantem.registry.cache.INSTALL_INSTRUCTIONS`: download a release bundle
-and install it), and this module makes the job queue give the same one, from the
-same strings. The maintainer's text is not lost -- it is logged at ``exception``
-level with the traceback, where a maintainer will look and a user will not.
+The Models screen gives the right answer to that user
+(:data:`quantem.registry.cache.INSTALL_HINT`: install the pack from that screen,
+or from a folder you unzipped a release into), and this module makes the job
+queue give the same one, from the same string. The maintainer's text is not lost
+-- it is logged at ``exception`` level with the traceback, where a maintainer
+will look and a user will not.
+
+**App copy, not terminal copy.** The hint used here is deliberately
+:data:`~quantem.registry.cache.INSTALL_HINT` and never
+:data:`~quantem.registry.cache.INSTALL_INSTRUCTIONS`: what this function returns
+is written to a segmentation's ``status_error`` and rendered verbatim in the
+labeling header and the viewer's overlay card, where a shell command is an
+instruction the reader cannot follow (invariant I-12). It used to return the
+terminal text, and the terminal text was on screen.
 
 Detection is deliberately by class *name*, walking the MRO, rather than by
 importing the exception classes: :mod:`quantem.seg_core` must keep working on an
@@ -51,21 +59,23 @@ def is_model_unavailable(exc: BaseException) -> bool:
     )
 
 
-def _install_instructions() -> str:
+def _install_hint() -> str:
     """The one thing a user is ever told to do to obtain models.
 
     Imported here rather than at module scope so ``seg_core`` does not depend on
     the registry app being importable in every context, and so there is still a
-    sensible sentence if it is not.
+    sensible sentence if it is not. The fallback obeys the same rule as the real
+    string: a screen and a button, never a command.
     """
     try:
-        from quantem.registry.cache import INSTALL_INSTRUCTIONS  # noqa: PLC0415
+        from quantem.registry.cache import INSTALL_HINT  # noqa: PLC0415
     except Exception:  # pragma: no cover -- registry is always present in-app
         return (
-            "Download a QuantEM model release, unzip it, and install it with "
-            "`quantem models install <the directory you unzipped it into>`."
+            "Install it on the Models screen. With no internet, unzip a QuantEM "
+            'model release onto this machine and use "Install from a local '
+            'folder" on the same screen.'
         )
-    return INSTALL_INSTRUCTIONS
+    return INSTALL_HINT
 
 
 def user_facing_model_error(
@@ -97,7 +107,7 @@ def user_facing_model_error(
             "The packs in a QuantEM release bundle carry everything needed to "
             "run them; reinstalling from one replaces a partial install."
         )
-    return f"{headline}\n{_install_instructions()}"
+    return f"{headline}\n{_install_hint()}"
 
 
 def translate_model_error(

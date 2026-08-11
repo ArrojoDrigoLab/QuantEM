@@ -434,6 +434,79 @@ describe("ImageViewer", () => {
 
     expect(onImageClick).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * The canvas bar is mounted here rather than by each screen, which is the
+   * whole reason both `/viewer` and `/labeling` get it: they both mount this
+   * component and neither has to know the bar exists.
+   */
+  it("carries the view controls, so every screen that mounts the canvas gets them", async () => {
+    loadOmeZarrMock.mockResolvedValue(makeVivResult());
+
+    const { container } = render(
+      <ImageViewer image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }} />
+    );
+
+    await waitFor(() => {
+      expect(getLayerIds()).toContain("viv-multiscale-image");
+    });
+
+    const labels = Array.from(
+      container.querySelectorAll(".viewer-view-controls button")
+    ).map((button) => button.textContent);
+    expect(labels).toEqual(["Fit", "1:1", "Reset"]);
+  });
+
+  it("draws a scale bar when the image is calibrated, and none when it is not", async () => {
+    loadOmeZarrMock.mockResolvedValue(makeVivResult());
+
+    const calibrated = render(
+      <ImageViewer
+        image={{ ngffUrl: "/image.zarr", width: 256, height: 256, pixelSizeNm: 5 }}
+      />
+    );
+    await waitFor(() => {
+      expect(getLayerIds()).toContain("viv-multiscale-image");
+    });
+    expect(
+      calibrated.container.querySelector(".viewer-scale-bar-label")?.textContent
+    ).toMatch(/(nm|µm|mm)$/);
+    calibrated.unmount();
+
+    const uncalibrated = render(
+      <ImageViewer image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }} />
+    );
+    await waitFor(() => {
+      expect(getLayerIds()).toContain("viv-multiscale-image");
+    });
+    expect(uncalibrated.container.querySelector(".viewer-scale-bar")).toBeNull();
+  });
+
+  it("says how to pan only once a tool has taken the left button", async () => {
+    loadOmeZarrMock.mockResolvedValue(makeVivResult());
+
+    const plain = render(
+      <ImageViewer image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }} />
+    );
+    await waitFor(() => {
+      expect(getLayerIds()).toContain("viv-multiscale-image");
+    });
+    expect(plain.container.querySelector(".viewer-pan-hint")).toBeNull();
+    plain.unmount();
+
+    const armed = render(
+      <ImageViewer
+        image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }}
+        interactions={{ onImageClick: vi.fn() }}
+      />
+    );
+    await waitFor(() => {
+      expect(getLayerIds()).toContain("viv-multiscale-image");
+    });
+    expect(armed.container.querySelector(".viewer-pan-hint")?.textContent).toBe(
+      "Hold space or the middle button to move the image"
+    );
+  });
 });
 
 function firePointerEvent(

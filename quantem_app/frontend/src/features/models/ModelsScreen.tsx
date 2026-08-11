@@ -51,13 +51,51 @@ import {
   useLastFailedInstalls,
   type LastFailedInstall,
 } from "@/features/models/useLastFailedInstalls";
-import { SplitModeBadge } from "@/features/finetune/components/HonestScore";
-import { FAMILY_LABELS, ORGANELLE_LABELS } from "@/features/finetune/models";
+import { SplitModeBadge } from "@/features/improve/components/HonestScore";
+import { FAMILY_LABELS, ORGANELLE_LABELS } from "@/features/improve/modelChoices";
 import type {
   AdaptedModelEntry,
   ModelCatalogue,
   ModelPack,
 } from "@/shared/types/finetune";
+
+/**
+ * The install-from-a-folder example, read off the running install.
+ *
+ * Owner ruling D8: no hardcoded absolute path ships, because this application
+ * runs on many different machines. The field used to be placeheld with a
+ * literal example beginning with the drive letter of the computer this build
+ * was made on — shown as guidance to somebody on a Mac, who has neither that
+ * drive nor backslashes. The backend now composes the example from its own
+ * resolved models directory (`storage` on `GET /api/models/`), where the path
+ * is built with the separator this platform actually uses.
+ *
+ * Read defensively rather than through the catalogue type: `storage` is a
+ * newer block, the type belongs to another package, and an older backend
+ * without it must fall back to the platform-neutral wording rather than to a
+ * drive letter or to nothing.
+ */
+function readLocalSourceExample(catalogue: unknown): string | null {
+  if (!catalogue || typeof catalogue !== "object") return null;
+  const storage = (catalogue as { storage?: unknown }).storage;
+  if (!storage || typeof storage !== "object") return null;
+  const example = (storage as { local_source_example?: unknown })
+    .local_source_example;
+  return typeof example === "string" && example.trim() ? example : null;
+}
+
+/**
+ * What the empty field says.
+ *
+ * With an example from this machine it shows that; without one it says what
+ * kind of folder it wants, in words, with no path at all. A generic
+ * placeholder is worth more than a wrong one.
+ */
+export function localSourcePlaceholder(example: string | null): string {
+  return example
+    ? `e.g. ${example}`
+    : "the folder you unzipped a QuantEM model release into";
+}
 
 export function ModelsScreen() {
   const {
@@ -66,6 +104,7 @@ export function ModelsScreen() {
     loading,
     refetch,
   } = useApiQuery<ModelCatalogue | null>(() => getModelCatalogue(), []);
+  const localSourceExample = readLocalSourceExample(catalogue);
 
   const device = describeDevice(catalogue ?? null);
   const nothingRuns = noPackIsRunnable(catalogue ?? null);
@@ -182,6 +221,7 @@ export function ModelsScreen() {
                   key={pack.id}
                   pack={pack}
                   lastFailedInstall={failedInstalls.get(pack.id) ?? null}
+                  localSourceExample={localSourceExample}
                   onInstalled={refreshAll}
                 />
               ))}
@@ -304,9 +344,17 @@ function AdaptedCard({
 function PackCard({
   pack,
   lastFailedInstall = null,
+  localSourceExample = null,
   onInstalled,
 }: {
   pack: ModelPack;
+  /**
+   * A folder path on *this* machine, composed by the backend, to show as the
+   * install field's example. `null` on a backend that does not supply one, and
+   * the field then says what it wants in words instead of naming a drive that
+   * may not exist here.
+   */
+  localSourceExample?: string | null;
   /**
    * The most recent FAILED install job for this pack, read from the jobs API.
    *
@@ -656,17 +704,17 @@ function PackCard({
                 id={`install-${pack.id}`}
                 className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 value={sourcePath}
-                placeholder="e.g. D:\quantem-models-0.1.0"
+                placeholder={localSourcePlaceholder(localSourceExample)}
                 disabled={installing}
                 onChange={(event) => setSourcePath(event.target.value)}
               />
-              {/* The help used to describe only the maintainer's layout -- "the
-                  folder holding head.pt and resolved_config.yaml", with
-                  D:\models\mito_quantem as the example -- which is not a shape
-                  anyone who downloaded a release has. A release unzips to
-                  MANIFEST.json beside packs/<family>__<organelle>/, and the
-                  endpoint accepts any level of that. The shapes below are the
-                  ones `_resolve_local_source` names in its own error. */}
+              {/* The help used to describe only the maintainer's layout -- the
+                  folder holding the head file and its resolved config, with a
+                  hardcoded example path -- which is not a shape anyone who
+                  downloaded a release has. A release unzips to MANIFEST.json
+                  beside a packs folder, and the endpoint accepts any level of
+                  that. The shapes below are the ones the install endpoint names
+                  in its own error. */}
               <div className="m-0 text-xs text-slate-500">
                 Any of:
                 <ul className="m-0 mt-1 list-disc pl-4">

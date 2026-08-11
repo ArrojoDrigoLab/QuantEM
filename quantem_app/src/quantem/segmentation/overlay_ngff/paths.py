@@ -15,6 +15,7 @@ from .constants import (
     OVERLAY_STORE_DIRNAME,
     OVERLAY_VERSIONED_DIRNAME,
 )
+from .failure_text import describe_os_error
 
 
 class OverlayStoreError(RuntimeError):
@@ -100,21 +101,55 @@ def get_or_create_overlay_state(
 
 
 def _remove_tree(path: Path) -> None:
+    """Delete an overlay directory, saying *why* if it will not go.
+
+    The retries are for the ordinary Windows case: a chunk file still open in a
+    worker that is on its way out, which clears in a few tens of milliseconds.
+
+    What does not clear is a file another program is holding -- a viewer, an
+    indexer, a backup agent. That used to raise "Failed to remove overlay path:
+    <path>", which names the *where* and discards the *what*, and the where on
+    its own is unactionable: the user is looking at a directory that seems
+    perfectly ordinary in Explorer. The OS already knows the answer ("The
+    process cannot access the file because it is being used by another
+    process"), so the last failure is kept and carried into the message.
+    """
     if not path.exists():
         return
+    last_error: OSError | None = None
     for attempt in range(3):
         try:
             shutil.rmtree(path)
             return
         except FileNotFoundError:
             return
-        except OSError:
+        except OSError as exc:
             if not path.exists():
                 return
+            last_error = exc
             time.sleep(0.05 * (attempt + 1))
-    shutil.rmtree(path, ignore_errors=True)
+
+    final_error: OSError | None = None
+
+    def _record(_func, _path, exc: BaseException) -> None:
+        # `onexc` without a re-raise is `ignore_errors=True` that keeps the
+        # evidence. Only the *first* failure of this pass is kept: everything
+        # after it is a consequence -- the held chunk file cannot be unlinked,
+        # so its directory "is not empty", so *its* parent is not empty either,
+        # and reporting the last one would name the root of the tree and the
+        # least useful reason of the three.
+        nonlocal final_error
+        if final_error is None and isinstance(exc, OSError):
+            final_error = exc
+
+    shutil.rmtree(path, onexc=_record)
     if path.exists():
-        raise OverlayStoreError(f"Failed to remove overlay path: {path}")
+        blocker = final_error or last_error
+        if blocker is not None:
+            raise OverlayStoreError(
+                f"Could not remove the overlay folder. {describe_os_error(blocker)}"
+            )
+        raise OverlayStoreError(f"Could not remove the overlay folder: {path}")
 
 
 def _close_overlay_arrays(arrays) -> None:

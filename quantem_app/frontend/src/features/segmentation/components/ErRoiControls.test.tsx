@@ -66,15 +66,17 @@ describe("ErRoiControls", () => {
     expect(screen.getByLabelText("Reviewed")).toBeInTheDocument();
   });
 
-  it("says what the flag is, and what it is not", () => {
+  it("says what the flag is, and what it now counts for", () => {
     renderControls();
 
     expect(
       screen.getByText(/records that you have been through this ROI window/i)
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/does not create a confirmed area/i)
-    ).toBeInTheDocument();
+    // This used to pin the opposite claim -- that ticking it "does not create a
+    // confirmed area, which is what Adapt a model needs". A reviewed ROI is now
+    // read as training data on the same terms a confirmed area is, so the copy
+    // says so and this says the copy says so.
+    expect(screen.getByText(/Fine-tuning trains on both/i)).toBeInTheDocument();
   });
 
   it("names the control that does produce one", () => {

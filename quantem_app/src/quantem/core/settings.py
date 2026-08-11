@@ -35,6 +35,7 @@ load_backend_env_files(BASE_DIR)
 from quantem.core.config import (  # noqa: E402
     SECRET_KEY_PATH,
     SERVER_LOG_PATH,
+    TMP_DIR,
     ensure_directories,
 )
 
@@ -100,6 +101,7 @@ INSTALLED_APPS = [
     "django_filters",  # Django filter for DRF
     "corsheaders",
     "quantem.assets",  # Image/asset management app
+    "quantem.library",  # Experiments and datasets over the image library
     "quantem.jobs",  # DB-backed job queue
     "quantem.segmentation",  # Segmentations, segments, ROIs, overlays
     "quantem.seg_core",  # Segmenter registry and shared inference plumbing
@@ -110,6 +112,11 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "quantem.core.middleware.LocalOnlyMiddleware",
+    # Above the rest so its process_exception runs last (Django unwinds
+    # process_exception from the bottom up) and it is the final chance to turn
+    # a request refused during parsing into JSON instead of Django's own 400
+    # page. See ApiErrorShapeMiddleware.
+    "quantem.core.middleware.ApiErrorShapeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -227,6 +234,47 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 100,
 }
 
+# Uploads.
+#
+# Where a multipart upload's bytes are staged before the view moves them into
+# place. Django's default is ``tempfile.gettempdir()``, which on Windows is the
+# signed-in user's own temporary folder under AppData, on the system drive, and
+# that is wrong here twice over. It writes the whole image to the system drive
+# -- forbidden by this project, and by
+# the owner's ruling that storage lives with the installation -- and it puts
+# the staged file on a *different volume* from the directory it is about to be
+# moved into, which turns what should be a rename into a second full copy of a
+# gigabyte. Pointing it at the data directory's own ``tmp`` makes the staged
+# file a sibling of its destination.
+#
+# TMP_DIR is created by ensure_directories() at the top of this module, so it
+# exists before the first request can arrive.
+FILE_UPLOAD_TEMP_DIR = str(TMP_DIR)
+
+# The largest request body the local server will accept, in bytes.
+#
+# waitress's default is 1 GiB, enforced against Content-Length before a single
+# body byte is read: fourteen of the forty TIFFs over 400 MB in this
+# laboratory's own collection are larger than that, so the shipped application
+# simply could not import them. It answered 413 and closed the socket while the
+# browser was still uploading, which the browser reports as a network error,
+# and nothing in the UI ever mentioned that a limit existed.
+#
+# 64 GiB, because:
+#
+# * the largest image this laboratory has produced is 2 074 034 677 B (1.93
+#   GiB), so this clears real work by more than thirty times, and clears the
+#   4 GiB ceiling of a classic (non-Big) TIFF by sixteen;
+# * it is still finite. There is no adversary on a loopback single-user server,
+#   but there is a malformed Content-Length, and an unlimited server would
+#   spool it onto the data volume until the disk filled. The real ceiling on an
+#   import remains free disk space, and that failure reports itself honestly
+#   from the write that hits it.
+#
+# quantem.cli passes this to waitress and reports the refusal in words; note
+# waitress compares with ``>=``, so the largest accepted body is one byte less.
+QUANTEM_MAX_UPLOAD_BYTES = 64 * 1024 * 1024 * 1024
+
 # Logging. Console always; plus a rotating file under the data directory when
 # the launcher asks for it. ``quantem serve`` and the frozen desktop build set
 # ``QUANTEM_LOG_TO_FILE=1`` (paper-cut: the packaged server wrote no log file
@@ -259,13 +307,10 @@ LOGGING = {
 
 
 def _file_logging_enabled() -> bool:
-    if not _env_flag("QUANTEM_LOG_TO_FILE"):
-        return False
-    # One process, one writer. A spawned job worker inherits the whole server
-    # environment, flag included, but rotation renames the log file and on
-    # Windows that rename fails while any other process holds it open. Workers
-    # log to their console (the server's), never to the file.
-    return os.environ.get("QUANTEM_JOB_WORKER") != "1"
+    # Shared with quantem.cli, which announces the path this decides to write.
+    from quantem.core.config import file_logging_enabled
+
+    return file_logging_enabled()
 
 
 if _file_logging_enabled():

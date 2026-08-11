@@ -1,10 +1,32 @@
 import type {
   CellStatusCounts,
+  Dataset,
   Experiment,
   PreprocessStage,
   SegmentCounts,
   Tag,
 } from "@/shared/types/common";
+
+/**
+ * Where one image sits in the library, if anywhere.
+ *
+ * Emitted by `serialize_asset_grouping` on **both** the list entry and the
+ * detail payload, so the library can group and filter sixty cards without sixty
+ * round trips.
+ *
+ * Every field is null or empty for an unorganised image, and that is the
+ * ordinary case rather than a missing value: it is the state every library that
+ * exists today is in, and nothing here may be rendered as an incomplete setup.
+ *
+ * The names travel beside the ids so a card can be labelled without resolving
+ * anything. They are a snapshot: a rename lands on the next list fetch.
+ */
+export interface AssetGrouping {
+  experiment_id?: string | null;
+  experiment_name?: string | null;
+  dataset_ids?: string[];
+  dataset_names?: string[];
+}
 
 // Denormalized mirror of the tile exporter's source registry for one asset.
 // Present (with populated counts) once a tile export run has touched the asset;
@@ -50,7 +72,7 @@ export interface AssetRendition {
   metadata?: Record<string, unknown>;
 }
 
-export interface AssetDetail {
+export interface AssetDetail extends AssetGrouping {
   id: string;
   asset_id?: string;
   asset_key?: string;
@@ -95,10 +117,6 @@ export interface AssetDetail {
   // Authoritative accepted-tile count (= Asset.accepted_tiles, deduped/png-verified).
   // Use this for the displayed count, not tiles_summary.accepted_tiles.
   tile_count?: number | null;
-  experiment?: Experiment | null;
-  experiment_id?: string | null;
-  datasets?: ExperimentDataset[];
-  dataset_ids?: string[];
   /**
    * Stored files behind this asset. Only `serialize_asset_detail` emits them
    * (the list entry does not), and the FULL entry carries the source file's own
@@ -120,7 +138,7 @@ export interface AssetDetail {
  * does not emit them. Kept in sync with
  * `src/quantem/assets/serializers.py::serialize_asset_entry`.
  */
-export interface HomeImage {
+export interface HomeImage extends AssetGrouping {
   id: string;
   display_name: string;
   original_filename: string;
@@ -173,34 +191,6 @@ export interface AssetEntry extends HomeImage {
 
 export type HomeEntry = AssetEntry;
 
-export interface HomeImageFilterOption {
-  value: string | null;
-  label: string;
-}
-
-export interface HomeTaxonomyFilterNode {
-  rank: string;
-  value: string | null;
-  label: string;
-  children: HomeTaxonomyFilterNode[];
-}
-
-export interface HomeTaxonomyFilterTree {
-  ranks: string[];
-  roots: HomeTaxonomyFilterNode[];
-}
-
-export interface HomeImageFiltersResponse {
-  experiments: HomeImageFilterOption[];
-  kingdoms: HomeImageFilterOption[];
-  species: HomeImageFilterOption[];
-  datasets: HomeImageFilterOption[];
-  tissues: HomeImageFilterOption[];
-  organs: HomeImageFilterOption[];
-  organisms: HomeImageFilterOption[];
-  taxonomy: HomeTaxonomyFilterTree;
-}
-
 export interface HomeEntryPage {
   results: AssetEntry[];
   total: number;
@@ -209,45 +199,34 @@ export interface HomeEntryPage {
   has_more: boolean;
 }
 
-export interface HomeExperimentPreview {
-  experiment: Experiment;
-  entries: AssetEntry[];
-  entry_count: number;
-  local_assets: number;
-  catalog_assets: number;
-  ready_local_assets: number;
-}
-
-export interface HomeExperimentPage {
-  results: HomeExperimentPreview[];
-  total: number;
-  limit: number;
-  offset: number;
-  has_more: boolean;
-}
-
-export interface HomeEntrySummary {
-  assets: number;
-  local_assets: number;
-  catalog_assets: number;
-  ready_local_assets: number;
-  experiments: number;
-  datasets: number;
-}
-
 export type HomeFilterParamValue = string | string[];
 
+/**
+ * The literal the grouping filters accept for "in none of them".
+ *
+ * Unassigned cannot be named by an id, because there is no row to have one, and
+ * it is not a gap that can be left out: it is the bucket every image starts in.
+ * Mirrors `UNASSIGNED` in `quantem/assets/views.py`.
+ */
+export const UNASSIGNED_FILTER = "none";
+
+/**
+ * What `/api/assets/` actually filters on.
+ *
+ * The facets this used to declare -- `tag`, `kingdom`, `species`, `tissue`,
+ * `organ`, `confirmed`, `tile_status` -- were the corpus catalogue's, and
+ * `_filtered_asset_queryset` reads none of them; they were serialised into the
+ * query string on every library fetch and discarded on arrival. `experiment`
+ * and `dataset` were in the same dead set and are now real.
+ *
+ * Both accept a repeated value for a union, and both accept
+ * {@link UNASSIGNED_FILTER} alongside real ids, so "this experiment, plus
+ * everything not yet filed" is one request.
+ */
 export interface HomeImagesParams {
   search?: string;
-  tag?: string;
-  kingdom?: HomeFilterParamValue;
-  species?: HomeFilterParamValue;
-  tissue?: HomeFilterParamValue;
-  organ?: HomeFilterParamValue;
   dataset?: HomeFilterParamValue;
   experiment?: HomeFilterParamValue;
-  confirmed?: HomeFilterParamValue;
-  tile_status?: HomeFilterParamValue;
   ordering?: string;
 }
 
@@ -257,52 +236,38 @@ export interface HomeEntriesParams extends HomeImagesParams {
   offset?: number;
 }
 
-export type HomeExperimentsParams = HomeEntriesParams;
-
-export interface ExperimentDataset {
-  id: string | null;
-  experiment: string;
-  name: string;
-  notes?: string;
-  origin?: "LOCAL" | "CATALOG";
-  catalog_source_key?: string;
-  external_id?: string;
-  external_version?: string;
-  source_url?: string;
-  doi?: string;
-  license?: string;
-  citation?: string;
-  raw_metadata?: Record<string, unknown>;
-  normalized_metadata?: Record<string, unknown>;
-  tags?: Tag[];
-  created_at: string | null;
-  updated_at: string | null;
-  // Initial page of entries embedded in the tree (local ordered before catalog).
-  // The remaining entries are lazily fetched via getExperimentDatasetEntries.
-  assets?: AssetEntry[];
-  local_assets?: AssetEntry[];
-  catalog_assets: HomeEntry[];
-  // Real totals for the dataset, regardless of how many entries are embedded.
-  local_asset_count: number;
-  catalog_asset_count: number;
-  entry_count: number;
-  has_more: boolean;
+/**
+ * What one grouping write did.
+ *
+ * `dataset_links_dropped` is the consequence of a move: a dataset belongs to
+ * exactly one experiment, so images moved out of theirs cannot stay in its
+ * datasets. The count travels back so the screen can report it rather than
+ * leaving the user to notice later.
+ */
+export interface AssetGroupingResult {
+  assets_changed: number;
+  dataset_links_dropped: number;
+  assets_moved_out_of_datasets: number;
+  datasets_left: string[];
+  experiment: Experiment | null;
+  datasets: Dataset[];
 }
 
-export interface ExperimentTreeCounts {
-  local_assets: number;
-  catalog_assets: number;
-  ready_local_assets: number;
-}
-
-export interface ExperimentTree {
-  experiment: Experiment;
-  datasets: ExperimentDataset[];
-  counts: ExperimentTreeCounts;
-  // Aggregated server-side so the header stays accurate while entries paginate.
-  species: string[];
-  tissues: string[];
-  is_processing: boolean;
+/**
+ * A grouping change to apply to a selection of images.
+ *
+ * Each of `experiment` and `datasets` is a **tri-state**: leave the key out to
+ * keep what the images have, send `null` (or `[]`) to clear it, send a value to
+ * set it. `experiment_name` / `dataset_name` are the "type a new name" halves of
+ * the two pickers and create the row on the way past.
+ */
+export interface AssetGroupingRequest {
+  asset_ids: string[];
+  experiment?: string | null;
+  experiment_name?: string;
+  datasets?: string[] | null;
+  dataset_name?: string;
+  datasets_mode?: "replace" | "add";
 }
 
 export interface SegmentationTypeTag {
@@ -451,6 +416,13 @@ export interface ImageSegmentation {
   segment_counts_by_source_model?: Record<string, SegmentCounts> | null;
   cell_status_counts?: CellStatusCounts | null;
   config?: ImageSegmentationConfig | null;
+  /**
+   * The include level the objects on screen were found at, or null when nobody
+   * has moved the dial. Deliberately not defaulted to the run's own threshold:
+   * that is a different fact, and showing it here would claim a dial position
+   * the user never set.
+   */
+  include_level?: number | null;
   is_complete?: boolean;
   /**
    * Present only when the stage would mislead on its own — a run finished here
@@ -498,6 +470,20 @@ export interface UploadImageOptions {
   segmentEr?: boolean;
   segmentNucleus?: boolean;
   segmentLd?: boolean;
+  /**
+   * Where in the library these images go, if anywhere.
+   *
+   * Optional, and optional is load-bearing: an import that names none of these
+   * behaves exactly as it did before they existed. Each pair is "an existing
+   * one" or "a new name to create"; the id wins when both are sent.
+   *
+   * A dataset without an experiment is refused at the door, because a dataset
+   * lives inside exactly one experiment and the combination describes nothing.
+   */
+  experimentId?: string;
+  experimentName?: string;
+  datasetId?: string;
+  datasetName?: string;
 }
 
 export interface ProbabilityMap {

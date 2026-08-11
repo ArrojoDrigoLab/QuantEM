@@ -6,26 +6,49 @@ export interface Tag {
   updated_at: string;
 }
 
+/**
+ * A named subset of one experiment's images.
+ *
+ * Mirrors `quantem.library.serializers.serialize_dataset`. `experiment` is that
+ * experiment's id and is never null: a dataset cannot exist outside one.
+ */
+export interface Dataset {
+  id: string;
+  experiment: string;
+  name: string;
+  notes: string;
+  /** Images in this dataset that are still in the library. */
+  asset_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/**
+ * One experiment, with its datasets.
+ *
+ * Mirrors `quantem.library.serializers.serialize_experiment`. This replaces the
+ * corpus-catalogue `Experiment` that was carried over into the frontend types
+ * and never had a backend: it declared `start_date`, `origin`, `doi`,
+ * `citation`, `raw_metadata` and a `confirmed_assets` flag, and
+ * `shared/api/assets.ts` called `/api/experiments/<id>/`, an endpoint the server
+ * did not mount. None of those fields exist here. This is a local desktop app
+ * organising a scientist's own images, not a catalogue federation.
+ *
+ * The datasets are nested rather than fetched separately because every caller
+ * wants both at once: the library filter, the import form's two pickers, and
+ * the tree a fine-tune's scope is chosen from.
+ */
 export interface Experiment {
   id: string;
   name: string;
-  start_date: string | null;
-  end_date: string | null;
-  notes?: string;
-  origin?: "LOCAL" | "CATALOG";
-  catalog_source_key?: string;
-  external_id?: string;
-  external_version?: string;
-  source_url?: string;
-  doi?: string;
-  license?: string;
-  citation?: string;
-  confirmed_assets: boolean;
-  raw_metadata?: Record<string, unknown>;
-  normalized_metadata?: Record<string, unknown>;
-  tags?: Tag[];
-  created_at: string;
-  updated_at: string;
+  notes: string;
+  datasets: Dataset[];
+  /** Images in this experiment that are still in the library. */
+  asset_count: number;
+  /** Of those, the ones in none of its datasets. A real bucket, not a gap. */
+  ungrouped_asset_count: number;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export type PreprocessStage =

@@ -49,12 +49,16 @@ COMPLETED_STAGE = "COMPLETED"
 #: What a refused mutation says. It states the rule, why the rule exists, and
 #: the one action that lifts it -- a refusal that does not say how to proceed is
 #: just a wall.
+#: Shown to the user on every refusal, so it names the button and nothing else.
+#: It used to end "...or DELETE this segmentation's /complete endpoint", which
+#: is invariant I-12's exact failure -- an HTTP verb and a route offered as an
+#: alternative to a control that is one click away. The route is still on the
+#: payload, under ``unlock``, where a client can read it and a person cannot.
 LOCKED_DETAIL = (
     "This segmentation is marked done, so it is locked: its objects, their "
     "labels and their measurements are final. Unlock it first if you need to "
-    'change something ("Unlock segmentation" in the labeling header, or DELETE '
-    "this segmentation's /complete endpoint). Unlocking also restores whatever "
-    "the completion discarded."
+    'change something ("Unlock segmentation" in the labeling header). '
+    "Unlocking also restores whatever the completion discarded."
 )
 
 

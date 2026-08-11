@@ -1,6 +1,6 @@
 """Serializers for the analysis API.
 
-The response shape is fixed by ``API_CONTRACT.md`` §Analysis and is deliberately
+The response shape is fixed by the API contract's Analysis section and is deliberately
 *flat*: the frontend reads ``composition``/``objects``/``points``/``distances``/
 ``monte_carlo`` at the top level, not nested under ``results``. Flattening here
 rather than in the frontend keeps the contract in one language.

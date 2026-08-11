@@ -12,11 +12,27 @@ called ``load_backend_env_files`` the data directory had already been resolved,
 and a ``.env`` setting ``QUANTEM_DATA_DIR`` was read into the environment far
 too late to have any effect. The mechanism was documented, exercised by nobody,
 and silently inert.
+
+The machine profile is applied on the *first* line, ahead of even that. This is
+the Django half of BIG_IMAGE_DESIGN S0: ``DJANGO_SETTINGS_MODULE`` points at
+:mod:`quantem.core.settings`, so every Django entry -- ``django.setup()``,
+wsgi, pytest-django, a spawned job worker -- runs this package body before it
+runs anything that could import numpy. ``configure_process`` pins
+``OMP_NUM_THREADS`` and friends, which OpenBLAS and OpenMP read at numpy's
+import to size their per-thread arenas and never read again. MEASURED on the
+build box: 1 668 MB of commit unpinned against 252 MB pinned to two threads.
+Ahead of the ``.env`` load because that load is itself an import, and because
+the pin must precede all of them; ``QUANTEM_MACHINE_PROFILE`` is therefore a
+real environment variable, not a ``.env`` key.
 """
 
-from pathlib import Path
+from quantem.core.machine import configure_process
 
-from quantem.core.env_files import load_backend_env_files
+configure_process()
+
+from pathlib import Path  # noqa: E402
+
+from quantem.core.env_files import load_backend_env_files  # noqa: E402
 
 # BASE_DIR as quantem.core.settings defines it: the `quantem` package root.
 load_backend_env_files(Path(__file__).resolve().parent.parent)

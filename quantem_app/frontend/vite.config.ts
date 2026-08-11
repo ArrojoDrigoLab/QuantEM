@@ -37,6 +37,17 @@ const pollInterval =
   parsePositiveIntegerEnv(process.env.CHOKIDAR_INTERVAL) ??
   300
 
+// Deliberately not Vite's default 5173, and not 8000 for the API. Those are the
+// first two ports every other project on a machine claims, and some dev scripts
+// "free" them by killing whatever holds them -- so a shared default costs a
+// debugging session every time two projects are up at once. These two sit above
+// the crowded registered range and below the ephemeral range (49152+), so
+// nothing else picks them by accident. Override with QUANTEM_VITE_PORT /
+// VITE_API_BASE_URL.
+// The matching API default lives in src/shared/api/core/http.ts (45174); app
+// source cannot import from this file, so the two are kept in step by hand.
+const devUiPort = parsePositiveIntegerEnv(process.env.QUANTEM_VITE_PORT) ?? 45173
+
 type QuantEmViteConfig = UserConfig & {
   test: {
     environment: string
@@ -44,6 +55,7 @@ type QuantEmViteConfig = UserConfig & {
     include: string[]
     exclude: string[]
     css: boolean
+    env: Record<string, string>
     coverage: {
       provider: string
       reporter: string[]
@@ -105,7 +117,7 @@ const config: QuantEmViteConfig = {
   },
   server: {
     host: '127.0.0.1',
-    port: 5173,
+    port: devUiPort,
     strictPort: true,
     watch: forcePolling
       ? {
@@ -120,6 +132,11 @@ const config: QuantEmViteConfig = {
     include: ['src/**/*.test.{ts,tsx}'],
     exclude: ['src/**/._*'],
     css: true,
+    // Pin the API origin the suite mocks against. Every MSW handler is written
+    // for this exact origin, so it must not drift when the dev port changes --
+    // tests should not inherit a dev convenience default. Kept at 8000 (the old
+    // dev port) purely so the existing handlers stay valid; it binds nothing.
+    env: { VITE_API_BASE_URL: 'http://127.0.0.1:8000' },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

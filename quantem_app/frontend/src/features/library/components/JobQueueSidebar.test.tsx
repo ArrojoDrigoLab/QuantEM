@@ -422,7 +422,10 @@ describe("JobQueueSidebar", () => {
       screen.queryByRole("button", { name: /running tasks/i })
     ).toBeNull();
 
-    const failedSection = screen.getByRole("heading", { name: "Failed" }).closest("section");
+    // "Stopped", not "Failed": the queue puts CANCELLED in this list too.
+    const failedSection = screen
+      .getByRole("heading", { name: "Stopped" })
+      .closest("section");
     const completedSection = screen
       .getByRole("heading", { name: "Completed" })
       .closest("section");
@@ -439,7 +442,7 @@ describe("JobQueueSidebar", () => {
 
     await user.click(
       within(failedSection!).getByRole("button", {
-        name: "Show 2 more failed tasks",
+        name: "Show 2 more stopped tasks",
       })
     );
 

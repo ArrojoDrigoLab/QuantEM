@@ -1,0 +1,16 @@
+/* A button wearing the header's link chip.
+
+   It sits in the same row as the two `.header-route-link` anchors and must not
+   read as a different kind of control, so it borrows that class and adds only
+   what a `<button>` needs and an `<a>` does not: a pointer, and a disabled look
+   that says "not yet" rather than "broken". */
+.finetune-header-button {
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.finetune-header-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

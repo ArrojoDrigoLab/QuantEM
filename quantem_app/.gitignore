@@ -9,8 +9,3 @@ quantem.sqlite3*
 # Frontend build output
 frontend/dist/
 frontend/.vite/
-
-# Built SPA staged into the package tree for the wheel (hatchling force-include
-# reads the filesystem, not git). Rebuilt from frontend/ at package time; the
-# hashed JS chunks would otherwise re-churn the repo on every build.
-src/quantem/_frontend/

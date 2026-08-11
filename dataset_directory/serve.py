@@ -5,7 +5,7 @@ working tree those live apart — ``data/`` is committed, ``thumbs/`` is built a
 ignored — so this maps them into the layout the page expects rather than making
 you copy 300 MB around.
 
-    python serve.py            # then open http://localhost:8000/
+    python serve.py            # then open http://localhost:45175/
 
 Development only. The real site is static files behind a CDN; nothing here runs
 in production.
@@ -56,7 +56,9 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8000)
+    # Not 8000: that port is the first thing every other dev server on a
+    # machine claims, and losing a preview to a port fight is pure noise.
+    parser.add_argument("--port", type=int, default=45175)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
 

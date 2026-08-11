@@ -409,24 +409,28 @@ class AnalysisInputs:
 #: next bundle repeats this caveat. The user followed the instruction, got a
 #: green success and was no further forward.
 #:
-#: So the instruction now says what has to happen first. The endpoint is named
-#: because it is the only route that exists: no screen calls it (the labeling
-#: screen's delete actions target CANDIDATE and INFERRED objects only), and a
-#: second segmentation of the same organelle on the same image is refused by the
-#: ``unique_segmentation_per_asset`` constraint, so "make a new one" is not a
-#: route either.
+#: So the instruction now says what has to happen first, and names the control
+#: that does it. It used to name the endpoint instead --
+#: ``POST /api/segmentations/<segmentation_id>/labels/clear`` -- and add "No
+#: screen offers that yet". That was three of invariant I-12's classes at once
+#: (an HTTP verb, an API route, a ``<placeholder>`` with nowhere to type it) in
+#: a sentence that lands in an analysis bundle a biologist reads, and it stopped
+#: being true when the labeling header gained its **Discard objects and
+#: re-run...** button. A second segmentation of the same organelle on the same
+#: image is still refused by ``unique_segmentation_per_asset``, so "make a new
+#: one" is not a route either.
 RERUN_NEEDS_THE_OBJECTS_GONE = (
     "Re-running inference is not by itself enough. Every object measured here "
     "is one somebody confirmed, and a new candidate that lands on an object "
     "already confirmed or excluded is dropped rather than saved — that is what "
     "stops a re-run undoing proofreading — so the run completes, reports no new "
     "objects, and leaves these ones, and their record of having been produced "
-    "without a pixel size, exactly as they were. The objects have to go first: "
-    "POST /api/segmentations/<segmentation_id>/labels/clear discards a "
-    "segmentation's confirmed and excluded objects, and inference run after "
-    "that produces a set stamped with the pixel size the image now has. No "
-    "screen offers that yet; re-importing the image with its pixel size set "
-    "before any organelle is run is the route that does."
+    "without a pixel size, exactly as they were. The objects have to go first. "
+    "Discard objects and re-run, on the labeling screen, deletes this "
+    "segmentation's confirmed and excluded objects and runs the model again; "
+    "what that produces is stamped with the pixel size the image now has. "
+    "Re-importing the image with its pixel size set before any organelle is "
+    "run avoids the situation altogether."
 )
 
 
@@ -1239,7 +1243,7 @@ def write_bundle(
         "segmentation_ids": sorted(
             {r.get("segmentation_id") for r in results if r.get("segmentation_id")}
         ),
-        # Not the same thing as the version string: 0.1.0.dev0 is every build
+        # Not the same thing as the version string: 0.1.0 is every build
         # between two releases, and a commit is one of them.
         "release": provenance.release(),
         "environment": provenance.environment(),

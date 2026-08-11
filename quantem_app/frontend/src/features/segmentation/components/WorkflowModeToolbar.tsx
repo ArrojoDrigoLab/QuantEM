@@ -1,7 +1,15 @@
 /**
  * Toolbar for selecting workflow mode and interaction tools.
+ *
+ * Three packages want to add a control here, and three packages editing one
+ * JSX tree is how a toolbar ends up with two Confirm buttons and a merge
+ * conflict. So the file has one owner and two named slots instead:
+ * `extraModes` for anything that changes what a click means, `extraTools` for
+ * anything that acts on the current selection. A package renders into a slot
+ * from its own file and never opens this one.
  */
 
+import type { ReactNode } from "react";
 import {
   CONFIRMED_AREA_API_ALIAS_NOTE,
   CONFIRMED_AREA_EXPLANATION,
@@ -82,6 +90,19 @@ interface WorkflowModeToolbarProps {
   polygonCanClose?: boolean;
   /** ER polygon tool: close the draft and commit it as a filled ER object. */
   onClosePolygon?: () => void;
+  /**
+   * Extra mode buttons, rendered beside Review / Correct.
+   *
+   * For controls that change what a click on the image does.
+   */
+  extraModes?: ReactNode;
+  /**
+   * Extra tool controls, rendered at the end of the toolbar.
+   *
+   * For controls that act on the current object or selection rather than
+   * changing the mode.
+   */
+  extraTools?: ReactNode;
 }
 
 export function WorkflowModeToolbar({
@@ -105,6 +126,8 @@ export function WorkflowModeToolbar({
   polygonHasDraft = false,
   polygonCanClose = false,
   onClosePolygon,
+  extraModes,
+  extraTools,
 }: WorkflowModeToolbarProps) {
   const canConfirm = correctionTool === "draw" ? hasDrawStrokes : false;
   const canClear = correctionTool === "draw" ? hasDrawStrokes : false;
@@ -134,6 +157,7 @@ export function WorkflowModeToolbar({
           >
             Correct
           </button>
+          {extraModes}
         </div>
       )}
 
@@ -361,6 +385,8 @@ export function WorkflowModeToolbar({
           )}
         </>
       )}
+
+      {extraTools && <div className="mode-toolbar-group">{extraTools}</div>}
     </div>
   );
 }

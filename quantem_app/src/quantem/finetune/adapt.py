@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -148,6 +148,33 @@ def tile_for(tile_size: int, patch_size: int) -> int:
     return round_up(int(tile_size), int(patch_size))
 
 
+def iter_windows(
+    valid: np.ndarray, tile: int, *, config: AdaptConfig = AdaptConfig()
+) -> Iterator[tuple[int, int]]:
+    """``(y, x)`` of every training window a ``valid`` mask yields.
+
+    The one definition of "how many tiles is this region worth". Both the
+    trainer (:func:`build_patches`) and the pre-run count the dialog shows
+    (:func:`quantem.finetune.scope.count_tiles`) walk it, so the number the user
+    was promised is the number the loop produces — a second implementation would
+    have drifted the first time either rule changed.
+
+    ``valid`` must already be padded to at least ``tile`` on both edges; see
+    :func:`_pad_to_tile`.
+    """
+    stride = max(1, tile // 2)
+    min_valid = config.min_valid_fraction * tile * tile
+    height, width = valid.shape[:2]
+    for y in range(0, max(1, height - tile + 1), stride):
+        for x in range(0, max(1, width - tile + 1), stride):
+            window = valid[y : y + tile, x : x + tile]
+            if window.shape != (tile, tile):
+                continue
+            if window.sum() < min_valid:
+                continue
+            yield y, x
+
+
 def build_patches(
     crops: Sequence[CropArrays],
     tile: int,
@@ -169,29 +196,39 @@ def build_patches(
     crops and wrong for a user who drew a 400 px region; the 20 % rule still
     rejects a region too small to be worth a step.
     """
-    stride = max(1, tile // 2)
     patches: list[tuple[np.ndarray, np.ndarray]] = []
-    min_valid = config.min_valid_fraction * tile * tile
 
     for crop in crops:
         if crop.em is None:
             raise ValueError(f"crop {crop.name!r} has no EM pixels loaded")
         em, gt, valid = _pad_to_tile(crop.em, crop.gt, crop.valid, tile)
         normalised = normalize_tile(em, image_mean, image_std)
-        height, width = em.shape[:2]
-        for y in range(0, max(1, height - tile + 1), stride):
-            for x in range(0, max(1, width - tile + 1), stride):
-                window_valid = valid[y : y + tile, x : x + tile]
-                if window_valid.shape != (tile, tile):
-                    continue
-                if window_valid.sum() < min_valid:
-                    continue
-                target = gt[y : y + tile, x : x + tile].astype(np.int64)
-                target[window_valid == 0] = config.ignore_index
-                patches.append(
-                    (normalised[y : y + tile, x : x + tile].copy(), target)
-                )
+        for y, x in iter_windows(valid, tile, config=config):
+            window_valid = valid[y : y + tile, x : x + tile]
+            target = gt[y : y + tile, x : x + tile].astype(np.int64)
+            target[window_valid == 0] = config.ignore_index
+            patches.append((normalised[y : y + tile, x : x + tile].copy(), target))
     return patches
+
+
+def pad_masks_to_tile(
+    gt: np.ndarray, valid: np.ndarray, tile: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """:func:`_pad_to_tile` for a caller that has labels but no image pixels.
+
+    Counting tiles must not need the image off disk: the dialog answers before
+    anything has been decoded.
+    """
+    height, width = valid.shape[:2]
+    pad_y = max(0, tile - height)
+    pad_x = max(0, tile - width)
+    if not pad_y and not pad_x:
+        return gt, valid
+    pads = ((0, pad_y), (0, pad_x))
+    return (
+        np.pad(gt, pads, mode="constant", constant_values=0),
+        np.pad(valid, pads, mode="constant", constant_values=0),
+    )
 
 
 def _pad_to_tile(

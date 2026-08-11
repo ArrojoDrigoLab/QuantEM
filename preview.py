@@ -11,8 +11,8 @@ working tree:
 This serves that layout by mapping URLs onto those directories, rather than
 copying 300 MB into a dist/ every time you want to look at the page.
 
-    python preview.py                    # http://localhost:8000/
-    python preview.py --base /QuantEM    # http://localhost:8000/QuantEM/
+    python preview.py                    # http://localhost:45176/
+    python preview.py --base /QuantEM    # http://localhost:45176/QuantEM/
 
 ``--base`` mirrors the path prefix a project site is published under
 (``arrojodrigolab.github.io/QuantEM/``). Every link on the site is relative, so
@@ -109,7 +109,9 @@ def _join(directory: Path, relative: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8000)
+    # Not 8000: that port is the first thing every other dev server on a
+    # machine claims, and losing a preview to a port fight is pure noise.
+    parser.add_argument("--port", type=int, default=45176)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
         "--base",

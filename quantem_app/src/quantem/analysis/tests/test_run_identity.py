@@ -865,6 +865,28 @@ class RealInferenceToManifestTests(TestCase):
             c for c in got["result"]["caveats"] if "not the run's" in c
         ], got["result"]["caveats"]
 
+    def test_the_manifest_names_the_device_a_real_run_finished_on(self):
+        """The other end of the wire the reader was written against.
+
+        ``_device_provenance`` was landed forward-compatibly and had nothing to
+        read: no writer put a device on a run, so this field was null in every
+        bundle QuantEM had ever produced. Owner ruling R4 requires the record
+        (R5 requires that it not be used to police a comparison), and this is
+        the whole path -- segmenter, run identity, object features, manifest --
+        rather than a fabricated stamp.
+        """
+        assert self._infer_and_confirm() >= 1
+
+        got = self._manifest()
+        device = got["manifest"]["models"]["compartments"][0]["run"][
+            "inference_device"
+        ]
+
+        assert device["value"] == "cpu"
+        assert device["recorded_from"] == "the objects"
+        assert device["n_objects"] >= 1
+        assert "unavailable" not in device
+
     def test_an_adapter_applied_after_the_run_does_not_rewrite_its_threshold(self):
         """Proofread, fine-tune, apply, analyse. The manifest used to report the
         adapter's 0.45 beside objects the released model made at 0.50."""
@@ -1040,7 +1062,15 @@ class InferenceDeviceTests(RunIdentityTestCase):
     the run stamp, beside the threshold that run used.
     """
 
-    def test_the_bundle_says_which_field_would_have_to_carry_it(self):
+    def test_an_object_set_that_records_no_device_says_so_about_itself(self):
+        """The reason is about these objects, not about the format.
+
+        It used to be about the format: the contract had no device field, so
+        nothing could be read even from a fully stamped object. It has one now
+        (this asserts it), which makes a null here a statement about objects
+        made before the writer landed -- and the sentence has to say that
+        rather than blaming a gap that has been filled.
+        """
         seg = self._segmentation(get_or_create_er_type)
         self._object(seg, _square(20, 20), source_model="quantem:er", stamp=_stamp())
 
@@ -1051,9 +1081,8 @@ class InferenceDeviceTests(RunIdentityTestCase):
         reason = device["unavailable"]["value"]
         assert "quantem.segmentation.run_identity" in reason
         assert loaders.DEVICE_STAMP_FIELD in reason
-        assert loaders.DEVICE_STAMP_FIELD not in RUN_IDENTITY_KEYS, (
-            "when the writer starts stamping a device, this reason is stale"
-        )
+        assert loaders.DEVICE_STAMP_FIELD in RUN_IDENTITY_KEYS
+        assert "before QuantEM recorded the device" in reason
 
     def test_the_environment_block_points_at_the_run_rather_than_answering(self):
         seg = self._segmentation(get_or_create_er_type)

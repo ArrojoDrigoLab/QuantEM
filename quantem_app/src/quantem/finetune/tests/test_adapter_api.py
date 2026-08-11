@@ -48,7 +48,7 @@ class AdaptApiTests(FinetuneAppTestCase):
         response = self.client.get(reverse("adapt-crops", args=[segmentation.id]))
         body = response.json()
         assert body["ready"] is False
-        assert "completed ROI" in body["blockers"][0]
+        assert "marked as finished" in body["blockers"][0]
 
     # -- POST adapt ---------------------------------------------------------
 
@@ -90,7 +90,7 @@ class AdaptApiTests(FinetuneAppTestCase):
             format="json",
         )
         assert response.status_code == 400
-        assert "completed ROI" in response.json()["error"]
+        assert "marked as finished" in response.json()["error"]
 
     # -- GET adapter / POST apply -------------------------------------------
 

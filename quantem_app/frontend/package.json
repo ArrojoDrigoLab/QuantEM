@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:ui": "vite --host 127.0.0.1 --port 5173",
+    "dev:ui": "vite --host 127.0.0.1",
     "typecheck": "tsc -b tsconfig.app.json tsconfig.node.json",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:test",

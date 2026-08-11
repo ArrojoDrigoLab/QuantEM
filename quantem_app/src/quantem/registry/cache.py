@@ -46,30 +46,58 @@ HashProgress = Callable[[float], None]
 #: Read size for hashing. 4 MB keeps a 1.2 GB encoder at a few hundred reads.
 _HASH_CHUNK = 4 * 1024 * 1024
 
-#: The things a user is ever told to do to obtain models. **Every user-facing
-#: string that names a command must use these.** They are here, in the module
-#: with no dependencies, because the alternative -- each error message spelling
-#: out its own advice -- is how the application once ended up telling strangers
-#: to run a command that only worked on one developer's computer.
+#: The things a user is ever told to do to obtain models. **Every message that
+#: advises an install must use one of these**, because the alternative -- each
+#: error spelling out its own advice -- is how the application once ended up
+#: telling strangers to run a command that only worked on one developer's
+#: computer.
 #:
-#: Two routes: the default downloads the pack from the QuantEM Hugging Face
-#: repository (in the app: the Models screen's Install button); the offline
-#: route installs from a downloaded, unzipped release bundle.
-INSTALL_COMMAND_REMOTE = "quantem models install <pack id, e.g. quantem:mito>"
-INSTALL_COMMAND = "quantem models install <the directory you unzipped the release into>"
+#: There are two audiences and therefore two strings, and keeping them apart is
+#: the whole point of this block.
+#:
+#: * :data:`INSTALL_HINT` is **app copy**. It is what the create-run dialog, the
+#:   viewer's overlay card, a failed run's ``status_error`` and every ``reason``
+#:   on ``GET /api/models/`` say. Its reader is a biologist who will never open
+#:   a terminal, so it names a screen and a button and contains no command, no
+#:   module path and no ``<placeholder>`` (invariant I-12).
+#: * :data:`INSTALL_INSTRUCTIONS` is **terminal copy**, for ``--help`` epilogs
+#:   and messages printed by the ``quantem`` console script. A command is the
+#:   right answer there and only there.
+#:
+#: The split is enforced, not merely documented: the I-12 gate
+#: (``registry/tests/test_i12_no_cli_in_served_copy.py``) walks every string the
+#: API can serialise and fails if any of :data:`TERMINAL_ONLY_COPY` appears in
+#: it. Before that gate existed, the terminal copy below was rendered verbatim
+#: in three places in the desktop UI.
+#:
+#: Two routes to a pack in both registers: the default downloads it from the
+#: QuantEM Hugging Face repository (in the app: the Models screen's Install
+#: button); the offline route installs from a downloaded, unzipped release
+#: bundle (in the app: the same screen's "Install from a local folder").
+
+#: Terminal only. Concrete and typeable: a placeholder like ``<pack id>`` is a
+#: usage line, not something a reader can paste, and this text is read by people
+#: who are about to paste it.
+INSTALL_COMMAND_REMOTE = "quantem models install quantem:mito"
+INSTALL_COMMAND = "quantem models install ./quantem-models-0.1.0"
 INSTALL_COMMAND_MODULE = (
-    "python -m quantem.registry.install bundle <the directory you unzipped "
-    "the release into> --all"
+    "python -m quantem.registry.install bundle ./quantem-models-0.1.0 --all"
 )
-#: One line, for embedding in a longer sentence or an API ``reason`` field.
+
+#: App copy. One or two sentences, safe to embed in a longer message, and safe
+#: to print: no em dash, because ``quantem models list`` puts a pack's ``reason``
+#: on a Windows console whose encoding is not ours to choose.
 INSTALL_HINT = (
-    f"Install it from the Models screen or with `{INSTALL_COMMAND_REMOTE}` -- QuantEM "
-    "downloads and verifies it from Hugging Face. Offline, download a QuantEM model "
-    f"release instead, unzip it, and install it with `{INSTALL_COMMAND}`."
+    "Install it on the Models screen. QuantEM downloads it and checks every file "
+    "before anything runs. With no internet, unzip a QuantEM model release onto "
+    'this machine and use "Install from a local folder" on the same screen.'
 )
-#: Several lines, for a terminal: an error the user has just hit, or CLI help.
+
+#: Terminal copy: several lines, for CLI help and for an error a terminal user
+#: has just hit. Never returned by the API. See :data:`TERMINAL_ONLY_COPY`.
 INSTALL_INSTRUCTIONS = (
-    "Model packs are downloaded on demand. Install one with:\n"
+    "Model packs are downloaded on demand. In the app, install one on the Models "
+    "screen. From a terminal:\n"
     f"  {INSTALL_COMMAND_REMOTE}\n"
     "which downloads and verifies it from Hugging Face "
     "(https://huggingface.co/ArrojoeDrigoLab/quantem).\n"
@@ -77,6 +105,15 @@ INSTALL_INSTRUCTIONS = (
     "elsewhere,\nunzip it, and install it with:\n"
     f"  {INSTALL_COMMAND}\n"
     f"(or, if the console script is not on your PATH:\n  {INSTALL_COMMAND_MODULE})"
+)
+
+#: Every string here that names a command. The I-12 gate asserts that none of
+#: them ever reaches an API response, a ``reason``, or a ``status_error``.
+TERMINAL_ONLY_COPY: tuple[str, ...] = (
+    INSTALL_COMMAND_REMOTE,
+    INSTALL_COMMAND,
+    INSTALL_COMMAND_MODULE,
+    INSTALL_INSTRUCTIONS,
 )
 
 #: Filenames inside a pack directory.
@@ -107,9 +144,12 @@ def models_root() -> Path:
     except Exception:  # pragma: no cover - only when core.config is unavailable
         raw = os.environ.get("QUANTEM_DATA_DIR", "").strip()
         if not raw:
+            # Named the module it could not import, which is I-12's
+            # module-path class; the reader of this sentence is whoever is
+            # looking at a QuantEM that cannot find its own storage.
             raise RuntimeError(
-                "QUANTEM_DATA_DIR is not set and quantem.core.config is not importable; "
-                "cannot locate the model cache."
+                "QuantEM cannot tell where its data folder is, so it cannot "
+                "find the models it has installed."
             ) from None
         return Path(raw) / "models"
 
@@ -232,16 +272,21 @@ def resolve_pack(pack_id: str) -> ResolvedPack:
     root = pack_dir(pack_id)
     record = read_record(pack_id)
     if record is None:
+        # App copy, not terminal copy: this exception's text is written into a
+        # segmentation's status_error and read on the labeling screen. It used
+        # to end with the absolute path of the pack directory it had looked in,
+        # which is I-12's absolute-path class: the reader cannot act on the
+        # model cache's internal layout, and the sentence that follows already
+        # names the screen that fixes it.
         raise PackNotInstalled(
-            f"Model pack {pack_id!r} is not installed (no {RECORD_NAME} under {root}).\n"
-            f"{INSTALL_INSTRUCTIONS}"
+            f"Model pack {pack_id!r} is not installed on this machine.\n{INSTALL_HINT}"
         )
 
     head_path = root / HEAD_NAME
     if not head_path.exists():
         raise PackNotInstalled(
-            f"Model pack {pack_id!r} has an install record but {head_path} is missing; "
-            "reinstall it."
+            f"Model pack {pack_id!r} is recorded as installed but some of its files are "
+            "missing. Install it again on the Models screen."
         )
 
     encoder_entry = record.get("encoder") or {}
@@ -249,8 +294,8 @@ def resolve_pack(pack_id: str) -> ResolvedPack:
     encoder_path = root / encoder_name if encoder_name else None
     if encoder_path is not None and not encoder_path.exists():
         raise PackNotInstalled(
-            f"Model pack {pack_id!r} records an encoder at {encoder_path}, which is missing; "
-            "reinstall it."
+            f"Model pack {pack_id!r} is missing the encoder it was installed with. "
+            "Install it again on the Models screen."
         )
 
     config_path = root / CONFIG_NAME

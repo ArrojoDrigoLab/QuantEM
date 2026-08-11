@@ -92,8 +92,8 @@ def hf_cache_dir() -> Path:
         raw = os.environ.get("QUANTEM_DATA_DIR", "").strip()
         if not raw:
             raise HfError(
-                "QUANTEM_DATA_DIR is not set and quantem.core.config is not importable; "
-                "cannot place the download cache."
+                "QuantEM cannot tell where its data folder is, so it has "
+                "nowhere to download a model to."
             ) from None
         return Path(raw) / "cache" / "hf"
 
@@ -195,11 +195,18 @@ def _prepare_hub_env() -> None:
 
 def _offline_error(what: str, exc: Exception) -> HfUnavailableError:
     """An honest no-network error: name the repo, then the road that still works."""
+    # App copy: this lands on a failed install job and is shown verbatim on the
+    # Models screen, so it names a screen and a button, never a command (I-12).
     return HfUnavailableError(
         f"Could not reach the QuantEM model repository ({HF_REPO_URL}) to fetch {what}. "
-        f"If this machine has no internet access, use the offline route instead: download "
-        f"a QuantEM model release on a machine that does, unzip it, and install it with "
-        f"`{cache.INSTALL_COMMAND}`. Original error: {exc.__class__.__name__}: {exc}"
+        f"If this machine has no internet access, use the offline route instead: "
+        f"download a QuantEM model release on a machine that does, copy it here and "
+        f'unzip it, then use "Install from a local folder" on the Models screen. '
+        # The class name used to lead this clause ("OSError: no route to
+        # host"). It is a Python type, it means nothing to the reader, and
+        # I-12 forbids it; the message it prefixed is the part that carries
+        # information.
+        f"What went wrong: {exc}"
     )
 
 
@@ -377,8 +384,7 @@ def download_file(
         if _looks_offline(error):
             raise _offline_error(filename, error) from error
         raise HfError(
-            f"Downloading {filename} from {HF_REPO_ID}@{rev} failed: "
-            f"{error.__class__.__name__}: {error}"
+            f"Downloading {filename} from the QuantEM model repository failed: {error}"
         ) from error
 
     path = Path(str(result["path"]))

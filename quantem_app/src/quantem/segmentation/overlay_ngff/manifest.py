@@ -21,6 +21,57 @@ from .store import _is_valid_label_store, _level_shapes
 
 logger = logging.getLogger(__name__)
 
+#: How many times the *manifest poll* may re-queue a rebuild that keeps failing
+#: before it stops asking and reports the failure instead. Counted since the
+#: last successful build, so a bundle that builds once starts over.
+#:
+#: This is the bound on the loop the viewer used to be stuck in: a rebuild that
+#: cannot succeed (the spawned pool child could not import its own module) left
+#: no valid store, the poll saw no store and no live job, re-queued, and the
+#: user watched "Overlay updating..." for as long as they were willing to. Three
+#: is enough to ride out a genuinely transient failure (a rename losing to a
+#: virus scanner, a worker killed by a low-memory moment) and small enough that
+#: nobody stares at a spinner for a minute of doomed rebuilds.
+MANIFEST_REQUEUE_FAILURE_LIMIT = 3
+
+
+def _failed_rebuilds_since_last_success(
+    segmentation: ImageSegmentation,
+    state: SegmentationOverlayState,
+) -> tuple[int, str]:
+    """``(count, newest message)`` for this bundle's failed rebuilds.
+
+    Only failures *after* the last successful build count: a bundle that built
+    successfully has spent its history, and the next failure starts a fresh
+    budget.
+    """
+    from .mutations import overlay_jobs_for_bundle
+
+    jobs = overlay_jobs_for_bundle(
+        str(segmentation.id),
+        source_model=state.candidate_source_model,
+    ).filter(status="FAILED")
+    if state.last_built_at is not None:
+        jobs = jobs.filter(created_at__gt=state.last_built_at)
+    newest = jobs.order_by("-created_at").first()
+    return jobs.count(), str(getattr(newest, "message", "") or "")
+
+
+def _record_manifest_failure(
+    segmentation: ImageSegmentation,
+    state: SegmentationOverlayState,
+    *,
+    reason: str,
+) -> None:
+    if (
+        state.status == SegmentationOverlayState.STATUS_FAILED
+        and state.last_error == reason
+    ):
+        return
+    state.status = SegmentationOverlayState.STATUS_FAILED
+    state.last_error = reason
+    state.save(update_fields=["status", "last_error", "updated_at"])
+
 
 def _try_queue_overlay_rebuild(
     segmentation: ImageSegmentation,
@@ -56,13 +107,32 @@ def _write_debug_manifest(
     segmentation: ImageSegmentation,
     state: SegmentationOverlayState,
 ) -> None:
-    manifest_path = get_overlay_debug_manifest_path(
-        str(segmentation.id),
-        state.candidate_source_model,
-    )
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest = build_overlay_manifest(segmentation, state)
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    """Drop a copy of the manifest on disk, beside the bundle, for debugging.
+
+    Best effort, and it has to be: this is a *debug* artifact, and it is
+    written on the read path. Measured, with a stray file sitting where the
+    overlay directory belongs: ``mkdir(parents=True)`` raised
+    ``FileExistsError: [WinError 183]`` and every ``GET .../overlay-manifest/``
+    returned HTTP 500 with an empty body -- so the viewer could not even be
+    told what was wrong, which is the same silence in a different costume.
+    Log it and carry on; the response the caller needs does not depend on it.
+    """
+    try:
+        manifest_path = get_overlay_debug_manifest_path(
+            str(segmentation.id),
+            state.candidate_source_model,
+        )
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest = build_overlay_manifest(segmentation, state)
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    except OSError:
+        logger.warning(
+            "Could not write the overlay debug manifest for segmentation %s "
+            "(source_model=%r); continuing.",
+            segmentation.id,
+            state.candidate_source_model,
+            exc_info=True,
+        )
 
 
 def build_overlay_manifest(
@@ -85,6 +155,11 @@ def build_overlay_manifest(
     lut_url = f"/api/segmentations/{segmentation.id}/overlay-lut/{source_query}"
     return {
         "status": state.status,
+        # Always present, empty when there is nothing wrong. A ``FAILED`` status
+        # with no reason beside it is the state this package exists to abolish:
+        # the client must be able to say *what* went wrong without a second
+        # request, and there is no second endpoint that would tell it.
+        "last_error": state.last_error or "",
         "ngff_url": active_path,
         "lut_url": lut_url,
         "arrays": list(OVERLAY_ARRAY_KEYS),
@@ -114,6 +189,9 @@ def ensure_overlay_manifest(
         width=width,
         height=height,
     )
+    build_failed = (
+        state.status == SegmentationOverlayState.STATUS_FAILED and bool(state.last_error)
+    )
     if current_valid:
         has_pending_work = bool(state.pending_full_rebuild) or (
             int(state.desired_revision) > int(state.applied_revision)
@@ -122,6 +200,16 @@ def ensure_overlay_manifest(
             str(segmentation.id),
             source_model=state.candidate_source_model,
         )
+        if build_failed and not overlay_job_active:
+            # The bundle on disk is usable but out of date, and the update that
+            # would have refreshed it failed. Serve the stale bundle -- seeing
+            # yesterday's objects beats seeing none -- and keep the failure
+            # visible rather than resetting it to BUILDING and asking again.
+            # The user's own next edit, or the rebuild button, clears it and
+            # retries; see ``mutations._register_overlay_mutation_one``.
+            manifest = build_overlay_manifest(segmentation, state)
+            _write_debug_manifest(segmentation, state)
+            return manifest
         if has_pending_work and not overlay_job_active:
             _try_queue_overlay_rebuild(
                 segmentation,
@@ -161,27 +249,53 @@ def ensure_overlay_manifest(
         # BUILDING with no ngff_url forever and the viewer would poll a phantom
         # build. Re-scheduling here is safe because queue_overlay_rebuild is a
         # no-op when an active job already exists.
-        if (
-            state.status != SegmentationOverlayState.STATUS_BUILDING
-            or not state.pending_full_rebuild
-            or state.last_error
-        ):
-            state.status = SegmentationOverlayState.STATUS_BUILDING
-            state.pending_full_rebuild = True
-            state.last_error = ""
-            state.save(
-                update_fields=[
-                    "status",
-                    "pending_full_rebuild",
-                    "last_error",
-                    "updated_at",
-                ]
-            )
-        _try_queue_overlay_rebuild(
-            segmentation,
-            mode="full",
-            source_model=state.candidate_source_model,
+        #
+        # But recovery is not unconditional, and that is the fix this package
+        # carries. A rebuild that *cannot* succeed left exactly this shape --
+        # no store, no live job -- so the endpoint re-queued it on every poll
+        # and the viewer said "Overlay updating..." until the user gave up.
+        # Two brakes, either of which stops the loop:
+        #   1. the build recorded its own failure on the state (the ordinary
+        #      case: ``run_overlay_rebuild_job`` writes FAILED + the reason);
+        #   2. the job died without recording anything -- killed worker, lost
+        #      queue -- and the count of failed jobs since the last successful
+        #      build has run out of budget.
+        failure_count, failure_message = _failed_rebuilds_since_last_success(
+            segmentation, state
         )
+        out_of_budget = failure_count >= MANIFEST_REQUEUE_FAILURE_LIMIT
+        if out_of_budget and not build_failed:
+            _record_manifest_failure(
+                segmentation,
+                state,
+                reason=(
+                    f"Overlay build failed {failure_count} times and was not "
+                    f"retried again. Last failure: "
+                    f"{failure_message or 'the rebuild worker stopped without a message'}"
+                ),
+            )
+        if not build_failed and not out_of_budget:
+            if (
+                state.status != SegmentationOverlayState.STATUS_BUILDING
+                or not state.pending_full_rebuild
+                or state.last_error
+            ):
+                state.status = SegmentationOverlayState.STATUS_BUILDING
+                state.pending_full_rebuild = True
+                state.last_error = ""
+                state.save(
+                    update_fields=[
+                        "status",
+                        "pending_full_rebuild",
+                        "last_error",
+                        "updated_at",
+                    ]
+                )
+            _try_queue_overlay_rebuild(
+                segmentation,
+                mode="full",
+                source_model=state.candidate_source_model,
+            )
 
     # Display fallback: a per-source bundle that has not been built yet would
     # otherwise serve a null ngff_url (nothing to show) while the build is
@@ -197,7 +311,15 @@ def ensure_overlay_manifest(
             height=height,
         ):
             _write_debug_manifest(segmentation, state)
-            return build_overlay_manifest(segmentation, aggregate_state)
+            fallback = build_overlay_manifest(segmentation, aggregate_state)
+            # Draw the aggregate, but do not let it swallow the news that this
+            # model's own bundle failed: the two are different pictures, and a
+            # user comparing models has to know they are looking at the other
+            # one.
+            state.refresh_from_db(fields=["status", "last_error"])
+            if state.status == SegmentationOverlayState.STATUS_FAILED and state.last_error:
+                fallback["last_error"] = state.last_error
+            return fallback
 
     manifest = build_overlay_manifest(segmentation, state)
     _write_debug_manifest(segmentation, state)

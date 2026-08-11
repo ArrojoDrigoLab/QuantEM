@@ -1,4 +1,7 @@
-import type { LeftMode } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
+import type {
+  LeftMode,
+  WorkflowMode,
+} from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   deleteSegmentsBatch,
@@ -21,7 +24,7 @@ interface UseReviewGroupSelectionArgs {
   currentSegmentation: ImageSegmentation | null;
   activeSourceModel: string | null;
   isErSegmentation: boolean;
-  workflowMode: "annotate" | "review" | "uncertain";
+  workflowMode: WorkflowMode;
   correctionMode: CorrectionModeState;
   leftMode: LeftMode;
   hoverActionMode: "confirm" | "reject" | "group-confirm" | "group-reject" | "test";
@@ -327,7 +330,7 @@ export function useReviewGroupSelection({
 }
 
 function isGroupActionMode(
-  workflowMode: "annotate" | "review" | "uncertain",
+  workflowMode: WorkflowMode,
   correctionMode: CorrectionModeState,
   leftMode: LeftMode,
   hoverActionMode: "confirm" | "reject" | "group-confirm" | "group-reject" | "test"

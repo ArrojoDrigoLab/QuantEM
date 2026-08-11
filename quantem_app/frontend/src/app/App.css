@@ -34,3 +34,69 @@
   color: #64748b;
   text-align: center;
 }
+
+/* The unknown-address screen. Slate, like the other "this is a state, not a
+   fault" notices in the app: #1e293b on #e2e8f0 -> 11.9:1 measured, the same
+   pair `.header-locked-notice` uses. */
+.not-found {
+  max-width: 34rem;
+  margin: 4rem auto;
+  padding: 1.5rem 1.75rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.75rem;
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.not-found-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+.not-found-body {
+  margin: 0 0 0.75rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+
+/* #ffffff on #1a5276 -> 8.4:1 measured; the same blue as Run Full Segmentation,
+   so the primary way out looks like the app's other primary buttons. */
+.not-found-primary,
+.not-found-secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.not-found-primary {
+  background: #1a5276;
+  border: 1px solid #1a5276;
+  color: #ffffff;
+}
+
+.not-found-primary:hover {
+  background: #2471a3;
+  border-color: #2471a3;
+}
+
+/* #1e293b on #ffffff -> 14.6:1 measured. */
+.not-found-secondary {
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  color: #1e293b;
+}
+
+.not-found-secondary:hover {
+  background: #f8fafc;
+}

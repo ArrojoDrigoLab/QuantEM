@@ -1,9 +1,6 @@
 import { useCallback } from "react";
-import {
-  getSegmentsAtPoint,
-  updateSegmentLabelsBatch,
-} from "@/shared/api/segmentations/annotations";
-import { extractApiErrorMessage } from "@/utils/apiErrors";
+import { getSegmentsAtPoint } from "@/shared/api/segmentations/annotations";
+import { useLabelAnswerQueue } from "@/features/segmentation/screen/hooks/useLabelAnswerQueue";
 import { selectBestPointActionSegment, type PointActionMode } from "@/utils/pointAction";
 import type { Point } from "@/utils/geometry";
 import type { LabelState } from "@/shared/types/common";
@@ -55,6 +52,19 @@ export function useReviewPointActions({
   handleOverlayMutationRefresh,
   showErrorToast,
 }: UseReviewPointActionsArgs) {
+  // Answers do not each get their own request. See useLabelAnswerQueue: a
+  // reviewer at speed produced one round-trip per keypress, and the keypress
+  // rhythm this screen is built around was throttled by them.
+  const { enqueueAnswer, flushAnswers } = useLabelAnswerQueue({
+    segmentationId: currentSegmentation?.id ?? null,
+    activeSourceModel,
+    rollbackOptimisticLabel,
+    stageOptimisticRevisionTargets,
+    getOptimisticTargetRevision,
+    handleOverlayMutationRefresh,
+    showErrorToast,
+  });
+
   const resolveHoveredPointActionSegment = useCallback(
     (point: Point, mode: PointActionMode): SegmentObject | null => {
       if (!hoverPoint || hoverSegments.length === 0) {
@@ -80,7 +90,6 @@ export function useReviewPointActions({
     async (point: Point) => {
       if (!currentSegmentation) return;
       registerAnnotationActivity();
-      let targetSegment: SegmentObject | null = null;
       try {
         const matches = await getSegmentsAtPoint(currentSegmentation.id, {
           x: point.x,
@@ -90,24 +99,18 @@ export function useReviewPointActions({
         });
         const segment = matches.find((item) => item.label_state === "CONFIRMED");
         if (!segment) return;
-        targetSegment = segment;
 
         applyOptimisticLabel(segment.id, "CANDIDATE", segment);
-        const response = await updateSegmentLabelsBatch({
-          labels: [{ id: segment.id, label_state: "CANDIDATE" }],
-          source_model: activeSourceModel,
+        enqueueAnswer({
+          segmentId: segment.id,
+          labelState: "CANDIDATE",
+          fallbackMessage: "Failed to un-mark the selected object.",
         });
-        stageOptimisticRevisionTargets(
-          [segment.id],
-          getOptimisticTargetRevision(response.overlays?.[currentSegmentation.id])
-        );
-        handleOverlayMutationRefresh(response.overlays?.[currentSegmentation.id]);
         clearHoverInteraction();
       } catch (error) {
-        if (targetSegment) {
-          rollbackOptimisticLabel(targetSegment.id);
-        }
-        console.error("Failed to reset confirmed segment to candidate:", error);
+        // Only the lookup can fail here; the answer's own failure is the
+        // queue's to report and to roll back.
+        console.error("Failed to find a kept object at that point:", error);
       }
     },
     [
@@ -115,11 +118,8 @@ export function useReviewPointActions({
       activeSourceModel,
       clearHoverInteraction,
       currentSegmentation,
-      getOptimisticTargetRevision,
-      handleOverlayMutationRefresh,
+      enqueueAnswer,
       registerAnnotationActivity,
-      rollbackOptimisticLabel,
-      stageOptimisticRevisionTargets,
     ]
   );
 
@@ -162,20 +162,19 @@ export function useReviewPointActions({
         });
         clearHoverInteraction();
 
-        const response = await updateSegmentLabelsBatch({
-          labels: [{ id: targetSegment.id, label_state: nextLabelState }],
-          source_model: activeSourceModel,
+        enqueueAnswer({
+          segmentId: targetSegment.id,
+          labelState: nextLabelState,
+          fallbackMessage,
         });
-        stageOptimisticRevisionTargets(
-          [targetSegment.id],
-          getOptimisticTargetRevision(response.overlays?.[currentSegmentation.id])
-        );
-        handleOverlayMutationRefresh(response.overlays?.[currentSegmentation.id]);
       } catch (error) {
+        // Reaching here means the object could not be found, not that the
+        // answer failed to save: the queue owns that half, including the
+        // rollback.
         if (targetSegment) {
           rollbackOptimisticLabel(targetSegment.id);
         }
-        showErrorToast(extractApiErrorMessage(error, fallbackMessage));
+        showErrorToast(fallbackMessage);
         console.error("Failed to apply point action:", error);
       }
     },
@@ -185,18 +184,18 @@ export function useReviewPointActions({
       activeSourceModel,
       clearHoverInteraction,
       currentSegmentation,
-      getOptimisticTargetRevision,
-      handleOverlayMutationRefresh,
+      enqueueAnswer,
       registerAnnotationActivity,
       resolveHoveredPointActionSegment,
       rollbackOptimisticLabel,
       showErrorToast,
-      stageOptimisticRevisionTargets,
     ]
   );
 
   return {
     handleResetConfirmedToCandidate,
     handleApplyPointAction,
+    /** Send any coalesced answers now; awaited before anything that reads them back. */
+    flushLabelAnswers: flushAnswers,
   };
 }

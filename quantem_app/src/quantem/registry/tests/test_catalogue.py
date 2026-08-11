@@ -77,7 +77,7 @@ class CatalogueShapeTests(SimpleTestCase):
         assert catalogue.pack_entry("omniem:ld")["title"] == "OmniEM — Lipid Droplets"
 
     def test_download_bytes_is_head_plus_the_shared_encoder(self):
-        # The number in API_CONTRACT.md, and the sum of two measured sizes.
+        # The number in the API contract, and the sum of two measured sizes.
         # Published HF sizes at the pinned revision: 136,541,856 (head) +
         # 227,685,512 (quantem-vitb trunk). The old pin, 662,337,373, counted
         # the local fp32 research artifacts and overstated the download by 74%.
@@ -124,29 +124,51 @@ class TestRunnableProbe:
         assert probe.reason is None
         assert probe.tier == "exported"
 
-    def test_a_quantem_pack_without_an_export_needs_dinov3(self, fake_cache):
-        # This is the bug the probe exists for: the pack installs perfectly and
-        # engine.load_model then raises ModelArchitectureUnavailable, because
-        # QuantEM does not redistribute Meta's dinov3 package.
+    def test_a_quantem_pack_without_an_export_builds_through_timm(self, fake_cache):
+        # A DINOv3-shaped index no longer means Meta's package. The engine
+        # renames the tensors and builds the same encoder through timm (see
+        # quantem.inference.encoders.build_encoder), so the probe must not grey
+        # out a pack that runs -- which is what it did while _EAGER_REQUIREMENT
+        # still said this family needed "dinov3".
         fake_cache.install("quantem:mito", index=QUANTEM_INDEX)
         with patch.object(catalogue, "_dinov3_available", return_value=False):
             probe = catalogue.probe_runnable("quantem:mito")
+        assert probe.ok is True
+        assert probe.tier == "timm"
+
+    def test_a_quantem_pack_needs_one_of_the_two(self, fake_cache):
+        # Neither timm nor dinov3: now there really is nothing to build with.
+        fake_cache.install("quantem:mito", index=QUANTEM_INDEX)
+        with (
+            patch.object(catalogue, "_module_available", lambda name: name == "torch"),
+            patch.object(catalogue, "_dinov3_available", return_value=False),
+        ):
+            probe = catalogue.probe_runnable("quantem:mito")
         assert probe.ok is False
-        assert "dinov3" in probe.reason
         # The reason names the way out, not just the problem -- and the way out
         # has to be one the person reading it can take. This used to point at
         # `python -m quantem.inference.export`, which needs both the dinov3
         # package the message has just said is missing and an already-installed
-        # pack, so it was advice only the developer could act on. The way out
-        # for everyone else is to reinstall from a release bundle, every pack in
-        # which carries an exported encoder.
-        assert cache.EXPORTED_ENCODER_NAME in probe.reason
-        assert cache.INSTALL_COMMAND in probe.reason
+        # pack, so it was advice only the developer could act on. It then
+        # pointed at `quantem models install`, which is advice only a terminal
+        # user can act on (I-12, F2). The way out for everyone else is to
+        # reinstall, which is a button.
+        assert cache.INSTALL_HINT in probe.reason
+        assert "reinstalling fixes this" in probe.reason
         assert "quantem.inference.export" not in probe.reason
+        # And it says what is missing in words, not in package names: "dinov3"
+        # is not a thing the reader can install, look up, or usefully know.
+        assert "dinov3" not in probe.reason
+        assert cache.EXPORTED_ENCODER_NAME not in probe.reason
 
-    def test_a_quantem_pack_is_runnable_where_dinov3_exists(self, fake_cache):
+    def test_a_quantem_pack_falls_back_to_dinov3_without_timm(self, fake_cache):
+        # The developer escape hatch, and the engine's last rung. Reported only
+        # when timm is genuinely absent, because timm is what would be built.
         fake_cache.install("quantem:mito", index=QUANTEM_INDEX)
-        with patch.object(catalogue, "_dinov3_available", return_value=True):
+        with (
+            patch.object(catalogue, "_module_available", lambda name: name == "torch"),
+            patch.object(catalogue, "_dinov3_available", return_value=True),
+        ):
             probe = catalogue.probe_runnable("quantem:mito")
         assert probe.ok is True
         assert probe.tier == "dinov3"
@@ -156,7 +178,12 @@ class TestRunnableProbe:
         with patch.object(catalogue, "_module_available", lambda name: name == "torch"):
             probe = catalogue.probe_runnable("omniem:mito")
         assert probe.ok is False
-        assert "timm" in probe.reason
+        # "timm" is a Python package name, and naming it in the app told the
+        # reader nothing they could act on (I-12). What they can act on is the
+        # reinstall, so that is what the sentence is about.
+        assert "timm" not in probe.reason
+        assert cache.INSTALL_HINT in probe.reason
+        assert "reinstalling fixes this" in probe.reason
 
     def test_an_omniem_pack_is_runnable_with_timm(self, fake_cache):
         fake_cache.install("omniem:mito", index=OMNIEM_INDEX)
@@ -168,7 +195,11 @@ class TestRunnableProbe:
         fake_cache.install("omniem:mito")
         probe = catalogue.probe_runnable("omniem:mito")
         assert probe.ok is False
-        assert cache.INDEX_NAME in probe.reason
+        # Not by filename: ``checkpoint_index.json`` is an implementation
+        # detail of the pack directory and means nothing on screen.
+        assert cache.INDEX_NAME not in probe.reason
+        assert "incomplete" in probe.reason
+        assert cache.INSTALL_HINT in probe.reason
 
     def test_an_unknown_encoder_framework_is_refused(self, fake_cache):
         fake_cache.install("omniem:mito", index={"encoder": {"framework": "jax"}})

@@ -45,9 +45,10 @@ Local paths are not recorded anywhere in a bundle
 -------------------------------------------------
 Two of the four files a pack ships are the maintainer's own training outputs,
 and they arrive full of the build machine: ``checkpoint_index.json`` records
-every encoder checkpoint by absolute path (``\\\\SOMEHOST\\share\\...``,
-``/mnt/d/...``) and ``resolved_config.yaml`` records the training ``data_root``
-and the config's path inside the training container. Those are the bytes a user
+every encoder checkpoint by absolute path -- a network share, a mounted drive,
+whatever the training box had -- and ``resolved_config.yaml`` records the
+training ``data_root`` and the config's path inside the training container.
+Those are the bytes a user
 is told to hash and keep, in an artifact bound for Hugging Face and Zenodo under
 a real name.
 

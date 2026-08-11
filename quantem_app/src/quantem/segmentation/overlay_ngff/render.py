@@ -233,17 +233,24 @@ def write_parent_chunk(
     )
 
 
-def downsample_block_worker(task: tuple[str, str, int, tuple[int, int, int, int]]) -> None:
-    """Process-pool worker: downsample one parent block of the staged store.
+def downsample_block(
+    group: zarr.Group,
+    array_key: str,
+    parent_level: int,
+    block: tuple[int, int, int, int],
+) -> None:
+    """Downsample one parent block of an **already-open** staged store.
 
-    Opens the staged zarr by path (the parent process has already closed its
-    handles), reads the child block, skips it if all background, else writes the
-    mode/max-pooled parent block. Blocks within a level are disjoint and
-    chunk-aligned, so concurrent workers never touch the same chunk file.
+    Reads the child block, skips it if all background (so no zero-chunks are
+    written for the mostly-empty gigapixel), else writes the mode/max-pooled
+    parent block. Blocks within a level are disjoint and chunk-aligned, so
+    concurrent callers never touch the same chunk file.
+
+    Taking the open group rather than a path is what lets the in-process pyramid
+    path open the store once and reuse the handle across every level and array,
+    instead of paying a group open per block.
     """
-    stage_root, array_key, parent_level, block = task
     block_y0, block_y1, block_x0, block_x1 = block
-    group = zarr.open_group(str(stage_root), mode="a", zarr_format=2)
     child = group[array_key][str(parent_level - 1)]
     parent = group[array_key][str(parent_level)]
     source = np.asarray(
@@ -261,6 +268,34 @@ def downsample_block_worker(task: tuple[str, str, int, tuple[int, int, int, int]
     parent[block_y0:block_y1, block_x0:block_x1] = downsampled[
         : block_y1 - block_y0, : block_x1 - block_x0
     ].astype(parent.dtype)
+
+
+def open_staged_group(stage_root: str) -> zarr.Group:
+    """Open a staged overlay store for read/write by path."""
+    return zarr.open_group(str(stage_root), mode="a", zarr_format=2)
+
+
+def close_staged_group(group: zarr.Group | None) -> None:
+    """Release a staged store handle.
+
+    Not tidiness: the caller moves the staging directory onto the published
+    bundle path as soon as the pyramid is done, and on Windows a directory with
+    an open handle under it will not move.
+    """
+    close = getattr(getattr(group, "store", None), "close", None)
+    if callable(close):
+        close()
+
+
+def downsample_block_worker(task: tuple[str, str, int, tuple[int, int, int, int]]) -> None:
+    """Process-pool entry point: open the staged zarr by path, then downsample.
+
+    The parent process has already closed its handles, so each worker opens the
+    store itself. Re-opening per block is the price of process isolation; the
+    in-process path calls :func:`downsample_block` with one shared handle.
+    """
+    stage_root, array_key, parent_level, block = task
+    downsample_block(open_staged_group(stage_root), array_key, parent_level, block)
 
 
 def iter_level0_chunks(width: int, height: int) -> list[tuple[int, int]]:

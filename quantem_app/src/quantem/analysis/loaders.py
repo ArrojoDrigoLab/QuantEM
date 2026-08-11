@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 CONFIRMED = "CONFIRMED"
 
 #: Analysis vocabulary for the shipped segmentation types. Three things depend
-#: on getting these exact strings: ``API_CONTRACT.md`` writes requests as
+#: on getting these exact strings: the API contract writes requests as
 #: ``{"nucleus": ..., "mito": ...}``; :func:`quantem.analysis.compartments.
 #: area_fractions` special-cases the literal ``"nucleus"`` and is what makes
 #: ``cytoplasm`` derivable at all; and they become the ``area_fraction_<name>``
@@ -886,10 +886,9 @@ def run_provenance(
     return provenance.section(values, unavailable)
 
 
-#: The stamp field a device would live in if inference recorded one. Read
-#: forward-compatibly rather than assumed absent, so the day
-#: :mod:`quantem.segmentation.run_identity` adds it this manifest reports it
-#: without another change here.
+#: The stamp field the device lives in. This side was written before the writer
+#: existed and read the field forward-compatibly; the writer landed in
+#: :mod:`quantem.segmentation.run_identity` and nothing here had to change.
 DEVICE_STAMP_FIELD = "device"
 
 
@@ -933,16 +932,18 @@ def _device_provenance(report: _RunReport) -> dict[str, Any]:
         {"recorded_from": "the objects"},
         {
             "value": (
-                "The device an inference run used is not recorded anywhere "
-                "QuantEM can read back. Every object produced by a model carries "
-                "the run that made it (quantem.segmentation.run_identity), and "
-                f"that contract's field list has no {DEVICE_STAMP_FIELD!r} entry, "
-                "so there is nothing to read even for a fully stamped object "
-                "set. It is read here the moment one is added. Until then, "
-                "reproducing these numbers on different hardware may not give "
-                "the last decimal place; environment.torch_devices_available "
-                "records only what the machine that wrote this bundle offers, "
-                "which is not necessarily the machine that ran the inference."
+                "None of these objects records the device its run used. Every "
+                "object produced by a model carries the run that made it "
+                "(quantem.segmentation.run_identity), whose contract does carry "
+                f"a {DEVICE_STAMP_FIELD!r} entry, so this is a statement about "
+                "these objects and not about the format: they were produced "
+                "either before QuantEM recorded the device or by a segmenter "
+                "that does not report one, and a value is not guessed for them. "
+                "Reproducing these numbers on different hardware may therefore "
+                "not give the last decimal place; "
+                "environment.torch_devices_available records only what the "
+                "machine that wrote this bundle offers, which is not "
+                "necessarily the machine that ran the inference."
             )
         },
     )
@@ -1254,8 +1255,11 @@ def _threshold_provenance(
         "by_pack": per_pack,
         "note": (
             "The foreground probability threshold each model ran at. It is "
-            "applied on the model's own resampled grid; only the resulting "
-            "binary mask is brought back to native pixels."
+            "applied to the stored probability map, which is in the image's "
+            "own pixel grid and quantised to 255 levels, so the threshold and "
+            "every object-level filter after it act in native pixels. The "
+            "quantisation means the realised cut is within 1/510 of the value "
+            "shown."
         ),
     }
 
@@ -1404,9 +1408,11 @@ def _min_area_provenance(report: _RunReport) -> dict[str, Any]:
     """The smallest object each run kept, in native pixels.
 
     Recorded because it moves the object count twice over. It is a per-organelle
-    constant (mito 60, ER 100, LD 40, nucleus 8000) applied *after* the mask is
-    mapped back to native pixels, so its value is stable in native pixels but
-    its meaning is not: on a 5 nm image a pack whose canonical scale is 8 nm saw
+    constant (mito 60, ER 100, LD 40, nucleus 8000) applied in **native pixels**
+    -- the probability map is brought back to the image's own grid and
+    thresholded there, so every object-level filter, this one included, runs on
+    native coordinates. Its value is therefore stable in native pixels but its
+    meaning is not: on a 5 nm image a pack whose canonical scale is 8 nm saw
     that area as ``(5/8)^2`` of it. The boundary itself is QuantEM's own and
     does not move with scikit-image -- see
     :func:`quantem.inference.postprocess.filter_min_area`.
@@ -1508,8 +1514,9 @@ def _min_area_provenance(report: _RunReport) -> dict[str, Any]:
         "by_pack": per_pack,
         "units": "native image pixels",
         "applied": (
-            "after the thresholded mask is mapped back from the model's grid to "
-            "native pixels, together with the organelle's morphological closing"
+            "in native pixels, after the probability map has been brought back "
+            "from the model's grid and thresholded there, together with the "
+            "organelle's morphological closing"
         ),
         "note": (
             "Connected components below this area were discarded by the pack "
@@ -1639,6 +1646,28 @@ def _instance_params(
 #: to refuse.
 SCALE_UNKNOWN = "unknown"
 
+#: Appended to every resampled-run note, because the note describes an ordering
+#: this application only adopted in v2.
+#:
+#: Before it, the foreground decision was made on the model's own resampled grid
+#: and the *binary mask* was carried back with nearest-neighbour -- the exact
+#: sentence this module used to print as fact. Objects produced then are not
+#: wrong; they came from a different, documented pipeline, and the measured
+#: difference is mostly in boundary geometry (Crofton perimeter down a few per
+#: cent at large upsample factors, circularity correspondingly up).
+#:
+#: **Nothing recorded on an object says which ordering produced it.** The run
+#: identity carries the pack, the threshold, the scale and the minimum area, but
+#: no pipeline version, so a bundle holding objects from both cannot tell them
+#: apart and this manifest must not imply that it can. Saying so is cheaper than
+#: a reader discovering it from a perimeter distribution with two modes in it.
+_ORDERING_CHANGED_NOTE = (
+    "Objects produced by a version of QuantEM before this ordering was adopted "
+    "were thresholded on the model's own grid instead, and nothing stored on an "
+    "object records which of the two produced it; the two are not the same "
+    "computation and a set mixing them cannot be separated here."
+)
+
 
 def _run_scale(report: _RunReport) -> dict[str, Any]:
     """The pixel size each model actually ran at, and whether it resampled.
@@ -1708,10 +1737,13 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
                 _native_scale_note(canonical, native, report)
                 if only is None
                 else (
-                    f"The image was resampled to {only} nm/px before inference "
-                    "and the resulting masks were mapped back to native pixels "
-                    "with nearest-neighbour interpolation, so every measurement "
-                    "in this bundle is in native pixels."
+                    f"The image was resampled to {only} nm/px before inference. "
+                    "The probability map was then brought back to the image's "
+                    "own pixel grid with a continuous interpolator (bilinear "
+                    "onto a finer grid, area-averaged onto a coarser one, never "
+                    "nearest-neighbour) and thresholded there, so every "
+                    "measurement in this bundle is in native pixels. "
+                    + _ORDERING_CHANGED_NOTE
                 )
             )
         else:
@@ -1786,9 +1818,12 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
         values["ran_at_nm"] = resampling
         values["note"] = (
             "The image was resampled from its native pixel size to each pack's "
-            "canonical scale before inference; the resulting masks were mapped "
-            "back to native pixels with nearest-neighbour interpolation, so all "
-            "measurements in this bundle are in native pixels."
+            "canonical scale before inference; each probability map was then "
+            "brought back to the image's own pixel grid with a continuous "
+            "interpolator (bilinear onto a finer grid, area-averaged onto a "
+            "coarser one, never nearest-neighbour) and thresholded there, so "
+            "all measurements in this bundle are in native pixels. "
+            + _ORDERING_CHANGED_NOTE
         )
     elif unknown_packs:
         values["ran_at"] = SCALE_UNKNOWN
@@ -2525,7 +2560,7 @@ def reviewed_area(
     except Exception as exc:  # pragma: no cover - shapely is a hard dependency
         reason = (
             f"The {len(polygons)} completed region(s) recorded here could not be "
-            f"combined to measure them ({exc.__class__.__name__}: {exc})."
+            f"combined to measure them ({exc})."
         )
         values["n_regions"] = len(polygons)
         for key in ("reviewed_px", "reviewed_fraction", "bbox_px"):

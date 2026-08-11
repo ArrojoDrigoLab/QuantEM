@@ -9,7 +9,6 @@ from django.http import Http404
 from quantem.assets.models import Asset, Rendition
 from quantem.core.config import DATA_DIR, NGFF_TMP_DIR, STORAGE_DIR
 from quantem.core.local_storage import (
-    normalize_stored_path_value,
     path_value_is_absolute_like,
     resolve_stored_path,
 )
@@ -142,34 +141,32 @@ def get_asset_ngff_rendition(asset: Asset) -> Rendition | None:
 
 
 def get_asset_ngff_path(asset: Asset) -> Path | None:
-    rendition = get_asset_ngff_rendition(asset)
-    return resolve_rendition_path(rendition) if rendition is not None else None
+    """The published generation's directory, or ``None``.
+
+    A one-line shim over :func:`quantem.assets.pyramid_authority.resolve_pyramid`,
+    kept because ``segmentation`` and the job artifact registry read it. It no
+    longer *derives* anything: "there is a path" and "the pyramid may be read"
+    are now the same question, answered in one place.
+    """
+
+    from .pyramid_authority import Intent, PublishedPyramid, resolve_pyramid
+
+    resolved = resolve_pyramid(asset, intent=Intent.SERVE)
+    return resolved.root if isinstance(resolved, PublishedPyramid) else None
 
 
 def asset_ngff_ready(asset: Asset) -> bool:
-    path = get_asset_ngff_path(asset)
-    return bool(path and path.exists() and path.is_dir())
+    """Whether the viewer may open this asset.
 
+    The frontend contract (``ngff_ready``/``can_view``/``can_segment`` in
+    ``serializers.py``) is unchanged; what changed is that this is no longer a
+    separate opinion computed from ``path.exists()``. It is the authority's
+    answer, so the card, the viewer route and every reader cannot disagree.
+    """
 
-def upsert_ngff_rendition(asset: Asset, ngff_root: Path, openable: AssetOpenable | None = None) -> None:
-    Rendition.objects.update_or_create(
-        asset=asset,
-        type=Rendition.TYPE_NGFF,
-        defaults={
-            "stored_path": normalize_stored_path_value(ngff_root, relative_to=NGFF_TMP_DIR),
-            "derived_from": openable.rendition if openable is not None else None,
-            "storage_root": "NGFF_TMP_DIR",
-            "path_exists": ngff_root.exists(),
-            "is_directory": ngff_root.is_dir(),
-            "stored_width": openable.width if openable is not None else asset.logical_width,
-            "stored_height": openable.height if openable is not None else asset.logical_height,
-            "stored_depth": openable.stored_depth if openable is not None else asset.logical_depth,
-            "stored_channels": openable.channels if openable is not None else asset.channels,
-            "stored_bit_depth": openable.bit_depth if openable is not None else asset.bit_depth,
-            "z_plane_indices": openable.z_plane_indices if openable is not None else [],
-            "metadata": {"display_name": asset.display_name},
-        },
-    )
+    from .pyramid_authority import Intent, PublishedPyramid, resolve_pyramid
+
+    return isinstance(resolve_pyramid(asset, intent=Intent.SERVE), PublishedPyramid)
 
 
 def select_local_rendition(asset: Asset) -> Rendition | None:

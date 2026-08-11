@@ -1,3 +1,4 @@
+import type { ComponentProps, ReactNode } from "react";
 import {
   ErRoiControls,
   type ErRoiSection,
@@ -11,8 +12,17 @@ import type {
   WorkflowMode,
 } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import type { HoverActionMode, GroupHoverActionMode } from "@/hooks/useHoverSelection";
-import type { CorrectionTool } from "@/shared/types/segmentation";
+import type {
+  CorrectionTool,
+  SegmentationOverlayManifest,
+} from "@/shared/types/segmentation";
 import type { LeftPanelLayerStyles } from "@/features/segmentation/overlays/segments";
+// Imported across features on purpose. The viewer and the labeling screen fail
+// the same way for the same reason, and finding V4 was the labeling screen
+// saying *nothing* while the viewer said everything -- two renderers of one
+// message is how that gap reopens.
+import { OverlayBuildFailureNotice } from "@/features/viewer/components/OverlayBuildFailureNotice";
+import { IncludeLevelDial } from "@/features/segmentation/components/threshold";
 
 interface TissueSection extends TissueWorkflowControlsProps {
   enabled: boolean;
@@ -41,6 +51,15 @@ interface ReviewSection {
   /** ER polygon tool: close the draft and commit it as a filled ER object. */
   onClosePolygon: () => void;
   onApplyGroupAction: (mode: GroupHoverActionMode) => void;
+  /**
+   * Rendered into the toolbar's `extraModes` slot -- controls that change what
+   * a click on the image means. Box-to-object (`features/sam`) is the first
+   * user; the slot exists so a package adds a tool from its own file instead of
+   * opening `WorkflowModeToolbar.tsx`.
+   */
+  extraModes?: ReactNode;
+  /** The toolbar's `extraTools` slot: controls acting on the current selection. */
+  extraTools?: ReactNode;
 }
 
 interface LayersSection {
@@ -55,6 +74,14 @@ interface LayersSection {
   onConfirmedStrokeWidthChange: (value: number) => void;
   onConfirmedFillOpacityChange: (value: number) => void;
   overlayUpdating: boolean;
+  /** True only for a build the server has given up on. */
+  overlayBuildFailed: boolean;
+  /** The failed manifest, carrying the reason and the two revisions. */
+  overlayManifest: SegmentationOverlayManifest | null;
+  /** Needed to ask for the build again; null before a segmentation is chosen. */
+  overlaySegmentationId: string | null;
+  /** Restart polling and reread the manifest once a retry is accepted. */
+  onOverlayBuildRetried: () => void;
 }
 
 interface ViewSection {
@@ -67,6 +94,8 @@ interface ViewSection {
   groupSelectionCount: number;
 }
 
+type IncludeLevelSection = ComponentProps<typeof IncludeLevelDial>;
+
 export interface SegmentationSidebarProps {
   /** Manual tissue-mask toolbar (brush + polygon + exclude-polygon). */
   tissue: TissueSection;
@@ -75,6 +104,12 @@ export interface SegmentationSidebarProps {
   view: ViewSection;
   /** ER-only ROI controls (2048² creation + per-organelle "mark ROI done"). */
   erRoi?: ErRoiSection;
+  /**
+   * The include-level dial. Absent until a segmentation is selected, and
+   * the dial itself greys out when there is no stored probability map to
+   * re-read, so it never offers a move it cannot make.
+   */
+  includeLevel?: IncludeLevelSection;
 }
 
 export function SegmentationSidebar({
@@ -83,6 +118,7 @@ export function SegmentationSidebar({
   layers,
   view,
   erRoi,
+  includeLevel,
 }: SegmentationSidebarProps) {
   const { enabled: isTissueSegmentation, ...tissueControls } = tissue;
   const {
@@ -105,6 +141,8 @@ export function SegmentationSidebar({
     onConfirmShape,
     onClosePolygon,
     onApplyGroupAction,
+    extraModes,
+    extraTools,
   } = review;
   const {
     usesRasterReviewOverlay,
@@ -118,6 +156,10 @@ export function SegmentationSidebar({
     onConfirmedStrokeWidthChange,
     onConfirmedFillOpacityChange,
     overlayUpdating,
+    overlayBuildFailed,
+    overlayManifest,
+    overlaySegmentationId,
+    onOverlayBuildRetried,
   } = layers;
   const {
     leftNavigateMode,
@@ -133,6 +175,7 @@ export function SegmentationSidebar({
         <section className="labeling-sidebar-section">
           <h3>Labeling View</h3>
           {erRoi && <ErRoiControls {...erRoi} />}
+          {includeLevel ? <IncludeLevelDial {...includeLevel} /> : null}
           {isTissueSegmentation ? (
             <TissueWorkflowControls {...tissueControls} />
           ) : (
@@ -156,6 +199,8 @@ export function SegmentationSidebar({
               isErSegmentation={isErSegmentation}
               canApplyGroupAction={canApplyGroupAction}
               onApplyGroupAction={onApplyGroupAction}
+              extraModes={extraModes}
+              extraTools={extraTools}
             />
           )}
         </section>
@@ -207,6 +252,22 @@ export function SegmentationSidebar({
           )}
           {workflowMode === "review" && overlayUpdating && (
             <div className="group-confirm-hint">Overlay updating.</div>
+          )}
+          {/*
+            Finding V4. The line above is mutually exclusive with this block --
+            `overlayUpdating` is false for a build the server has given up on --
+            and until now that meant the labeling screen said nothing at all
+            about a failed overlay while the review canvas quietly went on
+            drawing a raster that no longer matched the objects. It is shown in
+            every workflow mode, unlike "Overlay updating.": a failed build is
+            not a passing state, and leaving review does not make it go away.
+          */}
+          {overlayBuildFailed && overlayManifest && overlaySegmentationId && (
+            <OverlayBuildFailureNotice
+              manifest={overlayManifest}
+              segmentationId={overlaySegmentationId}
+              onRetried={onOverlayBuildRetried}
+            />
           )}
         </section>
         <details className="labeling-sidebar-section labeling-sidebar-collapsible" open>

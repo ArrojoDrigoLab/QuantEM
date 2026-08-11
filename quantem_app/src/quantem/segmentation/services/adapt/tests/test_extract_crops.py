@@ -74,11 +74,11 @@ class CropExtractionTests(TestCase):
         crop_set = collect_crops(self.segmentation)
         assert crop_set.crops == []
         assert not crop_set.ready
-        assert "completed ROI" in crop_set.blockers[0]
+        assert "marked as finished" in crop_set.blockers[0]
 
         with self.assertRaises(CompletedRoiRequired) as caught:
             require_crops(self.segmentation)
-        assert "completed ROI" in str(caught.exception)
+        assert "marked as finished" in str(caught.exception)
 
     def test_completed_roi_without_confirmed_objects_is_blocked(self):
         CompletedROI.objects.create(segmentation=self.segmentation, geometry=_square(20, 20, 140, 140))

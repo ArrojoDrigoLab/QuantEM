@@ -1,6 +1,6 @@
 """``GET /api/models/`` and ``POST /api/models/<pack_id>/install/``.
 
-Against ``API_CONTRACT.md`` §Models. The urlconf is overridden to
+Against the API contract's Models section. The urlconf is overridden to
 :mod:`quantem.registry.tests.urls` so these do not wait on ``core/urls.py`` --
 owned elsewhere -- mounting the routes; when it does, the override is a no-op
 and these keep passing unchanged.
@@ -43,13 +43,30 @@ class ModelListTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def test_the_body_has_the_four_contract_keys(self):
+    def test_the_body_has_the_contract_keys(self):
         # Re-pinned 2026-08-08: "registry" joined the body when the download
         # landed -- the pinned repo/revision a not-installed pack fetches from.
+        # Re-pinned 2026-08-10: "storage" joined it for owner ruling D8. The
+        # install-from-a-folder field used to be placeheld with this build
+        # machine's drive letter; the example is now composed from the running
+        # install's own resolved models directory, which only the server knows.
         body = self.client.get("/api/models/").json()
-        assert set(body) == {"packs", "adapted", "device", "registry"}
+        assert set(body) == {"packs", "adapted", "device", "registry", "storage"}
         assert body["registry"]["repo_id"] == "ArrojoeDrigoLab/quantem"
         assert body["registry"]["revision"]
+
+    def test_the_storage_block_is_built_from_this_machine(self):
+        """D8: the example the UI shows has to come from here, not from a literal."""
+        from quantem.core.config import MODELS_DIR
+
+        storage = self.client.get("/api/models/").json()["storage"]
+
+        assert storage["models_dir"] == str(MODELS_DIR)
+        # A sibling of the data directory, with the platform's own separator,
+        # so a Mac never sees a drive letter and Windows never sees a slash.
+        example = storage["local_source_example"]
+        assert example.startswith(str(Path(MODELS_DIR).parent.parent))
+        assert example.endswith("quantem-models")
 
     def test_all_eight_released_packs_are_listed(self):
         body = self.client.get("/api/models/").json()
@@ -105,7 +122,7 @@ class ActiveInstallTests(TestCase):
     installs, and its Download button queued a real duplicate 1.2 GB download
     while the installer-requested job for the same pack was RUNNING.
 
-    Two halves, pinned to `API_CONTRACT.md` §Models: every pack entry carries
+    Two halves, pinned to `the API contract` §Models: every pack entry carries
     ``active_install`` (null, or the live job with byte progress), and the
     install POST refuses a duplicate with a 409 naming the existing job --
     the exact guard ``pending_installs._queue_pack`` already had.
@@ -183,7 +200,11 @@ class ActiveInstallTests(TestCase):
         body = response.json()
         assert body["job_id"] == str(job.id)
         assert body["status"] == "RUNNING"
-        assert str(job.id) in body["error"]
+        # The id is a field, not a sentence: it is how the client finds the row
+        # to watch. Putting it in ``error`` broke I-12's raw-uuid rule, and no
+        # screen shows a job id for a reader to match it against.
+        assert str(job.id) not in body["error"]
+        assert "Tasks & Queues" in body["error"]
         assert body["active_install"]["status"] == "RUNNING"
         # The whole point: no second download job exists.
         assert Job.objects.filter(type=INSTALL_JOB_TYPE).count() == 1
@@ -290,7 +311,21 @@ class ModelInstallTests(TestCase):
         with patch.object(cache, "installed", return_value=False):
             response = self._install(source_path="D:/definitely/not/here")
         assert response.status_code == 400
-        assert "not a directory" in response.json()["error"]
+        assert "no folder at" in response.json()["error"]
+
+    def test_a_source_path_on_an_unreachable_drive_is_refused_not_crashed(self):
+        """A disconnected mapped drive raises from ``is_dir()`` on Windows.
+
+        Uncaught, that is a 500 and a traceback page where a sentence belongs.
+        """
+        with patch.object(cache, "installed", return_value=False):
+            with patch.object(
+                Path, "is_dir", side_effect=OSError(1326, "The user name or password is incorrect")
+            ):
+                response = self._install(source_path="Z:/somewhere/on/a/dead/share")
+
+        assert response.status_code == 400
+        assert "no folder at" in response.json()["error"]
 
     def test_a_directory_with_no_head_names_what_is_missing(self):
         with patch.object(cache, "installed", return_value=False):

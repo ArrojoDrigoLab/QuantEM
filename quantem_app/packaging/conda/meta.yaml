@@ -1,5 +1,10 @@
-{% set name = "quantem" %}
-{% set version = "0.1.0.dev0" %}
+{% set name = "quantem-app" %}
+{% set sdist = "quantem_app" %}
+{% set version = "0.1.0" %}
+
+# `sdist` exists because PEP 625 normalises the hyphen in the distribution name
+# to an underscore in the sdist filename: the project is `quantem-app`, the file
+# it publishes is `quantem_app-<version>.tar.gz`.
 
 # Conda recipe for the QuantEM application. Built from the *sdist*, which
 # carries the compiled frontend (quantem/_frontend in the wheel), so the conda
@@ -10,7 +15,7 @@
 #   conda build packaging/conda -c conda-forge --output-folder <dir>
 #
 # For a release, point `source.url` at the published sdist and fill in the
-# sha256 (`python -m build` prints the artifact path; `sha256sum dist/quantem-<version>.tar.gz`).
+# sha256 (`python -m build` prints the artifact path; `sha256sum dist/quantem_app-<version>.tar.gz`).
 # For a local build from this checkout, comment out `url`/`sha256` and use the
 # `path` line instead — then run `python -m build --sdist` first so
 # frontend/dist exists and is current.
@@ -20,7 +25,7 @@ package:
   version: {{ version }}
 
 source:
-  url: https://pypi.org/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  url: https://pypi.org/packages/source/{{ name[0] }}/{{ name }}/{{ sdist }}-{{ version }}.tar.gz
   sha256: 0000000000000000000000000000000000000000000000000000000000000000  # fill in at release
   # path: ../..   # local alternative to url+sha256
 
@@ -31,7 +36,7 @@ build:
   number: 0
   script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
   entry_points:
-    - quantem = quantem.cli:main
+    - quantem-app = quantem.cli:main
 
 requirements:
   host:
@@ -80,7 +85,12 @@ about:
   home: https://github.com/ArrojoDrigoLab/QuantEM
   summary: QuantEM — organelle segmentation, proofreading, and quantitative analysis for electron microscopy
   license: BSD-3-Clause
-  license_file: LICENSE
+  # Both files ride in the sdist this recipe builds from. NOTICE is the
+  # third-party attribution the bundled dependencies' licences require; it is
+  # not a second licence for this package.
+  license_file:
+    - LICENSE
+    - NOTICE
   doc_url: https://github.com/ArrojoDrigoLab/QuantEM
   dev_url: https://github.com/ArrojoDrigoLab/QuantEM
 

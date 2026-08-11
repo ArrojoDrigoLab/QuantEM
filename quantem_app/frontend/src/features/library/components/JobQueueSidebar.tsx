@@ -30,6 +30,13 @@ import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { describeJobRemoval } from "@/features/library/components/jobRemovalConsequence";
 import { useJobNextSteps } from "@/features/library/components/jobNextSteps";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
+import { RunProgressList } from "@/shared/progress/RunProgressList";
+import {
+  buildAggregateRows,
+  buildProgressRows,
+  hasStructuredProgress,
+  isRunJob,
+} from "@/shared/progress/runProgress";
 import type {
   ClearDoneJobsResponse,
   JobQueueItem,
@@ -259,6 +266,7 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
   // alarm about the queue is worse than no banner. What this panel can observe
   // directly -- what is running, queued, failed and completed -- is reported
   // instead.
+  const aggregateRows = buildAggregateRows(runningJobs);
   const doneJobsCount = failedJobs.length + completedJobs.length;
   const actionError = cancelError || deleteError || retryError || clearDoneError;
   const isPendingAction = (jobId: string) => Boolean(pendingActions[jobId]);
@@ -390,6 +398,18 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
               <div className="job-queue-empty">No active tasks.</div>
             ) : (
               <>
+                {/* One line per image, above the runs it covers. Every job in a
+                    wave carries the same rollup, so this is deduplicated by
+                    wave rather than drawn inside each run's block -- otherwise
+                    "Everything on Grid2_Cell04" would appear once per
+                    organelle and read as several different totals. */}
+                {aggregateRows.length > 0 && (
+                  <RunProgressList
+                    className="job-queue-run-progress"
+                    rows={aggregateRows}
+                    data-testid="job-queue-aggregate-progress"
+                  />
+                )}
                 {runningJobs.map((job) => (
                   <div key={job.id} className="job-queue-item">
                     <div className="job-queue-item-row">
@@ -419,17 +439,45 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
                         </span>
                       )}
                     </div>
-                    <div className="job-queue-progress">
-                      <div className="job-queue-progress-bar">
-                        <div
-                          className="job-queue-progress-fill"
-                          style={{ width: `${Math.round(job.progress)}%` }}
-                        />
-                      </div>
-                      <span>{Math.round(job.progress)}%</span>
-                    </div>
-                    {job.message && (
-                      <div className="job-queue-message">{job.message}</div>
+                    {/* Two ways to draw a running job, and which one is right
+                        depends on whether the job can count its own work.
+
+                        A run that reports tiles gets the structured rows: the
+                        wave rollup, the run's own tiles-primary line, the
+                        download. What it does *not* get is `job.message`. That
+                        message is where "DINO: 57% (Tile 32/56)" came from --
+                        an internal codename, and a percentage on the tiling
+                        plan's divisor sitting beside a bar on the whole-job
+                        divisor, disagreeing by a point. The count now comes
+                        from `unit_progress` and the bar divides by the same
+                        total, so there is one number.
+
+                        Everything else -- an upload, an analysis, an overlay
+                        rebuild -- has only a percentage and a sentence, and
+                        keeps both. */}
+                    {isRunJob(job) || hasStructuredProgress(job) ? (
+                      <RunProgressList
+                        className="job-queue-run-progress"
+                        rows={buildProgressRows([job], {
+                          includeAggregate: false,
+                        })}
+                        data-testid={`job-progress-${job.id}`}
+                      />
+                    ) : (
+                      <>
+                        <div className="job-queue-progress">
+                          <div className="job-queue-progress-bar">
+                            <div
+                              className="job-queue-progress-fill"
+                              style={{ width: `${Math.round(job.progress)}%` }}
+                            />
+                          </div>
+                          <span>{Math.round(job.progress)}%</span>
+                        </div>
+                        {job.message && (
+                          <div className="job-queue-message">{job.message}</div>
+                        )}
+                      </>
                     )}
                   </div>
                 ))}
@@ -479,6 +527,21 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
                               </span>
                             )}
                           </div>
+                          {/* How much work is waiting, not just that something
+                              is. A run's tiling plan is written when it is
+                              queued, so "waiting to start · 0 of 56 tiles" is a
+                              fact this row can state before any worker has
+                              touched it -- and a queue whose entries have no
+                              size is a queue nobody can plan around. */}
+                          {isRunJob(job) && hasStructuredProgress(job) && (
+                            <RunProgressList
+                              className="job-queue-run-progress"
+                              rows={buildProgressRows([job], {
+                                includeAggregate: false,
+                              })}
+                              data-testid={`job-progress-${job.id}`}
+                            />
+                          )}
                         </div>
                       ))
                     )}
@@ -508,10 +571,14 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
             </button>
           </div>
 
+          {/* "Failed" was the heading over a list the queue fills with FAILED
+              *and* CANCELLED, so a run the user stopped on purpose was filed
+              under a word meaning something went wrong. The heading now covers
+              both and each row says which of the two happened to it. */}
           <section className="job-queue-section">
-            <h3>Failed</h3>
+            <h3>Stopped</h3>
             {failedJobs.length === 0 ? (
-              <div className="job-queue-empty">No failed tasks.</div>
+              <div className="job-queue-empty">Nothing has stopped or failed.</div>
             ) : (
               <>
                 {visibleFailedJobs.map((job) => (
@@ -530,7 +597,7 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
                           void handleRetryJob(job);
                         }}
                         disabled={isPendingAction(job.id)}
-                        title="Retry failed task"
+                        title="Run this task again"
                       >
                         {pendingActions[job.id] === "retry" ? "Retrying..." : "Retry"}
                       </button>
@@ -546,14 +613,34 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
                         {formatTimeAgo(job.finished_at)}
                       </span>
                     </div>
-                    {job.message && (
+                    {/* How far it got before it stopped. The run's tile columns
+                        outlive the run, so the one question a user has after
+                        pressing Cancel -- "how much of that did I lose?" -- is
+                        answerable, and until now the answer existed on the wire
+                        and on no screen: this list rendered the bare word
+                        "cancelled" and nothing else. Same rows, same wording as
+                        the running list above, so a run reads the same before
+                        and after it stops. */}
+                    {isRunJob(job) && (
+                      <RunProgressList
+                        className="job-queue-run-progress"
+                        rows={buildProgressRows([job], { includeAggregate: false })}
+                        data-testid={`job-progress-${job.id}`}
+                      />
+                    )}
+                    {/* A failure's reason is kept -- it is the only text that
+                        says what went wrong. A cancelled run's message is the
+                        literal word "cancelled", which the row above already
+                        says better and with a count, so it is dropped rather
+                        than repeated. */}
+                    {job.message && !(isRunJob(job) && job.status === "CANCELLED") && (
                       <div className="job-queue-message">{job.message}</div>
                     )}
                   </div>
                 ))}
                 {failedRemainingCount > 0 && (
                   <SectionShowMoreButton
-                    label="failed tasks"
+                    label="stopped tasks"
                     remainingCount={failedRemainingCount}
                     onClick={() => showMoreSection("failed")}
                   />

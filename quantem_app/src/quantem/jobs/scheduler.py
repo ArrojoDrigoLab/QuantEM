@@ -64,6 +64,13 @@ def _wait_for_database() -> bool:
 #: short cycle rather than only at startup.
 REAP_INTERVAL_SECONDS = 15.0
 
+#: How often :meth:`JobScheduler._sweep_abandoned_uploads` looks for upload
+#: bytes nobody owns. Far slower than the job reaper: what it clears is disk,
+#: not a wedged screen, and the scan reads every name in the uploads directory.
+#: Fifteen minutes bounds a leaked import to that long plus the one-hour age
+#: threshold the sweep itself applies.
+UPLOAD_SWEEP_INTERVAL_SECONDS = 900.0
+
 DEFAULT_HEARTBEAT_STALE_SECONDS = 300
 
 
@@ -90,6 +97,10 @@ class JobScheduler:
         self.runner = JobRunner()
         self._database_ready = False
         self._last_reap_monotonic = 0.0
+        # Not 0.0: that would make the first ``tick`` sweep, and ``tick`` is
+        # called directly by tests that have nothing to do with uploads. The
+        # start-up sweep is scheduled explicitly in ``run_forever`` instead.
+        self._last_upload_sweep_monotonic = time.monotonic()
 
     def _owns(self, job_id) -> bool:
         """True when a worker in *this* process is running the job right now.
@@ -246,18 +257,27 @@ class JobScheduler:
             for job in queryset:
                 if not self.runner.can_dispatch(job.resource_class, job.type):
                     continue
+                claim = {
+                    "status": "RUNNING",
+                    "started_at": now,
+                    "claimed_at": now,
+                    "heartbeat_at": now,
+                    "attempts": job.attempts + 1,
+                    "message": "running",
+                }
+                if job.progress_units_total is not None:
+                    # An attempt starts its tile walk from zero. Without this a
+                    # retry inherits the previous attempt's count, so the row
+                    # claims 19 tiles are done while the new attempt is on its
+                    # first -- and the whole-image rollup adds that phantom
+                    # progress up and then watches it go backwards when the
+                    # writer catches up.
+                    claim["progress_units_done"] = 0
                 updated = Job.objects.filter(
                     id=job.id,
                     status__in=["PENDING", "RETRY"],
                     next_run_at__lte=now,
-                ).update(
-                    status="RUNNING",
-                    started_at=now,
-                    claimed_at=now,
-                    heartbeat_at=now,
-                    attempts=job.attempts + 1,
-                    message="running",
-                )
+                ).update(**claim)
                 if updated == 0:
                     continue
                 job.refresh_from_db()
@@ -320,12 +340,41 @@ class JobScheduler:
         self._last_reap_monotonic = now
         self._recover_orphaned_jobs()
 
+    def sweep_abandoned_uploads(self) -> None:
+        """Free upload bytes no asset owns and no request is still writing.
+
+        The scheduler thread is where this belongs: it is the one background
+        loop the server always runs, it already owns start-up recovery, and the
+        thing being cleaned up is left behind by exactly the events it handles
+        -- a request that failed, or a process that was killed mid-import.
+
+        Guarded on its own rather than relying on ``run_forever``'s guard: a
+        failure here is housekeeping, and must not cost the tick its dispatch.
+        """
+        from quantem.assets.upload_staging import sweep_abandoned_uploads
+
+        try:
+            result = sweep_abandoned_uploads()
+        except Exception:
+            logger.exception("The abandoned-upload sweep failed; continuing.")
+            return
+        if result.removed:
+            logger.info("Upload sweep: %s.", result.summary())
+
+    def _sweep_uploads_if_due(self) -> None:
+        now = time.monotonic()
+        if (now - self._last_upload_sweep_monotonic) < UPLOAD_SWEEP_INTERVAL_SECONDS:
+            return
+        self._last_upload_sweep_monotonic = now
+        self.sweep_abandoned_uploads()
+
     def tick(self) -> None:
         self.runner.poll()
         # Reaping runs on every tick cycle, not just at startup: a worker can
         # die at any point in a session, and until its job is cleared the
         # segmentation it holds cannot be run again at all.
         self._reap_if_due()
+        self._sweep_uploads_if_due()
         self.dispatch_ready()
 
     def run_forever(self) -> None:
@@ -346,6 +395,11 @@ class JobScheduler:
                         # not gated on the heartbeat window here.
                         self._recover_orphaned_jobs(startup=True)
                         self._last_reap_monotonic = time.monotonic()
+                        # Start-up is when the previous session's wreckage is
+                        # still on disk: the bytes a killed server left mid
+                        # import survive a restart, and nothing else looks.
+                        self.sweep_abandoned_uploads()
+                        self._last_upload_sweep_monotonic = time.monotonic()
                         self._database_ready = True
                         logger.info("Job scheduler: database ready, dispatching.")
                     else:

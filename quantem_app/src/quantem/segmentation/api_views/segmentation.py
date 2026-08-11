@@ -304,7 +304,8 @@ class SegmentationDetailView(APIView):
         its completed-ROI record and its feedback. Nothing is archived; there
         is no undo short of running the model again. Refused with a 409 while a
         job is queued, running or retrying on the segmentation (the body names
-        the job and how to clear it) and while the segmentation is locked by
+        the task the way Tasks & Queues names it, and carries the job's id and
+        type as fields for the client) and while the segmentation is locked by
         Mark Image Done (unlock first -- the lock exists so "done" stays
         final, and deletion is the strongest possible mutation).
 
@@ -332,6 +333,7 @@ class SegmentationDetailView(APIView):
     def delete(self, request, seg_id):
         from quantem.segmentation.api_views.shared import (  # noqa: PLC0415
             active_segmentation_job,
+            delete_blocked_response_payload,
         )
 
         segmentation = get_object_or_404(
@@ -346,32 +348,11 @@ class SegmentationDetailView(APIView):
         # user can cancel it and try again.
         job = active_segmentation_job(segmentation, job_types=None)
         if job is not None:
-            if job.status == "RUNNING":
-                how_to_clear = (
-                    f"Cancel it (POST /api/jobs/{job.id}/cancel/) and delete "
-                    "again once it has stopped."
-                )
-            else:
-                how_to_clear = (
-                    f"Wait for it or remove it from the queue "
-                    f"(DELETE /api/jobs/{job.id}/), then delete again."
-                )
-            # "RETRY" is a state name, not a verb: "is retry on it" is not a
-            # sentence, and this detail is rendered verbatim in the dialog.
-            doing = {"PENDING": "queued", "RUNNING": "running", "RETRY": "retrying"}.get(
-                job.status, job.status.lower()
-            )
+            # ``detail`` is rendered verbatim in the confirm dialog, so it says
+            # what is happening and names the screen with the control on it.
+            # See delete_blocked_response_payload for what it used to say.
             return Response(
-                {
-                    "detail": (
-                        f"This segmentation cannot be deleted while a "
-                        f"{job.type} job is {doing} on it "
-                        f"(job {job.id}). {how_to_clear}"
-                    ),
-                    "job_id": str(job.id),
-                    "job_type": job.type,
-                    "job_status": job.status,
-                },
+                delete_blocked_response_payload(job),
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -399,9 +380,13 @@ class SegmentationDetailView(APIView):
             except (TypeError, ValueError):
                 return Response(
                     {
+                        # The field name belonged in this sentence when only a
+                        # client could reach it; ``detail`` is rendered in the
+                        # dialog, so it reads as English (I-12, internal-name).
                         "detail": (
-                            "acknowledged_object_count must be the object count "
-                            "the user was shown before agreeing to delete."
+                            "The object count sent with this delete could not "
+                            "be read as a number. Nothing was deleted; reopen "
+                            "the delete dialog and confirm again."
                         ),
                         "delete_preview": preview,
                     },
@@ -532,10 +517,14 @@ class SegmentationCompleteView(APIView):
         if raw_is_complete is not None and _parse_bool(raw_is_complete) is not True:
             return Response(
                 {
+                    # HTTP verbs are for the ``unlock`` block below, which is
+                    # what a client reads; a sentence naming them is I-12's
+                    # http-verb class and tells a reader nothing they can act
+                    # on. "Unlock segmentation" is the control's own caption.
                     "detail": (
-                        "POST marks this segmentation done; it cannot unmark it. "
-                        "Send DELETE to this endpoint to unlock it and restore "
-                        "whatever the completion discarded."
+                        "Marking this segmentation done cannot undo it. Use "
+                        "Unlock segmentation on the labeling screen to unlock "
+                        "it and restore whatever the completion discarded."
                     ),
                     "unlock": {
                         "method": "DELETE",

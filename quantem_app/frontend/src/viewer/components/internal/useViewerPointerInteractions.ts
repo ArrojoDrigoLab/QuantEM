@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { findSceneOverlayIdAtPoint } from "@/viewer/overlays/hitTest";
 import type { Point } from "@/utils/geometry";
 import type { ViewMetrics } from "@/viewer/components/internal/viewerMath";
-import { screenToImagePoint } from "@/viewer/components/internal/viewerMath";
+import {
+  clampViewportToImage,
+  screenToImagePoint,
+} from "@/viewer/components/internal/viewerMath";
+import { panKeyState } from "@/viewer/panKeyState";
 import type { ViewportState } from "@/viewer/types";
 
 const MOUSE_MOVE_THROTTLE_MS = 60;
 const CLICK_MOVE_TOLERANCE_PX = 4;
+const MIDDLE_BUTTON = 1;
 
 export function useViewerPointerInteractions(config: {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -15,6 +20,7 @@ export function useViewerPointerInteractions(config: {
   localViewport: ViewportState | null;
   disablePan: boolean;
   resolvedImageWidth: number;
+  resolvedImageHeight: number;
   setViewport: (nextViewport: ViewportState, emit?: boolean) => void;
   onImageClick?: (point: Point) => void;
   onImagePress?: (point: Point, screenPoint: Point) => void;
@@ -39,6 +45,7 @@ export function useViewerPointerInteractions(config: {
     localViewport,
     disablePan,
     resolvedImageWidth,
+    resolvedImageHeight,
     setViewport,
     onImageClick,
     onImagePress,
@@ -57,15 +64,18 @@ export function useViewerPointerInteractions(config: {
   } = config;
   const activePointerIdRef = useRef<number | null>(null);
   const isPanningRef = useRef(false);
+  const panStartedWithPanKeyRef = useRef(false);
   const lastPointerScreenRef = useRef<Point | null>(null);
   const pointerDownStartRef = useRef<Point | null>(null);
   const movedSincePointerDownRef = useRef(false);
   const isBrushingRef = useRef(false);
   const lastMouseMoveTsRef = useRef(0);
+  const [panKeyHeld, setPanKeyHeld] = useState(false);
   const wheelStateRef = useRef({
     metrics,
     localViewport,
     resolvedImageWidth,
+    resolvedImageHeight,
   });
 
   useEffect(() => {
@@ -73,8 +83,31 @@ export function useViewerPointerInteractions(config: {
       metrics,
       localViewport,
       resolvedImageWidth,
+      resolvedImageHeight,
     };
-  }, [localViewport, metrics, resolvedImageWidth]);
+  }, [localViewport, metrics, resolvedImageHeight, resolvedImageWidth]);
+
+  useEffect(() => panKeyState.subscribe(setPanKeyHeld), []);
+
+  /**
+   * Who owns a plain left-button drag.
+   *
+   * The canvas reform's rule is that clicking the image does what the active
+   * tool says, so the left button cannot also be the pan gesture whenever a
+   * tool is armed: on the labeling screen the first stroke of a correction used
+   * to slide the image instead of drawing. Pan therefore moves to the two
+   * gestures nothing else claims -- hold space and drag, or drag with the
+   * middle button.
+   *
+   * Where nothing is armed there is no competition, and taking left-drag away
+   * would be a pure loss: the plain viewer and Navigate mode both pass no click
+   * or press handler at all, and dragging the image is the only thing a left
+   * drag could sensibly mean there. So the gesture is decided by whether a tool
+   * is listening, not by a flag a caller has to remember to set.
+   */
+  const toolOwnsLeftButton = Boolean(
+    onImageClick || onImagePress || onShapeClick || drawMode || brushMode
+  );
 
   const screenPointFromMouseEvent = useCallback((event: MouseEvent | PointerEvent): Point | null => {
     const container = containerRef.current;
@@ -115,11 +148,23 @@ export function useViewerPointerInteractions(config: {
       lastPointerScreenRef.current = screenPoint;
       movedSincePointerDownRef.current = false;
 
-      if (brushMode) {
+      // A pan gesture is exclusive: it must not also start a brush stroke or a
+      // group-selection box, or holding space to reposition the image would
+      // paint a line across whatever it passed over.
+      const panGesture =
+        !disablePan &&
+        (panKeyState.isPanKeyHeld() ||
+          event.button === MIDDLE_BUTTON ||
+          !toolOwnsLeftButton);
+      panStartedWithPanKeyRef.current = panGesture && panKeyState.isPanKeyHeld();
+
+      if (panGesture) {
+        isPanningRef.current = true;
+      } else if (brushMode) {
         isBrushingRef.current = true;
         drawState.startBrushStroke(imagePoint);
       } else {
-        isPanningRef.current = !disablePan;
+        isPanningRef.current = false;
         onImagePress?.(imagePoint, screenPoint);
       }
 
@@ -137,6 +182,7 @@ export function useViewerPointerInteractions(config: {
       onImagePress,
       screenPointFromMouseEvent,
       toImagePoint,
+      toolOwnsLeftButton,
     ]
   );
 
@@ -176,6 +222,30 @@ export function useViewerPointerInteractions(config: {
         }
       }
 
+      if (isPanningRef.current) {
+        if (disablePan || !localViewport) return;
+        const panX = (dx / metrics.containerWidth) * metrics.visibleWidth;
+        const panY = (dy / metrics.containerHeight) * metrics.visibleHeight;
+        if (panStartedWithPanKeyRef.current && (dx !== 0 || dy !== 0)) {
+          // Tell the keyboard layer this space press was a pan, so releasing
+          // the key does not also keep the object under the cursor.
+          panKeyState.markSpacePan();
+        }
+        setViewport(
+          clampViewportToImage(
+            {
+              ...localViewport,
+              centerX: localViewport.centerX - panX / resolvedImageWidth,
+              centerY: localViewport.centerY - panY / resolvedImageWidth,
+            },
+            resolvedImageWidth,
+            resolvedImageHeight
+          ),
+          true
+        );
+        return;
+      }
+
       if (brushMode && isBrushingRef.current) {
         drawState.appendBrushStroke(imagePoint);
         onImageDrag?.(imagePoint, screenPoint);
@@ -183,18 +253,6 @@ export function useViewerPointerInteractions(config: {
       }
 
       onImageDrag?.(imagePoint, screenPoint);
-      if (!isPanningRef.current || disablePan || !localViewport) return;
-
-      const panX = (dx / metrics.containerWidth) * metrics.visibleWidth;
-      const panY = (dy / metrics.containerHeight) * metrics.visibleHeight;
-      setViewport(
-        {
-          ...localViewport,
-          centerX: localViewport.centerX - panX / resolvedImageWidth,
-          centerY: localViewport.centerY - panY / resolvedImageWidth,
-        },
-        true
-      );
     },
     [
       brushMode,
@@ -207,6 +265,7 @@ export function useViewerPointerInteractions(config: {
       metrics,
       onImageDrag,
       onImageMove,
+      resolvedImageHeight,
       resolvedImageWidth,
       screenPointFromMouseEvent,
       setViewport,
@@ -220,7 +279,9 @@ export function useViewerPointerInteractions(config: {
       const screenPoint = screenPointFromMouseEvent(event.nativeEvent);
       const imagePoint = screenPoint ? toImagePoint(screenPoint) : null;
 
-      if (brushMode && isBrushingRef.current) {
+      if (isPanningRef.current) {
+        // A pan claimed this gesture at pointer-down; no tool ever saw it.
+      } else if (brushMode && isBrushingRef.current) {
         isBrushingRef.current = false;
         drawState.finishBrushStroke();
       } else if (screenPoint && imagePoint) {
@@ -229,6 +290,7 @@ export function useViewerPointerInteractions(config: {
 
       activePointerIdRef.current = null;
       isPanningRef.current = false;
+      panStartedWithPanKeyRef.current = false;
       lastPointerScreenRef.current = null;
     },
     [brushMode, drawState, metrics, onImageRelease, screenPointFromMouseEvent, toImagePoint]
@@ -243,6 +305,12 @@ export function useViewerPointerInteractions(config: {
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       if (!metrics || brushMode) return;
+      // Space is held: this gesture belonged to the pan, and a keep must not
+      // also fire off the same press.
+      if (panKeyState.isPanKeyHeld()) {
+        pointerDownStartRef.current = null;
+        return;
+      }
       const downStart = pointerDownStartRef.current;
       if (downStart && movedSincePointerDownRef.current) {
         pointerDownStartRef.current = null;
@@ -314,23 +382,36 @@ export function useViewerPointerInteractions(config: {
         imagePoint.y + (0.5 - screenPoint.y / metrics.containerHeight) * nextVisibleHeight;
 
       setViewport(
-        {
-          ...localViewport,
-          centerX: nextCenterX / resolvedImageWidth,
-          centerY: nextCenterY / resolvedImageWidth,
-          zoom: nextZoom,
-        },
+        clampViewportToImage(
+          {
+            ...localViewport,
+            centerX: nextCenterX / resolvedImageWidth,
+            centerY: nextCenterY / resolvedImageWidth,
+            zoom: nextZoom,
+          },
+          resolvedImageWidth,
+          resolvedImageHeight
+        ),
         true
       );
     },
-    [localViewport, metrics, resolvedImageWidth, screenPointFromMouseEvent, setViewport, toImagePoint]
+    [
+      localViewport,
+      metrics,
+      resolvedImageHeight,
+      resolvedImageWidth,
+      screenPointFromMouseEvent,
+      setViewport,
+      toImagePoint,
+    ]
   );
 
   const handleWheel = useCallback(
     (event: WheelEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      const { metrics, localViewport, resolvedImageWidth } = wheelStateRef.current;
+      const { metrics, localViewport, resolvedImageWidth, resolvedImageHeight } =
+        wheelStateRef.current;
       if (!metrics || !localViewport) return;
       const screenPoint = screenPointFromMouseEvent(event);
       if (!screenPoint) return;
@@ -347,12 +428,16 @@ export function useViewerPointerInteractions(config: {
         imagePoint.y + (0.5 - screenPoint.y / metrics.containerHeight) * nextVisibleHeight;
 
       setViewport(
-        {
-          ...localViewport,
-          centerX: nextCenterX / resolvedImageWidth,
-          centerY: nextCenterY / resolvedImageWidth,
-          zoom: nextZoom,
-        },
+        clampViewportToImage(
+          {
+            ...localViewport,
+            centerX: nextCenterX / resolvedImageWidth,
+            centerY: nextCenterY / resolvedImageWidth,
+            zoom: nextZoom,
+          },
+          resolvedImageWidth,
+          resolvedImageHeight
+        ),
         true
       );
     },
@@ -378,5 +463,9 @@ export function useViewerPointerInteractions(config: {
     handleMouseLeave,
     handleClick,
     handleDoubleClick,
+    /** Space is down: the canvas shows a grab cursor and tools stand aside. */
+    panKeyHeld,
+    /** Whether a plain left drag pans, for the cursor and for tests. */
+    leftDragPans: !toolOwnsLeftButton,
   };
 }

@@ -86,6 +86,14 @@
   color: #d1d1d1;
 }
 
+/* Occupies the slot "Overlay updating…" used to hold for ever. Amber, not
+   grey: it is a stopped state that needs a decision, not a progress note. */
+.viewer-error-indicator {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fbbf24;
+}
+
 .viewer-header-actions {
   display: flex;
   align-items: center;

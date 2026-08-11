@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { getAssetNgffUrl } from "@/shared/api/assets";
 import { ADD_BRUSH_DIAMETER } from "@/features/segmentation/screen/utils/constants";
 import { ImageViewer } from "@/viewer/components/ImageViewer";
+import { resolvePixelSize } from "@/shared/pixelSize";
 import type { OverlayScene } from "@/viewer/overlays/types";
 import type { SegmentationLeftPanelProps } from "@/features/segmentation/components/leftPanel/types";
 
@@ -60,6 +61,10 @@ export function buildLeftPanelViewerConfig({
       ngffUrl: getAssetNgffUrl(viewer.image.id, null),
       width: viewer.image.width,
       height: viewer.image.height,
+      // Drives the scale bar. `resolvePixelSize` returns null for an
+      // uncalibrated image and the canvas then draws no bar, which is the
+      // honest outcome: this screen's whole job is measurements in nanometres.
+      pixelSizeNm: resolvePixelSize(viewer.image).valueNm,
     },
     className: "viewer-container",
     viewport: {
@@ -101,8 +106,7 @@ export function buildLeftPanelViewerConfig({
         enabled:
           !roiPlacementActive &&
           !workflow.navigateMode &&
-          (workflow.leftMode === "annotate" ||
-            isAddMode ||
+          (isAddMode ||
             (workflow.mode === "review" &&
               workflow.reviewPhase === "correction" &&
               (workflow.correctionTool === "draw" ||

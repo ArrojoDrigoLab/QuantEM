@@ -431,9 +431,11 @@ class RunNoticeReachesAProofreadImageTests(_SegmentationTestCase):
 
         steps = " ".join(self._notice()["next_steps"])
 
-        self.assertIn(
-            f"/api/segmentations/{self.segmentation.id}/labels/clear", steps
-        )
+        # It named ``POST /api/segmentations/<id>/labels/clear``; the button
+        # that does it is "Discard objects and re-run..." on the labeling
+        # header, and I-12 forbids the route (api-endpoint) in copy.
+        self.assertIn("Discard objects and re-run", steps)
+        self.assertNotIn("/api/", steps)
         self.assertIn("A re-run cannot replace them", steps)
         self.assertNotIn("Lower the detection threshold", steps)
 

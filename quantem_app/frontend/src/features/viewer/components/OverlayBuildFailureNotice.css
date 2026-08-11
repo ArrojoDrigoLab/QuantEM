@@ -1,0 +1,85 @@
+/* The overlay-rebuild failure block.
+ *
+ * Deliberately louder than `.overlay-status-error` (which reports a failed
+ * *run*): this state is terminal and the user has to act on it, and it used to
+ * be represented on screen by the words "Overlay updating...".
+ *
+ * Amber rather than red. A failed rebuild is not a lost run -- the objects are
+ * intact and, when a previous bundle exists, still drawn -- and colouring it
+ * like a dead run would say the opposite of what the copy says.
+ */
+.overlay-build-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #92400e;
+  background: #2a1f10;
+  color: #fde3b8;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.overlay-build-failure-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fcd34d;
+}
+
+.overlay-build-failure p {
+  margin: 0;
+}
+
+/* The catalogued class of the failure, when the server named one. Ordinary
+   prose weight, above the monospaced verbatim reason: the class is what the
+   user reads and acts on, the reason is what they copy into Explorer. */
+.overlay-build-failure-class {
+  color: #fde3b8;
+}
+
+.overlay-build-failure-reason {
+  /* The server's words, at a path the user can go and look at: it must be
+     selectable and must not be truncated. */
+  padding: 5px 6px;
+  border-radius: 4px;
+  background: #1b1206;
+  color: #fbbf24;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.overlay-build-failure-revisions,
+.overlay-build-failure-advice {
+  color: #cbb389;
+}
+
+.overlay-build-failure-retry {
+  align-self: flex-start;
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: 1px solid #f59e0b;
+  background: #f59e0b;
+  color: #1b1206;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.overlay-build-failure-retry:hover:not(:disabled) {
+  background: #fbbf24;
+  border-color: #fbbf24;
+}
+
+.overlay-build-failure-retry:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.overlay-build-failure-retry-error {
+  color: #fca5a5;
+  overflow-wrap: anywhere;
+}

@@ -4,11 +4,15 @@ const runtimeConfig = getRuntimeConfig();
 // `window.__APP_CONFIG__.apiBaseUrl` is authoritative: the desktop shell binds the
 // backend to a free ephemeral port at launch and injects the resulting origin here.
 // Never rewrite it -- a hard-coded port would break every launch.
+// The dev fallback is deliberately not 8000: that port is the first thing every
+// other backend on a machine claims, and some dev scripts "free" it by killing
+// whatever holds it. 45174 pairs with the dev SPA on 45173 (vite.config.ts) --
+// change one and change the other. VITE_API_BASE_URL overrides it in any mode,
+// which is also how the test suite pins the origin its mocks are written for.
 const apiBase =
   runtimeConfig.apiBaseUrl ||
-  (import.meta.env.DEV
-    ? "http://127.0.0.1:8000"
-    : import.meta.env.VITE_API_BASE_URL) ||
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? "http://127.0.0.1:45174" : "") ||
   "";
 // No auth token is read or sent: QuantEM is single-user and loopback-only.
 // The block that used to seed one from VITE_LOCAL_AUTH_TOKEN referenced a

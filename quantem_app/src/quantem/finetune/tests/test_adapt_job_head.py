@@ -20,8 +20,8 @@ from django.test import TestCase
 
 torch = pytest.importorskip("torch", reason="head adaptation needs torch")
 
+from quantem.core.config import MODELS_DIR  # noqa: E402
 from quantem.finetune.job import adapter_job  # noqa: E402 -- after the torch skip
-from quantem.finetune.storage import adapter_head_path  # noqa: E402
 from quantem.finetune.tests.fixtures import (  # noqa: E402
     FakeCancel,
     FakeReporter,
@@ -100,7 +100,10 @@ class HeadModeJobTests(TestCase):
         assert result["sweep"]["heldout_dice_at_calibrated"] is not None
 
         # The saved head exists and reproduces the held-out score on reload.
-        head_file = adapter_head_path("unsaved")
+        # Read back from the result rather than reconstructed: a run with no
+        # adapter row gets a scratch path unique to it, so that two of them at
+        # once cannot verify each other's weights.
+        head_file = MODELS_DIR / result["head_path"]
         try:
             assert head_file.exists()
             assert result["verified_reload"] is True

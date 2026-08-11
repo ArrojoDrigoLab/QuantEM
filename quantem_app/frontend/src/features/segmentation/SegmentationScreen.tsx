@@ -23,6 +23,7 @@ import { useErPolygonWorkflow } from "@/features/segmentation/screen/hooks/useEr
 import { useConfirmedGeometrySubmission } from "@/features/segmentation/screen/hooks/useConfirmedGeometrySubmission";
 import { useSegmentationReviewWorkflow } from "@/features/segmentation/screen/hooks/useSegmentationReviewWorkflow";
 import { useSegmentationInteractionRouter } from "@/features/segmentation/screen/hooks/useSegmentationInteractionRouter";
+import { useReviewSamBoxController } from "@/features/segmentation/screen/hooks/review/useReviewSamBoxController";
 import { useSegmentationKeyboardShortcuts } from "@/features/segmentation/screen/hooks/useSegmentationKeyboardShortcuts";
 import { useSegmentationScreenUiState } from "@/features/segmentation/screen/hooks/useSegmentationScreenUiState";
 import { useRemoveAreaWorkflow } from "@/features/segmentation/screen/hooks/useRemoveAreaWorkflow";
@@ -301,6 +302,25 @@ export function SegmentationScreen() {
     [erRoi]
   );
 
+  // Box-to-object. Owns its own pointer gestures and its own weights; the
+  // screen only tells it where it is allowed to run and what to refresh.
+  const samBox = useReviewSamBoxController({
+    currentSegmentationId: route.currentSegmentationId,
+    workflowMode: reviewMode.workflowMode,
+    correctionMode: reviewMode.correctionMode,
+    leftNavigateMode: ui.leftNavigateMode,
+    isTissueSegmentation: route.isTissueSegmentation,
+    onOverlayMutation: (overlayMutation) =>
+      overlayRefresh.handleOverlayMutationRefresh(
+        (overlayMutation ?? null) as Parameters<
+          typeof overlayRefresh.handleOverlayMutationRefresh
+        >[0]
+      ),
+    showErrorToast: ui.showErrorToast,
+    showNoticeToast: ui.showNoticeToast,
+    registerAnnotationActivity: overlayRefresh.registerAnnotationActivity,
+  });
+
   const interactions = useSegmentationInteractionRouter({
     currentSegmentationId: route.currentSegmentationId,
     leftNavigateMode: ui.leftNavigateMode,
@@ -329,6 +349,12 @@ export function SegmentationScreen() {
           tissue.activePolygonTool?.handlePolygonMouseMove ?? (() => {}),
       },
     },
+    samBox: {
+      isActive: samBox.isActive,
+      handleImagePress: samBox.handleImagePress,
+      handleImageDrag: samBox.handleImageDrag,
+      handleImageRelease: samBox.handleImageRelease,
+    },
     review: {
       hoverActionMode: hover.hoverActionMode,
       leftMode: reviewMode.leftMode,
@@ -345,10 +371,32 @@ export function SegmentationScreen() {
     },
   });
 
+  /**
+   * The keyboard's half of the canvas reform.
+   *
+   * The object under the pointer is the object a key acts on, so a decision
+   * costs one keystroke instead of a round trip to the sidebar and back --
+   * which, at a few hundred objects an image, was most of the work.
+   */
+  const pointVerbs = useMemo(
+    () => ({
+      hoverPoint: hover.hoverPoint,
+      hasHoverTarget: hover.hoverSegments.length > 0,
+      keep: (point: Point) =>
+        reviewPointActions.handleApplyPointAction(point, "confirm"),
+      remove: (point: Point) =>
+        reviewPointActions.handleApplyPointAction(point, "reject"),
+      unmark: (point: Point) =>
+        reviewPointActions.handleResetConfirmedToCandidate(point),
+    }),
+    [hover.hoverPoint, hover.hoverSegments.length, reviewPointActions]
+  );
+
   useSegmentationKeyboardShortcuts({
     leftNavigateMode: ui.leftNavigateMode,
     toggleLeftNavigateMode: ui.toggleLeftNavigateMode,
     cycleHoverIndex: hover.cycleHoverIndex,
+    pointVerbs,
     drawing,
     removeArea: {
       mode: removeArea.rightPanelRemoveMode,
@@ -449,6 +497,7 @@ export function SegmentationScreen() {
     feedback,
     hover,
     interactions,
+    samBox,
     drawing,
     removeArea,
     tissue,
@@ -552,7 +601,23 @@ export function SegmentationScreen() {
           }}
           onCancel={completedRoi.cancelSave}
         />
-        <SegmentationSidebar {...viewModels.sidebarProps} />
+        <SegmentationSidebar
+          {...viewModels.sidebarProps}
+          // Wired here rather than in the view-model hook because the dial
+          // needs `refreshSegmentViews`, which lives on this screen: a
+          // re-extract replaces the whole candidate set and renumbers the
+          // result, so the ID-map overlay and the segment lists are both stale
+          // afterwards. The dial deliberately knows nothing about drawing.
+          includeLevel={
+            route.currentSegmentation
+              ? {
+                  segmentationId: route.currentSegmentation.id,
+                  sourceModel: route.activeSourceModel,
+                  onReextracted: overlayRefresh.refreshSegmentViews,
+                }
+              : undefined
+          }
+        />
         <SegmentationLeftPanel {...viewModels.leftPanelProps} />
         {ui.showConfirmedPanel && (
           <SegmentationRightPanel {...viewModels.rightPanelProps} />

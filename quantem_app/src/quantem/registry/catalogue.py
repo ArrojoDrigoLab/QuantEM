@@ -13,13 +13,18 @@ render a model picker honestly:
 The third question is the one that did not exist before. Installing a pack only
 records verified files; whether those files can be turned into a *module* is a
 separate fact, decided by :func:`quantem.inference.engine.build_module` at the
-moment a user clicks Run. Four of the eight packs (the QuantEM family) sit on a
-DINOv3 ViT-B whose architecture code QuantEM deliberately does not redistribute,
-so on a machine with no exported ``encoder_ts.pt`` and no ``dinov3`` package
-those packs install perfectly and then raise
+moment a user clicks Run. A pack with no exported ``encoder_ts.pt`` and nothing
+installed that can rebuild its architecture installs perfectly and then raises
 :class:`~quantem.inference.engine.ModelArchitectureUnavailable` seconds into a
 run. :func:`probe_runnable` surfaces that up front so the picker can grey the
 pack out and say why.
+
+**What counts as "nothing that can rebuild it" has narrowed**, and this module
+has to keep up or it greys out packs that work. It used to be that the four
+QuantEM packs needed Meta's DINOv3 package, which is not redistributed here.
+They no longer do: timm implements the same architecture and
+:func:`quantem.inference.encoders.build_encoder` renames the tensors. See
+:data:`_EAGER_REQUIREMENT`.
 
 **The probe is cheap on purpose.** It stats one file, reads one small JSON, and
 asks :func:`importlib.util.find_spec` whether a package exists. It never loads a
@@ -36,11 +41,12 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from quantem.inference.dinov3_hint import DINOV3_PATH_ENV_VAR as _DINOV3_PATH_ENV_VAR
+from quantem.inference.dinov3_hint import hint_provides_dinov3
 from quantem.inference.specs import FAMILY_LABELS, MODEL_SPECS, ModelSpec
 from quantem.registry import cache
 from quantem.registry.manifest import MEASURED_SIZES
@@ -98,16 +104,26 @@ _NOTES: dict[str, str] = {
 
 #: Encoder frameworks and the package each one needs to be built eagerly. Keyed
 #: by the ``encoder.framework`` value in a pack's ``checkpoint_index.json``.
+#:
+#: **Both are ``timm``**, including the family whose index says ``dinov3``.
+#: That is not a shortcut: :func:`quantem.inference.encoders.build_encoder`
+#: builds a ``dinov3``-indexed QuantEM pack through timm by translating the
+#: tensor names, and only falls back to Meta's package when timm cannot. The
+#: probe has to describe the ladder that exists, or the Models screen greys out
+#: packs that run -- which is what it did while this said ``"dinov3": "dinov3"``
+#: and the engine had already stopped needing it.
 _EAGER_REQUIREMENT: dict[str, str] = {
     "timm_vit": "timm",
-    "dinov3": "dinov3",
+    "dinov3": "timm",
 }
 
-#: Env var that points at a DINOv3 checkout; mirrors
-#: :data:`quantem.inference.encoders.DINOV3_PATH_ENV_VAR`. Named here rather
-#: than imported because ``encoders`` imports torch at module scope and this
-#: module must stay import-cheap.
-DINOV3_PATH_ENV_VAR = "QUANTEM_DINOV3_PATH"
+#: Env var that points at a DINOv3 checkout. Imported from
+#: :mod:`quantem.inference.dinov3_hint`, which is standard-library-only and
+#: exists so this module and
+#: :func:`quantem.inference.encoders._import_dinov3` cannot disagree about what
+#: the variable means. ``encoders`` itself must not be imported here: it imports
+#: torch at module scope and a list request has to stay cheap.
+DINOV3_PATH_ENV_VAR = _DINOV3_PATH_ENV_VAR
 
 
 @dataclass(frozen=True)
@@ -135,11 +151,16 @@ def _module_available(name: str) -> bool:
 
 
 def _dinov3_available() -> bool:
-    """DINOv3 is importable, or a checkout is pointed at by the env hint."""
-    if _module_available("dinov3"):
-        return True
-    hint = os.environ.get(DINOV3_PATH_ENV_VAR, "").strip()
-    return bool(hint) and (Path(hint) / "dinov3").is_dir()
+    """DINOv3 is importable, or a checkout is pointed at by the env hint.
+
+    The hint is judged by the same rule the importer applies -- would adding
+    this directory to ``sys.path`` make ``import dinov3`` work -- rather than by
+    a second, looser guess at the layout. This function used to require a
+    ``dinov3`` *subdirectory* while the importer accepted any directory and let
+    the import decide, so the Models screen and the run path could give
+    different answers about the same environment variable.
+    """
+    return _module_available("dinov3") or hint_provides_dinov3()
 
 
 def _encoder_framework(index_path: Path) -> str | None:
@@ -166,8 +187,11 @@ def probe_runnable(pack_id: str, *, installed: bool | None = None) -> Runnable:
     2. the pack's files are installed;
     3. an exported ``encoder_ts.pt`` beside the head (tier a, the shipping path)
        -- self-describing, needs no architecture package;
-    4. otherwise the eager tier named by the pack's own
-       ``checkpoint_index.json``: ``timm`` for OmniEM, ``dinov3`` for QuantEM.
+    4. otherwise ``timm``, for **both** families: the engine builds a
+       DINOv3-indexed QuantEM pack through timm by translating the tensor
+       names, and only reaches for Meta's package when it cannot;
+    5. and that fallback: a pack whose index this build cannot map onto a timm
+       architecture is runnable only where ``dinov3`` is.
 
     Never loads a weight file. The answer can be wrong in one direction only --
     a pack reported runnable can still fail on a corrupt file or a shape
@@ -184,8 +208,9 @@ def probe_runnable(pack_id: str, *, installed: bool | None = None) -> Runnable:
     if not _module_available("torch"):
         return Runnable(
             False,
-            "PyTorch is not installed in this environment, so no model can run "
-            "here. Threshold calibration still works; inference does not.",
+            "This copy of QuantEM was installed without PyTorch, so no model can "
+            "run on it. Include level calibration still works; segmentation does "
+            "not.",
         )
 
     if installed is None:
@@ -201,8 +226,9 @@ def probe_runnable(pack_id: str, *, installed: bool | None = None) -> Runnable:
     if not index_path.exists():
         return Runnable(
             False,
-            f"No exported encoder and no {cache.INDEX_NAME} beside the weights, "
-            "so nothing describes the architecture to rebuild. Reinstall the pack.",
+            "This copy of the pack is incomplete: the part that reads the image "
+            "is missing, and so is the description needed to rebuild it. "
+            f"Reinstalling replaces it. {cache.INSTALL_HINT}",
         )
 
     framework = _encoder_framework(index_path)
@@ -210,28 +236,28 @@ def probe_runnable(pack_id: str, *, installed: bool | None = None) -> Runnable:
     if requirement is None:
         return Runnable(
             False,
-            f"Encoder framework {framework!r} is not one QuantEM can build "
-            "('timm_vit' or 'dinov3').",
-        )
-
-    if requirement == "dinov3":
-        if _dinov3_available():
-            return Runnable(True, None, "dinov3")
-        return Runnable(
-            False,
-            "This copy of the pack has no exported encoder, and rebuilding its "
-            "ViT-B would need Meta's `dinov3` package, which QuantEM does not "
-            "redistribute. Reinstall the pack -- an install from Hugging Face or "
-            f"from a release bundle carries or builds {cache.EXPORTED_ENCODER_NAME}, "
-            f"which needs nothing else. {cache.INSTALL_HINT}",
+            "This copy of the pack describes itself in a way this version of "
+            f"QuantEM does not recognise ({framework!r}), so it cannot be loaded. "
+            f"Reinstalling replaces it. {cache.INSTALL_HINT}",
         )
 
     if _module_available(requirement):
         return Runnable(True, None, "timm")
+
+    # timm is absent. Meta's package can still build the QuantEM family, which
+    # is the developer's escape hatch and the last rung of the engine's ladder;
+    # saying so keeps this function's answer and the engine's behaviour the
+    # same answer.
+    if framework == "dinov3" and _dinov3_available():
+        return Runnable(True, None, "dinov3")
+
     return Runnable(
         False,
-        f"This pack's encoder is built through `{requirement}`, which is not "
-        "installed here.",
+        "This copy of the pack is missing its ready-to-run image encoder, and "
+        "the component that would rebuild one is not part of this QuantEM "
+        "installation. A pack installed from Hugging Face or from a QuantEM "
+        "model release carries that encoder and needs nothing else, so "
+        f"reinstalling fixes this. {cache.INSTALL_HINT}",
     )
 
 
@@ -251,6 +277,36 @@ def download_bytes(spec: ModelSpec) -> int:
     if not spec.embeds_encoder:
         total += MEASURED_SIZES.get(_ENCODER_SIZE_KEY[spec.family], 0)
     return total
+
+
+def deduped_download_bytes(pack_ids: list[str] | tuple[str, ...]) -> int:
+    """Bytes a fresh install of *this set* of packs must fetch, counted once.
+
+    Three QuantEM packs share one encoder blob, so installing all three costs
+    one copy of it and not three. Adding :func:`download_bytes` up over a
+    selection therefore overstates it -- measured at **2.62x** across the eight
+    released packs (6.64 GB claimed against 2.53 GB real), on the one screen
+    whose whole job is to state a cost before the user commits to it.
+
+    Unknown pack ids are skipped rather than raising: an id this build does not
+    know is an older or newer release, and refusing to quote any figure at all
+    would be worse than quoting the part that is known.
+    """
+    heads = 0
+    families_needing_encoder: set[str] = set()
+    for pack_id in dict.fromkeys(pack_ids):
+        spec = MODEL_SPECS.get(pack_id)
+        if spec is None:
+            continue
+        heads += MEASURED_SIZES.get(f"{spec.organelle}_{spec.family}_head", 0)
+        if not spec.embeds_encoder:
+            families_needing_encoder.add(spec.family)
+    encoders = sum(
+        MEASURED_SIZES.get(_ENCODER_SIZE_KEY[family], 0)
+        for family in families_needing_encoder
+        if family in _ENCODER_SIZE_KEY
+    )
+    return heads + encoders
 
 
 def pack_title(spec: ModelSpec) -> str:
@@ -319,7 +375,7 @@ def active_install_job(pack_id: str) -> Any | None:
 def active_install_entry(pack_id: str) -> dict[str, Any] | None:
     """The ``active_install`` block of one pack entry, or None.
 
-    Shape (pinned in ``API_CONTRACT.md`` §Models)::
+    Shape (pinned in the API contract §Models)::
 
         {"job_id": "<uuid>", "status": "QUEUED" | "RUNNING",
          "progress_current_bytes": int | null,
@@ -467,6 +523,46 @@ def registry_block() -> dict[str, Any]:
     }
 
 
+#: The folder name a QuantEM model release unzips to. Used only to build an
+#: *example* path; nothing resolves or reads it.
+_RELEASE_DIRNAME_EXAMPLE = "quantem-models"
+
+
+def storage_block() -> dict[str, Any]:
+    """Where this install keeps models, and an example built from that.
+
+    Owner ruling D8: a path shown to a user is **constructed from the running
+    machine**, never typed by whoever wrote the line. The Models screen's
+    "Install from a local folder" field used to be placeheld with a literal
+    example beginning with this build machine's drive letter, offered as
+    guidance to somebody on a Mac, who has neither that drive nor backslashes.
+
+    So the example is assembled here, where :class:`~pathlib.Path` knows the
+    separator and :func:`quantem.registry.cache.models_root` knows the root.
+    ``models_dir`` is the real resolved directory (a datum, in a field of its
+    own -- see D7: never in a sentence), and ``local_source_example`` is a
+    sibling of the data directory with a release-shaped name on it, which is
+    where somebody who unzipped a release next to their data would actually
+    find it.
+
+    ``unavailable`` rather than a fabricated string when the data directory
+    cannot be resolved at all: an example is worth less than nothing if it is a
+    guess about a machine we just failed to read.
+    """
+    from quantem.registry import cache
+
+    try:
+        models_dir = cache.models_root()
+    except Exception:
+        return {"models_dir": None, "local_source_example": None}
+    return {
+        "models_dir": str(models_dir),
+        "local_source_example": str(
+            models_dir.parent.parent / _RELEASE_DIRNAME_EXAMPLE
+        ),
+    }
+
+
 def catalogue() -> dict[str, Any]:
     """The whole ``GET /api/models/`` body."""
     return {
@@ -474,4 +570,5 @@ def catalogue() -> dict[str, Any]:
         "adapted": adapted_entries(),
         "device": device_block(),
         "registry": registry_block(),
+        "storage": storage_block(),
     }

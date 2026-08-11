@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildMetrics,
+  clampViewportToImage,
   defaultViewport,
   fitBoundsViewport,
+  oneToOneZoom,
+  scaleBarPlan,
 } from "@/viewer/components/internal/viewerMath";
+import type { ViewportState } from "@/viewer/types";
 
 describe("defaultViewport", () => {
   /**
@@ -112,5 +116,128 @@ describe("fitBoundsViewport", () => {
     expect(viewport.centerX).toBeCloseTo(25 / 100);
     expect(viewport.centerY).toBeCloseTo(25 / 100);
     expect(viewport.zoom).toBeCloseTo(100 / 50);
+  });
+});
+
+describe("clampViewportToImage", () => {
+  /**
+   * Nothing bounded the pan, so a few flicks of the wrist left a black canvas
+   * with the image off to one side and no way back except a reload.
+   */
+  function viewport(centerX: number, centerY: number): ViewportState {
+    return {
+      centerX,
+      centerY,
+      zoom: 1,
+      containerWidth: 1000,
+      containerHeight: 800,
+    };
+  }
+
+  it("keeps the centre of the canvas over the image when panned far right", () => {
+    const clamped = clampViewportToImage(viewport(9.5, 0.25), 2000, 1000);
+
+    expect(clamped.centerX).toBe(1);
+    expect(clamped.centerY).toBe(0.25);
+  });
+
+  it("keeps the centre of the canvas over the image when panned far up", () => {
+    const clamped = clampViewportToImage(viewport(0.4, -6), 2000, 1000);
+
+    expect(clamped.centerX).toBe(0.4);
+    expect(clamped.centerY).toBe(0);
+  });
+
+  it("bounds the vertical centre by the image's own aspect, not by 1", () => {
+    // Centres are in `imageWidth` units, so a 2000x1000 image ends at 0.5.
+    const clamped = clampViewportToImage(viewport(0.5, 0.9), 2000, 1000);
+
+    expect(clamped.centerY).toBe(0.5);
+  });
+
+  it("leaves an in-bounds viewport strictly untouched", () => {
+    const inBounds = viewport(0.5, 0.25);
+
+    expect(clampViewportToImage(inBounds, 2000, 1000)).toBe(inBounds);
+  });
+
+  it("does nothing when the image has no measured size yet", () => {
+    const unbounded = viewport(9, 9);
+
+    expect(clampViewportToImage(unbounded, 0, 0)).toBe(unbounded);
+  });
+});
+
+describe("oneToOneZoom", () => {
+  it("puts one image pixel on one screen pixel", () => {
+    const zoom = oneToOneZoom(4000, 1000);
+    const metrics = buildMetrics(
+      { centerX: 0.5, centerY: 0.25, zoom, containerWidth: 1000, containerHeight: 800 },
+      4000,
+      2000
+    );
+
+    expect(metrics.visibleWidth).toBeCloseTo(1000);
+  });
+
+  it("survives an unmeasured container", () => {
+    expect(Number.isFinite(oneToOneZoom(4000, 0))).toBe(true);
+  });
+});
+
+describe("scaleBarPlan", () => {
+  /**
+   * The bar has to mean nanometres at the zoom actually on screen, and the
+   * number under it has to be one a reader can hold in their head.
+   */
+  function metricsAtZoom(zoom: number) {
+    return buildMetrics(
+      { centerX: 0.5, centerY: 0.25, zoom, containerWidth: 1000, containerHeight: 800 },
+      4000,
+      2000
+    );
+  }
+
+  it("reads correctly at three zoom levels on a 5 nm/px image", () => {
+    // Fit: 4000 image px across 1000 screen px -> 4 image px per screen px ->
+    // 20 nm per screen px, so a 160 px budget covers 3 200 nm and the largest
+    // round length that fits is 2 um.
+    const fit = scaleBarPlan(metricsAtZoom(1), 5, 160);
+    expect(fit?.label).toBe("2 µm");
+    expect(fit?.lengthPx).toBeCloseTo(2000 / 20);
+
+    // 1:1 -> 5 nm per screen px, 160 px covers 800 nm -> 500 nm.
+    const oneToOne = scaleBarPlan(metricsAtZoom(oneToOneZoom(4000, 1000)), 5, 160);
+    expect(oneToOne?.label).toBe("500 nm");
+    expect(oneToOne?.lengthPx).toBeCloseTo(500 / 5);
+
+    // 8x -> 0.625 nm per screen px, 160 px covers 100 nm -> 100 nm exactly.
+    const zoomedIn = scaleBarPlan(metricsAtZoom(oneToOneZoom(4000, 1000) * 8), 5, 160);
+    expect(zoomedIn?.label).toBe("100 nm");
+    expect(zoomedIn?.lengthPx).toBeCloseTo(100 / 0.625);
+  });
+
+  it("never draws a bar wider than its budget", () => {
+    for (const zoom of [0.25, 1, 3, 17, 200]) {
+      const plan = scaleBarPlan(metricsAtZoom(zoom), 5, 160);
+      expect(plan).not.toBeNull();
+      expect(plan!.lengthPx).toBeLessThanOrEqual(160);
+    }
+  });
+
+  it("switches to millimetres on a coarse survey image", () => {
+    // 20 000 nm/px at 4 image px per screen px is 80 um per screen px, so a
+    // 160 px budget covers 12.8 mm and the bar reads 10 mm.
+    const plan = scaleBarPlan(metricsAtZoom(1), 20000, 160);
+
+    expect(plan?.label).toBe("10 mm");
+    expect(plan?.lengthNm).toBe(1e7);
+  });
+
+  it("draws nothing at all for an uncalibrated image", () => {
+    expect(scaleBarPlan(metricsAtZoom(1), null, 160)).toBeNull();
+    expect(scaleBarPlan(metricsAtZoom(1), undefined, 160)).toBeNull();
+    expect(scaleBarPlan(metricsAtZoom(1), 0, 160)).toBeNull();
+    expect(scaleBarPlan(metricsAtZoom(1), Number.NaN, 160)).toBeNull();
   });
 });

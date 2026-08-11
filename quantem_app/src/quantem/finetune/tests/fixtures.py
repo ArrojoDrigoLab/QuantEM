@@ -84,18 +84,106 @@ def annotated_segmentation(
     return segmentation
 
 
+def done_roi(
+    segmentation: ImageSegmentation,
+    rect: tuple[int, int, int, int],
+    *,
+    display_name: str = "done area",
+):
+    """A ROI ticked as done for this organelle: the second ground-truth source.
+
+    ``rect`` is ``(x, y, width, height)``. The record the trainer reads is
+    ``RoiSegmentationStatus``, not the flat ``ImageROI.is_complete`` flag, which
+    says nothing about which organelle was finished.
+    """
+    from quantem.assets.models import ImageROI
+    from quantem.segmentation.models import RoiSegmentationStatus
+
+    x, y, width, height = rect
+    roi = ImageROI.objects.create(
+        asset=segmentation.asset,
+        display_name=display_name,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+        source="MANUAL",
+    )
+    roi.segmentations.add(segmentation)
+    status = RoiSegmentationStatus.objects.create(
+        image_roi=roi, segmentation=segmentation
+    )
+    status.set_complete(True)
+    status.save()
+    return status
+
+
 class FakeReporter:
-    """Records what a job would have shown the user."""
+    """Records what a job would have shown the user.
+
+    Carries the queue reporter's whole surface, not only ``update``: the scoped
+    run writes stages and step counts, and a stand-in that quietly lacked them
+    would let a progress defect through every test in this package.
+    """
 
     def __init__(self) -> None:
         self.updates: list[tuple[float | None, str | None]] = []
         self.logs: list[tuple[str, str]] = []
+        self.stages: list[str] = []
+        self.scopes: list[FakeUnitScope] = []
 
-    def update(self, progress: float | None = None, message: str | None = None) -> None:
+    def update(
+        self,
+        progress: float | None = None,
+        message: str | None = None,
+        *,
+        stage: str | None = None,
+        detail: dict | None = None,
+        **_ignored,
+    ) -> None:
         self.updates.append((progress, message))
+        if stage is not None:
+            self.stages.append(stage)
+
+    def unit_scope(self, *, total: int, label: str, stage=None, detail=None, **_kw):
+        scope = FakeUnitScope(total=total, label=label, stage=stage, detail=detail)
+        self.scopes.append(scope)
+        if stage is not None:
+            self.stages.append(stage)
+        return scope
 
     def log(self, level: str, message: str) -> None:
         self.logs.append((level, message))
+
+
+class FakeUnitScope:
+    """What a job wrote into one countable phase, without a database."""
+
+    def __init__(self, *, total: int, label: str, stage=None, detail=None) -> None:
+        self.total = total
+        self.label = label
+        self.stage = stage
+        self.detail = dict(detail or {})
+        self.done = 0
+        self.max_done = 0
+
+    def set(self, done: int, *, total: int | None = None) -> None:
+        if total is not None:
+            self.total = total
+        self.done = int(done)
+        self.max_done = max(self.max_done, self.done)
+
+    def advance(self, count: int = 1) -> None:
+        self.set(self.done + count)
+
+    def finish(self) -> None:
+        return None
+
+    def __enter__(self) -> FakeUnitScope:
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        return None
 
 
 class FakeCancel:

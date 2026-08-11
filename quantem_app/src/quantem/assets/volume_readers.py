@@ -35,7 +35,7 @@ import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import tifffile
@@ -207,11 +207,14 @@ class _TiffVolumeSource(VolumeSource):
     def _read_voxel_size(self) -> tuple[float | None, float | None, float | None]:
         z = y = x = None
         self._calibration_conflict: str | None = None
+        self._calibration_source: str | None = None
         ome = self._tif.ome_metadata
         if ome:
             x = _ome_physical_size(ome, "X")
             y = _ome_physical_size(ome, "Y")
             z = _ome_physical_size(ome, "Z")
+            if x is not None or y is not None:
+                self._calibration_source = PIXEL_SIZE_SOURCE_OME
         if (x is None or y is None) or z is None:
             ij = _imagej_calibration(self._tif)
             page = self._tif.pages[0]
@@ -222,18 +225,27 @@ class _TiffVolumeSource(VolumeSource):
                     z = None
             res_unit = ij.get("unit")
             conflicts: list[str] = []
+            # Goes through the same composed reader as the 2D import
+            # (``utils._tiff_pixel_size_nm``) so the vendor tag, the ImageJ
+            # unit and the baseline tag are ranked identically here: the same
+            # file must not calibrate differently depending on whether it was
+            # imported as an image or as a volume.
             if x is None:
-                x, conflict = _resolution_tag_nm_and_conflict(
+                x, conflict, source = in_plane_pixel_size_nm(
                     page, "XResolution", res_unit
                 )
                 if conflict:
                     conflicts.append(conflict)
+                if x is not None and self._calibration_source is None:
+                    self._calibration_source = source
             if y is None:
-                y, conflict = _resolution_tag_nm_and_conflict(
+                y, conflict, source = in_plane_pixel_size_nm(
                     page, "YResolution", res_unit
                 )
                 if conflict:
                     conflicts.append(conflict)
+                if y is not None and self._calibration_source is None:
+                    self._calibration_source = source
             if conflicts:
                 # X and Y almost always produce the same sentence; keep one.
                 self._calibration_conflict = " ".join(dict.fromkeys(conflicts))
@@ -251,6 +263,11 @@ class _TiffVolumeSource(VolumeSource):
         # surface it as file_declared_pixel_size_caveat.
         if getattr(self, "_calibration_conflict", None):
             extra["calibration_conflict"] = self._calibration_conflict
+        # Which tag or block the voxel size came from. Same purpose and same
+        # vocabulary as ``source_metadata.pixel_size_source`` on a 2D import;
+        # surfaced as file_declared_pixel_size_source.
+        if getattr(self, "_calibration_source", None):
+            extra["calibration_source"] = self._calibration_source
         return extra
 
     def _page_index(self, z: int) -> int:
@@ -573,6 +590,207 @@ def _imagej_calibration(tif) -> dict[str, Any]:
     return _imagej_description_meta(page)
 
 
+#: TIFF tag 51023, ``FibicsXML``: the whole acquisition record Zeiss/Fibics
+#: ATLAS writes into a private tag as an XML string. MEASURED over 139 TIFFs in
+#: this lab's corpus: 97 carry it, every one of them with
+#: ``Software = 'Fibics ATLAS Export'``, ``ResolutionUnit = NONE`` and either no
+#: ``XResolution`` or ``XResolution = (1, 1)`` -- so before this tag was read,
+#: every calibrated Zeiss Atlas export in the lab imported uncalibrated.
+FIBICS_XML_TAG = 51023
+
+#: Provenance labels for :class:`PixelSizeReading`. Each one names the tag or
+#: block that supplied the number, because "5.229 nm/pixel" on a library card is
+#: a different claim depending on whether the microscope wrote it, Fiji wrote
+#: it, or a person typed it.
+PIXEL_SIZE_SOURCE_OME = "OME-XML PhysicalSize"
+PIXEL_SIZE_SOURCE_FIBICS = "TIFF tag 51023 (FibicsXML)"
+PIXEL_SIZE_SOURCE_IMAGEJ = "ImageJ ImageDescription unit (TIFF tag 270)"
+PIXEL_SIZE_SOURCE_RESOLUTION_UNIT = "TIFF XResolution/ResolutionUnit (tags 282/296)"
+
+#: Above this a "pixel size" is not an electron-microscopy scale, it is a
+#: parse accident. One metre per pixel is already absurd by nine orders of
+#: magnitude; the bound only exists so a corrupt tag cannot produce a number.
+_MAX_PLAUSIBLE_PIXEL_NM = 1e9
+
+
+class PixelSizeReading(NamedTuple):
+    """What a file said its in-plane pixel size is, and who said it.
+
+    ``caveat`` is the sentence shown to the user when two declarations in the
+    same file disagree, or when one of them was rejected. ``source`` is one of
+    the ``PIXEL_SIZE_SOURCE_*`` labels, or ``None`` when the file is silent.
+    """
+
+    nm: float | None
+    caveat: str | None
+    source: str | None
+
+
+def _fibics_xml(page) -> str | None:
+    """The ``FibicsXML`` string of TIFF tag 51023, or ``None``.
+
+    Deliberately *not* handed to an XML parser: the block arrives inside an
+    uploaded file, and ``xml.etree`` is documented as vulnerable to entity
+    expansion. Every field this module wants is a leaf element holding a
+    number, so a bounded regex over the string is both sufficient and safe --
+    the same choice :func:`_xml_attr` already makes for OME-XML.
+    """
+    value = getattr(page.tags.get(FIBICS_XML_TAG), "value", None)
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "replace")
+    if not isinstance(value, str) or "<Fibics" not in value:
+        return None
+    return value
+
+
+def _fibics_element(xml: str, name: str) -> tuple[float | None, str | None]:
+    """``(number, units attribute)`` of a leaf ``<name ...>number</name>``."""
+    match = re.search(rf"<{name}((?:\s[^>]*)?)>([^<]*)</{name}>", xml)
+    if match is None:
+        return None, None
+    units = re.search(r'units\s*=\s*"([^"]*)"', match.group(1))
+    try:
+        return float(match.group(2).strip()), (units.group(1) if units else None)
+    except ValueError:
+        return None, None
+
+
+def _fibics_axis_nm(xml: str, axis: str) -> float | None:
+    """In-plane pixel size in nm along ``axis`` from the Fibics ``<Scan>`` block.
+
+    ``<Ux>/<Uy>`` and ``<Vx>/<Vy>`` are the two scan step *vectors* in
+    micrometres -- U from one pixel to the next along the image x axis, V along
+    y -- so the pixel size is each vector's length, not its named component.
+    That distinction is not academic: in every Atlas file in this lab's corpus
+    ``<Uy>`` is exactly ``0`` and the y pixel size lives in ``<Vy>`` (negative,
+    because the raster runs down), so reading ``<Ux>``/``<Uy>`` as the x and y
+    sizes -- the obvious reading -- yields ``0`` for y. With ``<ScanRot>``
+    non-zero the components mix and only the vector length is right.
+
+    Falls back to ``FOV_X / Width``, which is the same number to 15 digits in
+    every corpus file (checked) and is what survives if a future writer emits
+    the field of view but not the step vectors.
+    """
+    first, second = ("Ux", "Uy") if axis == "X" else ("Vx", "Vy")
+    a, _ = _fibics_element(xml, first)
+    b, _ = _fibics_element(xml, second)
+    if a is not None or b is not None:
+        step_um = math.hypot(a or 0.0, b or 0.0)
+        if step_um > 0:
+            return step_um * 1000.0
+
+    fov, fov_unit = _fibics_element(xml, "FOV_X" if axis == "X" else "FOV_Y")
+    extent, _ = _fibics_element(xml, "Width" if axis == "X" else "Height")
+    if fov and extent and extent > 0:
+        factor = _length_unit_to_nm(fov_unit or "um")
+        if factor:
+            return fov / extent * factor
+    return None
+
+
+def _fibics_reading(page, axis: str) -> tuple[float | None, str | None]:
+    """``(nm, note)`` from tag 51023 for one axis; ``(None, None)`` if absent.
+
+    The block records the geometry of the *acquisition*. If someone has since
+    binned or cropped the raster with a tool that preserves unknown TIFF tags,
+    the scan step no longer describes these pixels -- and the block says so
+    itself, because it carries its own ``<Width>``/``<Height>``. When those
+    disagree with the IFD's dimensions the value is refused and the reason is
+    returned as a note, rather than calibrating the file to a scale it no
+    longer has.
+    """
+    xml = _fibics_xml(page)
+    if xml is None:
+        return None, None
+
+    nm = _fibics_axis_nm(xml, axis)
+    if nm is None or not math.isfinite(nm) or not 0 < nm <= _MAX_PLAUSIBLE_PIXEL_NM:
+        return None, None
+
+    declared_w, _ = _fibics_element(xml, "Width")
+    declared_h, _ = _fibics_element(xml, "Height")
+    actual_w = getattr(page, "imagewidth", None)
+    actual_h = getattr(page, "imagelength", None)
+    if (
+        declared_w
+        and declared_h
+        and actual_w
+        and actual_h
+        and (int(declared_w) != int(actual_w) or int(declared_h) != int(actual_h))
+    ):
+        return None, (
+            f"This file carries the microscope's calibration in "
+            f"{PIXEL_SIZE_SOURCE_FIBICS} ({nm:.4g} nm/pixel), but that record "
+            f"describes a {int(declared_w)} x {int(declared_h)} image and this "
+            f"one is {int(actual_w)} x {int(actual_h)} pixels. The image has "
+            f"been resized since acquisition, so the recorded scale was not "
+            f"used."
+        )
+    return nm, None
+
+
+def _join_notes(notes: Iterable[str | None]) -> str | None:
+    kept = dict.fromkeys(note for note in notes if note)
+    return " ".join(kept) or None
+
+
+def in_plane_pixel_size_nm(page, tag_name: str, unit: str | None) -> PixelSizeReading:
+    """The file's own in-plane pixel size for one axis, with its provenance.
+
+    Composes the vendor tag with the resolution tags under one precedence, so
+    that a 2D import and a 3D import of the same file cannot disagree:
+
+    1. a recognised **ImageJ/Fiji unit** in the ImageDescription
+       (:func:`_resolution_tag_reading`),
+    2. the **Zeiss/Fibics ATLAS block** in TIFF tag 51023,
+    3. the **baseline TIFF ``ResolutionUnit``** tag.
+
+    ImageJ stays on top because that is the precedence this reader already had
+    and the argument for it has not changed: a ``unit=`` line is a statement
+    somebody made about *this* raster, after acquisition, and a re-save through
+    Fiji is exactly the operation that can change the pixel size while leaving
+    an acquisition-time vendor block behind. The vendor block goes above the
+    baseline tag for the mirror-image reason given on
+    :func:`_resolution_tag_reading`: a writer that sets ``ResolutionUnit`` to
+    inches while recording nanometres in a private tag is keeping a library
+    default, not making a second claim. (No file in this lab's corpus exercises
+    that ordering: all 97 Fibics files have ``ResolutionUnit = NONE``, which
+    makes no physical claim at all.)
+
+    Whichever loses, the user is told. Any disagreement beyond 0.1% comes back
+    as a caveat that travels with the asset (``pixel_size_caveat`` on the
+    source metadata, ``file_declared_pixel_size_caveat`` on the API payload).
+    """
+    axis = "Y" if str(tag_name).upper().startswith("Y") else "X"
+    vendor_nm, vendor_note = _fibics_reading(page, axis)
+    tag_nm, tag_caveat, tag_source = _resolution_tag_reading(page, tag_name, unit)
+    notes = [vendor_note, tag_caveat]
+
+    if tag_source == PIXEL_SIZE_SOURCE_IMAGEJ and tag_nm is not None:
+        if vendor_nm is not None and not math.isclose(vendor_nm, tag_nm, rel_tol=1e-3):
+            notes.append(
+                f"The pixel size was read from the file's ImageJ calibration "
+                f"(unit '{unit}': {tag_nm:.4g} nm/pixel), but the microscope's "
+                f"own record in {PIXEL_SIZE_SOURCE_FIBICS} disagrees "
+                f"({vendor_nm:.4g} nm/pixel). The ImageJ calibration was used."
+            )
+        return PixelSizeReading(tag_nm, _join_notes(notes), PIXEL_SIZE_SOURCE_IMAGEJ)
+
+    if vendor_nm is not None:
+        if tag_nm is not None and not math.isclose(vendor_nm, tag_nm, rel_tol=1e-3):
+            notes.append(
+                f"The pixel size was read from the microscope's own record in "
+                f"{PIXEL_SIZE_SOURCE_FIBICS} ({vendor_nm:.4g} nm/pixel), but "
+                f"the file's baseline TIFF ResolutionUnit tag disagrees "
+                f"({tag_nm:.4g} nm/pixel). The microscope's record was used."
+            )
+        return PixelSizeReading(vendor_nm, _join_notes(notes), PIXEL_SIZE_SOURCE_FIBICS)
+
+    return PixelSizeReading(
+        tag_nm, _join_notes(notes), tag_source if tag_nm is not None else None
+    )
+
+
 def _resolution_tag_nm(page, tag_name: str, unit: str | None) -> float | None:
     """Physical pixel size in nm; see :func:`_resolution_tag_nm_and_conflict`."""
     return _resolution_tag_nm_and_conflict(page, tag_name, unit)[0]
@@ -581,6 +799,15 @@ def _resolution_tag_nm(page, tag_name: str, unit: str | None) -> float | None:
 def _resolution_tag_nm_and_conflict(
     page, tag_name: str, unit: str | None
 ) -> tuple[float | None, str | None]:
+    """``(nm, conflict)`` from the resolution tags; see
+    :func:`_resolution_tag_reading`, which also names the source."""
+    nm, caveat, _source = _resolution_tag_reading(page, tag_name, unit)
+    return nm, caveat
+
+
+def _resolution_tag_reading(
+    page, tag_name: str, unit: str | None
+) -> tuple[float | None, str | None, str | None]:
     """Physical size of one pixel in nm from ``XResolution``/``YResolution``.
 
     The resolution tags record *pixels per unit*. Two different conventions
@@ -591,6 +818,12 @@ def _resolution_tag_nm_and_conflict(
        ImageDescription (passed in as ``unit``; see :func:`_imagej_calibration`).
        This is the most common calibrated-EM layout in the wild.
     2. **Baseline TIFF**: the ``ResolutionUnit`` tag (inch/centimetre).
+
+    A third convention -- a vendor's own private tag -- is folded in one level
+    up, by :func:`in_plane_pixel_size_nm`; this function stays about the
+    resolution tags alone. The third element of its return says which of the
+    two conventions above produced the number, which is what lets the caller
+    apply a precedence between all three and record the winner as provenance.
 
     Rule: a recognised ImageJ length unit wins, because it is the writer's
     deliberate calibration statement — Fiji sets ``ResolutionUnit=NONE``
@@ -612,17 +845,17 @@ def _resolution_tag_nm_and_conflict(
     """
     tag = page.tags.get(tag_name)
     if tag is None:
-        return None, None
+        return None, None, None
     try:
         numerator, denominator = tag.value
         if numerator == 0:
-            return None, None
+            return None, None, None
         pixels_per_unit = numerator / denominator
         if pixels_per_unit <= 0:
-            return None, None
+            return None, None, None
         unit_size = 1.0 / pixels_per_unit  # source units per pixel
     except Exception:
-        return None, None
+        return None, None, None
 
     imagej_factor = _length_unit_to_nm(unit)
     imagej_nm = unit_size * imagej_factor if imagej_factor else None
@@ -646,8 +879,10 @@ def _resolution_tag_nm_and_conflict(
                 f"TIFF ResolutionUnit tag disagrees ({tag_unit}: "
                 f"{tag_nm:.4g} nm/pixel). The ImageJ calibration was used."
             )
-        return imagej_nm, conflict
-    return tag_nm, None
+        return imagej_nm, conflict, PIXEL_SIZE_SOURCE_IMAGEJ
+    if tag_nm is not None:
+        return tag_nm, None, PIXEL_SIZE_SOURCE_RESOLUTION_UNIT
+    return None, None, None
 
 
 # --------------------------------------------------------------------------- #

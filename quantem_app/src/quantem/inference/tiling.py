@@ -49,6 +49,19 @@ _WEIGHT_EPS = 1e-6
 BandSink = Callable[[int, np.ndarray], None]
 TilePredictor = Callable[["Tile"], np.ndarray]
 
+#: ``predict_tiles(tiles) -> [prob, ...]`` -- several windows in one call, in
+#: the order given. The blending is unchanged by batching: the same windows are
+#: accumulated in the same row-major order with the same weights, so a batched
+#: run and a one-at-a-time run differ only in how many go through the model at
+#: once.
+TileBatchPredictor = Callable[[list["Tile"]], list[np.ndarray]]
+
+#: ``on_tile(done, total)`` -- called once per completed window with whole
+#: numbers, not a fraction. Progress reporting reads this rather than rounding
+#: a float back into a tile count, so what the user is shown is the count the
+#: loop actually reached.
+TileCounter = Callable[[int, int], None]
+
 
 @lru_cache(maxsize=8)
 def hann2d(tile: int, floor: float = HANN_FLOOR) -> np.ndarray:
@@ -170,14 +183,49 @@ def estimate_tile_count(
     tile: int,
     overlap: float = DEFAULT_OVERLAP,
 ) -> int:
-    """Number of windows a region will need, for progress reporting.
+    """Number of windows a region of exactly ``shape`` would need.
 
     Unlike :func:`plan_tiles` this tolerates regions smaller than a tile (they
-    become one window after padding).
+    become one window after padding). It does **not** know about the
+    patch-multiple padding a real run applies first, so it can be one row or
+    column short of what the run does; :func:`count_tiles_for_region` is the
+    one to quote to a user.
     """
     stride = stride_for(tile, overlap)
     rows = len(window_starts(max(int(shape[0]), tile), tile, stride))
     cols = len(window_starts(max(int(shape[1]), tile), tile, stride))
+    return max(rows * cols, 1)
+
+
+def padded_shape(shape: tuple[int, int], tile: int, patch: int) -> tuple[int, int]:
+    """The region shape :func:`pad_for_tiling` will produce, without padding it.
+
+    Extracted so a tile count can be quoted before the pixels exist, and so the
+    quote and the run cannot drift: both read this.
+    """
+    h0, w0 = int(shape[0]), int(shape[1])
+    return (round_up(max(h0, tile), patch), round_up(max(w0, tile), patch))
+
+
+def count_tiles_for_region(
+    shape: tuple[int, int],
+    tile: int,
+    patch: int,
+    overlap: float = DEFAULT_OVERLAP,
+) -> int:
+    """Exactly how many windows a region will be run as.
+
+    This is :attr:`TilePlan.n_tiles` for the plan the run will build, computed
+    without touching the image: it applies the same padding
+    (:func:`padded_shape`) that :func:`pad_for_tiling` applies before
+    :func:`plan_tiles` sees the region. A progress denominator quoted from here
+    is the denominator the loop will count to, so the bar reaches 100 % on the
+    last tile rather than at 96 % or 104 %.
+    """
+    height, width = padded_shape(shape, tile, patch)
+    stride = stride_for(tile, overlap)
+    rows = len(window_starts(height, tile, stride))
+    cols = len(window_starts(width, tile, stride))
     return max(rows * cols, 1)
 
 
@@ -197,11 +245,8 @@ def pad_for_tiling(
         with ``prob[:h0, :w0]``.
     """
     h0, w0 = image.shape[:2]
-    ph = max(tile - h0, 0)
-    pw = max(tile - w0, 0)
-    ht, wt = h0 + ph, w0 + pw
-    ph += round_up(ht, patch) - ht
-    pw += round_up(wt, patch) - wt
+    height, width = padded_shape((h0, w0), tile, patch)
+    ph, pw = height - h0, width - w0
     if ph == 0 and pw == 0:
         return image, (0, 0)
     padded = np.pad(image, ((0, ph), (0, pw)), mode="constant")
@@ -310,22 +355,98 @@ def blend_region_streaming(
     on_band: BandSink,
     *,
     on_progress: Callable[[float], None] | None = None,
+    on_tile: TileCounter | None = None,
 ) -> None:
     """Run every window and stream normalised row-bands to ``on_band``.
 
     ``predict_tile(tile)`` returns the float32 ``[tile, tile]`` foreground
     probability for one window. This is the bounded-memory entry point: nothing
     the size of the full region is ever allocated here.
+
+    ``on_tile(done, total)`` fires once per completed window with the counts
+    themselves. ``on_progress`` is the same information as a fraction and is
+    kept for the callers that only want a bar; a caller that wants to *say*
+    "531 of 858" must use ``on_tile``, because a fraction rounded back into a
+    count is not the count the loop reached.
     """
+    blend_region_streaming_batched(
+        plan,
+        lambda tiles: [predict_tile(tile) for tile in tiles],
+        on_band,
+        batch=1,
+        on_progress=on_progress,
+        on_tile=on_tile,
+    )
+
+
+def blend_region_streaming_batched(
+    plan: TilePlan,
+    predict_tiles: TileBatchPredictor,
+    on_band: BandSink,
+    *,
+    batch: int = 1,
+    on_progress: Callable[[float], None] | None = None,
+    on_tile: TileCounter | None = None,
+) -> None:
+    """As :func:`blend_region_streaming`, ``batch`` windows per model call.
+
+    The batch is a slice of the *same* row-major sequence, so the accumulation
+    order, the Hann weights and therefore the blended result are unchanged by
+    it -- a batch is only how many windows the model sees at once. Progress
+    still fires once per window, after the batch it belonged to has been
+    blended, because a window is not done until its numbers are in the buffer.
+
+    Batching across a tile-row boundary is deliberate and safe: the windows are
+    still added in order, so :class:`BandBlender` retires the rows above the new
+    row exactly when it would have anyway.
+    """
+    size = max(1, int(batch))
     blender = BandBlender(plan, on_band)
     total = plan.n_tiles
-    for done, tile in enumerate(plan.tiles(), start=1):
-        blender.add(tile, predict_tile(tile))
-        if on_progress is not None:
-            on_progress(done / total)
+    done = 0
+    pending: list[Tile] = []
+    for tile in plan.tiles():
+        pending.append(tile)
+        if len(pending) < size:
+            continue
+        done = _blend_batch(blender, pending, predict_tiles, done, total,
+                            on_progress, on_tile)
+        pending = []
+    if pending:
+        done = _blend_batch(blender, pending, predict_tiles, done, total,
+                            on_progress, on_tile)
     blender.finish()
     if on_progress is not None:
         on_progress(1.0)
+    if on_tile is not None and done != total:
+        # Defensive: an empty plan cannot happen (plan_tiles always yields at
+        # least one window), but a denominator that is never reached is exactly
+        # the bug this reporting exists to remove.
+        on_tile(total, total)
+
+
+def _blend_batch(
+    blender: BandBlender,
+    tiles: list[Tile],
+    predict_tiles: TileBatchPredictor,
+    done: int,
+    total: int,
+    on_progress: Callable[[float], None] | None,
+    on_tile: TileCounter | None,
+) -> int:
+    probs = predict_tiles(list(tiles))
+    if len(probs) != len(tiles):
+        raise ValueError(
+            f"batched predictor returned {len(probs)} maps for {len(tiles)} windows"
+        )
+    for tile, prob in zip(tiles, probs, strict=True):
+        blender.add(tile, prob)
+        done += 1
+        if on_progress is not None:
+            on_progress(done / total)
+        if on_tile is not None:
+            on_tile(done, total)
+    return done
 
 
 def blend_region(
@@ -333,6 +454,7 @@ def blend_region(
     predict_tile: TilePredictor,
     *,
     on_progress: Callable[[float], None] | None = None,
+    on_tile: TileCounter | None = None,
     out: np.ndarray | None = None,
 ) -> np.ndarray:
     """Materialise the whole blended probability map.
@@ -341,6 +463,26 @@ def blend_region(
     do fit in memory. Pass ``out`` (e.g. a ``np.memmap``) to stream into
     backing storage instead of RAM.
     """
+    return blend_region_batched(
+        plan,
+        lambda tiles: [predict_tile(tile) for tile in tiles],
+        batch=1,
+        on_progress=on_progress,
+        on_tile=on_tile,
+        out=out,
+    )
+
+
+def blend_region_batched(
+    plan: TilePlan,
+    predict_tiles: TileBatchPredictor,
+    *,
+    batch: int = 1,
+    on_progress: Callable[[float], None] | None = None,
+    on_tile: TileCounter | None = None,
+    out: np.ndarray | None = None,
+) -> np.ndarray:
+    """:func:`blend_region` with several windows per model call."""
     target = (
         np.zeros((plan.height, plan.width), dtype=np.float32) if out is None else out
     )
@@ -352,7 +494,14 @@ def blend_region(
     def sink(y0: int, band: np.ndarray) -> None:
         target[y0:y0 + band.shape[0]] = band
 
-    blend_region_streaming(plan, predict_tile, sink, on_progress=on_progress)
+    blend_region_streaming_batched(
+        plan,
+        predict_tiles,
+        sink,
+        batch=batch,
+        on_progress=on_progress,
+        on_tile=on_tile,
+    )
     return target
 
 

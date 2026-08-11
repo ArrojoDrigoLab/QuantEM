@@ -97,13 +97,25 @@ shell at it — the shell spawns nothing in this mode:
 ```powershell
 # terminal 1: the server (checkout venv)
 $env:QUANTEM_DATA_DIR = "D:\somewhere\devdata"
-python -m quantem.cli serve --port 8000
+python -m quantem.cli serve --port 45174
 
 # terminal 2: the shell
 cd desktop
-$env:QUANTEM_DEV_SERVER_URL = "http://127.0.0.1:8000/"
+$env:QUANTEM_DEV_SERVER_URL = "http://127.0.0.1:45174/"
 npm run dev
 ```
+
+45174 is the port the dev SPA falls back to (`frontend/src/shared/api/core/http.ts`),
+paired with the dev SPA's own 45173 (`frontend/vite.config.ts`). Neither is the
+conventional 5173/8000 on purpose — those collide with whatever else on the
+machine claimed them first, and some dev scripts free them by killing the
+holder. Pass `--port` and set `VITE_API_BASE_URL` to use anything else.
+
+Sharing the machine with another heavy job? The server sizes its worker pools
+from total RAM and core count and otherwise assumes it owns the box, so two
+such jobs oversubscribe it. `QUANTEM_MACHINE_PROFILE=standard` (or `small`)
+forces a smaller row — 2 heavy slots and 4 raster workers instead of 4 and 8 —
+and leaves the rest of the machine alone.
 
 To exercise the real spawn path in dev, unset `QUANTEM_DEV_SERVER_URL` and
 set `QUANTEM_SERVER_EXE` to a built sidecar exe instead.

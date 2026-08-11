@@ -342,3 +342,16 @@
   border-bottom: 2px solid currentColor;
   transform: rotate(45deg);
 }
+
+/* The drawer's skin for the shared run-progress rows. Only colours: the
+   geometry lives in RunProgressList.css so the drawer and the labeling banner
+   cannot drift apart in what they say. */
+.job-queue-run-progress {
+  margin-top: 8px;
+  --run-progress-text: #c7cdd6;
+  --run-progress-name: #f5f7fb;
+  --run-progress-track: #2c313d;
+  --run-progress-fill: #6bb1ff;
+  --run-progress-warning: #f0b57a;
+  --run-progress-download: #b8a6ff;
+}

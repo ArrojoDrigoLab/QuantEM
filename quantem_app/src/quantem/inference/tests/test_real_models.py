@@ -113,7 +113,8 @@ def test_pack_loads_and_segments(pack_id: str, image: np.ndarray) -> None:
 
     # --- the probability map ---
     # Shape is the resample plan's, not the image's: a pack with a canonical
-    # scale predicts on a resampled grid and is thresholded there.
+    # scale predicts on a resampled grid. Nothing is thresholded there -- the
+    # field comes back to native pixels first; see test_native_prob_maps.py.
     expected = resample.plan_resample(
         image.shape[:2], PIXEL_SIZE_NM, spec.canonical_nm
     ).model_shape

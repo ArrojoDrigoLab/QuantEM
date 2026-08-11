@@ -5,6 +5,11 @@ import {
   drawingState,
   setupSegmentationScreenTest,
 } from "@/features/segmentation/SegmentationScreen.testUtils";
+import { panKeyState, resetPanKeyStateForTests } from "@/viewer/panKeyState";
+
+type PointVerbsArg = NonNullable<
+  Parameters<typeof useSegmentationKeyboardShortcuts>[0]["pointVerbs"]
+>;
 
 function makeArgs(
   overrides: Partial<Parameters<typeof useSegmentationKeyboardShortcuts>[0]> = {}
@@ -180,4 +185,121 @@ describe("useSegmentationKeyboardShortcuts", () => {
     expect(args.tissue.handleConfirmBrush).toHaveBeenCalled();
   });
 
+  /**
+   * The verbs, which are the whole point of the reform: a decision costs a
+   * keystroke over the object, not a trip to the sidebar and back.
+   */
+  describe("the point verbs", () => {
+    function makeVerbs(overrides: Partial<PointVerbsArg> = {}): PointVerbsArg {
+      return {
+        hoverPoint: { x: 120, y: 240 },
+        hasHoverTarget: true,
+        keep: vi.fn(),
+        remove: vi.fn(),
+        unmark: vi.fn(),
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      resetPanKeyStateForTests();
+    });
+
+    it("keeps the hovered object when space is tapped, with no mouse travel", () => {
+      const pointVerbs = makeVerbs();
+      renderHook(() => useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs })));
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space" }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space" }));
+
+      expect(pointVerbs.keep).toHaveBeenCalledWith({ x: 120, y: 240 });
+    });
+
+    it("does not keep anything when that space press was a pan", () => {
+      const pointVerbs = makeVerbs();
+      renderHook(() => useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs })));
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space" }));
+      // The viewer reports that the held space actually moved the image.
+      panKeyState.markSpacePan();
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space" }));
+
+      expect(pointVerbs.keep).not.toHaveBeenCalled();
+    });
+
+    it("removes with x and un-marks with u", () => {
+      const pointVerbs = makeVerbs();
+      renderHook(() => useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs })));
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "u" }));
+
+      expect(pointVerbs.remove).toHaveBeenCalledWith({ x: 120, y: 240 });
+      expect(pointVerbs.unmark).toHaveBeenCalledWith({ x: 120, y: 240 });
+    });
+
+    it("does nothing at all when the pointer is over no object", () => {
+      const pointVerbs = makeVerbs({ hoverPoint: null, hasHoverTarget: false });
+      renderHook(() => useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs })));
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space" }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space" }));
+
+      expect(pointVerbs.remove).not.toHaveBeenCalled();
+      expect(pointVerbs.keep).not.toHaveBeenCalled();
+    });
+
+    it("stays out of the way while Navigate is on", () => {
+      const pointVerbs = makeVerbs();
+      renderHook(() =>
+        useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs, leftNavigateMode: true }))
+      );
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space" }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space" }));
+
+      expect(pointVerbs.remove).not.toHaveBeenCalled();
+      expect(pointVerbs.keep).not.toHaveBeenCalled();
+    });
+
+    it("routes z, [ and ] to whoever owns them, and leaves them alone otherwise", () => {
+      const undo = vi.fn();
+      const next = vi.fn();
+      const previous = vi.fn();
+      const pointVerbs = makeVerbs({ undo, next, previous });
+      renderHook(() => useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs })));
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "z" }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "]" }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "[" }));
+
+      expect(undo).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(previous).toHaveBeenCalledTimes(1);
+    });
+
+    it("undoes even in Navigate mode, where the user is looking around", () => {
+      const undo = vi.fn();
+      const pointVerbs = makeVerbs({ undo });
+      renderHook(() =>
+        useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs, leftNavigateMode: true }))
+      );
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "z" }));
+
+      expect(undo).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not swallow an unclaimed key", () => {
+      const pointVerbs = makeVerbs();
+      renderHook(() => useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs })));
+
+      const event = new KeyboardEvent("keydown", { key: "z", cancelable: true });
+      window.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(false);
+    });
+  });
 });

@@ -10,14 +10,30 @@ describe("useSegmentationWorkflowMode", () => {
     expect(result.current.leftMode).toBe("hover");
   });
 
-  it("switches left mode to annotate when annotate mode is selected", () => {
+  it("returns the canvas to hover whenever the workflow mode changes", () => {
     const { result } = renderHook(() => useSegmentationWorkflowMode());
 
     act(() => {
-      result.current.setWorkflowMode("annotate");
+      result.current.setLeftMode("draw");
+    });
+    expect(result.current.leftMode).toBe("draw");
+
+    act(() => {
+      result.current.setWorkflowMode("uncertain");
     });
 
-    expect(result.current.workflowMode).toBe("annotate");
-    expect(result.current.leftMode).toBe("annotate");
+    expect(result.current.workflowMode).toBe("uncertain");
+    expect(result.current.leftMode).toBe("hover");
+  });
+
+  it("has no annotate mode to enter", () => {
+    // `annotate` was a third workflow whose handlers were already empty, so
+    // choosing it armed a canvas that could not do anything. It is gone from
+    // the type, which is what stops it being reintroduced by a string literal.
+    const modes: Array<ReturnType<typeof useSegmentationWorkflowMode>["workflowMode"]> = [
+      "review",
+      "uncertain",
+    ];
+    expect(modes).not.toContain("annotate");
   });
 });

@@ -90,10 +90,13 @@ class RerunAfterProofreadingTests(TestCase):
     def test_it_names_the_only_route_there_is(self):
         self._object(0, stamp=_stamp(native_pixel_size_nm=None))
 
-        step = next(s for s in self._steps() if "labels/clear" in s)
+        step = next(s for s in self._steps() if "Discard objects and re-run" in s)
 
-        self.assertIn(f"/api/segmentations/{self.segmentation.id}/labels/clear", step)
-        self.assertIn("No screen offers that yet", step)
+        # Named the endpoint and claimed no screen offered it. I-12 forbids the
+        # first; the labeling header's button falsified the second.
+        self.assertIn("Discard objects and re-run, on the labeling screen", step)
+        self.assertNotIn("/api/", step)
+        self.assertNotIn("No screen offers that yet", step)
 
     def test_the_advice_that_was_already_right_is_still_there(self):
         self._object(0, stamp=_stamp(native_pixel_size_nm=None))
@@ -109,12 +112,12 @@ class RerunAfterProofreadingTests(TestCase):
         """EXCLUDED objects suppress candidates and carry the same stamp."""
         self._object(0, label_state="EXCLUDED", stamp=_stamp(native_pixel_size_nm=None))
 
-        self.assertTrue(any("labels/clear" in s for s in self._steps()))
+        self.assertTrue(any("Discard objects and re-run" in s for s in self._steps()))
 
     def test_a_calibrated_run_is_told_nothing_about_calibration(self):
         self._object(0, stamp=_stamp(native_pixel_size_nm=5.0))
 
-        self.assertFalse([s for s in self._steps() if "labels/clear" in s])
+        self.assertFalse([s for s in self._steps() if "Discard objects and re-run" in s])
 
     def test_an_unstamped_object_says_nothing_about_when_it_was_made(self):
         """No stamp is a hand-drawn outline or one made before stamping existed.
@@ -125,14 +128,14 @@ class RerunAfterProofreadingTests(TestCase):
         """
         self._object(0, stamp=None)
 
-        self.assertFalse([s for s in self._steps() if "labels/clear" in s])
+        self.assertFalse([s for s in self._steps() if "Discard objects and re-run" in s])
 
     def test_an_image_with_nothing_labelled_is_still_the_other_branch(self):
         """Nothing suppresses anything here, so the model really did find nothing."""
         self._object(0, label_state="CANDIDATE", stamp=_stamp(native_pixel_size_nm=None))
 
         steps = self._steps()
-        self.assertFalse([s for s in steps if "labels/clear" in s])
+        self.assertFalse([s for s in steps if "Discard objects and re-run" in s])
         self.assertTrue(any("threshold" in s for s in steps))
 
     def test_an_image_that_is_still_uncalibrated_is_told_setting_it_is_not_enough(self):
@@ -140,7 +143,7 @@ class RerunAfterProofreadingTests(TestCase):
         self.asset.save(update_fields=["pixel_size_nm"])
         self._object(0, stamp=_stamp(native_pixel_size_nm=None))
 
-        step = next(s for s in self._steps() if "labels/clear" in s)
+        step = next(s for s in self._steps() if "Discard objects and re-run" in s)
 
         self.assertIn("it still has none", step)
         self.assertIn("applied when inference runs, not afterwards", step)

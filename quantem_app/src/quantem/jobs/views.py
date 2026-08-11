@@ -8,13 +8,19 @@ from rest_framework.views import APIView
 from quantem.assets.models import Asset
 from quantem.jobs.apps import scheduler_is_running
 from quantem.jobs.constants import (
+    JOB_TYPE_INSTALL_MODEL_PACK,
     JOB_TYPE_LABELS,
     QUEUE_DISPLAY_NAMES,
     QUEUE_PRIORITY_ORDER,
 )
 from quantem.jobs.failure_reconcile import reconcile_domain_objects_for_removed_job
-from quantem.jobs.models import Job
-from quantem.jobs.serializers import JobCreateSerializer, JobSerializer
+from quantem.jobs.models import STAGE_QUEUED, Job
+from quantem.jobs.serializers import (
+    JobCreateSerializer,
+    JobSerializer,
+    batch_progress_map,
+    job_progress_block,
+)
 from quantem.segmentation.models import ImageSegmentation
 
 DONE_JOB_STATUSES = ("SUCCESS", "FAILED", "CANCELLED")
@@ -57,10 +63,42 @@ def _collect_context_maps(
     return assets_by_id, segmentations_by_id
 
 
+def _model_pack_payload(job: Job) -> dict | None:
+    """Which model a download job is fetching, named the way a person would.
+
+    Only the pack id is on the payload, and a pack id is a machine key. The
+    download indicator has to be legible on its own -- it is deliberately a
+    different kind of row from a segmentation run -- so it carries the title the
+    Models screen shows for the same pack.
+
+    Returns None for every other job type, and for a pack this build does not
+    know: an unknown id is not an error, it is an older or newer release, and
+    the row degrades to the job's own label rather than inventing a name.
+    """
+    if job.type != JOB_TYPE_INSTALL_MODEL_PACK:
+        return None
+    pack_id = str((job.payload_json or {}).get("pack_id") or "").strip()
+    if not pack_id:
+        return None
+    title = ""
+    try:
+        # Lazy: the registry pulls in the model specs, and no other job type
+        # should pay for that import on a queue poll.
+        from quantem.registry.catalogue import MODEL_SPECS, pack_title
+
+        spec = MODEL_SPECS.get(pack_id)
+        if spec is not None:
+            title = pack_title(spec)
+    except Exception:
+        title = ""
+    return {"id": pack_id, "title": title}
+
+
 def _serialize_job_status(
     job: Job,
     assets_by_id: dict[str, Asset],
     segmentations_by_id: dict[str, ImageSegmentation],
+    batches_by_id: dict[str, dict] | None = None,
 ) -> dict:
     payload = job.payload_json or {}
     asset = None
@@ -93,7 +131,6 @@ def _serialize_job_status(
         "type": job.type,
         "task_label": _build_task_label(job),
         "status": job.status,
-        "progress": job.progress,
         "message": job.message,
         "cancel_requested": job.cancel_requested,
         "queue_name": job.queue_name,
@@ -103,6 +140,19 @@ def _serialize_job_status(
         "finished_at": job.finished_at,
         "image": image_payload,
         "segmentation": segmentation_payload,
+        "model_pack": _model_pack_payload(job),
+        # `progress`, tiles, bytes and the whole-image rollup. This endpoint is
+        # the one the Tasks drawer and the labeling screen actually poll; while
+        # it dropped these, tile progress existed on `GET /api/jobs/<id>/` and
+        # on no screen in the product, and the only tile count a user ever saw
+        # was parsed out of the free-text message.
+        #
+        # `progress` comes from the same block rather than from the column, so
+        # this endpoint and `GET /api/jobs/<id>/` cannot answer differently, and
+        # a job's percentage cannot disagree with its own tile percentage.
+        **job_progress_block(
+            job, batch=(batches_by_id or {}).get(job.batch_id or "")
+        ),
     }
 
 
@@ -192,11 +242,13 @@ class JobRetryView(APIView):
             if job.status == "RUNNING":
                 # Naming the way out matters: a running job whose worker is gone
                 # is exactly the state a user reaches this endpoint from, and
-                # cancelling it is what makes it retryable.
+                # cancelling it is what makes it retryable. Name the control,
+                # not the route it posts to -- this lands in the Tasks & Queues
+                # panel, in front of someone who cannot issue a request (I-12).
                 detail += (
-                    " Cancel it first (POST /api/jobs/"
-                    f"{job.id}/cancel/); a job whose worker is gone is cancelled "
-                    "within a few seconds."
+                    " Cancel it first, with Cancel on its row in Tasks & "
+                    "Queues; a job whose worker is gone is cancelled within a "
+                    "few seconds."
                 )
             return Response(
                 {"detail": detail, "job_id": str(job.id), "job_status": job.status},
@@ -204,19 +256,26 @@ class JobRetryView(APIView):
             )
 
         now = timezone.now()
-        Job.objects.filter(id=job.id).update(
-            status="PENDING",
-            progress=0.0,
-            message="retry queued",
-            cancel_requested=False,
-            started_at=None,
-            finished_at=None,
-            next_run_at=now,
-            attempts=0,
-            result_json=None,
-            error_traceback="",
-            updated_at=now,
-        )
+        requeued = {
+            "status": "PENDING",
+            "progress": 0.0,
+            "message": "retry queued",
+            "cancel_requested": False,
+            "started_at": None,
+            "finished_at": None,
+            "next_run_at": now,
+            "attempts": 0,
+            "result_json": None,
+            "error_traceback": "",
+            "updated_at": now,
+        }
+        if job.progress_units_total is not None:
+            # The tiles the previous attempt walked are not this one's. Keeping
+            # the count would show a queued run part-done, and the whole-image
+            # rollup would carry that fiction into its total.
+            requeued["progress_units_done"] = 0
+            requeued["progress_stage"] = STAGE_QUEUED
+        Job.objects.filter(id=job.id).update(**requeued)
         return Response(
             {
                 "status": "queued",
@@ -248,24 +307,36 @@ class JobQueueStatusView(APIView):
 
         all_jobs = running_jobs + queued_jobs + failed_jobs + completed_jobs
         assets_by_id, segmentations_by_id = _collect_context_maps(all_jobs)
+        # Every wave this response mentions, open or concluded, in one query.
+        #
+        # It used to be the open ones only. That dropped the rollup at exactly
+        # the moment it says the most: a wave of three runs where one was
+        # cancelled and one failed reads "25 of 118 tiles · 2 of 3 did not
+        # finish" until the last run concludes, and then the whole line
+        # disappears -- so the summary of what happened is the one thing the
+        # user never gets to read. The run panel is deliberately built to
+        # outlive its runs; this is what it needs to do that.
+        batches_by_id = batch_progress_map(job.batch_id for job in all_jobs)
 
         running_payload = [
-            _serialize_job_status(job, assets_by_id, segmentations_by_id)
+            _serialize_job_status(job, assets_by_id, segmentations_by_id, batches_by_id)
             for job in running_jobs
         ]
         failed_payload = [
-            _serialize_job_status(job, assets_by_id, segmentations_by_id)
+            _serialize_job_status(job, assets_by_id, segmentations_by_id, batches_by_id)
             for job in failed_jobs
         ]
         completed_payload = [
-            _serialize_job_status(job, assets_by_id, segmentations_by_id)
+            _serialize_job_status(job, assets_by_id, segmentations_by_id, batches_by_id)
             for job in completed_jobs
         ]
 
         queues: dict[str, list[dict]] = {}
         for job in queued_jobs:
             queues.setdefault(job.queue_name, []).append(
-                _serialize_job_status(job, assets_by_id, segmentations_by_id)
+                _serialize_job_status(
+                    job, assets_by_id, segmentations_by_id, batches_by_id
+                )
             )
 
         queue_payload = [

@@ -2,7 +2,7 @@
 
 ``core/urls.py`` does not yet include ``quantem.analysis.urls`` -- the project
 lead wires that. Overriding ``ROOT_URLCONF`` with this module lets the endpoint
-tests exercise the real routes, at the real paths from ``API_CONTRACT.md``,
+tests exercise the real routes, at the real paths from the API contract,
 without touching a file this package does not own.
 """
 

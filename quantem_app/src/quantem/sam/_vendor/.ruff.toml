@@ -1,0 +1,16 @@
+# Vendored third-party source: the linter stays off it.
+#
+# These files are Meta's, copied verbatim from the Apache-2.0 upstream so they
+# can be diffed against it. A style fix here would be indistinguishable, in the
+# diff, from a change of substance -- which is exactly the property vendoring
+# is supposed to preserve. Ruff resolves configuration per file from the nearest
+# config upwards, so this one governs everything under `_vendor/`.
+#
+# `select = []` rather than an exclude list: a nested config does not inherit
+# from the root, so enabling nothing is the whole statement.
+
+line-length = 100
+target-version = "py313"
+
+[lint]
+select = []

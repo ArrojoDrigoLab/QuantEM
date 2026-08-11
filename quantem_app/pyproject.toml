@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quantem"
-version = "0.1.0.dev0"
+name = "quantem-app"
+version = "0.1.0"
 description = "QuantEM — organelle segmentation, proofreading, and quantitative analysis for electron microscopy"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -85,14 +85,14 @@ dev = [
 ]
 
 [project.scripts]
-quantem = "quantem.cli:main"
+quantem-app = "quantem.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ArrojoDrigoLab/QuantEM"
 Source = "https://github.com/ArrojoDrigoLab/QuantEM"
 
 # ---------------------------------------------------------------------------
-# Distribution. The wheel is the product: `pip install quantem` must give the
+# Distribution. The wheel is the product: `pip install quantem-app` must give the
 # whole application, UI included, with no node and no checkout. The version has
 # exactly one source — [project].version above; src/quantem/__init__.py reads
 # it back through importlib.metadata (or this file, in an uninstalled checkout).
@@ -187,10 +187,23 @@ python_files = ["test_*.py", "tests.py"]
 testpaths = ["src/quantem"]
 # -p quantem._pytest_env redirects the data directory before pytest-django
 # sets Django up; see that module for why a conftest.py is too late.
-addopts = "-q --strict-markers -p quantem._pytest_env"
+#
+# `-m "not requires_network"` is the offline lane, and it is the default lane
+# on purpose. This application's first invariant is that it works with no
+# internet; a suite that cannot be run green without one contradicts the
+# product it is testing, and a contributor on a train reads the resulting red
+# as "I broke something". The one test it deselects
+# (registry/tests/test_hf_live.py) says so in its own docstring but nothing
+# acted on that, so a plain `pytest` reached out to huggingface.co and failed
+# with `OfflineModeIsEnabled` on any machine that had opted out of the network.
+# The network lane is one word: `pytest -m requires_network`, which overrides
+# this expression because a command-line -m wins.
+addopts = "-q --strict-markers -p quantem._pytest_env -m 'not requires_network'"
 markers = [
     "requires_weights: needs model weights downloaded from the registry",
     "requires_gpu: needs CUDA or MPS",
-    "requires_network: touches the live Hugging Face repository; excluded from offline lanes",
-    "slow: excluded from the default CI lane",
+    # Deselected by the default lane through addopts above -- not merely
+    # documented as excluded, which is what it was.
+    "requires_network: reaches the live Hugging Face repository over the internet; deselected by the default lane, run it with `pytest -m requires_network`",
+    "slow: excluded from the CI lane (.github/workflows/quantem-app.yml), which runs `-m \"not requires_weights and not requires_gpu and not slow\"`",
 ]

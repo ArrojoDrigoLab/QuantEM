@@ -84,7 +84,24 @@
   color: #f87171;
 }
 
-/* What "Candidates ready" leaves out when the run produced nothing. Amber on
+/* The server's verbatim reason a run failed. Its own box rather than another
+   grey line: it is the only text on the card that says whether the model was
+   missing, the worker died or the user cancelled, and it is frequently two
+   sentences long, so it wraps and keeps its line breaks. Contrast #fecaca on
+   #2a1215 -> 10.6:1. */
+.overlay-status-error {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #7f1d1d;
+  background: #2a1215;
+  color: #fecaca;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* What a finished run leaves out when it produced nothing. Amber on
    this dark sidebar: #fdba74 on #111827 -> 8.9:1. */
 .overlay-status-note {
   margin-top: 2px;
@@ -227,6 +244,16 @@
 
 .overlay-opacity input[type="range"] {
   flex: 1;
+  /* Finding V13. A flex item's `min-width` defaults to `auto`, and for a range
+     input that resolves to its intrinsic width -- 129 px in Chrome, whatever
+     `flex: 1` says. "Opacity" + 129 + the readout came to 222 px inside a
+     205 px card, so the row pushed the whole list 6 px wider than its own
+     scroll port: a horizontal scrollbar appeared under the card and the "%"
+     was sliced off the opacity readout, which is the one number on this row a
+     user reads. `min-width: 0` lets the slider give up the space it does not
+     need. Widening the sidebar instead would have moved the clipping rather
+     than removed it -- the row is elastic, the readout is not. */
+  min-width: 0;
 }
 
 .overlay-opacity-value {

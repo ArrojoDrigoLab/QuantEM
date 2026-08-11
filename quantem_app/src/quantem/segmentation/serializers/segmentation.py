@@ -162,6 +162,11 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             "is_complete",
             "run_notice",
             "objects_pixel_size",
+            # The dial position the objects on screen were found at, or ``null``
+            # when nobody has moved it. Read-only here: it is written by the
+            # re-extract that acts on it, never by a PATCH, because a level with
+            # no matching object set is a claim about objects that do not exist.
+            "include_level",
             "status_stage",
             "status_stage_display",
             "status_progress",
@@ -172,6 +177,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "asset",
+            "include_level",
             "status_progress",
             "status_error",
             "created_at",

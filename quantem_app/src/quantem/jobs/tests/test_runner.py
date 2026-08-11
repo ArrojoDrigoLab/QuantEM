@@ -101,7 +101,11 @@ class JobRunnerFailureHandlingTests(TestCase):
         job.refresh_from_db()
 
         self.assertEqual(job.status, "FAILED")
-        self.assertIn("RuntimeError", job.message)
+        # The exception's sentence, and not the name of its class: this string
+        # is rendered verbatim in the Tasks drawer (invariant I-12).
+        self.assertEqual(job.message, "simulated full-run failure")
+        self.assertNotIn("RuntimeError", job.message)
+        self.assertIn("RuntimeError", job.error_traceback)
 
     def test_adapter_training_failure_is_failed_without_retry(self):
         job = Job.enqueue(
@@ -141,7 +145,8 @@ class JobRunnerFailureHandlingTests(TestCase):
 
         job.refresh_from_db()
         self.assertEqual(job.status, "RETRY")
-        self.assertIn("RuntimeError", job.message)
+        self.assertEqual(job.message, "simulated upload failure")
+        self.assertNotIn("RuntimeError", job.message)
         self.assertGreater(job.next_run_at, timezone.now())
 
     def test_overlay_rebuild_failure_is_failed_after_attempts(self):
@@ -161,7 +166,8 @@ class JobRunnerFailureHandlingTests(TestCase):
 
         job.refresh_from_db()
         self.assertEqual(job.status, "FAILED")
-        self.assertIn("RuntimeError", job.message)
+        self.assertEqual(job.message, "simulated overlay failure")
+        self.assertNotIn("RuntimeError", job.message)
 
     def test_legacy_job_type_fails_that_job_without_stopping_the_runner(self):
         job = Job.enqueue(

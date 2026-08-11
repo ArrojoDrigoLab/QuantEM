@@ -17,6 +17,7 @@ from PIL import Image
 from quantem.assets.asset_openable import get_asset_openable
 from quantem.assets.models import ImageROI
 from quantem.core.config import PROB_MAPS_DIR, STORAGE_DIR, TMP_DIR
+from quantem.inference.resample import quantize_probability
 from quantem.segmentation.models import ImageSegmentation, ProbabilityMap
 from quantem.segmentation.prob_maps.io import resolve_probability_map_path
 
@@ -148,8 +149,22 @@ def save_probability_map(
     file_path = get_prob_map_file_path(segmentation, model_name, prefix, roi_id)
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Convert to uint8 for PNG storage (0-255)
-    prob_uint8 = (np.clip(prob_data, 0, 1) * 255).astype(np.uint8)
+    # uint8 for PNG storage. `quantize_probability` rounds to nearest; the
+    # `(p * 255).astype(uint8)` this used to do truncates, which biases every
+    # stored value up to 1/255 low and is what made thresholding the stored map
+    # disagree with thresholding the float it came from (measured: up to 13 956
+    # pixels and one object at the default threshold, none after this change).
+    #
+    # A uint8 input is passed through untouched. Under the native-coordinate
+    # ordering the caller has already quantised, and that array is the
+    # authority for the image -- re-deriving it here would be a second, subtly
+    # different decision about the same pixels.
+    prob_array = np.asarray(prob_data)
+    prob_uint8 = (
+        prob_array
+        if prob_array.dtype == np.uint8
+        else quantize_probability(prob_array)
+    )
     img = Image.fromarray(prob_uint8, mode="L")
     img.save(file_path)
 

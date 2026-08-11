@@ -14,6 +14,7 @@ import {
 import { runFullSegmentation } from "@/shared/api/segmentations/overlays";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import {
+  MODEL_DOWNLOAD_JOB_TYPE,
   ORGANELLE_ACTION_JOB_TYPES,
   PROCESSING_BANNER_JOB_TYPES,
   ROI_JOB_TYPE,
@@ -21,11 +22,27 @@ import {
   STATUS_POLL_MS,
 } from "@/features/segmentation/screen/utils/constants";
 import { clamp } from "@/features/segmentation/screen/utils/bbox";
+import { isStoppedRunJob } from "@/shared/progress/runProgress";
 import type {
   ImageSegmentation,
   SegmentationInstanceParams,
 } from "@/shared/types/images";
 import type { JobQueueItem } from "@/shared/types/jobs";
+
+/**
+ * How long a run that stopped stays on the run panel after it concludes.
+ *
+ * The panel used to empty itself within one poll of a cancellation -- measured
+ * at 1 Hz by the wave-0c verifier, non-empty at t=19.87 s with "11 of 56 tiles"
+ * and empty at t=20.90 s -- so the one number a user wants after pressing
+ * Cancel ("how far did it get?") disappeared at the moment they asked for it.
+ * It has to outlive the run, and it has to stop being news eventually: five
+ * minutes is long enough to walk back to the screen and short enough that a
+ * stale row is never mistaken for something happening now. The heading changes
+ * to "Last run" as soon as nothing is live, so the row is never presented as
+ * work in flight.
+ */
+const STOPPED_RUN_LINGER_MS = 5 * 60 * 1000;
 
 interface UseSegmentationProcessingStateArgs {
   currentSegmentation: ImageSegmentation | null;
@@ -70,7 +87,6 @@ export function useSegmentationProcessingState({
     [segmentationRois]
   );
 
-  const shouldShowProcessingStatus = Boolean(currentSegmentation && supportsPointFeedback);
   const { data: jobQueueStatus, refetch: refetchJobs } = useApiQuery(
     () => getJobQueueStatus(),
     [currentSegmentation?.id]
@@ -86,14 +102,80 @@ export function useSegmentationProcessingState({
     return [...jobQueueStatus.running, ...queuePendingJobs];
   }, [jobQueueStatus, queuePendingJobs]);
 
+  /**
+   * Everything worth watching while this image is being segmented.
+   *
+   * Widened from "runs on the segmentation currently open" to "runs on this
+   * image, plus any model coming down the wire", because the owner asked for
+   * three indicators and two of them are not about the open segmentation:
+   *
+   * * the **aggregate** is across every organelle for the image, so it needs
+   *   the sibling runs -- with only the open one, "Everything" would equal the
+   *   line beneath it and the second organelle would be invisible until the
+   *   user switched to it;
+   * * a **model download** belongs to no segmentation at all. It is what the
+   *   run is waiting for, and it is shown as its own kind of row so it can
+   *   never be read as segmentation progress.
+   */
   const processingJobs: JobQueueItem[] = useMemo(() => {
     if (!currentSegmentation) return [];
-    return allQueueJobs.filter(
-      (job) =>
-        job.segmentation?.id === currentSegmentation.id &&
-        PROCESSING_BANNER_JOB_TYPES.has(job.type)
+    const imageId = currentSegmentation.asset ?? null;
+    const openWaves = new Set(
+      allQueueJobs.map((job) => job.batch_id).filter(Boolean) as string[]
     );
-  }, [allQueueJobs, currentSegmentation]);
+    // Two reasons a concluded run stays on the panel.
+    //
+    // Its wave is still going: mitochondria completing while nucleus still has
+    // 88 tiles to walk is the ordinary case, and a row that disappears reads as
+    // work lost, not work done.
+    //
+    // Or it stopped -- cancelled or failed -- recently, whether or not anything
+    // else in its wave is still open. This is the case the wave-0c verifier
+    // caught: cancel the only run in a wave and the wave closes with it, so the
+    // gate above dropped the row one poll later and the tile count the user was
+    // watching went with it. `organelleRow` has always had the copy for this
+    // ("stopped at 18 of 56 tiles · you stopped this one"); nothing could reach
+    // it.
+    const now = Date.now();
+    const stillWorthShowing = [
+      ...(jobQueueStatus?.completed ?? []),
+      ...(jobQueueStatus?.failed ?? []),
+    ].filter((job) => {
+      if (!PROCESSING_BANNER_JOB_TYPES.has(job.type)) return false;
+      if (job.batch_id && openWaves.has(job.batch_id)) return true;
+      if (!isStoppedRunJob(job)) return false;
+      // Server clock, browser clock. A skew makes the row linger a little
+      // longer or a little less; it cannot make it wrong, because the row
+      // states its own outcome rather than implying freshness.
+      const finished = job.finished_at ? Date.parse(job.finished_at) : NaN;
+      if (!Number.isFinite(finished)) return false;
+      return now - finished <= STOPPED_RUN_LINGER_MS;
+    });
+    return [...allQueueJobs, ...stillWorthShowing]
+      .filter((job) => {
+        if (job.type === MODEL_DOWNLOAD_JOB_TYPE) {
+          return job.status === "RUNNING" || job.status === "PENDING";
+        }
+        if (!PROCESSING_BANNER_JOB_TYPES.has(job.type)) return false;
+        if (job.segmentation?.id === currentSegmentation.id) return true;
+        return Boolean(imageId && job.image?.id === imageId);
+      })
+      // Enqueue order, so the rows do not reshuffle as runs start and finish.
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }, [allQueueJobs, currentSegmentation, jobQueueStatus]);
+
+  /**
+   * Whether the run panel is worth a strip of the screen.
+   *
+   * It used to be "this segmentation type takes point feedback", which is a
+   * fact about the model and not about whether anything is happening: on a type
+   * outside that set, a run could be walking 858 tiles with nothing on screen
+   * to say so. Now it is the honest question -- is there work in flight for
+   * this image.
+   */
+  const shouldShowProcessingStatus = Boolean(
+    currentSegmentation && (supportsPointFeedback || processingJobs.length > 0)
+  );
 
   const activeFullImageJob = useMemo(() => {
     if (!currentSegmentation) return null;
@@ -104,12 +186,30 @@ export function useSegmentationProcessingState({
     return matches.find((job) => job.status === "RUNNING") ?? matches[0];
   }, [allQueueJobs, currentSegmentation]);
 
+  /**
+   * The percentage on the run button, on the tiling plan's divisor.
+   *
+   * `job.progress` divides by the whole job -- the model load, the tiles,
+   * finding objects, saving them -- so during the tiles it reads a point or two
+   * below the tile fraction the panel above the button is showing for the same
+   * run. Two numbers for one thing, disagreeing, is the defect. While tiles
+   * remain, this is the tile fraction; once they are walked there is no tile
+   * fraction left to quote and the whole-job number takes over, which is also
+   * the moment it stops being the smaller of the two.
+   */
   const fullImageProgress = useMemo(() => {
     if (!activeFullImageJob) return null;
-    if (activeFullImageJob.status === "RUNNING") {
-      return Math.max(0, Math.min(100, Math.round(activeFullImageJob.progress)));
-    }
-    return null;
+    if (activeFullImageJob.status !== "RUNNING") return null;
+    // While the model loads there is no fraction of the work done, and the
+    // header's fallback for null is the word "Starting". A number here would be
+    // the frozen 5% again, wearing a smaller number.
+    if (activeFullImageJob.progress_stage === "loading_model") return null;
+    const units = activeFullImageJob.unit_progress;
+    const value =
+      units && units.total > 0 && units.done < units.total && units.percent !== null
+        ? units.percent
+        : activeFullImageJob.progress;
+    return Math.max(0, Math.min(100, Math.round(value)));
   }, [activeFullImageJob]);
 
   const fullImageActive = activeFullImageJob !== null;

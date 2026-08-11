@@ -66,6 +66,26 @@ def test_an_unfrozen_checkout_still_records_its_git_identity():
     )
 
 
+def test_an_installed_copy_does_not_borrow_the_enclosing_repository(monkeypatch, tmp_path):
+    """The pip channel's version of the frozen trap, found in round-14 validation.
+
+    A venv created inside somebody's checkout is completely ordinary. The walk
+    up from ``quantem.__file__`` used to sail past ``site-packages`` and stamp
+    that stranger's commit and dirty state into the user's manifests. Here the
+    package sits in a site-packages under a repository that is not it.
+    """
+    (tmp_path / ".git").mkdir()
+    installed = tmp_path / ".venv" / "Lib" / "site-packages" / "quantem" / "__init__.py"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("", encoding="utf-8")
+
+    import quantem
+
+    monkeypatch.setattr(quantem, "__file__", str(installed))
+
+    assert provenance._repo_root() is None
+
+
 def _stripped_metadata(monkeypatch):
     def refuse(name: str) -> str:
         raise importlib_metadata.PackageNotFoundError(name)

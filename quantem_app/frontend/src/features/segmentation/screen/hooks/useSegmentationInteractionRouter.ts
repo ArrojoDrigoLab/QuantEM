@@ -1,6 +1,9 @@
 import { useCallback, useEffect } from "react";
 import { LABELING_LEFT_PANEL_STATES } from "@/features/segmentation/screen/utils/constants";
-import type { LeftMode } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
+import type {
+  LeftMode,
+  WorkflowMode,
+} from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import type { Point } from "@/utils/geometry";
 import type { SegmentObject } from "@/shared/types";
 import type { HoverSegmentQuery } from "@/features/segmentation/screen/hooks/useSegmentationHoverQuery";
@@ -38,10 +41,20 @@ interface UseSegmentationInteractionRouterArgs {
       handlePolygonMouseMove: (point: Point) => void;
     };
   };
+  /**
+   * Box-to-object (`features/sam`). A drag tool, so it takes press/drag/release
+   * and nothing else; it has no click meaning and no hover meaning.
+   */
+  samBox?: {
+    isActive: boolean;
+    handleImagePress: (imagePoint: Point, screenPoint: Point) => void;
+    handleImageDrag: (imagePoint: Point, screenPoint: Point) => void;
+    handleImageRelease: (imagePoint: Point, screenPoint: Point) => void;
+  };
   review: {
     hoverActionMode: "confirm" | "reject" | "group-confirm" | "group-reject" | "test";
     leftMode: LeftMode;
-    workflowMode: "annotate" | "review" | "uncertain";
+    workflowMode: WorkflowMode;
     isGroupActionMode: boolean;
     group: {
       handleImagePress: (imagePoint: Point, screenPoint: Point) => void;
@@ -66,6 +79,7 @@ export function useSegmentationInteractionRouter({
   completedRoi,
   erPolygon,
   tissue,
+  samBox,
   review,
 }: UseSegmentationInteractionRouterArgs) {
   const onLeftClick = useCallback(
@@ -103,8 +117,6 @@ export function useSegmentationInteractionRouter({
         return;
       }
 
-      if (review.leftMode === "annotate") return;
-
       if (review.leftMode === "hover") {
         if (
           review.hoverActionMode === "group-confirm" ||
@@ -135,6 +147,12 @@ export function useSegmentationInteractionRouter({
     (imagePoint: Point, screenPoint: Point) => {
       if (leftNavigateMode || roiPlacementActive) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
+      // Before the group-selection check: both are box drags, and whichever is
+      // switched on owns the gesture.
+      if (samBox?.isActive) {
+        samBox.handleImagePress(imagePoint, screenPoint);
+        return;
+      }
       if (!review.isGroupActionMode) return;
       review.group.handleImagePress(imagePoint, screenPoint);
     },
@@ -145,6 +163,7 @@ export function useSegmentationInteractionRouter({
       completedRoi,
       erPolygon,
       tissue,
+      samBox,
     ]
   );
 
@@ -152,6 +171,10 @@ export function useSegmentationInteractionRouter({
     (imagePoint: Point, screenPoint: Point) => {
       if (leftNavigateMode || roiPlacementActive) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
+      if (samBox?.isActive) {
+        samBox.handleImageDrag(imagePoint, screenPoint);
+        return;
+      }
       if (!review.isGroupActionMode) return;
       review.group.handleImageDrag(imagePoint, screenPoint);
     },
@@ -162,6 +185,7 @@ export function useSegmentationInteractionRouter({
       completedRoi,
       erPolygon,
       tissue,
+      samBox,
     ]
   );
 
@@ -169,6 +193,10 @@ export function useSegmentationInteractionRouter({
     (imagePoint: Point, screenPoint: Point) => {
       if (leftNavigateMode || roiPlacementActive) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
+      if (samBox?.isActive) {
+        samBox.handleImageRelease(imagePoint, screenPoint);
+        return;
+      }
       if (!review.isGroupActionMode) return;
       review.group.handleImageRelease(imagePoint, screenPoint);
     },
@@ -179,6 +207,7 @@ export function useSegmentationInteractionRouter({
       completedRoi,
       erPolygon,
       tissue,
+      samBox,
     ]
   );
 
@@ -220,7 +249,6 @@ export function useSegmentationInteractionRouter({
       if (
         leftNavigateMode ||
         review.leftMode !== "hover" ||
-        review.workflowMode === "annotate" ||
         review.isGroupActionMode
       ) {
         return;

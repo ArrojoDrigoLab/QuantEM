@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  assignAssetGrouping,
   deleteAsset,
   getAssetNgffThumbnailUrl,
   getAssetPreviewPngUrl,
@@ -82,6 +83,16 @@ describe("shared/api/assets", () => {
     );
   });
 
+  /**
+   * The query string now carries only what the server reads.
+   *
+   * It used to serialise `species`, `organ`, `confirmed` and `tile_status` --
+   * the corpus catalogue's facets -- on every library fetch, and
+   * `_filtered_asset_queryset` has never looked at any of them. This test
+   * asserted the shape of that dead payload, which is how it stayed. The two
+   * grouping facets in its place are real and are the same repeated-parameter
+   * union the old ones pretended to be.
+   */
   it("sends paged home-entry params", async () => {
     const fetchMock = vi
       .fn()
@@ -93,17 +104,15 @@ describe("shared/api/assets", () => {
     await getHomeEntryPage({
       search: "islet",
       availability: "all" as const,
-      species: ["Mus musculus", "__none__"],
-      organ: ["Pancreas"],
-      confirmed: ["confirmed"],
-      tile_status: ["partial"],
+      experiment: ["exp-1", "none"],
+      dataset: ["set-1"],
       limit: 60,
       offset: 120,
     });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "http://127.0.0.1:9000/api/assets/?search=islet&species=Mus+musculus&species=__none__&organ=Pancreas&confirmed=confirmed&tile_status=partial&availability=all&limit=60&offset=120",
+      "http://127.0.0.1:9000/api/assets/?search=islet&dataset=set-1&experiment=exp-1&experiment=none&availability=all&limit=60&offset=120",
       expect.any(Object)
     );
   });
@@ -182,20 +191,89 @@ describe("shared/api/assets", () => {
     expect((fetchMock.mock.calls[0][1].body as FormData).get("pixel_size_nm")).toBeNull();
   });
 
-  it("patches experiment metadata", async () => {
+  /**
+   * `/api/experiments/` is a real endpoint now.
+   *
+   * This test used to patch `confirmed_assets` -- a field of the corpus
+   * catalogue's `Experiment`, on a route the server did not mount. It passed
+   * because the fetch was stubbed, which is exactly how three dead functions
+   * survived a product change.
+   */
+  it("renames an experiment", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse({ id: "exp-1", confirmed_assets: true }));
+      .mockResolvedValue(jsonResponse({ id: "exp-1", name: "Fasted" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await updateExperiment("exp-1", { confirmed_assets: true });
+    await updateExperiment("exp-1", { name: "Fasted" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:9000/api/experiments/exp-1/",
       expect.objectContaining({
-        body: JSON.stringify({ confirmed_assets: true }),
+        body: JSON.stringify({ name: "Fasted" }),
         method: "PATCH",
       })
     );
+  });
+
+  it("posts a grouping change for a whole selection at once", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        assets_changed: 2,
+        dataset_links_dropped: 0,
+        assets_moved_out_of_datasets: 0,
+        datasets_left: [],
+        experiment: null,
+        datasets: [],
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await assignAssetGrouping({
+      asset_ids: ["asset-1", "asset-2"],
+      experiment_name: "Fasted cohort",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:9000/api/assets/grouping/",
+      expect.objectContaining({
+        body: JSON.stringify({
+          asset_ids: ["asset-1", "asset-2"],
+          experiment_name: "Fasted cohort",
+        }),
+        method: "POST",
+      })
+    );
+  });
+
+  /**
+   * An import that names no experiment must produce exactly the request it
+   * produced before the fields existed. This is the whole of "optional".
+   */
+  it("sends no grouping fields when the import named none", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "asset-1" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await uploadAsset(new File(["x"], "scan.tif"), {});
+
+    const body = fetchMock.mock.calls[0][1].body as FormData;
+    expect(body.get("experiment_id")).toBeNull();
+    expect(body.get("experiment_name")).toBeNull();
+    expect(body.get("dataset_id")).toBeNull();
+    expect(body.get("dataset_name")).toBeNull();
+  });
+
+  it("sends a typed experiment and dataset name with the import", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "asset-1" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await uploadAsset(new File(["x"], "scan.tif"), {
+      experimentName: "Fasted cohort",
+      datasetName: "Liver 24h",
+    });
+
+    const body = fetchMock.mock.calls[0][1].body as FormData;
+    expect(body.get("experiment_name")).toBe("Fasted cohort");
+    expect(body.get("dataset_name")).toBe("Liver 24h");
   });
 });

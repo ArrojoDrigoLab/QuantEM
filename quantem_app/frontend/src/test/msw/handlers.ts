@@ -34,6 +34,30 @@ export const EMPTY_JOB_QUEUE_STATUS: JobQueueStatus = {
   generated_at: "2026-01-01T00:00:00Z",
 };
 
+/**
+ * Nothing to fine-tune on.
+ *
+ * The labeling header asks `POST /api/finetune/preview/` over the image it is
+ * open on, because R13 enables its Fine-Tune button only once that organelle
+ * has an annotation on that image. Every test that renders the header therefore
+ * fires it, and without a default it fires into `onUnhandledRequest: "error"` --
+ * sixty-odd error lines in a full run, which is how a suite teaches people to
+ * ignore MSW errors. Zero annotations is the neutral answer: the button renders
+ * disabled, exactly as it does on an image nobody has annotated.
+ */
+export const EMPTY_FINETUNE_PREVIEW = {
+  experiment: null,
+  asset_count: 0,
+  annotation_count: 0,
+  confirmed_areas: 0,
+  done_rois: 0,
+  tile_count: 0,
+  per_image: [],
+  default_mode: "use_all",
+  eligible: false,
+  blockers: [],
+};
+
 // Default no-op handler to keep MSW initialized in tests that do not define
 // request handlers explicitly.
 export const handlers = [
@@ -46,4 +70,16 @@ export const handlers = [
   http.get("http://127.0.0.1:8000/api/jobs/queue-status/", () =>
     HttpResponse.json(EMPTY_JOB_QUEUE_STATUS)
   ),
+  http.post("http://127.0.0.1:8000/api/finetune/preview/", () =>
+    HttpResponse.json(EMPTY_FINETUNE_PREVIEW)
+  ),
+  // An unorganised library. The import form and the library page both read
+  // `GET /api/experiments/` so they can offer the experiments that exist; with
+  // `onUnhandledRequest: "error"` every one of their tests would otherwise fail
+  // on the request rather than on its own assertion. Empty is the neutral state
+  // and the one every library that exists today is in -- the grouping controls
+  // render as "No experiment" plus "New experiment…", and the library's filter
+  // does not appear at all, which is exactly what those tests already assert
+  // about the screen. A test that cares overrides this with `server.use(...)`.
+  http.get("http://127.0.0.1:8000/api/experiments/", () => HttpResponse.json([])),
 ];

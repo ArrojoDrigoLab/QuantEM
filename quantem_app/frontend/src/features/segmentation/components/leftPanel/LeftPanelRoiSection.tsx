@@ -1,4 +1,3 @@
-import { RoiAnnotationPanel } from "@/features/segmentation/components/RoiAnnotationPanel";
 import type {
   LeftPanelRoiState,
   LeftPanelWorkflowState,
@@ -9,25 +8,20 @@ interface LeftPanelRoiSectionProps {
   roi: LeftPanelRoiState;
 }
 
-export function LeftPanelRoiSection({ workflow, roi }: LeftPanelRoiSectionProps) {
-  if (workflow.mode !== "annotate") {
-    return null;
-  }
-
-  return (
-    <RoiAnnotationPanel
-      activeRoi={roi.activeRoi}
-      roiPoints={roi.roiPoints}
-      roiPointsSubmitted={roi.roiPointsSubmitted}
-      roiComplete={roi.roiComplete}
-      roiLabelMode={roi.roiLabelMode}
-      brushSize={roi.brushSize}
-      onRoiLabelModeChange={roi.onRoiLabelModeChange}
-      onBrushSizeChange={roi.onBrushSizeChange}
-      onSubmitRoiLabels={roi.onSubmitRoiLabels}
-      onClearRoiLabels={roi.onClearRoiLabels}
-      onReselectRoi={roi.onReselectRoi}
-      onMarkRoiComplete={roi.onMarkRoiComplete}
-    />
-  );
+/**
+ * Unreachable, pending deletion.
+ *
+ * This rendered `RoiAnnotationPanel`, and only ever when the workflow mode was
+ * `annotate`. That mode has been removed -- its handlers had already been
+ * emptied to `() => {}`, so entering it gave the user a canvas that quietly did
+ * nothing -- and with it the only condition under which this panel appeared.
+ *
+ * It is left as a stub rather than deleted here because the panel it mounted,
+ * its stylesheet and the surrounding dead props are one removal owned by the
+ * delete package; splitting that across two changes would leave a half-removed
+ * component in the tree.
+ */
+export function LeftPanelRoiSection(props: LeftPanelRoiSectionProps) {
+  void props;
+  return null;
 }

@@ -9,8 +9,8 @@ it gets its own module and a strict preference order:
 tier   source            when it applies
 ===== ================= ==============================================
  (a)   exported artifact a TorchScript encoder sits beside the weights
- (b)   ``timm``          the OmniEM family, always
- (c)   ``dinov3``        the QuantEM family, development only
+ (b)   ``timm``          both families, always
+ (c)   ``dinov3``        neither, unless timm cannot; development only
 ===== ================= ==============================================
 
 **(a) is the shipping path.** :mod:`quantem.inference.export` traces a built
@@ -20,18 +20,29 @@ exists the app needs neither ``timm`` nor ``dinov3`` to run that pack, which is
 the whole point: no research-tree architecture code, no third-party licence
 surface, and the artifact's digest covers something that cannot silently drift.
 
-**(b) covers all four OmniEM packs with no Meta code at all.** Their
-``checkpoint_index.json`` declares ``loader: timm_external`` and
-``timm_model: vit_large_patch14_dinov2.lvd142m``; the released weights are that
-architecture with a ``vit.`` prefix. ``timm`` is already a dependency.
+**(b) covers all eight packs with no Meta code at all.** The four OmniEM packs
+declare ``loader: timm_external`` and ``timm_model:
+vit_large_patch14_dinov2.lvd142m``; the released weights are that architecture
+with a ``vit.`` prefix. The four QuantEM packs are a DINOv3 ViT-B, which timm
+also implements (``timm/models/eva.py``, Apache-2.0) -- an index that says
+``framework: timm_vit`` reaches it directly, and one that says ``framework:
+dinov3`` reaches it through :func:`build_quantem_timm_encoder_from_dinov3`,
+which renames the tensors. ``timm`` is already a dependency.
 
-**(c) is for development only.** The QuantEM ViT-B declares ``module:
-dinov3.models.vision_transformer``, and QuantEM does **not** redistribute Meta's
-DINOv3 package -- it is not vendored here and is not a dependency. This tier
-exists so that a developer who has the package on their machine can build the
-model once and *export* it to tier (a), after which nobody else needs it. If it
-is missing, :class:`EncoderUnavailable` says so and names the export route
-rather than just failing.
+**(c) is for development only, and is now genuinely last.** QuantEM does **not**
+redistribute Meta's DINOv3 package -- it is not vendored here and is not a
+dependency. This tier is reached only when timm cannot build a pack at all. It
+matters because it is the reference implementation the timm path is verified
+against; a developer who has the package can also build a pack and *export* it
+to tier (a). If it is missing, :class:`EncoderUnavailable` says so and names the
+export route rather than just failing.
+
+**Why (b) is preferred over (a) on an accelerator, and where the order is
+decided.** A traced graph is not portable between devices for this family (see
+:func:`exported_encoder_name`), so on CUDA the shipped artifact fails and the
+eager rebuild is what runs. :func:`quantem.inference.engine._build_and_prepare`
+owns that ladder; this module only has to be able to build eagerly wherever it
+is asked to.
 
 Input normalisation
 -------------------
@@ -45,9 +56,9 @@ from __future__ import annotations
 import importlib
 import json
 import logging
-import os
 import sys
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -55,17 +66,28 @@ from typing import Any
 import torch
 import torch.nn as nn
 
+# ``DINOV3_PATH_ENV_VAR`` is re-exported: it has always been named here, and it
+# now lives in a standard-library-only module so that the Models screen's
+# runnability probe can agree with this one about what the variable means
+# without importing torch. See quantem.inference.dinov3_hint.
+from .dinov3_hint import DINOV3_PATH_ENV_VAR as DINOV3_PATH_ENV_VAR
+from .dinov3_hint import dinov3_hint, hint_provides_dinov3
+
 logger = logging.getLogger(__name__)
 
 #: Filename an exported encoder takes inside a pack directory (tier a).
+#: **This name means "traced on the CPU"** -- it is what every release bundle
+#: ships and what every CPU install builds. See :func:`exported_encoder_name`.
 EXPORTED_ENCODER_NAME = "encoder_ts.pt"
 
 #: Name of the metadata blob embedded inside that TorchScript archive.
 EXPORT_META_FILE = "quantem_encoder.json"
 
-#: Where to look for Meta's DINOv3 package when it is not already importable.
-#: Development-only escape hatch; see the module docstring.
-DINOV3_PATH_ENV_VAR = "QUANTEM_DINOV3_PATH"
+#: Metadata key recording the device an artifact was traced on. Absent in every
+#: artifact written before device tagging existed, and ``"cpu"`` is the right
+#: reading of that absence: the exporter's default was CPU and the release
+#: builder never overrode it.
+EXPORT_DEVICE_META_KEY = "traced_device"
 
 
 class EncoderUnavailable(RuntimeError):
@@ -225,6 +247,14 @@ class FrozenEncoder(nn.Module):
         # QuantEM trunk ships without the fine-tuned blocks 8-11. The head
         # loader refuses to return a model while any of these is uncovered.
         self.pending_overlay: list[str] = []
+        # Set when the head's ``encoder_trainable`` block is written in a
+        # different dialect from this module's parameter names, which happens
+        # for a QuantEM pack whose index is DINOv3's and whose encoder was
+        # nonetheless built through timm. The head loader puts the block through
+        # this before placing it; without it the fine-tuned blocks simply never
+        # land and the pack runs at trunk weights, silently. None means the
+        # names already match.
+        self.overlay_remap: Callable[[dict], dict] | None = None
         for p in self.backbone.parameters():
             p.requires_grad_(False)
         self.backbone.eval()
@@ -295,6 +325,9 @@ class ExportedEncoder(nn.Module):
         self.layers = [int(i) for i in meta["layers"]]
         self.traced_tile = int(meta["traced_tile"])
         self.dynamic_spatial = bool(meta.get("dynamic_spatial", False))
+        #: The device this graph was traced on. Absent means CPU -- see
+        #: :data:`EXPORT_DEVICE_META_KEY`.
+        self.traced_device = str(meta.get(EXPORT_DEVICE_META_KEY) or "cpu")
 
     def features(self, x: torch.Tensor, layers: list[int]) -> list[torch.Tensor]:
         want = sorted(int(i) for i in layers)
@@ -316,12 +349,59 @@ class ExportedEncoder(nn.Module):
 # --- Tier (a): the exported artifact ----------------------------------------
 
 
-def exported_encoder_path(pack_root: str | Path) -> Path:
-    return Path(pack_root) / EXPORTED_ENCODER_NAME
+def _device_kind(device: str | None) -> str:
+    """``"cuda:1"`` -> ``"cuda"``. Duplicated from :mod:`.device` on purpose:
+    that module imports torch lazily and this one imports it at module scope,
+    so the dependency would run the wrong way."""
+    return (str(device or "cpu").strip().lower().split(":", 1)[0]) or "cpu"
+
+
+def exported_encoder_name(device: str = "cpu") -> str:
+    """The artifact filename for a trace made on ``device``.
+
+    A TorchScript artifact is **not** device-independent, which the exporter
+    believed for a year and four of the eight shipped packs disproved. The
+    DINOv3 rotary position encoding materialises tensors while it is traced and
+    ``torch.jit.freeze`` folds them into the archive's constant table, where
+    ``torch.jit.load(map_location=...)`` cannot reach them: a CPU trace of the
+    QuantEM family dies on CUDA with *"Expected all tensors to be on the same
+    device"*, and a CUDA trace of the same encoder dies the mirror death on the
+    CPU. One name for both was therefore a name for a file that can only be
+    right for whoever wrote it last -- and the self-healing re-export wrote it
+    on whatever device that run happened to use, so one GPU run permanently
+    broke the CPU path of a shared pack directory.
+
+    Tagging the name removes the class rather than guarding it: a CUDA trace has
+    nowhere to be written except a CUDA name. ``cpu`` keeps the bare
+    :data:`EXPORTED_ENCODER_NAME` so every bundle, installer and checksum that
+    already names it stays correct.
+    """
+    kind = _device_kind(device)
+    if kind == "cpu":
+        return EXPORTED_ENCODER_NAME
+    stem, _, suffix = EXPORTED_ENCODER_NAME.rpartition(".")
+    return f"{stem}.{kind}.{suffix}"
+
+
+def exported_encoder_path(pack_root: str | Path, device: str = "cpu") -> Path:
+    return Path(pack_root) / exported_encoder_name(device)
 
 
 def load_exported_encoder(path: str | Path, device: str = "cpu") -> ExportedEncoder:
-    """Load a TorchScript encoder and the metadata embedded in its archive."""
+    """Load a TorchScript encoder and the metadata embedded in its archive.
+
+    Refuses an artifact that **states** it was traced somewhere else. Only a
+    stated one: whether a given trace survives a device change is a property of
+    the encoder, not a rule -- MEASURED, the OmniEM ViT-L's CPU trace runs
+    perfectly on CUDA, while the QuantEM ViT-B's does not, because only the
+    latter's rotary position encoding recomputes itself from CPU-created
+    coordinates inside ``forward``. So an artifact with no stamp (every release
+    bundle to date) is *tried*, and
+    :func:`quantem.inference.engine.prepare_for_device` decides by running it.
+    A stamp, once present, is believed: it is written only by an exporter that
+    knew the answer, and the alternative to refusing here is a raw
+    device-mismatch ``RuntimeError`` from inside a traced graph.
+    """
     extra: dict[str, bytes] = {EXPORT_META_FILE: b""}
     module = torch.jit.load(str(path), map_location=device, _extra_files=extra)
     blob = extra.get(EXPORT_META_FILE) or b""
@@ -332,6 +412,14 @@ def load_exported_encoder(path: str | Path, device: str = "cpu") -> ExportedEnco
             "and input normalisation are unknown."
         )
     meta = json.loads(blob.decode("utf-8"))
+    stamped = meta.get(EXPORT_DEVICE_META_KEY)
+    wanted = _device_kind(device)
+    if stamped and _device_kind(stamped) != wanted:
+        raise EncoderUnavailable(
+            f"{Path(path).name} was traced on {_device_kind(stamped)!r} and is not the "
+            f"artifact for {wanted!r}: a traced graph can carry device-locked constants "
+            "that loading it elsewhere does not move. The encoder will be rebuilt instead."
+        )
     module.eval()
     return ExportedEncoder(module, meta)
 
@@ -540,6 +628,7 @@ def build_quantem_timm_encoder(
     apply_encoder_norm: bool = True,
     *,
     skeleton_state: dict | None = None,
+    state_dict: dict | None = None,
 ) -> FrozenEncoder:
     """Tier (b) for the QuantEM family: the DINOv3 ViT-B through timm.
 
@@ -558,6 +647,12 @@ def build_quantem_timm_encoder(
     ``skeleton_state`` serves ``quantem:er`` (``adapt: full``): its head embeds
     the whole fine-tuned encoder, no trunk is installed, and the module is
     built from the head's own timm-named tensors.
+
+    ``state_dict`` hands over already-loaded, already-timm-named tensors and
+    wins over both of the above. It is how
+    :func:`build_quantem_timm_encoder_from_dinov3` reaches this builder with a
+    pack whose weights are on disk in DINOv3's naming: the translation happens
+    once, there, and everything downstream is the ordinary timm path.
 
     Input contract: the caller hands this encoder a tile already standardised
     with the corpus statistics (``input_mean``/``input_std`` below), exactly as
@@ -592,7 +687,9 @@ def build_quantem_timm_encoder(
     )
     _promote_k_bias(model)
 
-    if weight_path is not None:
+    if state_dict is not None:
+        sd = dict(state_dict)
+    elif weight_path is not None:
         sd = _load_state_dict_any(weight_path)
         strip = str(fe.get("strip_prefix") or "")
         if strip:
@@ -663,6 +760,176 @@ def build_quantem_timm_encoder(
     return enc
 
 
+# --- Tier (b), reached from a DINOv3-shaped index ---------------------------
+#
+# An HF-installed pack arrives with everything above already arranged for it:
+# the installer synthesises `framework: timm_vit` + `variant: quantem_dinov3`
+# and the published weights are timm-named. A pack installed from a release
+# bundle, or from a local research directory, carries the *research* index
+# instead -- `framework: dinov3`, `loader: dinov3_teacher` -- and its weights
+# are named as Meta's model names them. Nothing but the names differed, and the
+# names were enough to send it down a tier that needs a package this project
+# does not ship, and from there to the CPU. MEASURED on a Quadro RTX 8000:
+# quantem:mito 0.68 s per window on the processor against 0.24 s on the card,
+# for want of a rename.
+#
+# The translation below is a port of quantem-core's
+# `models/encoders/quantem_vit.remap_reference_state_dict` -- the same function
+# the published HF artifacts were converted with, and the one whose fidelity
+# that project's tests pin. Keeping the two in step matters: a key this misses
+# is not an error, it is a tensor that quietly never loads.
+
+#: DINOv3 keys that exist only for pretraining and have no timm counterpart.
+_DINOV3_PRETRAIN_ONLY = ("mask_token",)
+
+#: Where :func:`remap_dinov3_state_dict` parks the rotary period buffer. timm
+#: registers ``rope.periods`` non-persistently, so it cannot travel in a state
+#: dict; it is applied by hand afterwards (T11).
+_ROPE_PERIODS_KEY = "rope.periods"
+
+#: ``encoder.arch`` -> the timm entry that implements it. Only the ViT-B is
+#: mapped because the QuantEM family is only the ViT-B; an unknown arch falls
+#: through to Meta's package rather than guessing at a timm name.
+_QUANTEM_TIMM_MODELS: dict[str, str] = {
+    "vit_base": "vit_base_patch16_dinov3_qkvb",
+}
+
+
+def remap_dinov3_state_dict(src: dict) -> dict:
+    """DINOv3 backbone naming -> timm ``Eva`` naming.
+
+    ``src`` is already stripped of the ``teacher.``/``backbone.`` prefixes.
+
+    Deliberately **not** ``timm.models.eva.checkpoint_filter_fn``: that helper
+    drops the k-bias, which is right for Meta's distilled weights (trained with
+    ``mask_k_bias=True``) and wrong for ours (the k-bias was live for all 675k
+    steps; see T10 in the tier comment above). Every trained tensor is kept.
+    """
+    out: dict = {}
+    for k, v in src.items():
+        if k in _DINOV3_PRETRAIN_ONLY:
+            continue
+        if k == "rope_embed.periods":
+            out[_ROPE_PERIODS_KEY] = v
+            continue
+        if k == "storage_tokens":
+            out["reg_token"] = v
+            continue
+        if k.endswith("attn.qkv.bias"):
+            q, kb, vb = v.chunk(3, dim=-1)
+            base = k[: -len("qkv.bias")]
+            out[base + "q_bias"] = q
+            out[base + "k_bias"] = kb  # T10: kept, not discarded
+            out[base + "v_bias"] = vb
+            continue
+        out[k.replace("ls1.gamma", "gamma_1").replace("ls2.gamma", "gamma_2")] = v
+    return out
+
+
+def remap_dinov3_overlay(state: dict) -> dict:
+    """A head's ``encoder_trainable`` block, in the timm module's naming.
+
+    The released heads were saved from the reference encoder, so a ``last_n``
+    pack's replaced blocks arrive as ``backbone.blocks.8.attn.qkv.bias`` and a
+    ``full`` pack's whole encoder the same way. Keys outside ``backbone.`` (the
+    OmniEM LoRA modules) pass through untouched.
+    """
+    passthrough = {k: v for k, v in state.items() if not k.startswith("backbone.")}
+    backbone = {
+        k[len("backbone."):]: v for k, v in state.items() if k.startswith("backbone.")
+    }
+    remapped = remap_dinov3_state_dict(backbone)
+    # A buffer, never a trained head tensor; it is installed from the trunk.
+    remapped.pop(_ROPE_PERIODS_KEY, None)
+    out = {f"backbone.{k}": v for k, v in remapped.items()}
+    out.update(passthrough)
+    return out
+
+
+def _timm_entry_point_for_dinov3(manifest: EncoderManifest, backbone_sd: dict) -> dict:
+    """The ``feature_entry_point`` an HF install would have written for this pack.
+
+    Every value here is the one
+    :func:`quantem.registry.hf_install._checkpoint_index` writes for the QuantEM
+    family, so a pack installed from a bundle and the same pack installed from
+    Hugging Face build the *same* module. The one thing read from the checkpoint
+    rather than fixed is the prefix-token count, because it is derivable
+    (1 class token + however many storage tokens this encoder was trained with)
+    and a wrong value would split features silently rather than loudly.
+    """
+    model_name = _QUANTEM_TIMM_MODELS.get(manifest.arch)
+    if not model_name:
+        raise EncoderUnavailable(
+            f"encoder arch {manifest.arch!r} has no timm equivalent recorded here; "
+            "only the QuantEM ViT-B does."
+        )
+    storage = backbone_sd.get("storage_tokens")
+    n_prefix = 1 + int(storage.shape[1]) if storage is not None else 5
+    return {
+        "loader": "timm_dinov3_remap",
+        "variant": QUANTEM_TIMM_VARIANT,
+        "forward": "forward_intermediates",
+        "timm_model": model_name,
+        "in_chans": int(manifest.input_channels or 1),
+        "img_size_build": 512,
+        "norm_eps": 1e-06,
+        "rope_periods_bf16": True,
+        "n_prefix_tokens": n_prefix,
+        # The trunk this reads is the research checkpoint, which carries all
+        # twelve blocks; the head then overwrites the fine-tuned ones. Nothing
+        # is left for the head to *provide*, unlike the HF trunk.
+        "overlay_blocks": [],
+    }
+
+
+def build_quantem_timm_encoder_from_dinov3(
+    weight_path: str | Path | None,
+    manifest: EncoderManifest,
+    apply_encoder_norm: bool = True,
+    *,
+    skeleton_state: dict | None = None,
+) -> FrozenEncoder:
+    """Build a DINOv3-indexed QuantEM pack through timm, by renaming its tensors.
+
+    The bridge between an index written by the research tree and the builder
+    above. It reads the checkpoint the index describes, translates the names,
+    synthesises the timm entry point that index implies, and hands both to
+    :func:`build_quantem_timm_encoder`. The encoder that comes back is the same
+    object an HF install produces, with one addition: ``overlay_remap``, because
+    the pack's *head* is written in the same DINOv3 naming and has to make the
+    same journey.
+    """
+    fe = manifest.entry_point
+    prefix = str(fe.get("backbone_prefix", "backbone."))
+    checkpoint_key = str(fe.get("checkpoint_key", "teacher"))
+
+    if weight_path is not None:
+        src = _dinov3_backbone_state(weight_path, checkpoint_key, prefix)
+    elif skeleton_state:
+        src = {k[len(prefix):]: v for k, v in skeleton_state.items() if k.startswith(prefix)}
+        if not src:
+            raise EncoderUnavailable(
+                "no encoder blob installed and the head carries no backbone tensors to "
+                "build the encoder from."
+            )
+    else:
+        raise EncoderUnavailable(
+            f"encoder {manifest.run_id!r} needs its weight file, which is not installed."
+        )
+
+    state = remap_dinov3_state_dict(src)
+    shim = replace(
+        manifest,
+        framework="timm_vit",
+        entry_point=_timm_entry_point_for_dinov3(manifest, src),
+    )
+    enc = build_quantem_timm_encoder(
+        None, shim, apply_encoder_norm, state_dict=state
+    )
+    enc.overlay_remap = remap_dinov3_overlay
+    return enc
+
+
 # --- Tier (c): dinov3 -------------------------------------------------------
 
 
@@ -676,9 +943,15 @@ def dinov3_available() -> bool:
 
 
 def _import_dinov3(module_name: str) -> ModuleType:
-    """Import from Meta's DINOv3 package, honouring the dev-only path hint."""
-    hint = os.environ.get(DINOV3_PATH_ENV_VAR, "").strip()
-    if hint and hint not in sys.path and Path(hint).is_dir():
+    """Import from Meta's DINOv3 package, honouring the dev-only path hint.
+
+    What counts as a usable hint is decided in one place
+    (:func:`quantem.inference.dinov3_hint.hint_provides_dinov3`) so that this
+    and the Models screen's probe cannot mean different things by the same
+    environment variable.
+    """
+    hint = dinov3_hint()
+    if hint and hint not in sys.path and hint_provides_dinov3(hint):
         sys.path.insert(0, hint)
     try:
         return importlib.import_module(module_name)
@@ -877,10 +1150,47 @@ def build_encoder(
             enc = build_timm_encoder(encoder_path, manifest, apply_encoder_norm)
         tier = "timm"
     elif manifest.framework == "dinov3":
-        enc = build_dinov3_encoder(
-            encoder_path, manifest, apply_encoder_norm, skeleton_state=skeleton_state
-        )
-        tier = "dinov3"
+        # timm first, Meta's package only if timm cannot. The index says
+        # "dinov3" because the research tree wrote it, not because that is the
+        # only way to build this encoder: timm implements the same architecture
+        # (Apache-2.0, timm/models/eva.py) and only the tensor *names* differ,
+        # which build_quantem_timm_encoder_from_dinov3 translates.
+        #
+        # The order is what closes the GPU gap, and it is chosen on evidence
+        # rather than preference. A traced DINOv3 encoder cannot be replayed on
+        # another device (see exported_encoder_name), so on an accelerator the
+        # shipped artifact fails and the eager rebuild is the only route left --
+        # and if that route needs a package this project does not redistribute,
+        # the pack lands on the processor. MEASURED on a Quadro RTX 8000:
+        # quantem:mito 0.68 s per window there against 0.24 s on the card. timm
+        # is already a dependency, so the fast route is the one that is always
+        # available and the reference package is the fallback.
+        #
+        # It is not a different model. quantem-core pins the five adaptations
+        # timm needs to reproduce the reference forward, and this build is
+        # verified against the DINOv3 one on the released weights (see
+        # inference/tests/test_dinov3_timm_bridge.py).
+        #
+        # This belongs here and not at install time: rewriting a pack's
+        # checkpoint_index.json on the way in would make the file disagree with
+        # the digest the installer recorded for it, so `quantem models verify`
+        # would then call every QuantEM pack corrupt.
+        try:
+            enc = build_quantem_timm_encoder_from_dinov3(
+                encoder_path, manifest, apply_encoder_norm, skeleton_state=skeleton_state
+            )
+            tier = "timm"
+        except EncoderUnavailable as timm_exc:
+            logger.info(
+                "%s: could not build this encoder through timm (%s); falling back "
+                "to Meta's dinov3 package.",
+                manifest.run_id or manifest.arch,
+                timm_exc,
+            )
+            enc = build_dinov3_encoder(
+                encoder_path, manifest, apply_encoder_norm, skeleton_state=skeleton_state
+            )
+            tier = "dinov3"
     else:
         raise EncoderUnavailable(
             f"encoder framework {manifest.framework!r} is not supported "
@@ -895,7 +1205,10 @@ def build_encoder(
             patch_size=enc.patch_size,
             embedding_dim=enc.embedding_dim,
             depth=enc.depth,
-            framework=manifest.framework,
+            # What was *built*, not what the index said. They differ for a
+            # DINOv3-indexed pack built through timm, and this field is read as
+            # provenance -- the honest answer is the module in hand.
+            framework=enc.framework,
             tier=tier,
         ),
     )

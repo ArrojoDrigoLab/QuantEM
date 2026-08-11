@@ -20,6 +20,14 @@ export interface ImageViewerImageConfig {
   storedDepth?: number | null;
   /** Original source plane index per stored slice, for true-depth labels. */
   zPlaneIndices?: number[];
+  /**
+   * Physical width of one image pixel, in nanometres.
+   *
+   * Drives the scale bar, and only the scale bar. Absent or null means the
+   * image has no calibration, and the canvas then shows no bar at all rather
+   * than one that would silently mean pixels.
+   */
+  pixelSizeNm?: number | null;
 }
 
 export interface ImageViewerViewportConfig {
@@ -30,6 +38,12 @@ export interface ImageViewerViewportConfig {
   fitBoundsPaddingRatio?: number;
   disablePan?: boolean;
   onChange?: (viewport: ViewportState) => void;
+  /**
+   * Show the Fit / 1:1 / Reset controls and the scale bar. Defaults to true --
+   * every canvas needs a way back to the whole image. Set false for a viewer
+   * that is a thumbnail rather than a workspace.
+   */
+  showControls?: boolean;
 }
 
 export interface ImageViewerOverlayConfig {

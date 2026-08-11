@@ -60,6 +60,18 @@ class BaseSegmenter(ABC):
     * ``on_progress(stage, fraction)`` may be called freely; ``stage`` is a
       short lowercase key and ``fraction`` is in ``[0, 1]``.
 
+    Progress, and why it does not come back through ``on_progress``
+    ---------------------------------------------------------------
+    ``on_progress`` carries a fraction, and a fraction cannot say "531 of 858
+    tiles" without being rounded back into a count that may not be the one the
+    loop reached. Countable work is therefore reported *sideways*, straight
+    onto the job row, by :func:`quantem.jobs.reporter.unit_scope`: the running
+    job's reporter registers itself on its thread, and the tiling loop writes
+    ``progress_units_done`` / ``progress_units_total`` as it goes. An
+    implementation that runs sliding windows should open a scope around its
+    loop (:mod:`quantem.inference.segmenter` is the worked example); one that
+    does not is simply absent from the tile numbers, which is honest.
+
     Not part of the contract any more
     ---------------------------------
     There is no per-call retraining hook, and no ensemble: nothing trains a
@@ -143,9 +155,24 @@ class BaseSegmenter(ABC):
         return None
 
     def estimate_dl_tile_count(self, image_shape: tuple[int, int]) -> int | None:
-        """Optional per-model tile-count estimate for progress reporting.
+        """How many windows this segmenter will run over ``image_shape``.
+
+        Called before any model is loaded so the run has a denominator to show
+        while the weights are still coming off disk. An implementation that
+        returns a number must return the number its loop will actually count
+        to -- the window layout is fully determined by the region shape, the
+        pack's canonical nm/px, its tile size and its patch size, so there is
+        nothing to guess and no excuse for an approximation the user then
+        watches overshoot. (:func:`quantem.inference.engine.estimate_tiles` is
+        the reference implementation and is exact.)
 
         Return ``None`` to let the caller fall back to a generic estimate.
+
+        Progress does not depend on this being called: the tiling loop reports
+        whole tiles with the plan's own total as it goes (see
+        :func:`quantem.inference.tiling.blend_region_streaming`), and that total
+        wins if the two ever disagree. This is what makes the count exist
+        *before* tile 1.
         """
         _ = image_shape
         return None
@@ -178,9 +205,13 @@ class BaseSegmenter(ABC):
         a user ends up with a run they believe is calibrated and is not.
         """
         _ = (adapter_id, calibrated_threshold, head_file)
+        # The Python class name used to lead this sentence. It lands in the
+        # Tasks & Queues panel through the failed job's message, where it is
+        # I-12's exception/class class and means nothing to the reader; the
+        # model the adapter was fitted on is the fact that matters.
         raise NotImplementedError(
-            f"{self.__class__.__name__} cannot use the adapter fitted on "
-            f"{base_model!r}; it has no adaptation support."
+            f"This model cannot use the adapter fitted on {base_model!r}: it "
+            "does not support adaptation."
         )
 
     def predict_from_image_file(
@@ -193,7 +224,7 @@ class BaseSegmenter(ABC):
         """Optional full-image prediction path that streams from the source image."""
         _ = (image_file, cached_prob_maps, on_progress, kwargs)
         raise NotImplementedError(
-            f"{self.__class__.__name__} does not support image-file prediction."
+            "This model cannot run over a whole image file."
         )
 
     # --- DL Inference ---

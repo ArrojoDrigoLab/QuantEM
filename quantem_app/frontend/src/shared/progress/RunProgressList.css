@@ -1,0 +1,133 @@
+/* Two skins, one component. A host sets the four variables; everything else
+   here is geometry, so the drawer (dark) and the labeling banner (light) can
+   never drift apart in what they say, only in how they look. */
+.run-progress-list {
+  --run-progress-text: #c7cdd6;
+  --run-progress-name: #f5f7fb;
+  --run-progress-track: #2c313d;
+  --run-progress-fill: #6bb1ff;
+  --run-progress-warning: #f0b57a;
+  --run-progress-download: #9d8bf5;
+
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  /* So the rows can restack for the 360 px Tasks drawer without a media query:
+     the drawer is narrow inside a wide window, and a viewport query cannot see
+     that. */
+  container-type: inline-size;
+}
+
+.run-progress-row {
+  display: grid;
+  grid-template-columns: 12px minmax(72px, max-content) minmax(48px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--run-progress-text);
+  min-width: 0;
+}
+
+/* The detail clause wraps under the bar rather than pushing the row wide: the
+   drawer is 360 px and "531 of 858 tiles · about 4 min left" does not fit
+   beside a bar at that width. */
+.run-progress-detail {
+  grid-column: 2 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.run-progress-glyph {
+  font-size: 10px;
+  line-height: 1;
+  text-align: center;
+  color: var(--run-progress-fill);
+}
+
+.run-progress-name {
+  font-weight: 600;
+  color: var(--run-progress-name);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run-progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--run-progress-track);
+  overflow: hidden;
+  display: block;
+}
+
+.run-progress-bar-empty {
+  background: transparent;
+}
+
+.run-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--run-progress-fill);
+  transition: width 200ms linear;
+}
+
+.run-progress-percent {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--run-progress-name);
+}
+
+.run-progress-aggregate .run-progress-name {
+  letter-spacing: 0.01em;
+}
+
+/* A download is a different kind of row and has to look like one: its own
+   colour and its own glyph, so a glance can never read it as the run. */
+.run-progress-download .run-progress-glyph {
+  color: var(--run-progress-download);
+  font-size: 12px;
+}
+
+.run-progress-download .run-progress-fill {
+  background: var(--run-progress-download);
+}
+
+.run-progress-download .run-progress-bar {
+  border: 1px dashed var(--run-progress-download);
+  background: transparent;
+  height: 8px;
+  box-sizing: border-box;
+}
+
+.run-progress-tone-warning .run-progress-detail,
+.run-progress-tone-warning .run-progress-glyph {
+  color: var(--run-progress-warning);
+}
+
+.run-progress-tone-warning .run-progress-fill {
+  background: var(--run-progress-warning);
+}
+
+/* Narrow host (the Tasks drawer): the name gets its own line rather than being
+   truncated to "QuantEM — Endoplasmic Reticul…". Which model is downloading is
+   the whole content of that row. */
+@container (max-width: 460px) {
+  .run-progress-row {
+    grid-template-columns: 12px 1fr auto;
+  }
+
+  .run-progress-name {
+    white-space: normal;
+    overflow: visible;
+  }
+
+  .run-progress-bar {
+    grid-column: 2 / -1;
+  }
+
+  .run-progress-percent {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}

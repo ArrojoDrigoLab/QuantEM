@@ -293,7 +293,10 @@ def test_offline_error_names_the_repo_and_the_bundle_route(repo, monkeypatch):
 
     message = str(excinfo.value)
     assert hf.HF_REPO_URL in message
-    assert cache.INSTALL_COMMAND in message
+    # Shown verbatim on the Models screen, so the offline route it names has to
+    # be the one on that screen and not a command (I-12).
+    assert "Install from a local folder" in message
+    assert cache.INSTALL_COMMAND not in message
     assert "Traceback" not in message
 
 

@@ -27,6 +27,9 @@
     "active": true,
     "targets": ["nsis"],
     "useLocalToolsDir": true,
+    "publisher": "Arrojo e Drigo Lab",
+    "copyright": "Copyright (c) Arrojo e Drigo Lab, Vanderbilt University",
+    "shortDescription": "Segment and measure organelles in electron microscopy images",
     "icon": ["icons/icon.ico"],
     "resources": {
       "../../packaging/pyinstaller/dist/quantem-server": "quantem-server"

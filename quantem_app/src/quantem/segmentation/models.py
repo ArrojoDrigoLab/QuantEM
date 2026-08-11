@@ -1,6 +1,6 @@
 import logging
 
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 from shapely.geometry import Point, Polygon
 from shapely.geometry.base import BaseGeometry
@@ -25,6 +25,7 @@ from .segment_status import (
     status_for_segment_lifecycle,
 )
 from .source_models import (
+    SOURCE_MODEL_MANUAL,
     SOURCE_MODEL_UNKNOWN,
     infer_source_model_from_features,
     normalize_source_model,
@@ -114,6 +115,20 @@ class ImageSegmentation(TimeStampedModel):
     )
     status_progress = models.FloatField(default=0.0)  # 0–100
     status_error = models.TextField(blank=True)
+
+    #: How many rows of the live preview raster have been written for the run
+    #: currently in flight. Counts up during inference so the viewer can wash
+    #: the finished band over the image before the overlay exists; reset to 0
+    #: when a run starts. Zero also means "nothing to wash", which is the state
+    #: of every segmentation that has never run.
+    preview_rows_ready = models.PositiveIntegerField(default=0)
+
+    #: The include level (0-1) the current object set was extracted at, or
+    #: ``None`` when no dial movement has been recorded against it. ``None`` is
+    #: not "0.5": the run's own threshold lives in each object's run identity,
+    #: and inventing a level here would claim a dial position the user never
+    #: chose. Set when objects are re-extracted from the stored probability map.
+    include_level = models.FloatField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -229,6 +244,18 @@ class SegmentObject(TimeStampedModel):
         related_name="derived_segments",
     )
 
+    #: Which result version produced this object. Objects written before result
+    #: versions existed are version 1, which is why the default is 1 and not 0:
+    #: there has always been a first result, and calling it version 1 keeps the
+    #: numbering a user sees ("Version 2") the same as the numbering stored.
+    run_version = models.PositiveIntegerField(default=1)
+
+    #: When a later version replaced this object, or ``None`` while it is live.
+    #: A superseded object is kept rather than deleted so a revert is exact and
+    #: so a user's own corrections survive a model pass; every read path that
+    #: means "the current objects" filters on ``superseded_at__isnull=True``.
+    superseded_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["created_at"]
         indexes = [
@@ -242,6 +269,14 @@ class SegmentObject(TimeStampedModel):
             models.Index(fields=["segmentation", "bbox_minx", "bbox_maxx"]),
             models.Index(fields=["segmentation", "bbox_miny", "bbox_maxy"]),
             models.Index(fields=["segmentation", "centroid_x", "centroid_y"]),
+            # Result versions. Both are composite and lead with ``segmentation``
+            # rather than being bare single-column indexes on the two new
+            # columns, because neither is ever queried on its own -- "the live
+            # objects" and "the objects of version N" are always scoped to one
+            # segmentation first. Two indexes instead of four keeps the
+            # per-object insert cost of an extraction run where it was.
+            models.Index(fields=["segmentation", "superseded_at"]),
+            models.Index(fields=["segmentation", "run_version"]),
         ]
 
     @property
@@ -678,7 +713,26 @@ class ProbabilityMap(TimeStampedModel):
 
     Multiple probability maps can be associated with a single segmentation,
     allowing comparison of different model outputs or different channels.
+
+    The four provenance columns below say what grid the stored array is on and
+    how it was got there. They exist because owner ruling R11 made the stored
+    map the authority every threshold reads, rather than a by-product kept for
+    fine-tuning: once a dial re-thresholds this array, "which grid, quantised
+    how, resampled with what" stops being a curiosity and becomes part of the
+    record that says whether two object sets are the same computation.
     """
+
+    #: The stored array is on the original image's pixel grid.
+    GRID_NATIVE = "native"
+    #: The stored array is on whatever grid the model predicted at. Maps written
+    #: before R11 are this, and they are not replayable: re-thresholding one
+    #: would decide on the wrong grid. Recorded rather than assumed so a reader
+    #: can tell an old map from a new one.
+    GRID_MODEL = "model"
+    GRID_CHOICES = [
+        (GRID_NATIVE, "Original image pixels"),
+        (GRID_MODEL, "Model prediction grid"),
+    ]
 
     segmentation = models.ForeignKey(
         ImageSegmentation,
@@ -693,6 +747,30 @@ class ProbabilityMap(TimeStampedModel):
         default=0
     )  # For multi-channel probability maps
     metadata = models.JSONField(default=dict, blank=True)
+
+    #: Which pixel grid the stored array is on. Defaults to ``"native"``
+    #: because that is what every map written from now on is; the rows that
+    #: predate R11 are corrected by the data migration that adds this column,
+    #: which reads each map's recorded metadata rather than guessing.
+    grid = models.CharField(
+        max_length=16,
+        choices=GRID_CHOICES,
+        default=GRID_NATIVE,
+    )
+    #: How the continuous field was quantised for storage, e.g. ``"uint8"``.
+    #: Bounds the granularity of any threshold read off this map -- uint8 is
+    #: about 1/255 -- which is a number the dial has to state rather than imply.
+    quantisation = models.CharField(max_length=16, default="uint8")
+    #: The interpolation used to bring probabilities back to native pixels
+    #: (``"area"``, ``"bilinear"``), or blank when no resampling happened
+    #: because the model already predicted at native scale. Never ``"nearest"``
+    #: for a continuous field.
+    resample_kernel = models.CharField(max_length=32, blank=True, default="")
+    #: The float range the quantised levels stand for, as ``[low, high]``.
+    #: ``None`` means the range was not recorded, which is not the same as
+    #: ``[0, 1]``: a reader must be able to tell an unrecorded range from a
+    #: recorded full one before converting a level back to a probability.
+    value_range = models.JSONField(null=True, blank=True)
 
     class Meta:
         ordering = ["created_at"]
@@ -777,4 +855,465 @@ class SegmentationCompletionArchive(TimeStampedModel):
         return (
             f"Completion archive for {self.segmentation_id}: "
             f"{self.discarded_count} object(s)"
+        )
+
+
+#: How many times :meth:`SegmentationResultVersion.record_new_result` will
+#: recompute the next version number after losing the unique constraint to
+#: another pass. Small on purpose: two extractions finishing on the same
+#: segmentation in the same instant is already unusual, and a long spin here
+#: would hold a write transaction open behind a completed inference run.
+_VERSION_ALLOCATION_ATTEMPTS = 5
+
+
+class SegmentationResultVersion(TimeStampedModel):
+    """One numbered result for a segmentation: what it was, and when.
+
+    A segmentation's objects are replaced whenever the model runs again or the
+    include level moves. Before this existed, the previous set was gone, so
+    "put it back" was another inference pass and two versions of the same image
+    could not be told apart in an analysis. A row here is the header of one
+    such set; the objects themselves carry the matching
+    :attr:`SegmentObject.run_version` and are marked
+    :attr:`SegmentObject.superseded_at` rather than deleted, so a revert is
+    exact rather than approximate.
+
+    ``version`` starts at 1 because objects written before result versions
+    existed default to 1 -- there has always been a first result, and giving it
+    a number here rather than a special case keeps every later count honest.
+
+    **An analysis counts one image once.** Two versions of the same
+    segmentation are two descriptions of the same pixels, not two samples, and
+    the read path in :mod:`quantem.analysis` is required to use the live set
+    only.
+    """
+
+    segmentation = models.ForeignKey(
+        ImageSegmentation,
+        on_delete=models.CASCADE,
+        related_name="result_versions",
+    )
+    version = models.PositiveIntegerField(default=1)
+    #: The include level this set was extracted at, or ``None`` when the set
+    #: came straight from a run and no dial position was chosen. Not defaulted
+    #: to the run's threshold: the two are different facts and conflating them
+    #: would show a user a dial position they never set.
+    include_level = models.FloatField(null=True, blank=True)
+    #: The run identity every object in this set carries, copied here so the
+    #: version list can name the run without loading an object.
+    run_identity = models.JSONField(default=dict, blank=True)
+    object_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["segmentation", "version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["segmentation", "version"],
+                name="uniq_result_version_per_segmentation",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["segmentation", "-version"]),
+        ]
+
+    @classmethod
+    def current_version_for(cls, segmentation) -> int:
+        """The result version a new judgement is about.
+
+        One definition, in one place, because three features ask the question
+        and a disagreement between them would silently mis-scope a quality
+        estimate: the highest numbered version if any is recorded, else the
+        highest version stamped on a live object, else 1. Never 0 -- a
+        segmentation with no objects at all is still on its first result, and
+        answering 0 would make every check written against it look stale the
+        moment the first run landed.
+        """
+        latest = (
+            cls.objects.filter(segmentation=segmentation)
+            .order_by("-version")
+            .values_list("version", flat=True)
+            .first()
+        )
+        if latest:
+            return int(latest)
+        stamped = (
+            SegmentObject.objects.filter(
+                segmentation=segmentation,
+                superseded_at__isnull=True,
+            )
+            .order_by("-run_version")
+            .values_list("run_version", flat=True)
+            .first()
+        )
+        return int(stamped) if stamped else 1
+
+    @classmethod
+    def _next_version_after(cls, segmentation, floor: int) -> int:
+        """The number to give the next result. Never reuses one already taken.
+
+        ``floor`` is what the caller knows about the set being replaced; the
+        highest row already recorded is what the database knows. Taking the
+        larger of the two and adding one is what makes the retry in
+        :meth:`record_new_result` terminate: a lost race raises the row floor,
+        so the next attempt asks for a strictly larger number.
+        """
+        latest = (
+            cls.objects.filter(segmentation=segmentation)
+            .order_by("-version")
+            .values_list("version", flat=True)
+            .first()
+        )
+        return max(int(floor or 0), int(latest or 0)) + 1
+
+    @classmethod
+    def record_new_result(
+        cls,
+        segmentation,
+        *,
+        after_version: int | None = None,
+        run_identity: dict | None = None,
+        include_level: float | None = None,
+    ) -> "SegmentationResultVersion | None":
+        """Number the result a pass has just produced, and move the objects onto it.
+
+        **This is the writer that makes the version mean something.** The
+        schema, the constraints and every read path were landed together and
+        nothing ever incremented the number, so
+        :meth:`current_version_for` could only ever answer 1: a quality
+        estimate taken against one candidate set went on feeding the headline
+        after the model had been re-run at a different threshold, and the
+        "compare with the previous version" surface was permanently empty
+        because there was never a previous version to compare with.
+
+        Called at the one moment that makes a stored quality estimate untrue:
+        a model pass has replaced the candidate set (see
+        :func:`quantem.seg_core.db.extraction.run_extraction`). Answering a
+        question, drawing a hand-made outline or clearing labels are
+        deliberately **not** such moments -- they are the user's own judgements
+        about the same objects, and :class:`QualityCheck` says in as many words
+        that a later clear-labels pass does not unmake one.
+
+        **Every live object is stamped, not only the new rows.** A pass deletes
+        this model's own untouched candidates and writes fresh ones, but a
+        CONFIRMED or EXCLUDED object survives it untouched -- and those objects
+        are still on screen and still in the analysis, so they are part of the
+        new result. Leaving them on the old number would drop them out of
+        :func:`~quantem.segmentation.quality_sampling.live_model_objects`, and
+        the count the spot check quotes ("12 of the 511") would silently stop
+        counting everything the user had already confirmed. ``run_version`` is
+        the number of the *result set*; which run produced any individual
+        object is a separate fact and is recorded per object in
+        ``features["run"]``, which this never touches.
+
+        Args:
+            segmentation: the segmentation whose objects were just replaced.
+            after_version: the version of the set this one replaces, or ``0``
+                when there was no result here before. **Read before the pass
+                ran**, because afterwards the question cannot be answered: the
+                objects on the table are this pass's own, and asking then would
+                make a brand-new segmentation's first result "version 2".
+                ``None`` falls back to :meth:`current_version_for`, which is
+                right for a caller that genuinely does not know.
+            run_identity: the run behind the new set, copied onto the row so
+                the version list can name the run without loading an object.
+            include_level: the dial position this set was extracted at.
+                ``None`` -- the ordinary case -- means the set came straight
+                from a run and nobody chose a level; it is deliberately not
+                defaulted to the run's threshold, because showing a user a dial
+                position they never set is worse than showing none.
+
+        Returns:
+            The new row, or ``None`` when a version number could not be
+            allocated. ``None`` rather than an exception: this is bookkeeping
+            beside a completed inference run, and a failure to number the
+            result must not throw away the objects the run just wrote.
+        """
+        stamp = dict(run_identity) if isinstance(run_identity, dict) else {}
+        level = None if include_level is None else float(include_level)
+        floor = (
+            cls.current_version_for(segmentation)
+            if after_version is None
+            else int(after_version)
+        )
+
+        for _attempt in range(_VERSION_ALLOCATION_ATTEMPTS):
+            version = cls._next_version_after(segmentation, floor)
+            try:
+                with transaction.atomic():
+                    row = cls.objects.create(
+                        segmentation=segmentation,
+                        version=version,
+                        include_level=level,
+                        run_identity=stamp,
+                    )
+                    # ``update`` rather than a save loop: this is one statement
+                    # over an indexed (segmentation, superseded_at) range, and
+                    # it deliberately leaves ``updated_at`` alone -- numbering
+                    # the result is not an edit to any object in it.
+                    SegmentObject.objects.filter(
+                        segmentation=segmentation,
+                        superseded_at__isnull=True,
+                    ).update(run_version=version)
+                    row.object_count = (
+                        SegmentObject.objects.filter(
+                            segmentation=segmentation,
+                            superseded_at__isnull=True,
+                            run_version=version,
+                        )
+                        .exclude(source_model=SOURCE_MODEL_MANUAL)
+                        .count()
+                    )
+                    row.save(update_fields=["object_count", "updated_at"])
+            except IntegrityError:
+                # Two passes over the same segmentation finished together and
+                # both claimed the same number. The loser recomputes and takes
+                # the next one; the unique constraint is what makes that safe.
+                continue
+            return row
+
+        logger.warning(
+            "Could not allocate a result version for segmentation %s after %d "
+            "attempts; its objects stay on the previous version.",
+            getattr(segmentation, "pk", segmentation),
+            _VERSION_ALLOCATION_ATTEMPTS,
+        )
+        return None
+
+    def __str__(self):
+        return (
+            f"Result version {self.version} of {self.segmentation_id}: "
+            f"{self.object_count} object(s)"
+        )
+
+
+class QualityCheck(TimeStampedModel):
+    """One question the app asked about one object, and the user's answer.
+
+    Half of the two-number quality answer. Precision is estimated from a random
+    spot check: a sample of the run's own untouched objects, each shown once,
+    each answered yes / wrong shape / not the thing / not sure. This table is
+    the sample *and* the answers, which is what makes the sample stable -- the
+    rows are written when the sample is drawn, so the same twelve objects come
+    back after a reload, a restart, and a second person opening the same image.
+
+    **Why ``sample_seed`` and ``ordinal`` are stored rather than recomputed.**
+    The draw is deterministic (a hash of the object id and the seed), so it
+    could in principle be recomputed on every request. It is not, because the
+    set it draws from moves: answering a question labels the object, which
+    takes it out of the "untouched" pool, so a recomputed sample would reshuffle
+    itself as the user worked through it. Storing the draw fixes the twelve
+    before the first answer changes anything.
+
+    **``unsure`` is excluded from the denominator**, and the readout says so.
+    An answer of "not sure" is a real answer -- it is the honest one when the
+    image does not settle the question -- and counting it either way would
+    invent a judgement the user declined to make.
+
+    A row survives the deletion of its object (``segment`` goes null): the user
+    made that judgement, and a later clear-labels pass does not unmake it. The
+    estimate still reports the answer, because dropping answered rows would
+    quietly shrink the denominator that the sample size in the sentence quotes.
+    """
+
+    KIND_RANDOM_SAMPLE = "random_sample"
+    KIND_COUNT_BOX = "count_box"
+    KIND_CHOICES = [
+        (KIND_RANDOM_SAMPLE, "Random spot check"),
+        (KIND_COUNT_BOX, "Inside the count box"),
+    ]
+
+    ANSWER_YES = "yes"
+    ANSWER_WRONG_SHAPE = "wrong_shape"
+    ANSWER_NOT_THE_THING = "not_the_thing"
+    ANSWER_UNSURE = "unsure"
+    ANSWER_CHOICES = [
+        (ANSWER_YES, "Yes"),
+        (ANSWER_WRONG_SHAPE, "Wrong shape"),
+        (ANSWER_NOT_THE_THING, "Not the thing"),
+        (ANSWER_UNSURE, "Not sure"),
+    ]
+
+    #: The answers that count as the object being good. ``wrong_shape`` is not
+    #: here: an outline that is wrong is a wrong object for a measurement, even
+    #: though the thing under it is real.
+    POSITIVE_ANSWERS = frozenset({ANSWER_YES})
+    #: The answers that count at all. ``unsure`` is deliberately absent.
+    SCORED_ANSWERS = frozenset({ANSWER_YES, ANSWER_WRONG_SHAPE, ANSWER_NOT_THE_THING})
+
+    segmentation = models.ForeignKey(
+        ImageSegmentation,
+        on_delete=models.CASCADE,
+        related_name="quality_checks",
+    )
+    #: The result version this check is about. A check never carries over to a
+    #: new version: the objects changed, so the judgement is about objects that
+    #: are no longer on screen.
+    run_version = models.PositiveIntegerField(default=1)
+    kind = models.CharField(
+        max_length=16,
+        choices=KIND_CHOICES,
+        default=KIND_RANDOM_SAMPLE,
+    )
+    #: Fixed once per (segmentation, result version) so the draw is repeatable
+    #: and so extending a sample from 12 to 36 takes the next 24 of the same
+    #: order rather than reshuffling the first 12.
+    sample_seed = models.BigIntegerField(default=0)
+    segment = models.ForeignKey(
+        SegmentObject,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="quality_checks",
+    )
+    #: Position in the draw, from 0. Also the order the questions are asked in,
+    #: so "3 of 12" means the same thing on every device.
+    ordinal = models.PositiveIntegerField(default=0)
+    #: Blank until answered. Blank is not an answer and is not counted.
+    answer = models.CharField(
+        max_length=16,
+        choices=ANSWER_CHOICES,
+        blank=True,
+        default="",
+    )
+    answered_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["segmentation", "run_version", "kind", "ordinal"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["segmentation", "run_version", "kind", "ordinal"],
+                name="uniq_quality_check_slot",
+            ),
+            _build_check_constraint(
+                # An answer and its timestamp are one fact. Half of it is a row
+                # that either counts with no record of when, or records a
+                # moment with nothing decided at it.
+                expression=(
+                    models.Q(answer="", answered_at__isnull=True)
+                    | (~models.Q(answer="") & models.Q(answered_at__isnull=False))
+                ),
+                name="quality_check_answer_and_time_together",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["segmentation", "run_version", "kind"]),
+        ]
+
+    @property
+    def is_answered(self) -> bool:
+        return bool(self.answer)
+
+    def record_answer(self, answer: str, *, now=None) -> None:
+        """Set the answer and its timestamp together.
+
+        In one method because the check constraint above requires both, and
+        because a re-answer must move the timestamp: the user changed their
+        mind, and the record should say when they did.
+        """
+        self.answer = answer
+        self.answered_at = now or timezone.now()
+
+    def __str__(self):
+        state = self.answer or "unanswered"
+        return (
+            f"Quality check {self.ordinal} ({self.kind}/{state}) "
+            f"for {self.segmentation_id} v{self.run_version}"
+        )
+
+
+class CountBox(TimeStampedModel):
+    """One small box the user marked up exhaustively, and what it showed.
+
+    The other half of the quality answer, and the half that cannot be got any
+    other way. A spot check can only ask about objects the model already found,
+    so it measures precision and is blind to misses -- a model that finds 511
+    of 1 300 real mitochondria scores beautifully on a spot check while the
+    user's counts are 60 % low. The only way to see the misses is to have a
+    human mark every object in a small area and compare.
+
+    **The app places the box, not the user.** A user-chosen box is a biased
+    box: people put it where the segmentation looks interesting, which is
+    exactly where it is not representative. ``seed`` records the draw so the
+    same box comes back on reload and so the placement can be re-derived.
+
+    **One box, and it is rough.** ``n_marked`` and ``n_matched`` come from a
+    single small window, so the recall they imply carries a wide interval and
+    the readout says so in words. Two boxes would be better; the price is the
+    user's time, and this plan spends about three minutes of it.
+    """
+
+    #: The app scored windows for tissue content and drew among the good ones.
+    PLACEMENT_TISSUE_SCORED = "tissue_scored"
+    #: The app could not read the image to score it, so the box went in the
+    #: middle. A distinct value rather than a silent fallback: a box in the
+    #: centre of an image whose centre is empty resin measures nothing, and the
+    #: recall it implies is not the recall of the tissue.
+    PLACEMENT_CENTRED = "centred"
+
+    segmentation = models.ForeignKey(
+        ImageSegmentation,
+        on_delete=models.CASCADE,
+        related_name="count_boxes",
+    )
+    #: The result version this box was marked against, for the same reason
+    #: :attr:`QualityCheck.run_version` exists: a new version is new objects,
+    #: so ``n_matched`` no longer describes anything on screen.
+    run_version = models.PositiveIntegerField(default=1)
+
+    # The rectangle, in the image's own pixel coordinates -- the same space
+    # segment geometry lives in, so no conversion sits between the box and the
+    # objects it is compared against.
+    x = models.FloatField()
+    y = models.FloatField()
+    width = models.FloatField()
+    height = models.FloatField()
+
+    #: The draw that placed the box.
+    seed = models.BigIntegerField(default=0)
+    #: How the box got where it is: :attr:`PLACEMENT_TISSUE_SCORED` or
+    #: :attr:`PLACEMENT_CENTRED`. Blank on a row written before this was
+    #: recorded, which is "not recorded" and not a third kind of placement.
+    #: Stored rather than re-derived because re-deriving it needs the image,
+    #: and the reason to know it is precisely that the image could not be read.
+    placement = models.CharField(max_length=16, blank=True, default="")
+    #: How many objects the user marked inside the box.
+    n_marked = models.PositiveIntegerField(default=0)
+    #: How many of those the model had already found.
+    n_matched = models.PositiveIntegerField(default=0)
+    #: Set when the user pressed done. An unfinished box is not an answer: it
+    #: reads as "0 marked", which would say the model missed nothing.
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["segmentation", "run_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["segmentation", "run_version"],
+                name="uniq_count_box_per_result_version",
+            ),
+            _build_check_constraint(
+                expression=models.Q(width__gt=0) & models.Q(height__gt=0),
+                name="count_box_has_area",
+            ),
+            _build_check_constraint(
+                # The matched objects are a subset of the marked ones, so a row
+                # claiming otherwise is arithmetic that would report recall
+                # above 1.
+                expression=models.Q(n_matched__lte=models.F("n_marked")),
+                name="count_box_matched_within_marked",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["segmentation", "run_version"]),
+        ]
+
+    @property
+    def is_complete(self) -> bool:
+        return self.completed_at is not None
+
+    def __str__(self):
+        state = "complete" if self.is_complete else "in progress"
+        return (
+            f"Count box for {self.segmentation_id} v{self.run_version} "
+            f"({state}): {self.n_matched} of {self.n_marked} found"
         )

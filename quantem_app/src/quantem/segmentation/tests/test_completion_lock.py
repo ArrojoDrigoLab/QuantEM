@@ -208,8 +208,12 @@ class CompletionLockTests(TestCase):
             f"{self.base}/complete", {"is_complete": False}, format="json"
         )
         self.assertEqual(response.status_code, 400, response.data)
+        # The verb belongs in ``unlock``, which is what a client reads. The
+        # sentence names the control on the screen instead (I-12, http-verb).
         self.assertEqual(response.data["unlock"]["method"], "DELETE")
-        self.assertIn("DELETE", response.data["detail"])
+        self.assertIn("Unlock segmentation", response.data["detail"])
+        self.assertNotIn("DELETE", response.data["detail"])
+        self.assertNotIn("POST", response.data["detail"])
 
         self.segmentation.refresh_from_db()
         self.assertNotEqual(self.segmentation.status_stage, "COMPLETED")

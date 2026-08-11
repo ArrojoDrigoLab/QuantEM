@@ -69,13 +69,33 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from .encoders import EXPORT_META_FILE, EXPORTED_ENCODER_NAME
+from .encoders import EXPORT_DEVICE_META_KEY, EXPORT_META_FILE, exported_encoder_name
 from .specs import MODEL_SPECS, ModelSpec
 
 logger = logging.getLogger(__name__)
 
 #: Max absolute difference tolerated between the exported and eager encoders.
 DEFAULT_TOLERANCE = 1e-4
+
+#: Forward passes an artifact must survive before it is believed. **Two, and
+#: the second is the one that counts.**
+#:
+#: TorchScript's profiling executor records tensor profiles on the first
+#: execution of a graph and only compiles the specialised, *fused* version on
+#: the second -- the same fact :data:`quantem.inference.engine._WARMUP_PASSES`
+#: exists for. Verifying a single pass therefore measured a graph no user ever
+#: runs, and said nothing about the one they all do.
+#:
+#: MEASURED on a Quadro RTX 8000, tap outputs of the QuantEM ViT-B traced on
+#: CUDA: pass 1 matched the eager encoder **exactly** (0.0) and every pass after
+#: it was **2.56e-01** out, 2 500x the tolerance the export then reported as
+#: met. Downstream that was max 2.9e-02 in output probability and 48 pixels of
+#: a 0.45 MP micrograph changing side of the threshold, against 4.8e-03 and 10
+#: pixels for the same model run eagerly. The OmniEM ViT-L moves 5.4e-05 and
+#: passes either way, and *every* CPU trace measured 0.0 at every pass -- which
+#: is why no shipped artifact was ever affected and why this went unseen until
+#: device-tagged CUDA artifacts started being written.
+_VERIFY_PASSES = 2
 
 
 class ExportError(RuntimeError):
@@ -153,10 +173,14 @@ def export_pack(
     Args:
         pack_id: e.g. ``"omniem:mito"``.
         tolerance: max absolute difference allowed against the eager encoder.
-        device: where to build and verify. CPU is the honest default -- the
-            artifact is device-independent and CPU float32 has no autocast to
-            mask a discrepancy.
-        output: destination; defaults to ``<pack dir>/encoder_ts.pt``.
+        device: where to build, trace and verify. CPU is the default because it
+            is what every machine has and what the release bundle ships. It is
+            **not** because the artifact is portable: a trace carries
+            device-locked constants, which is why the filename below is tagged
+            with the device rather than shared between them.
+        output: destination; defaults to the device-tagged name beside the
+            pack's ``head.pt`` (see
+            :func:`quantem.inference.encoders.exported_encoder_name`).
         overwrite: replace an existing artifact.
 
     Raises:
@@ -180,7 +204,11 @@ def export_pack(
             index_path=files.index_path,
             encoder_path=files.encoder_path,
         ),
-        output=Path(output) if output else files.head_path.parent / EXPORTED_ENCODER_NAME,
+        output=(
+            Path(output)
+            if output
+            else files.head_path.parent / exported_encoder_name(device)
+        ),
         tolerance=tolerance,
         device=device,
         overwrite=overwrite,
@@ -289,6 +317,7 @@ def export_encoder_files(
         output=target,
         tolerance=tolerance,
         device=device,
+        overwrite=overwrite,
     )
 
 
@@ -308,6 +337,7 @@ def export_built_encoder(
     output: str | Path,
     tolerance: float = DEFAULT_TOLERANCE,
     device: str = "cpu",
+    overwrite: bool = False,
 ) -> ExportResult:
     """Trace, verify and atomically write an **already-built** pack encoder.
 
@@ -325,11 +355,20 @@ def export_built_encoder(
     probed rather than assumed, and the write is tmp-then-rename so a crash or
     a failed verification never leaves a half-written artifact where the
     engine would load it.
+
+    **An existing artifact is never replaced unless the caller says so.** The
+    repair path is the reason: it runs inside somebody's segmentation run, on
+    whatever device that run drew, and a best-effort write that can overwrite is
+    a best-effort write that can destroy a good file. Combined with the
+    device-tagged filename, the strongest thing that can go wrong is a file that
+    was not written.
     """
     spec = MODEL_SPECS.get(pack_id)
     if spec is None:
         raise ExportError(f"unknown pack id {pack_id!r}; known: {sorted(MODEL_SPECS)}")
     target = Path(output)
+    if target.exists() and not overwrite:
+        raise ExportError(f"{target} already exists; pass --overwrite to replace it.")
     layers = [int(i) for i in layers]
 
     tap = _TapModule(encoder, layers).to(device).eval()
@@ -359,6 +398,11 @@ def export_built_encoder(
         "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "torch_version": torch.__version__,
         "tolerance": float(tolerance),
+        # Stamped, not inferred. The filename already says it, but a file can be
+        # renamed and an artifact that lies about where it can run is the defect
+        # this whole tagging exists to remove -- so the claim travels inside the
+        # archive too, and the loader checks it.
+        EXPORT_DEVICE_META_KEY: str(device).split(":", 1)[0] or "cpu",
     }
 
     # Probe other spatial sizes before committing to a claim about them.
@@ -371,24 +415,28 @@ def export_built_encoder(
 
     # Verify what actually landed on disk, not the in-memory traced object: a
     # serialisation bug would otherwise pass a check against the wrong thing.
+    # And verify it *warm* -- see _VERIFY_PASSES for the graph the first pass
+    # is not.
     extra = {EXPORT_META_FILE: b""}
     reloaded = torch.jit.load(str(tmp), map_location=device, _extra_files=extra)
     reloaded.eval()
     with torch.no_grad():
-        got = tuple(reloaded(example))
+        for _ in range(_VERIFY_PASSES):
+            got = tuple(reloaded(example))
     diff = _max_abs_diff(eager, got)
     if diff > tolerance:
         tmp.unlink(missing_ok=True)
         raise ExportError(
-            f"{pack_id}: exported encoder differs from the eager one by {diff:.3e} "
-            f"(tolerance {tolerance:.1e}). Not writing {target.name} -- an artifact that "
-            "does not reproduce the published model is worse than none."
+            f"{pack_id}: the exported encoder differs from the eager one by {diff:.3e} "
+            f"once its graph is specialised (tolerance {tolerance:.1e}). Not writing "
+            f"{target.name} -- an artifact that does not reproduce the published model "
+            "is worse than none."
         )
     tmp.replace(target)
 
     logger.info(
-        "Exported %s from tier %s: max|diff|=%.3e, dynamic=%s, taps=%s, adapt=%s",
-        pack_id, source_tier, diff, dynamic, layers, adapt,
+        "Exported %s from tier %s on %s -> %s: max|diff|=%.3e, dynamic=%s, taps=%s, adapt=%s",
+        pack_id, source_tier, device, target.name, diff, dynamic, layers, adapt,
     )
     return ExportResult(
         pack_id=pack_id,
@@ -416,13 +464,17 @@ def _probe_dynamic(
     position embedding can include the pos-embed resample grid. The app only
     ever feeds ``spec.tile_size`` windows, so a False here is not a defect --
     but claiming dynamic shapes that do not hold would be.
+
+    Run :data:`_VERIFY_PASSES` times for the same reason the main check is: a
+    single pass through a new shape measures the unspecialised graph.
     """
     probe = tile + patch
     try:
         x = torch.randn(1, 1, probe, probe, device=device)
         with torch.no_grad():
             want = eager(x)
-            got = tuple(traced(x))
+            for _ in range(_VERIFY_PASSES):
+                got = tuple(traced(x))
         return _max_abs_diff(want, got) <= tolerance
     except Exception as exc:
         logger.debug("dynamic-shape probe at %d failed: %r", probe, exc)

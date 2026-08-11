@@ -1,3 +1,5 @@
+import atexit
+import contextlib
 import logging
 import multiprocessing as mp
 import os
@@ -6,9 +8,10 @@ import sys
 import threading
 import time
 import traceback
+import weakref
+from collections.abc import Iterator
 from datetime import timedelta
 
-import django
 from django.apps import apps
 from django.utils import timezone
 
@@ -19,11 +22,17 @@ from quantem.jobs.constants import (
 )
 from quantem.jobs.failure_reconcile import (
     domain_status_recorded,
+    failure_message,
     reconcile_domain_objects_for_cancelled_job,
     reconcile_domain_objects_for_failed_job,
     reconcile_domain_objects_for_retrying_job,
     retrying_attempt_detail,
     worker_exit_message,
+)
+from quantem.jobs.pool import (
+    WORKER_PROCESS_ENV_VAR,
+    django_pool_initializer,
+    install_parent_death_watchdog,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,8 +43,17 @@ RUNNING_HEARTBEAT_SECONDS = 30.0
 #: environment so the inference layer can honour it. Unset means "no
 #: accelerator was assigned" — run on CPU.
 WORKER_DEVICE_ENV_VAR = "QUANTEM_WORKER_DEVICE"
-#: Set inside a spawned job worker. Only the server process runs a scheduler.
-WORKER_PROCESS_ENV_VAR = "QUANTEM_JOB_WORKER"
+
+# ``WORKER_PROCESS_ENV_VAR`` -- set inside a spawned job worker, so that only
+# the server process runs a scheduler -- is imported from
+# :mod:`quantem.jobs.pool` rather than declared again here. ``pool`` holds the
+# copy a pool child can import before ``django.setup()``; this module used to
+# declare a second string with the same value and a comment asking the next
+# reader to keep them in step. The dependency runs one way only: ``pool`` must
+# never import this module, which reaches Django models at import time.
+
+#: How long :meth:`JobRunner.shutdown` waits for a terminated worker to go.
+SHUTDOWN_JOIN_SECONDS = 5.0
 
 #: Single persistent-worker pool for accelerator-class jobs.
 GPU_POOL_KEY = "gpu"
@@ -124,21 +142,54 @@ def _job_should_retry(job) -> bool:
 
 
 def _setup_django() -> None:
-    # Claim this process as a worker *before* django.setup(), which opens the
-    # first DB connection and would otherwise autostart a second job scheduler
-    # here. On Windows the start method is spawn: the child re-imports
-    # everything and inherits QUANTEM_AUTOSTART_JOBS=1, so without this marker
-    # every worker runs its own JobScheduler. That is not a tidiness problem --
-    # N schedulers race for the same rows, and the persistent GPU worker sets
-    # daemon=True so *its* scheduler cannot spawn children and throws
-    # "daemonic processes are not allowed to have children" on every tick.
-    os.environ[WORKER_PROCESS_ENV_VAR] = "1"
-    if not apps.ready:
-        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "quantem.core.settings")
-        django.setup()
+    """Prepare a spawned job worker: exactly what a pool child gets.
+
+    This is :func:`quantem.jobs.pool.django_pool_initializer`, called rather
+    than re-implemented. The two had drifted into near-copies of each other --
+    claim ``QUANTEM_JOB_WORKER`` before ``django.setup()`` opens the first
+    connection (otherwise the child inherits ``QUANTEM_AUTOSTART_JOBS=1`` and
+    runs a second scheduler racing this one for the same rows), point
+    ``DJANGO_SETTINGS_MODULE`` at the settings module, then set Django up once
+    -- and only one of them also installs the parent-death watchdog. Delegating
+    means a job worker and a pool child cannot diverge again.
+    """
+    django_pool_initializer()
+
+
+@contextlib.contextmanager
+def _worker_process_marker() -> Iterator[None]:
+    """Put ``QUANTEM_JOB_WORKER`` back the way it was when the job returns.
+
+    :func:`_setup_django` claims the whole process as a worker, which is right
+    for a spawned worker but permanent. Called in-process -- which the tests
+    do, since this entry point *is* the real failure path they need to exercise
+    -- it poisons the interpreter for everything that runs afterwards: file
+    logging is suppressed in workers, so an unrelated later test can watch a
+    server promise a log file that can never appear. The persistent worker
+    claims the marker itself before its loop, so restoring the *previous* value
+    leaves that claim standing.
+    """
+    previous = os.environ.get(WORKER_PROCESS_ENV_VAR)
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(WORKER_PROCESS_ENV_VAR, None)
+        else:
+            os.environ[WORKER_PROCESS_ENV_VAR] = previous
 
 
 def run_job_in_subprocess(job_id: str, device_name: str | None = None) -> None:
+    # Before _configure_worker_device, which imports torch: that import is
+    # seconds long and holds hundreds of megabytes, and a parent force-killed
+    # during it would otherwise leave exactly the orphan this guards. A no-op in
+    # the server process and in the in-process (inline) mode the tests use.
+    install_parent_death_watchdog()
+    with _worker_process_marker():
+        _run_job_in_subprocess(job_id, device_name=device_name)
+
+
+def _run_job_in_subprocess(job_id: str, device_name: str | None = None) -> None:
     _configure_worker_device(device_name)
     _setup_django()
 
@@ -196,15 +247,24 @@ def run_job_in_subprocess(job_id: str, device_name: str | None = None) -> None:
             backoff_seconds = min(3600, 2 ** min(job.attempts, 8))
             next_status = "RETRY"
             next_run_at = timezone.now() + timedelta(seconds=backoff_seconds)
-        message = f"failed: {exc.__class__.__name__}: {exc}"
-        Job.objects.filter(id=job_id).update(
-            status=next_status,
-            error_traceback=error_trace,
-            finished_at=timezone.now(),
-            next_run_at=next_run_at,
-            message=message,
-            heartbeat_at=timezone.now(),
-        )
+        # The exception's own sentence, never its class name: this string is
+        # rendered verbatim in the Tasks drawer. See
+        # :func:`quantem.jobs.failure_reconcile.failure_message`.
+        message = failure_message(exc)
+        conclusion = {
+            "status": next_status,
+            "error_traceback": error_trace,
+            "finished_at": timezone.now(),
+            "next_run_at": next_run_at,
+            "message": message,
+            "heartbeat_at": timezone.now(),
+        }
+        if next_status == "RETRY" and job.progress_units_total is not None:
+            # The next attempt walks the tiles again from the first one. Leaving
+            # the previous attempt's count on the row would show the wave more
+            # done than it is and then take it back when the retry starts.
+            conclusion["progress_units_done"] = 0
+        Job.objects.filter(id=job_id).update(**conclusion)
         if next_status == "FAILED":
             reconcile_domain_objects_for_failed_job(
                 job.type,
@@ -225,11 +285,7 @@ def run_job_in_subprocess(job_id: str, device_name: str | None = None) -> None:
             reconcile_domain_objects_for_retrying_job(
                 job.type,
                 job.payload_json,
-                retrying_attempt_detail(
-                    job.attempts,
-                    job.max_attempts,
-                    f"{exc.__class__.__name__}: {exc}",
-                ),
+                retrying_attempt_detail(job.attempts, job.max_attempts, message),
             )
         from quantem.jobs.storage_leases import StorageLeaseConflict
 
@@ -254,6 +310,12 @@ def run_job_in_persistent_worker(
     result_queue: object,
     device_name: str | None = None,
 ) -> None:
+    # The process this most matters for: it holds a warm CUDA context and its
+    # model weights for the whole session, and between jobs it blocks in
+    # `job_queue.get()` -- a wait nothing else can interrupt. `daemon = True`
+    # below does not help, because a force-quit is TerminateProcess and no
+    # atexit hook runs.
+    install_parent_death_watchdog()
     _configure_worker_device(device_name)
     _setup_django()
     Job = _get_job_model()
@@ -340,6 +402,45 @@ def _is_persistent_job_worker(process: object) -> bool:
     return hasattr(process, "try_consume_completion") and hasattr(process, "pool_key")
 
 
+#: Every live :class:`JobRunner`, so one ``atexit`` hook can stop all of them.
+#: Weak, so a runner a test threw away is not kept alive to the end of the
+#: session and does not have its (already collected) workers poked at exit.
+_LIVE_RUNNERS: weakref.WeakSet = weakref.WeakSet()
+_ATEXIT_REGISTERED = False
+
+
+def _shutdown_live_runners() -> None:
+    for runner in list(_LIVE_RUNNERS):
+        try:
+            runner.shutdown()
+        except Exception:  # pragma: no cover - shutdown is best effort
+            logger.debug("A job runner did not shut down cleanly.", exc_info=True)
+
+
+def _register_runner_for_shutdown(runner: "JobRunner") -> None:
+    """Arrange for ``runner``'s workers to be stopped when this process exits.
+
+    The clean-exit half of the orphan problem. ``multiprocessing`` registers its
+    own ``atexit`` hook when it is imported, and that hook *joins* non-daemon
+    children -- so a plain Ctrl-C or a Quit from the shell blocked until the
+    running segmentation finished, which for a full-image run is minutes of an
+    app that looks hung. Users answer that by force-quitting, which is how the
+    905 MB orphan got made in the first place. ``atexit`` runs handlers in
+    reverse registration order and this one is registered later, so it
+    terminates the workers before multiprocessing tries to wait for them.
+
+    The killed job is not lost information: its row stays RUNNING and the next
+    launch's startup reaper (``JobScheduler._recover_orphaned_jobs``) retries or
+    fails it with the reason.
+    """
+    global _ATEXIT_REGISTERED
+
+    _LIVE_RUNNERS.add(runner)
+    if not _ATEXIT_REGISTERED:
+        atexit.register(_shutdown_live_runners)
+        _ATEXIT_REGISTERED = True
+
+
 class RunningJob:
     def __init__(self, process: object, resource_class: str, job_type: str = ""):
         self.process = process
@@ -366,15 +467,62 @@ class JobRunner:
         }
         cpu_default = max(1, (os.cpu_count() or 2) - 1)
         self.cpu_slots = _parse_worker_count(os.environ.get("JOB_CPU_WORKERS"), cpu_default)
-        self.gpu_slots = _parse_worker_count(os.environ.get("JOB_GPU_WORKERS"), 1)
         self.upload_pipeline_slots = _parse_worker_count(
             os.environ.get("JOB_UPLOAD_PIPELINE_WORKERS"),
             5,
         )
         self.gpu_devices = _detect_accelerator_devices()
+        # One worker per accelerator, and the default has to come from how many
+        # there are. It was a flat 1, so `_next_gpu_device_name` round-robined
+        # over cards that `_get_or_create_idle_gpu_worker` would never ask for:
+        # a two-card workstation enumerated both and used one.
+        #
+        # One *per* card, not more: MEASURED, two processes sharing a card gain
+        # 1.10x of throughput and four gain 1.20x, while per-run latency gets
+        # 3.1x worse and VRAM use quadruples. The streaming multiprocessors are
+        # already saturated by a single stream; the only thing concurrency
+        # overlaps is host-side loading.
+        self.gpu_slots = _parse_worker_count(
+            os.environ.get("JOB_GPU_WORKERS"), max(1, len(self.gpu_devices))
+        )
         self.ctx = mp.get_context("spawn")
         self.running: dict[str, RunningJob] = {}
         self.gpu_workers: dict[str, list[PersistentJobWorker]] = {}
+        _register_runner_for_shutdown(self)
+
+    def shutdown(self) -> None:
+        """Terminate every worker process this runner started.
+
+        Only processes, and only ones from ``self`` -- never a name-based sweep.
+        Inline mode runs jobs on threads, which cannot be terminated and are
+        daemons anyway, so they are skipped.
+        """
+        workers: list[object] = [job.process for job in self.running.values()]
+        workers.extend(
+            worker for pool in self.gpu_workers.values() for worker in pool
+        )
+        terminated = []
+        for worker in workers:
+            terminate = getattr(worker, "terminate", None)
+            is_alive = getattr(worker, "is_alive", None)
+            if not callable(terminate) or not callable(is_alive):
+                continue  # a thread, in inline mode
+            try:
+                if not is_alive():
+                    continue
+                terminate()
+                terminated.append(worker)
+            except Exception:  # pragma: no cover - the process may be mid-exit
+                logger.debug("Could not terminate a job worker.", exc_info=True)
+        for worker in terminated:
+            join = getattr(worker, "join", None)
+            if callable(join):
+                with contextlib.suppress(Exception):
+                    join(timeout=SHUTDOWN_JOIN_SECONDS)
+        if terminated:
+            logger.info(
+                "Stopped %d job worker process(es) on shutdown.", len(terminated)
+            )
 
     def _next_gpu_device_name(self) -> str | None:
         if not self.gpu_devices:
@@ -514,12 +662,12 @@ class JobRunner:
                     # NTSTATUS reached the Analysis panel as "worker subprocess
                     # exited with code 3221225794", which is not a message for
                     # a biologist.
-                    failure_message = worker_exit_message(exit_code)
+                    stopped_message = worker_exit_message(exit_code)
                     Job.objects.filter(id=job_id, status="RUNNING").update(
                         status="FAILED",
                         finished_at=timezone.now(),
-                        message=failure_message,
-                        error_traceback=failure_message,
+                        message=stopped_message,
+                        error_traceback=stopped_message,
                     )
                     # The worker died without releasing its storage leases;
                     # left ACTIVE they brick the segmentation for the lease TTL
@@ -532,7 +680,7 @@ class JobRunner:
                     reconcile_domain_objects_for_failed_job(
                         job.type,
                         job.payload_json,
-                        failure_message,
+                        stopped_message,
                         # The worker vanished without writing anything, so an
                         # existing FAILED stage is an older attempt's.
                         supersede_stale_failure=True,

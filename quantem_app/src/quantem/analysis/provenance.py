@@ -1,25 +1,21 @@
-"""What it takes to get the same numbers again in six months.
+"""What an export bundle records about how its numbers were produced.
 
-An export bundle is only reportable if someone can re-derive it. That needs more
-than "the mitochondria model": it needs *which build* of that model, at *which
-threshold*, on *which pixels*, under *which* library versions. Every item below
-changed a published number at least once in this project's history:
+A bundle is re-derivable only if it says which build of a model ran, at which
+threshold, on which pixels, under which library versions. This module collects
+that record.
+
+Four things it captures, and why each is not obvious:
 
 * **Model bytes.** ``quantem:mito`` is a name, not an identity. The head and the
-  encoder are separate downloads and either can be re-released; the installer
-  already computes a SHA-256 for both, so the digest is what goes here.
-* **The scale the model ran at.** Six of the eight packs declare a
-  ``canonical_nm`` and resample to it. An uncalibrated image runs at native
-  scale instead, and the object count changes.
-* **scikit-image.** ``binary_closing`` and ``regionprops`` sit under every
-  measurement here, so the version belongs in the record. It is *not* what
-  decides the min-area boundary: 0.26 changed ``remove_small_objects`` from
-  "smaller than" to "smaller than or equal to", which is exactly why
-  :func:`quantem.inference.postprocess.filter_min_area` counts components
-  itself. Saying otherwise sends a reader chasing a version pin that cannot
-  explain a count mismatch.
-* **The image.** ``image_key`` is a local database UUID. It identifies nothing
-  on another machine, and it survives the file being replaced.
+  encoder are separate downloads and either can be re-released, so the SHA-256
+  of each is what goes in the record.
+* **The scale the model ran at.** Most packs declare a ``canonical_nm`` and
+  resample to it; an uncalibrated image runs at native scale instead, and the
+  object count differs.
+* **Library versions.** ``scikit-image`` sits under every measurement here, and
+  ``torch``, ``numpy`` and ``scipy`` under the probability map.
+* **The image.** ``image_key`` is a local database UUID and identifies nothing
+  on another machine, so a file is recorded by name and SHA-256 instead.
 
 Three rules govern this module:
 
@@ -27,16 +23,14 @@ Three rules govern this module:
    with a sentence saying why, in the section's ``unavailable`` map. A manifest
    that quietly omits the adapter reads exactly like one from a run that had no
    adapter.
-2. **Nothing here can fail a run.** Provenance is metadata; a missing git
-   directory, an unreadable file or an optional package that is not installed
-   turns into a recorded reason, never an exception out of an analysis job.
-3. **Nothing here names this machine.** An export bundle is attached to a paper
-   or emailed to a collaborator, and ``D:\\Chris\\uat4_data\\images\\x.png``
-   tells the reader where one person keeps their data and nothing whatever about
-   the image. A file is identified by its **name and its sha256**, which mean
-   the same thing on every machine; the directory it happened to sit in is not
-   recorded. :func:`scrub_local_paths` is the backstop, and it uses the same
-   detector the model-release build gate does.
+2. **Nothing here can fail a run.** Provenance is metadata: a missing git
+   directory, an unreadable file or an absent optional package becomes a
+   recorded reason, never an exception out of an analysis job.
+3. **Nothing here names this machine.** A full path says which drive and which
+   folders one person keeps their data in, and nothing about the image. Files
+   are identified by name and SHA-256, which mean the same thing everywhere.
+   :func:`scrub_local_paths` is the backstop, using the same detector as the
+   model-release build gate.
 """
 
 from __future__ import annotations
@@ -110,7 +104,7 @@ def section(values: dict[str, Any], unavailable: dict[str, str]) -> dict[str, An
 def release() -> dict[str, Any]:
     """QuantEM's own identity: version string and, if it is a checkout, the commit.
 
-    ``0.1.0.dev0`` is the same string for every build made between two releases.
+    ``0.1.0`` is the same string for every build made between two releases.
     On its own it cannot distinguish the code that produced a number from the
     code that produced a different one a week later.
 
@@ -199,6 +193,15 @@ def _repo_root() -> Path | None:
     except Exception:  # pragma: no cover - quantem is always importable here
         return None
     for parent in here.parents:
+        # An installed copy has no checkout of its own, and the walk must stop
+        # here rather than continue into whatever repository happens to enclose
+        # the environment. A venv created inside someone else's checkout is
+        # ordinary, and without this guard that stranger's commit and dirty
+        # state are stamped into the user's scientific manifests as if they
+        # described the code that produced the numbers. The frozen build is
+        # covered by the early return above; this is the same defence for pip.
+        if parent.name in {"site-packages", "dist-packages"}:
+            return None
         if (parent / ".git").exists():
             return parent
     return None
@@ -344,10 +347,10 @@ def environment() -> dict[str, Any]:
         "inference: the analysis job routinely runs in a different process, and "
         "on a shared install a different machine. The device each *run* used is "
         "reported per compartment under models.compartments[].run."
-        "inference_device, read from the objects themselves; it is null there "
-        "too until quantem.segmentation.run_identity adds a device field to "
-        "RUN_IDENTITY_KEYS, because nothing else stores it. Only the devices "
-        "this machine offers are recorded above."
+        "inference_device, read from the objects themselves, where "
+        "quantem.segmentation.run_identity records it; it is null there only "
+        "for objects made before that record existed. Only the devices this "
+        "machine offers are recorded above."
     )
     return section(values, unavailable)
 
@@ -447,8 +450,8 @@ def scrub_local_paths(document: Any) -> tuple[Any, dict[str, Any]]:
 
     Anything it finds in a string value is replaced with the release module's
     own placeholder, and the count is recorded. The spans themselves are
-    **never** recorded -- writing "we removed ``D:\\Chris\\...``" into the
-    manifest would put back exactly what was taken out.
+    **never** recorded -- writing "we removed" followed by the path it removed
+    would put back exactly what was taken out.
 
     The report says ``clean`` only after re-scanning the serialised result, so a
     leak in a dict *key* -- which is not rewritten, because keys are field names
@@ -565,9 +568,9 @@ def _pack_spec(pack_id: str, unavailable: dict[str, str]) -> dict[str, Any]:
         spec = get_model_spec(family, organelle)
     except Exception as exc:
         reason = (
-            f"{pack_id!r} is not one of the released model packs "
-            f"({exc.__class__.__name__}: {exc}), so its architecture, canonical "
-            "pixel size and default threshold are unknown to this build."
+            f"{pack_id!r} is not one of the released model packs ({exc}), so "
+            "its architecture, canonical pixel size and default threshold are "
+            "unknown to this build."
         )
         for key in ("family", "organelle", "canonical_nm", "tile_size", "default_threshold"):
             unavailable[key] = reason
@@ -612,9 +615,8 @@ def _tiling(spec: Any) -> dict[str, Any]:
         )
     except Exception as exc:  # pragma: no cover - inference always ships
         reason = (
-            f"The tiling module could not be imported ({exc.__class__.__name__}: "
-            f"{exc}), so the sliding-window overlap this build uses could not be "
-            "recorded."
+            f"This build could not read its own tiling settings ({exc}), so "
+            "the sliding-window overlap it uses could not be recorded."
         )
         for key in ("window_overlap", "stride_px", "blend"):
             unavailable[key] = reason

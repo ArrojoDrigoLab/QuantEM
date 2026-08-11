@@ -178,7 +178,14 @@ class JobRetryViewTests(TestCase):
         # The refusal has to name the way out. A running job whose worker is
         # gone is exactly the state a user reaches this endpoint from, and
         # cancelling is what makes it retryable.
-        self.assertIn(f"/api/jobs/{job.id}/cancel/", body["detail"])
+        # Named ``POST /api/jobs/<id>/cancel/`` until 2026-08-10. This detail
+        # lands in the Tasks & Queues panel, where the reader has a Cancel
+        # button and no way to issue a request; invariant I-12 forbids the verb
+        # and the route, and the id is a field, not a sentence.
+        self.assertIn("Cancel", body["detail"])
+        self.assertIn("Tasks & Queues", body["detail"])
+        self.assertNotIn("/api/jobs/", body["detail"])
+        self.assertNotIn(str(job.id), body["detail"])
         self.assertEqual(body["job_status"], "RUNNING")
         self.assertEqual(body["job_id"], str(job.id))
 

@@ -1,4 +1,24 @@
-"""ROI endpoints for segmentation workflows."""
+"""ROI endpoints for segmentation workflows.
+
+**Where the completion lock falls in here.** A ROI rectangle is asset-scoped:
+one rectangle is shared by every organelle on the image. Marking *one*
+segmentation done therefore cannot freeze the rectangles themselves -- the
+other organelles are still being worked, through their own ids, and they need
+to place and remove ROIs.
+
+What the lock does cover is everything a request *through this segmentation's
+id* writes into this segmentation: the ROI's association with it, the
+per-(ROI, segmentation) completion row, and the flat done flag on the ROI it is
+looking at. So every route below that writes refuses when this segmentation is
+marked done, and the same rectangle stays fully manageable through any
+organelle on the asset that is not.
+
+The one write that is deliberately still allowed is activation, which is how
+the viewer is pointed at a ROI -- navigation, not result. It cannot be frozen
+in any case: an unlocked organelle on the same asset flips the same shared flag.
+
+Reads are untouched. A finished segmentation stays fully browsable.
+"""
 
 from __future__ import annotations
 
@@ -55,8 +75,7 @@ class CompletedRoiListCreateView(APIView):
     def post(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         # A completed area is proofreading state that belongs to this
-        # segmentation, unlike the ROI rectangles below, which are shared by
-        # every organelle on the asset.
+        # segmentation, so it follows this segmentation's lock.
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked
@@ -140,6 +159,18 @@ class SegmentationRoiListCreateView(APIView):
 
     def post(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        # Refused before anything is read off the request, so a locked
+        # segmentation answers the lock rather than a complaint about the body.
+        #
+        # This is the one that shipped open. A segmentation marked done still
+        # accepted a new ROI: the row was created, associated with the finished
+        # segmentation and made active, so the labeling screen for a locked
+        # image gained a ROI window it then refused every operation on -- the
+        # per-organelle "mark done" below is locked, and so is `rerun-roi`. A
+        # to-do that can never be finished, written past a write lock.
+        locked = completion_lock_response(segmentation)
+        if locked is not None:
+            return locked
         target_image = get_segmentation_target_image(segmentation)
 
         source = request.data.get("source", "AUTO") or "AUTO"
@@ -210,6 +241,14 @@ class SegmentationRoiCompleteView(APIView):
 
     def post(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        # Same proofreading state as the per-organelle "mark ROI done" below,
+        # recorded on the flat flag instead of the per-(ROI, segmentation) row,
+        # so it follows the same lock. Leaving it open meant the coarser of the
+        # two done-flags was writable on a finished segmentation while the
+        # finer one was not.
+        locked = completion_lock_response(segmentation)
+        if locked is not None:
+            return locked
         get_segmentation_target_image(segmentation)
         roi_image = get_active_roi_for_asset(segmentation.asset)
         if not roi_image:
@@ -243,8 +282,8 @@ class SegmentationRoiSegmentationCompleteView(APIView):
     def _set_complete(self, seg_id, roi_id, *, is_complete: bool):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         # Per-(ROI, segmentation) proofreading state, so it follows this
-        # segmentation's lock. The ROI rectangle itself does not: it is shared
-        # by every organelle on the asset and locking one must not freeze them.
+        # segmentation's lock. See the module docstring for where that line
+        # falls on the shared rectangle itself.
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked
@@ -277,10 +316,19 @@ class SegmentationRoiDetailView(APIView):
     ROI window are left untouched. If the deleted ROI was the active one, the
     most recently created remaining ROI for the asset is activated to preserve
     the "one active ROI" invariant.
+
+    Because of that cascade this is a *destructive* route for the segmentation
+    it is addressed through -- it removes the record of which ROI windows were
+    exhaustively labeled for it, the exact rows the per-organelle "mark ROI
+    done" above refuses to touch once the segmentation is locked. So it refuses
+    too.
     """
 
     def delete(self, request, seg_id, roi_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        locked = completion_lock_response(segmentation)
+        if locked is not None:
+            return locked
         roi_image = get_object_or_404(
             _roi_queryset_for_segmentation(segmentation),
             id=roi_id,
@@ -309,7 +357,14 @@ class SegmentationRoiDetailView(APIView):
 
 
 class SegmentationRoiActivateView(APIView):
-    """Activate an existing ROI for the segmentation image."""
+    """Activate an existing ROI for the segmentation image.
+
+    Deliberately *not* behind the completion lock, unlike the other writes in
+    this module: activation is how the viewer is pointed at a ROI ("show me
+    this one"), and a locked segmentation stays browsable. The flag it sets is
+    asset-scoped, so freezing it here would not freeze it anyway -- any
+    unlocked organelle on the same image moves the same one.
+    """
 
     def post(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)

@@ -27,6 +27,7 @@ import type { SegmentObject } from "@/shared/types";
 import type { Runnability } from "@/features/models/runnable";
 import type { AppliedAdapterState } from "@/features/models/appliedAdapter";
 import type { ScaleMismatch } from "@/features/models/scaleMismatch";
+import type { ReviewSamBoxController } from "@/features/segmentation/screen/hooks/review/useReviewSamBoxController";
 
 interface UseSegmentationScreenViewModelsArgs {
   route: ReturnType<typeof useSegmentationRouteState>;
@@ -40,6 +41,8 @@ interface UseSegmentationScreenViewModelsArgs {
   feedback: ReturnType<typeof useSegmentationFeedback>;
   hover: ReturnType<typeof useSegmentationHoverQuery>;
   interactions: ReturnType<typeof useSegmentationInteractionRouter>;
+  /** Box-to-object: its toolbar controls and its live/pending rectangles. */
+  samBox: ReviewSamBoxController;
   drawing: ReturnType<typeof useDrawing>;
   removeArea: ReturnType<typeof useRemoveAreaWorkflow>;
   tissue: ReturnType<typeof useTissueLabeling>;
@@ -85,6 +88,7 @@ export function useSegmentationScreenViewModels({
   feedback,
   hover,
   interactions,
+  samBox,
   drawing,
   removeArea,
   tissue,
@@ -233,6 +237,7 @@ export function useSegmentationScreenViewModels({
           hideActiveRoiOverlay: erRoi.pendingRoi !== null,
           extraTransientOverlays: [
             ...overlayOptimistic.optimisticTransientOverlays,
+            ...samBox.overlays,
             ...(erRoi.pendingRoiOverlay ? [erRoi.pendingRoiOverlay] : []),
             ...(erPolygon.active
               ? generateCompletedRoiDraftOverlays(
@@ -351,6 +356,7 @@ export function useSegmentationScreenViewModels({
         onApplyGroupAction: (mode) => {
           reviewGroup.handleToolbarGroupAction(mode);
         },
+        extraModes: samBox.controls,
       },
       layers: {
         usesRasterReviewOverlay: overlayManifest.usesRasterReviewOverlay,
@@ -364,6 +370,12 @@ export function useSegmentationScreenViewModels({
         onConfirmedStrokeWidthChange: overlayLayers.updateLayerStyles.setConfirmedStrokeWidth,
         onConfirmedFillOpacityChange: overlayLayers.updateLayerStyles.setConfirmedFillOpacity,
         overlayUpdating: overlayManifest.overlayUpdating,
+        // Finding V4: the sidebar could say a build was in progress but had no
+        // way to say one had failed, so a terminal failure showed as silence.
+        overlayBuildFailed: overlayManifest.overlayBuildFailed,
+        overlayManifest: overlayManifest.overlayManifest,
+        overlaySegmentationId: route.currentSegmentation?.id ?? null,
+        onOverlayBuildRetried: overlayManifest.handleOverlayBuildRetried,
       },
       view: {
         leftNavigateMode: ui.leftNavigateMode,
@@ -423,6 +435,7 @@ export function useSegmentationScreenViewModels({
     handleLeftViewportChange,
     handleRightViewportChange,
     interactions,
+    samBox,
     leftSegments,
     modelRunnability,
     appliedAdapter,

@@ -16,7 +16,7 @@ Two rungs, and the cheap one is not a consolation prize:
 Both fit on the user's *training* crops and only ever *score* on the held-out
 ones, and both report the split mode, the crops the threshold was fit on, and
 the per-crop oracle ceiling alongside every number. Those are requirements from
-``API_CONTRACT.md`` §"Honesty rules", not decorations: a held-out Dice with no
+the API contract's Honesty section rules", not decorations: a held-out Dice with no
 split mode beside it is a number someone will put in a paper.
 """
 
@@ -32,6 +32,7 @@ from quantem.finetune import calibrate
 from quantem.finetune.adapt import (
     AdaptConfig,
     AdaptProgress,
+    HeadAdaptationUnavailable,
     build_patches,
     load_head,
     masks_to_model_scale,
@@ -41,7 +42,16 @@ from quantem.finetune.adapt import (
     torch_available,
     train_head,
 )
-from quantem.finetune.storage import adapter_head_path, relative_head_path
+from quantem.finetune.preflight import check_head_size
+from quantem.finetune.scope import TrainingFold, count_tiles, plan_folds
+from quantem.finetune.storage import (
+    adapter_head_path,
+    discard_staged_head,
+    promote_head,
+    relative_head_path,
+    staged_head_path,
+    unsaved_head_path,
+)
 from quantem.inference import resample
 from quantem.segmentation.models import ImageSegmentation
 from quantem.segmentation.services.adapt import (
@@ -49,6 +59,7 @@ from quantem.segmentation.services.adapt import (
     CompletedRoiRequired,
     plan_split,
     require_crops,
+    require_crops_for_scope,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +67,13 @@ logger = logging.getLogger(__name__)
 MODE_THRESHOLD_ONLY = "threshold_only"
 MODE_HEAD = "head"
 MODES = (MODE_THRESHOLD_ONLY, MODE_HEAD)
+
+#: Said when an overwrite fails. The point of the sentence is that nothing was
+#: lost: the previous weights were never touched, because a new head is written
+#: beside the live one and only moved over it once the run has finished.
+OVERWRITE_SAFE_SUFFIX = (
+    " The previous version of this fine-tune is untouched and still in use."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -168,21 +186,36 @@ def _split_for_scoring(
 def adapter_job(payload: dict, reporter: Any, cancel: Any) -> dict:
     """Fit an adapter to the user's annotations and report it honestly.
 
+    Two shapes of payload, one entry point:
+
+    * the **single-segmentation** one, still used by the labeling view's Improve
+      panel: ``segmentation_id``, ``base_model``, ``mode``;
+    * the **scoped** one, from the Fine-Tune dialog: ``segmentation_type_id``,
+      ``asset_ids``, ``training_mode``, ``cv_benchmark``. Recognised by
+      ``asset_ids`` being present, so an old queued row still runs the old way.
+
     Args:
-        payload: ``segmentation_id``, ``base_model``, ``mode``, and optionally
-            ``adapter_id``, ``steps``, ``lr``, ``seed``, ``name``.
+        payload: as above, plus optionally ``adapter_id``, ``steps``, ``lr``,
+            ``seed``, ``name``.
         reporter: job reporter (``update(progress=, message=)``, ``log``).
         cancel: cancel token (``check_cancelled()``).
 
     Returns:
-        The adapter payload described in ``API_CONTRACT.md`` §"Guided
+        The adapter payload described in the API contract's Guided section
         fine-tuning", which is also what ``GET /api/adapters/<id>/`` serves.
     """
     adapter_id = str(payload.get("adapter_id") or "").strip() or None
+    scoped = bool(payload.get("asset_ids")) and bool(payload.get("segmentation_type_id"))
     try:
-        result = _run(payload, reporter, cancel, adapter_id)
+        if scoped:
+            result = _run_scoped(payload, reporter, cancel, adapter_id)
+        else:
+            result = _run(payload, reporter, cancel, adapter_id)
     except Exception as exc:
-        _update_adapter(adapter_id, status="FAILED", error=str(exc))
+        message = str(exc)
+        if payload.get("overwrite"):
+            message += OVERWRITE_SAFE_SUFFIX
+        _update_adapter(adapter_id, status="FAILED", error=message)
         raise
     return result
 
@@ -254,8 +287,78 @@ def _run(payload: dict, reporter: Any, cancel: Any, adapter_id: str | None) -> d
         trainable_params=result.get("trainable_params"),
         train_seconds=result.get("train_seconds"),
     )
+    result["apply_and_rerun"] = _apply_and_rerun(
+        adapter_id,
+        base_model=base_model,
+        calibrated=result["sweep"]["calibrated_threshold"],
+        requested=bool(payload.get("apply_and_rerun")),
+        reporter=reporter,
+    )
     reporter.update(progress=100.0, message="adaptation complete")
     return result
+
+
+def _apply_and_rerun(
+    adapter_id: str | None,
+    *,
+    base_model: str,
+    calibrated: float | None,
+    requested: bool,
+    reporter: Any,
+) -> dict:
+    """Put the new include level to work, and say exactly what that did.
+
+    Two separate things, deliberately not merged:
+
+    * **Applying** stamps the adapter so the *next* run uses it. It writes no
+      object, so nothing on screen moves and nothing the user did by hand is
+      touched. It is instant and it is what ``requested`` asks for.
+    * **Re-running** is what actually re-finds the objects, costs real time, and
+      belongs to the run machinery — not to a job that told the user it would
+      take about a second. So this reports that the re-run is pending; it does
+      not queue one behind the user's back.
+
+    The re-run itself is safe by construction:
+    :func:`quantem.seg_core.db.extraction.extract_and_save_segments` deletes only
+    its own generated candidates and then drops any new guess that lands on a
+    kept or removed object. Saying so here, in the result the panel renders, is
+    what makes the guarantee visible rather than merely true.
+    """
+    default = _published_threshold(base_model)
+    changes = (
+        calibrated is not None
+        and default is not None
+        and abs(float(calibrated) - float(default)) >= 5e-3
+    )
+    applied_at = None
+    if requested and adapter_id:
+        from django.utils import timezone  # noqa: PLC0415 -- Django-only path
+
+        applied_at = timezone.now()
+        _update_adapter(adapter_id, applied_at=applied_at)
+        reporter.update(message="using the new include level for the next run")
+    return {
+        "requested": requested,
+        "applied": applied_at is not None,
+        "applied_at": applied_at.isoformat() if applied_at is not None else None,
+        "include_level": calibrated,
+        "previous_include_level": default,
+        "changes_objects": bool(changes),
+        "rerun_pending": bool(applied_at is not None and changes),
+        "preserves_manual_work": True,
+        "preservation": (
+            "Nothing you have kept, removed or drawn by hand changes when the "
+            "model runs again. Only my own guesses are replaced."
+        ),
+    }
+
+
+def _published_threshold(base_model: str) -> float | None:
+    """The pack's own cut-off, so a new one can be reported as a change."""
+    from quantem.inference.specs import MODEL_SPECS  # noqa: PLC0415 -- cheap, local
+
+    spec = MODEL_SPECS.get(base_model)
+    return float(spec.threshold) if spec is not None else None
 
 
 def _run_threshold_only(
@@ -342,6 +445,22 @@ def _run_head(
         image_std=spec.image_std,
         config=config,
     )
+    if not patches:
+        # ``train_head`` refuses this too, but in terms of its own coverage
+        # rule -- "every completed area is smaller than the model's 20 %
+        # coverage rule for one tile" is true and tells a microscopist nothing
+        # they can act on. The pre-flight knows the two spans, so say them.
+        # Reaching here at all means the geometry changed between the check at
+        # the door and the run; both ends now give the same sentence.
+        verdict = check_head_size(train, base_model)
+        raise HeadAdaptationUnavailable(
+            f"{verdict.reason} No training window survived, so there would be "
+            "nothing to train on. Matching my cut-off to your marks works at "
+            "any size."
+            if verdict is not None and verdict.reason
+            else "No training window survived: every checked area is too small "
+            "for this model. Matching my cut-off to your marks works at any size."
+        )
     reporter.update(
         progress=18.0,
         message=f"training on {len(patches)} window(s) from {len(train)} region(s)",
@@ -374,7 +493,14 @@ def _run_head(
     )
 
     reporter.update(progress=88.0, message="saving the adapted head")
-    head_file = adapter_head_path(adapter_id or "unsaved")
+    # Written beside the live file and moved over it at the end, never straight
+    # onto it: a run that dies while saving must leave whatever was there
+    # loadable. An unrecorded run gets a unique scratch path -- this used to be
+    # a single shared ``unsaved`` folder, so two of them overwrote each other.
+    head_file = (
+        staged_head_path(adapter_id) if adapter_id else unsaved_head_path()
+    )
+    final_head = adapter_head_path(adapter_id) if adapter_id else head_file
     save_head(
         model.module,
         head_file,
@@ -410,6 +536,8 @@ def _run_head(
                 "during training; the numbers below are from the in-memory model.",
             )
 
+    promote_head(head_file, final_head)
+
     result = {
         "base_model": base_model,
         "mode": MODE_HEAD,
@@ -423,11 +551,359 @@ def _run_head(
         "base_sweep": base_sweep.as_dict(),
         "training": training.as_dict(),
         "tile": tile,
-        "head_path": relative_head_path(head_file),
+        "head_path": relative_head_path(final_head),
         "verified_reload": verified,
         "reloaded_heldout_dice": reload_heldout,
         "caveats": _caveats(split_mode, sweep, mode=MODE_HEAD, verified=verified),
     }
+    return result
+
+
+# ---------------------------------------------------------------------------
+# The scoped run: a named fine-tune over a chosen set of images
+# ---------------------------------------------------------------------------
+
+
+def _null_scope(total: int, label: str):
+    """A unit-progress scope for a caller that has no job row behind it."""
+    from quantem.jobs.reporter import NullUnitProgressScope  # noqa: PLC0415
+
+    return NullUnitProgressScope(total=total, label=label)
+
+
+def _unit_scope(reporter: Any, *, total: int, label: str, stage: str, detail: dict):
+    """``reporter.unit_scope`` when there is one, a no-op scope otherwise.
+
+    The trainer runs under the queue in production and under a plain object in
+    tests and at a REPL; giving the second case a scope with the same surface is
+    what keeps the round loop free of "is anything watching" branches.
+    """
+    factory = getattr(reporter, "unit_scope", None)
+    if factory is None:
+        return _null_scope(total, label)
+    return factory(total=total, label=label, stage=stage, detail=detail)
+
+
+def _stage(reporter: Any, stage: str, message: str | None = None) -> None:
+    update = getattr(reporter, "update", None)
+    if update is None:
+        return
+    try:
+        update(message=message, stage=stage)
+    except TypeError:
+        # A reporter from before stages existed. The message still lands.
+        update(message=message)
+
+
+def _fold_metrics(
+    fold: TrainingFold,
+    probs: dict[str, Any],
+    scaled: dict[str, Any],
+    threshold: float,
+) -> dict[str, Any]:
+    """Dice and IoU for one round, on the area held back from it.
+
+    ``None`` where undefined -- neither prediction nor truth has any foreground
+    inside the valid region -- and never zero, which would drag a mean down for
+    an area that contains nothing to find.
+    """
+    scored = _scoring_crops(fold.heldout, probs, scaled)
+    return {
+        "fold": fold.index,
+        "held_out_asset_id": fold.held_out_asset_id,
+        "dice": calibrate.mean_dice(scored, threshold),
+        "iou": calibrate.mean_iou(scored, threshold),
+        "n_tiles": len(fold.train),
+    }
+
+
+def _cv_results(
+    folds: list[dict[str, Any]], names: dict[str, str]
+) -> dict[str, Any]:
+    """Fold rows, the mean over them, and the per-image breakdown R13 requires.
+
+    The mean is over the folds that produced a number. Per-image rows are
+    grouped by the image that was held out, so a run whose average looks fine
+    but which cannot do one of the images says so on that image's row -- which
+    is the whole reason the owner asked for per-image results beside the mean.
+    """
+    dice = [f["dice"] for f in folds if f["dice"] is not None]
+    iou = [f["iou"] for f in folds if f["iou"] is not None]
+    per_image: dict[str, dict[str, Any]] = {}
+    for fold in folds:
+        asset_id = fold.get("held_out_asset_id")
+        if not asset_id:
+            continue
+        row = per_image.setdefault(
+            str(asset_id),
+            {
+                "asset_id": str(asset_id),
+                "name": names.get(str(asset_id), ""),
+                "dice": None,
+                "iou": None,
+                "n_tiles": 0,
+            },
+        )
+        row["dice"] = fold["dice"]
+        row["iou"] = fold["iou"]
+        row["n_tiles"] = fold["n_tiles"]
+    return {
+        "folds": folds,
+        "mean": {
+            "dice": float(np.mean(dice)) if dice else None,
+            "iou": float(np.mean(iou)) if iou else None,
+        },
+        "per_image": [per_image[key] for key in sorted(per_image)],
+    }
+
+
+def _asset_names(asset_ids: Sequence[str]) -> dict[str, str]:
+    from quantem.assets.models import Asset  # noqa: PLC0415 -- Django app registry
+
+    return {
+        str(asset_id): display_name
+        for asset_id, display_name in Asset.objects.filter(
+            id__in=[str(value) for value in asset_ids]
+        ).values_list("id", "display_name")
+    }
+
+
+def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | None) -> dict:
+    """Train a named fine-tune over an explicit set of images.
+
+    One round per hold-out unit under cross-validation, one otherwise. Every
+    round starts from the released weights, not from the round before it: a fold
+    that inherited the previous fold's training would have already seen the area
+    it is about to be scored on, and its number would be worthless.
+
+    The **shipped** head is the last round's. Under cross-validation the folds
+    are a measurement of the recipe on this data, and the average is reported as
+    that; the head the user gets is one real model, and the fold it belongs to
+    is named in the result so the two are never confused.
+    """
+    from quantem.finetune.models import (  # noqa: PLC0415 -- Django app registry
+        TRAINING_MODE_USE_ALL,
+    )
+    from quantem.inference import engine  # noqa: PLC0415 -- torch-heavy, lazy
+    from quantem.jobs.models import (  # noqa: PLC0415 -- Django app registry
+        STAGE_EVALUATING,
+        STAGE_LOADING_MODEL,
+        STAGE_PREPARING,
+        STAGE_SAVING,
+        STAGE_TRAINING,
+        UNIT_STEP,
+    )
+    from quantem.jobs.reporter import unit_window  # noqa: PLC0415
+
+    cancel.check_cancelled()
+    base_model = str(payload.get("base_model") or "").strip()
+    if not base_model:
+        raise ValueError("payload.base_model is required")
+    if not torch_available():
+        raise ValueError(
+            "Fine-tuning needs PyTorch, which is not installed here. Matching my "
+            "cut-off to your marks works without it."
+        )
+    segmentation_type_id = str(payload.get("segmentation_type_id") or "").strip()
+    asset_ids = [str(value) for value in (payload.get("asset_ids") or [])]
+    training_mode = str(payload.get("training_mode") or TRAINING_MODE_USE_ALL)
+    cv_benchmark = bool(payload.get("cv_benchmark"))
+    config = AdaptConfig(
+        steps=_as_int(payload.get("steps"), AdaptConfig.steps),
+        lr=_as_float(payload.get("lr"), AdaptConfig.lr),
+        seed=_as_int(payload.get("seed"), AdaptConfig.seed),
+    )
+
+    _update_adapter(adapter_id, status="RUNNING", error="")
+    _stage(reporter, STAGE_PREPARING, "reading the annotations you chose")
+
+    try:
+        crop_set = require_crops_for_scope(
+            segmentation_type_id, asset_ids, load_em=True
+        )
+    except CompletedRoiRequired as exc:
+        reporter.log("warning", str(exc))
+        raise
+    for warning in crop_set.warnings:
+        reporter.log("warning", warning)
+
+    usable = [c for c in crop_set.crops if c.em is not None]
+    if not usable:
+        raise ValueError("No annotated region could be read from its image.")
+
+    folds, split_mode = plan_folds(
+        usable, training_mode=training_mode, cv_benchmark=cv_benchmark
+    )
+    total_rounds = len(folds)
+    total_steps = config.steps * total_rounds
+    tile_count = count_tiles(usable, base_model, config=config)
+
+    cancel.check_cancelled()
+    _stage(reporter, STAGE_LOADING_MODEL, f"loading {base_model}")
+    model = engine.load_model(base_model)
+    engine.clear_model_cache()
+    spec = model.spec
+    scaled = {
+        c.name: to_model_scale_crop(c, canonical_nm=spec.canonical_nm) for c in usable
+    }
+    tile = tile_for(spec.tile_size, spec.patch_size)
+
+    # The "before" number, from this code over these pixels, so the improvement
+    # is a comparison of two runs and not of a run against a published figure.
+    base_probs = {c.name: _predict(engine, model, c) for c in usable}
+    base_sweep = calibrate.sweep_threshold(_scoring_crops(usable, base_probs, scaled))
+
+    fold_rows: list[dict[str, Any]] = []
+    training = None
+    sweep = None
+    shipped_fold = folds[-1]
+    for index, fold in enumerate(folds):
+        cancel.check_cancelled()
+        if index:
+            # Fresh weights per round. See the docstring.
+            model = engine.load_model(base_model)
+            engine.clear_model_cache()
+
+        patches = build_patches(
+            [scaled[c.name] for c in fold.train],
+            tile,
+            image_mean=spec.image_mean,
+            image_std=spec.image_std,
+            config=config,
+        )
+        if not patches:
+            verdict = check_head_size(fold.train, base_model)
+            raise HeadAdaptationUnavailable(
+                f"{verdict.reason} No training window survived, so there would be "
+                "nothing to train on. Matching my cut-off to your marks works at "
+                "any size."
+                if verdict is not None and verdict.reason
+                else "No training window survived: every checked area is too small "
+                "for this model. Matching my cut-off to your marks works at any "
+                "size."
+            )
+
+        base_units = index * config.steps
+        message = (
+            f"Round {index + 1} of {total_rounds}: training on {len(patches)} "
+            f"window(s) from {len(fold.train)} area(s)"
+        )
+        reporter.update(message=message)
+        # One window per round, offset into the grand total, so the bar and the
+        # ETA are over the whole run rather than restarting every fold.
+        with unit_window(base_units, total_steps), _unit_scope(
+            reporter,
+            total=config.steps,
+            label=UNIT_STEP,
+            stage=STAGE_TRAINING,
+            detail={
+                "round": index + 1,
+                "total_rounds": total_rounds,
+                "tiles": tile_count,
+            },
+        ) as steps_done:
+
+            def on_progress(progress: AdaptProgress, sink=steps_done) -> None:
+                sink.set(progress.step + 1)
+
+            training = train_head(
+                model.module,
+                patches,
+                device=model.device,
+                config=config,
+                on_progress=on_progress,
+                should_cancel=lambda: _cancelled(cancel),
+            )
+
+        cancel.check_cancelled()
+        _stage(
+            reporter,
+            STAGE_EVALUATING,
+            f"Round {index + 1} of {total_rounds}: scoring the held-out area",
+        )
+        adapted_probs = {c.name: _predict(engine, model, c) for c in usable}
+        sweep = calibrate.sweep_threshold(
+            _scoring_crops(fold.train, adapted_probs, scaled),
+            heldout_crops=_scoring_crops(fold.heldout, adapted_probs, scaled),
+        )
+        if fold.heldout:
+            fold_rows.append(
+                _fold_metrics(fold, adapted_probs, scaled, sweep.calibrated_threshold)
+            )
+        shipped_fold = fold
+
+    assert sweep is not None and training is not None  # one round always runs
+
+    _stage(reporter, STAGE_SAVING, "saving the fine-tuned model")
+    staged = staged_head_path(adapter_id) if adapter_id else unsaved_head_path()
+    final_head = adapter_head_path(adapter_id) if adapter_id else staged
+    try:
+        save_head(
+            model.module,
+            staged,
+            meta={
+                "base_model": base_model,
+                "steps": training.steps,
+                "tile": tile,
+                "calibrated_threshold": sweep.calibrated_threshold,
+                "split_mode": split_mode,
+            },
+        )
+        promote_head(staged, final_head)
+    except Exception:
+        discard_staged_head(staged)
+        raise
+
+    names = _asset_names(asset_ids)
+    cv_results = _cv_results(fold_rows, names) if fold_rows else {}
+
+    result = {
+        "id": adapter_id,
+        "name": str(payload.get("name") or "").strip(),
+        "base_model": base_model,
+        "mode": MODE_HEAD,
+        "training_mode": training_mode,
+        "cv_benchmark": cv_benchmark,
+        "steps": training.steps,
+        "total_steps": total_steps,
+        "rounds": total_rounds,
+        "trainable_params": training.trainable_params,
+        "train_seconds": round(training.seconds, 2),
+        "split_mode": split_mode,
+        "asset_ids": asset_ids,
+        "annotation_count": crop_set.annotation_count,
+        "tile_count": tile_count,
+        "train_crop_names": [c.name for c in shipped_fold.train],
+        "heldout_crop_names": [c.name for c in shipped_fold.heldout],
+        "sweep": sweep.as_dict(),
+        "base_sweep": base_sweep.as_dict(),
+        "training": training.as_dict(),
+        "tile": tile,
+        "head_path": relative_head_path(final_head),
+        "verified_reload": False,
+        "cv_results": cv_results,
+        "warnings": list(crop_set.warnings),
+        "status": "SUCCESS",
+        "caveats": _caveats(split_mode, sweep, mode=MODE_HEAD, verified=False),
+    }
+
+    _update_adapter(
+        adapter_id,
+        status="SUCCESS",
+        sweep=result["sweep"],
+        calibrated_threshold=result["sweep"]["calibrated_threshold"],
+        split_mode=split_mode,
+        head_path=result["head_path"],
+        verified_reload=False,
+        trainable_params=result["trainable_params"],
+        train_seconds=result["train_seconds"],
+        cv_results=cv_results,
+        # Written by the run and not only by the view that started it, so the row
+        # records what was actually done rather than what was asked for.
+        training_mode=training_mode,
+        cv_benchmark=cv_benchmark,
+    )
+    reporter.update(progress=100.0, message="Fine-tune complete")
     return result
 
 

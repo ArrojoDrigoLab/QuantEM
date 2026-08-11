@@ -646,10 +646,19 @@ def test_no_user_facing_command_names_the_old_developer_only_one() -> None:
     assert "install bundle" in cache.INSTALL_COMMAND_MODULE
 
 
-def test_not_installed_error_names_a_command_that_works(data_dir: Path) -> None:
+def test_not_installed_error_names_a_way_out_that_works(data_dir: Path) -> None:
+    """And it is the app's way out, not the terminal's.
+
+    ``resolve_pack``'s message is written into a segmentation's
+    ``status_error``, which the labeling header renders verbatim, so it carries
+    :data:`cache.INSTALL_HINT` and never the terminal copy (I-12).
+    """
     with pytest.raises(cache.PackNotInstalled) as excinfo:
         cache.resolve_pack(PACK_ID)
-    assert cache.INSTALL_COMMAND in str(excinfo.value)
+    message = str(excinfo.value)
+    assert cache.INSTALL_HINT in message
+    for terminal in cache.TERMINAL_ONLY_COPY:
+        assert terminal not in message
 
 
 def test_install_local_has_no_built_in_roots() -> None:

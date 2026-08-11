@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   useSegmentationWorkflowMode,
   type LeftMode,
+  type WorkflowMode,
 } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import type { CorrectionModeState, LabelState } from "@/shared/types";
 
@@ -14,7 +15,7 @@ interface UseReviewModeStateArgs {
 }
 
 function isGroupActionMode(
-  workflowMode: "annotate" | "review" | "uncertain",
+  workflowMode: WorkflowMode,
   correctionMode: CorrectionModeState,
   leftMode: LeftMode,
   hoverActionMode: "confirm" | "reject" | "group-confirm" | "group-reject" | "test"
@@ -49,7 +50,7 @@ export function useReviewModeState({
 
   useEffect(() => {
     if (workflowMode !== "review") {
-      if (leftMode !== "hover" && workflowMode !== "annotate") {
+      if (leftMode !== "hover") {
         setLeftMode("hover");
       }
       return;

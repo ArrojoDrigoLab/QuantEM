@@ -133,15 +133,42 @@ describe("ModelsScreen", () => {
     );
 
     const input = screen.getByLabelText("Directory on this machine");
-    // The old placeholder named a maintainer's training-output directory.
+    // Owner ruling D8. This placeholder used to be a literal beginning with
+    // the drive letter of the machine the release was built on, shown as
+    // guidance to every user on every platform. With no `storage` block on the
+    // catalogue there is nothing to build an example from, and the field says
+    // what it wants in words instead of naming somebody else's disk.
     expect(input).toHaveAttribute(
       "placeholder",
-      expect.stringContaining("quantem-models")
+      "the folder you unzipped a QuantEM model release into"
     );
     const shapes = input.parentElement as HTMLElement;
     expect(within(shapes).getByText("packs/quantem__mito/")).toBeInTheDocument();
     expect(within(shapes).getByText("MANIFEST.json")).toBeInTheDocument();
     expect(within(shapes).getByText(/unzipped a QuantEM model release into/)).toBeInTheDocument();
+  });
+
+  it("shows an example path built by the server, never one typed into the source", async () => {
+    // D8's fix: the server composes the example from its own resolved models
+    // directory, so a Mac gets a POSIX path and Windows gets a Windows one,
+    // and neither gets the build machine's drive.
+    const user = userEvent.setup();
+    renderScreen({
+      ...catalogue(),
+      storage: {
+        models_dir: "/Users/somebody/QuantEM/data/models",
+        local_source_example: "/Users/somebody/QuantEM/quantem-models",
+      },
+    } as ModelCatalogue);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Install from a local folder" })
+    );
+
+    expect(screen.getByLabelText("Directory on this machine")).toHaveAttribute(
+      "placeholder",
+      "e.g. /Users/somebody/QuantEM/quantem-models"
+    );
   });
 
   it("can apply an adapted model without the wizard", async () => {

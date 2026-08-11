@@ -4,7 +4,10 @@ import { SegmentationLeftPanel } from "@/features/segmentation/components/Segmen
 import { SegmentationRightPanel } from "@/features/segmentation/components/SegmentationRightPanel";
 import { SegmentationSidebar } from "@/features/segmentation/screen/components/SegmentationSidebar";
 import { LABELING_LEFT_PANEL_STATES } from "@/features/segmentation/screen/utils/constants";
-import type { LeftMode } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
+import type {
+  LeftMode,
+  WorkflowMode,
+} from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import type { CorrectionTool, SegmentObject } from "@/shared/types";
 
 type SegmentationHeaderProps = ComponentProps<typeof SegmentationHeader>;
@@ -37,7 +40,7 @@ export function buildLeftPanelWorkflowState({
   isTissueSegmentation: boolean;
   tissueTool: "brush" | "polygon" | "exclude";
   leftNavigateMode: boolean;
-  workflowMode: "annotate" | "review" | "uncertain";
+  workflowMode: WorkflowMode;
   leftMode: LeftMode;
   correctionMode: {
     reviewPhase: "model" | "correction";
@@ -122,7 +125,7 @@ export function buildSegmentationLeftPanelProps({
   base: SegmentationLeftPanelProps;
   leftSegments: SegmentObject[];
   applyLabelOverrides: (items: SegmentObject[]) => SegmentObject[];
-  workflowMode: "annotate" | "review" | "uncertain";
+  workflowMode: WorkflowMode;
   reviewInteractionSegments: SegmentObject[];
   hoverPoint: { x: number; y: number } | null;
   hoverSegments: SegmentObject[];

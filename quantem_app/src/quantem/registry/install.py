@@ -70,11 +70,12 @@ StatusFn = Callable[[str], None]
 
 #: Maintainer roots for :func:`install_all_from_paths`, read from the
 #: environment. There are deliberately **no** built-in defaults: this module
-#: used to hard-code one developer's ``D:\\Chris\\...`` layout as the default for
-#: ``--heads-root``/``--weights-root``, and because that default was printed in
-#: the README, in a 501 body and in every not-installed error, the single
-#: documented way to obtain the models was a command that could not work on any
-#: other computer. See :mod:`quantem.registry.release` for the roots' meaning.
+#: used to hard-code one developer's own directory layout, on their own drive,
+#: as the default for the heads and weights roots, and because that default was
+#: printed in the README, in a 501 body and in every not-installed error, the
+#: single documented way to obtain the models was a command that could not work
+#: on any other computer. See :mod:`quantem.registry.release` for the roots'
+#: meaning.
 HEADS_ROOT_ENV_VAR = release.HEADS_ROOT_ENV_VAR
 WEIGHTS_ROOT_ENV_VAR = release.WEIGHTS_ROOT_ENV_VAR
 SEARCH_DIRS_ENV_VAR = release.SEARCH_DIRS_ENV_VAR
@@ -302,16 +303,16 @@ def install_pack_from_path(
     if encoder_index is None and not has_export:
         raise InstallError(
             f"{pack_id}: {head_dir} has {cache.HEAD_NAME} and {cache.CONFIG_NAME}, but "
-            f"neither {cache.EXPORTED_ENCODER_NAME} -- the exported encoder that every "
-            f"pack in a QuantEM release ships beside its head, and all that is needed "
-            f"to run one -- nor a {cache.INDEX_NAME} for encoder run "
+            f"neither {cache.EXPORTED_ENCODER_NAME} — the exported encoder that "
+            f"every pack in a QuantEM release ships beside its head, and all that is "
+            f"needed to run one — nor a {cache.INDEX_NAME} for encoder run "
             f"{run_id or '(unnamed)'}.\n"
             f"If you unzipped a QuantEM model release, install from the directory "
             f"holding {release.MANIFEST_NAME}, from its {release.PACKS_DIRNAME}/ "
             f"folder, or from one pack directory inside that "
             f"({release.PACKS_DIRNAME}/{cache.pack_dirname(pack_id)}/).\n"
-            f"If these are raw training outputs, the index is at "
-            f"<weights root>/{run_id or '<run id>'}/{cache.INDEX_NAME}."
+            f"If these are raw training outputs, the folder holding the encoder runs "
+            f"must contain a folder named for the run with {cache.INDEX_NAME} in it."
         )
 
     dirs = [*(search_dirs or []), head_dir]

@@ -14,7 +14,7 @@ A browsable, filterable directory of the QuantEM electron microscopy corpus.
 | [`serve.py`](serve.py) | A local server that assembles the site the way the deployed one is |
 
 ```bash
-python serve.py          # then open http://localhost:8000/
+python serve.py          # then open http://localhost:45175/
 ```
 
 ## What you can do with it

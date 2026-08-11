@@ -1,229 +1,271 @@
 /**
- * Import an image into the local library.
+ * Import images into the local library.
  *
- * The accepted file types come from `/api/system/status/`
- * (`supported_upload_formats`), never from a list hard-coded here: the server
- * validates against `UPLOAD_SUFFIXES` and the field exists precisely so the
- * picker cannot drift from it. PNG was accepted by the server and rejected by
- * this form for exactly that reason.
+ * ## What this panel used to do, and why none of it survived
  *
- * This is also the third — and busiest — door into an uncalibrated inference
- * run. Each ticked "Segment ..." box queues a whole-image pass through
- * `default_source_model_for_organelle`, exactly the run the create-segmentation
- * dialog and "Run Full Segmentation" both stop to warn about. This form used to
- * say only that units stay in pixels, which reads as a reporting detail you can
- * fix later, so images got segmented uncalibrated on first contact and the
- * object sets were never revisited. The same warning the other two doors use now
- * appears here, as soon as the combination that causes it exists.
+ * It was a collapsed accordion whose header button read "▶ Import image". The
+ * library's own empty state offered a button called "Import an image" which
+ * *expanded the accordion* and left the user looking at a `<input type=file>`
+ * they still had to click. There was no drop target anywhere in the
+ * application. And on success `handleSubmit` cleared every field and called
+ * `setExpanded(false)`, so a completed import and a reset form were pixel-for-
+ * pixel identical -- which is exactly what the owner reported as "seemed to
+ * have failed (reverted back to upload button)".
  *
- * Two things about *when* it appears were wrong, and both cost more than they
- * saved:
+ * Three changes answer that:
  *
- * **It fired on the correct workflow.** The warning was decided from the typed
- * box alone, while the helper text directly above that box says "Leave blank to
- * use the value in the file". So a TIFF declaring 5 nm/px, imported the way the
- * form tells you to import it, produced the full warning and a button reading
- * "Import and segment uncalibrated" over an import that came back
- * `pixel_size_nm: 5.0`. A warning that fires on the correct workflow is one
- * people learn to click through, and this is the warning that must still land
- * when it is right. `probeFileDeclaredPixelSize` reads the file's own header
- * before the form claims anything, and the wording hedges when it cannot.
+ * 1. **The picker opens on the first click.** The drop zone is a `<label>` for
+ *    the file input, so a click anywhere in it opens the OS dialog through the
+ *    browser's own native path -- no JavaScript, nothing to go wrong, and it
+ *    works with the keyboard. {@link ImageUploadPanelHandle.openFilePicker}
+ *    gives the Library's own "Import an image" button the same behaviour.
+ * 2. **The same area takes a drop**, through the same validation and the same
+ *    state, with a visible hover state while a file is over it.
+ * 3. **Success is not a reset.** The panel does not clear itself and vanish;
+ *    it hands each created asset to `onUploaded`, and the Library turns those
+ *    into a confirmation banner and highlighted cards. The panel only clears
+ *    the files that landed, so the next import can start.
  *
- * **All four boxes were ticked.** A machine with two packs queued four runs on a
- * first import and two of them FAILED; restricting the default to installed
- * packs fixed the two failures and left the real problem, which was the number
- * of runs. A full install ticked all four, so importing one image queued four
- * whole-image CPU passes -- tens of minutes each, on organelles nobody had said
- * they were interested in, with the Library's queue sidebar the only place to
- * stop them. Nothing is ticked now: importing an image imports an image, and
- * every run is asked for. That is what the other two doors already do.
+ * ## A plate, not a picture
  *
- * **And the button said "Upload" while four runs were about to start.** The
- * caption only mentioned segmentation when the run would be *uncalibrated*, so
- * a calibrated image -- the case where the runs certainly happen -- got the
- * plainest wording on the form. It now counts the runs in every case.
+ * The zone says **"Choose files…"** and it means it. The input took exactly one
+ * file for as long as that label has been on screen: the picker refused the
+ * second file, and a drop of forty imported one and said so. A postdoc coming
+ * off a session has a plate, so the queue is the normal case --
+ *
+ *   - the picker is `multiple`, and a drop of any number is accepted;
+ *   - **each file is its own import**, posted one at a time to
+ *     `POST /api/assets/upload/` (which takes one `file`), with its own row and
+ *     its own state: *Waiting* → *Uploading…* → *Imported*, or a named failure
+ *     in place;
+ *   - **one file failing does not lose the other thirty-nine.** The queue
+ *     carries on, the failures stay listed with the server's own words, and the
+ *     button becomes "Try these 3 again";
+ *   - the optional pixel size and notes **apply to the whole batch**, and every
+ *     row states the pixel size it will actually be imported with, so "what is
+ *     about to be applied to what" is never a guess.
+ *
+ * Sequential, not parallel: a plate of EM mosaics is 250 MB to 2 GB each, and
+ * forty simultaneous multipart POSTs would compete for the same disk while
+ * making the first image land last. The queue is also what makes per-file
+ * progress mean anything.
+ *
+ * This is deliberately **not** the Set/Condition sheet from plan §1.2 -- no
+ * groups, no sampling unit, no `ImageSet` (that is package 4.1, and it needs a
+ * migration). It is only the part that stops forty images costing forty trips
+ * through this panel.
+ *
+ * ## What is still asked, and what is not
+ *
+ * Only one question can silently ruin every number downstream, and that is the
+ * pixel size -- packs resample before they look for anything, so the scale
+ * decides which objects exist, not just the units they are reported in. So the
+ * pixel size is *asked* when the file does not declare one and merely *stated*
+ * when it does. `probeFileDeclaredPixelSize` reads each file's own header
+ * (a few hundred bytes through `Blob.slice`) before the form claims anything.
+ *
+ * **Nothing is pre-filled except the display name**, which comes from the
+ * filename and is inert. A pixel size harvested from anywhere other than this
+ * file's own header would be a fabricated calibration -- and with a batch that
+ * matters more, not less: a typed value reaches only the images that declare
+ * nothing unless the user explicitly says otherwise, so one number typed over a
+ * mixed folder cannot silently overwrite twelve real calibrations.
+ *
+ * ## Where the parts live
+ *
+ * This file was 1 441 lines, the largest in the app, and the first thing the
+ * owner complained about. It is now the queue's state and the layout; each
+ * responsibility it used to inline is its own module under `./import/`:
+ *
+ * * `import/importValidation.ts` — what counts as an importable file, and the
+ *   prose helpers the panel words its refusals with;
+ * * `import/useImportScale.ts` — the pixel size each queued file will actually
+ *   be imported with, and the census the form describes the batch from;
+ * * `import/ImportDropZone.tsx` — the empty state: drop target and picker;
+ * * `import/ImportQueue.tsx` — the file rows and their per-file progress;
+ * * `import/ImportDetailsFields.tsx` — the optional fields;
+ * * `import/ImportRunOptions.tsx` — the four organelle boxes and their
+ *   disclosure, over the choices in `import/organelles.ts`.
+ *
+ * Nothing moved changed: same DOM, same `data-testid`s, same words.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { uploadAsset } from "@/shared/api/assets";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  exceedsUploadLimit,
+  readMaxUploadBytes,
+} from "@/shared/api/assets";
 import { getSystemStatus } from "@/shared/api/jobs";
-import { useApiMutation } from "@/shared/hooks/useApiMutation";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
-import { formatPixelSizeNm, parsePixelSizeInput } from "@/shared/pixelSize";
-import {
-  probeFileDeclaredPixelSize,
-  type FileDeclaredPixelSize,
-} from "@/shared/fileDeclaredPixelSize";
+import { parsePixelSizeInput } from "@/shared/pixelSize";
+import { probeFileDeclaredPixelSize } from "@/shared/fileDeclaredPixelSize";
+import { Button, Panel } from "@/shared/ui/design";
+import { formatBytes } from "@/shared/ui/format";
 import { useModelCatalogue } from "@/features/models/useModelCatalogue";
-import {
-  DEFAULT_PACK_FOR_ORGANELLE,
-  scaleMismatchesForOrganelles,
-} from "@/features/models/scaleMismatch";
-import { runnabilityForPackId } from "@/features/models/runnable";
+import { scaleMismatchesForOrganelles } from "@/features/models/scaleMismatch";
 import { UncalibratedImportWarning } from "@/features/models/components/UncalibratedScaleWarning";
-import { extractApiErrorMessage } from "@/utils/apiErrors";
+import {
+  FALLBACK_UPLOAD_FORMATS,
+  formatExtensionList,
+  isSameFile,
+  normaliseExtension,
+  plural,
+  stripKnownExtension,
+  type ChosenFile,
+} from "@/features/library/components/import/importValidation";
+import { useImportRun } from "@/features/library/components/import/useImportRun";
+import type { ImportBatchPosition } from "@/features/library/components/import/useImportRun";
+import { useImportScale } from "@/features/library/components/import/useImportScale";
+import { ImportDropZone } from "@/features/library/components/import/ImportDropZone";
+import { ImportQueue } from "@/features/library/components/import/ImportQueue";
+import { ImportDetailsFields } from "@/features/library/components/import/ImportDetailsFields";
+import { ImportRunOptions } from "@/features/library/components/import/ImportRunOptions";
+import {
+  NO_ORGANELLES_TICKED,
+  type OrganelleId,
+} from "@/features/library/components/import/organelles";
+import { useExperiments } from "@/features/library/components/grouping/useExperiments";
+import {
+  NO_GROUP,
+  chosenId,
+  chosenName,
+  isChosen,
+  type GroupingChoice,
+} from "@/features/library/components/grouping/GroupingPicker";
 import type { AssetDetail, UploadImageOptions } from "@/shared/types/images";
-import "./ImageUploadPanel.css";
 
-/**
- * Used only until the first `/api/system/status/` response lands (or if it
- * fails). Kept minimal on purpose: it is a stopgap, not a second source of
- * truth.
- */
-const FALLBACK_UPLOAD_FORMATS = [".tif", ".tiff", ".png"];
-
-/**
- * The four runs this form can queue, in the order they are offered.
- *
- * `id` matches `DEFAULT_PACK_FOR_ORGANELLE`, which mirrors the server's
- * `default_source_model_for_organelle`, so the pack named in a warning is the
- * pack the import will actually use.
- */
-const ORGANELLE_CHOICES = [
-  { id: "mito", inputId: "segment-mito", label: "Segment mitochondria" },
-  { id: "er", inputId: "segment-er", label: "Segment ER" },
-  { id: "nucleus", inputId: "segment-nucleus", label: "Segment nucleus" },
-  { id: "ld", inputId: "segment-ld", label: "Segment lipid droplets" },
-] as const;
-
-type OrganelleId = (typeof ORGANELLE_CHOICES)[number]["id"];
-
-/**
- * What to tick before the user has touched anything: nothing.
- *
- * Each box is one whole-image inference pass on the CPU, minutes to tens of
- * minutes, and the only way to stop one once it is queued is the Library's job
- * sidebar. A default of "everything runnable" made that four passes on a full
- * install, chosen by what happens to be installed rather than by what the image
- * is of -- and the person importing has not yet seen the image, let alone
- * decided which organelles they care about.
- *
- * Restricting the default to *runnable* packs was the previous fix and it
- * addressed a different complaint (two of the four runs FAILED on a partial
- * install). The runs that succeeded were never the smaller problem.
- *
- * There is no lost capability here: every organelle is one tick away on this
- * form, and "Run Full Segmentation" on the labeling screen queues the identical
- * pass once the image is open and calibrated -- which is the point at which the
- * choice can actually be made well.
- */
-const NO_ORGANELLES_TICKED: OrganelleId[] = [];
-
-function normaliseExtension(value: string): string {
-  const trimmed = value.trim().toLowerCase();
-  if (!trimmed) return "";
-  return trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
+export interface ImageUploadPanelHandle {
+  /**
+   * Open the OS file dialog. This is what the Library's "Import an image"
+   * button calls: owner ask #1 is that the button opens the picker, not an
+   * accordion.
+   */
+  openFilePicker: () => void;
+  /**
+   * Take files the user dropped somewhere else on the page. Same validation,
+   * same state, same code path as the picker.
+   */
+  acceptDroppedFiles: (files: FileList | File[]) => void;
 }
 
-/** `[".tif", ".tiff"]` -> `".tif, .tiff"` for prose. */
-function formatExtensionList(extensions: string[]): string {
-  return extensions.join(", ");
-}
-
-function stripKnownExtension(filename: string, extensions: string[]): string {
-  const lower = filename.toLowerCase();
-  const match = extensions.find((extension) => lower.endsWith(extension));
-  return match ? filename.slice(0, -match.length) : filename;
-}
+/**
+ * Where one finished import sat in the batch that produced it.
+ *
+ * Declared with the queue that produces it and re-exported here, because
+ * `LibraryPage` imports it from this module and that import is not worth
+ * moving for a type.
+ */
+export type { ImportBatchPosition } from "@/features/library/components/import/useImportRun";
 
 interface ImageUploadPanelProps {
-  onUploaded?: (asset: AssetDetail) => void;
-  /** Open on mount -- the library's empty state points at this panel. */
-  defaultExpanded?: boolean;
+  /**
+   * Called once per image, the moment it lands, with its place in the batch.
+   *
+   * The position is not decoration: the Library opens an import by itself when
+   * it is the only one (owner ask #3), and it must not do that in the middle of
+   * a plate of forty. A small PNG can be ready in a second while a 2 GB mosaic
+   * is still uploading, so "is this the whole batch?" cannot be inferred from
+   * what has arrived so far -- only the panel running the queue knows.
+   */
+  onUploaded?: (asset: AssetDetail, batch: ImportBatchPosition) => void;
+  /**
+   * True while a drag is anywhere over the Library, so the drop zone can light
+   * up before the pointer reaches it.
+   */
+  pageDragActive?: boolean;
 }
 
-export function ImageUploadPanel({
-  onUploaded,
-  defaultExpanded = false,
-}: ImageUploadPanelProps) {
-  const [file, setFile] = useState<File | null>(null);
+export const ImageUploadPanel = forwardRef<
+  ImageUploadPanelHandle,
+  ImageUploadPanelProps
+>(function ImageUploadPanel({ onUploaded, pageDragActive = false }, ref) {
+  const {
+    imports,
+    setImports,
+    batchSummary,
+    setBatchSummary,
+    batchTotal,
+    importing,
+    runImport,
+    mountedRef,
+  } = useImportRun({ onUploaded });
+  const [files, setFiles] = useState<ChosenFile[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [pixelSizeText, setPixelSizeText] = useState("");
   const [notesText, setNotesText] = useState("");
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [fileError, setFileError] = useState<string | null>(null);
+  /**
+   * Whether a typed pixel size also replaces the values files declare.
+   *
+   * Off by default and only offered for a batch: with one file the typed box is
+   * the documented way to correct a wrong tag, and the help text above it says
+   * so. With forty, one number typed over a mixed folder would silently
+   * overwrite every real calibration in it -- the exact "fabricates 43
+   * calibrations" failure the plan's §1.2 is built to avoid.
+   */
+  const [replaceDeclaredPixelSizes, setReplaceDeclaredPixelSizes] =
+    useState(false);
+  /**
+   * Files that were refused, and why -- one sentence each.
+   *
+   * A list rather than a string because a drop of forty can contain three
+   * different problems, and "some files were not added" is not an error
+   * message.
+   */
+  const [rejections, setRejections] = useState<string[]>([]);
   const [pixelSizeError, setPixelSizeError] = useState<string | null>(null);
   const [tickedOrganelles, setTickedOrganelles] =
     useState<OrganelleId[]>(NO_ORGANELLES_TICKED);
-  /** What the chosen file declares, once it has been read. Null while pending. */
-  const [fileScale, setFileScale] = useState<FileDeclaredPixelSize | null>(null);
+  /**
+   * Where this batch goes in the library. Both default to "nowhere", which is
+   * a complete and permanent answer rather than a step the user has skipped.
+   */
+  const [experimentChoice, setExperimentChoice] =
+    useState<GroupingChoice>(NO_GROUP);
+  const [datasetChoice, setDatasetChoice] = useState<GroupingChoice>(NO_GROUP);
+  const [runOptionsOpen, setRunOptionsOpen] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * `dragenter`/`dragleave` fire for every child element the pointer crosses,
+   * so a boolean set by `dragleave` flickers off as soon as the pointer moves
+   * from the zone onto the text inside it. Counting entries and leaves is the
+   * standard fix and the only one that does not need layout maths.
+   */
+  const dragDepthRef = useRef(0);
+  /** Monotonic, so two identically named files from different folders differ. */
+  const fileKeyCounterRef = useRef(0);
+  /**
+   * Whether the next picker result replaces the queue or adds to it.
+   *
+   * "Choose a different file" means *different*; "Add more files" means *more*.
+   * The input cannot tell the two apart, so the caller says which it meant.
+   */
+  const pickerReplacesRef = useRef(false);
+  /**
+   * The queue as it stands, readable from callbacks that must not be
+   * re-created every time it changes -- the imperative handle and the drop
+   * handlers hold on to `acceptFiles`, and it needs the current list to spot a
+   * file that is already queued and to append rather than replace.
+   */
+  const filesRef = useRef<ChosenFile[]>([]);
+  const fieldId = useId();
 
   const { data: systemStatus } = useApiQuery(() => getSystemStatus(), []);
   const { catalogue } = useModelCatalogue();
-
-  /**
-   * Read the file's own pixel size as soon as one is chosen.
-   *
-   * Header only -- a few hundred bytes through `Blob.slice` -- so this costs
-   * nothing on a 40k x 40k image. `cancelled` matters because a user who picks
-   * two files quickly would otherwise get the first file's answer applied to
-   * the second.
-   */
-  useEffect(() => {
-    setFileScale(null);
-    if (!file) return undefined;
-    let cancelled = false;
-    void probeFileDeclaredPixelSize(file).then((result) => {
-      if (!cancelled) setFileScale(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [file]);
-
-  /**
-   * What the typed pixel size is *right now*, by the same rule the submit uses.
-   *
-   * Read from the draft text rather than from the saved asset, because the
-   * whole point is to warn while the field is still empty and still editable.
-   * A half-typed or invalid value counts as no pixel size: it is what would be
-   * sent, and `parsePixelSizeInput` is the same check the server applies.
-   */
-  const draftPixelSizeNm = useMemo(() => {
-    const parsed = parsePixelSizeInput(pixelSizeText);
-    return parsed.error ? null : parsed.value;
-  }, [pixelSizeText]);
-
-  const declaredPixelSizeNm =
-    fileScale?.state === "declared" ? fileScale.pixelSizeNm : null;
-
-  /**
-   * The pixel size the import will end up with, as best this form can tell.
-   *
-   * A typed value wins, exactly as it does server-side (`create_asset` only
-   * falls back to the file's metadata when none was posted). `null` means
-   * either "the file was read and says nothing" or "the file could not be
-   * read"; `uncalibratedIsCertain` is what separates those two.
-   */
-  const effectivePixelSizeNm = draftPixelSizeNm ?? declaredPixelSizeNm;
-
-  /**
-   * The packs that would resample and cannot. Empty when the image is
-   * calibrated, when nothing that declares a working resolution is ticked (ER
-   * runs at native scale by design), or when the catalogue has not answered —
-   * an unknown pack must not be claimed to declare a resolution.
-   */
-  const scaleMismatches = useMemo(
-    () =>
-      scaleMismatchesForOrganelles(
-        catalogue,
-        tickedOrganelles,
-        effectivePixelSizeNm
-      ),
-    [catalogue, tickedOrganelles, effectivePixelSizeNm]
-  );
-  const willRunUncalibrated = scaleMismatches.length > 0;
-  /** How many whole-image passes pressing the button would queue. */
-  const runCount = tickedOrganelles.length;
-  /**
-   * Whether "this will run uncalibrated" is a fact or a possibility.
-   *
-   * Only a file that was read and found silent earns the flat statement. A file
-   * that could not be parsed here (BigTIFF, an unfamiliar layout) or no file at
-   * all leaves it a conditional -- which is weaker, and correct.
-   */
-  const uncalibratedIsCertain =
-    draftPixelSizeNm === null && fileScale?.state === "silent";
+  // The experiments this library already has, so the picker can offer them.
+  // An empty list is the ordinary starting state and renders as "No
+  // experiment" plus "New experiment…", which is all a first import needs.
+  const { experiments, reload: reloadExperiments } = useExperiments();
 
   const acceptedExtensions = useMemo(() => {
     const fromServer = (systemStatus?.supported_upload_formats ?? [])
@@ -232,19 +274,208 @@ export function ImageUploadPanel({
     return fromServer.length > 0 ? fromServer : FALLBACK_UPLOAD_FORMATS;
   }, [systemStatus]);
 
-  const { mutate, loading, error, reset } = useApiMutation<
-    { file: File; options: UploadImageOptions },
-    AssetDetail
-  >(async ({ file, options }) => {
-    return uploadAsset(file, options);
-  });
+  /**
+   * The largest upload this server accepts, or null while it has not said.
+   *
+   * Until `/api/system/status/` carried this, a file over the limit was refused
+   * by waitress from the request headers and the socket was closed while the
+   * browser was still streaming -- which the browser reports as a plain network
+   * error, after however long the doomed upload took. Knowing the number is
+   * what turns that into an instant, local, named refusal.
+   */
+  const maxUploadBytes = readMaxUploadBytes(systemStatus);
+
+  /**
+   * Read each newly chosen file's own pixel size.
+   *
+   * Header only -- a few hundred bytes through `Blob.slice` -- so this costs
+   * nothing on a 40k x 40k image, and forty of them cost forty times nothing.
+   * The result is applied by key, so a file removed while its probe was in
+   * flight simply drops the answer, and a second file with the same name gets
+   * its own.
+   */
+  const probeFile = useCallback((entry: ChosenFile) => {
+    void probeFileDeclaredPixelSize(entry.file).then((scale) => {
+      if (!mountedRef.current) return;
+      setFiles((current) =>
+        current.map((candidate) =>
+          candidate.key === entry.key ? { ...candidate, scale } : candidate
+        )
+      );
+    });
+  }, [mountedRef]);
+
+  /**
+   * The one place files become *the* files, whether they arrived by picker or
+   * by drop.
+   *
+   * Every path gets the same three checks -- `accept` is a hint the picker may
+   * honour and a drop ignores entirely, the size limit is the server's and is
+   * unknowable to the file dialog, and a file already in the queue must not be
+   * imported twice. Anything refused is named, with its reason, and the rest
+   * are still added: refusing forty files because one of them is a `.txt` is
+   * not validation, it is an obstacle.
+   */
+  const acceptFiles = useCallback(
+    (incoming: FileList | File[], { replace }: { replace: boolean }) => {
+      const list = Array.from(incoming);
+      if (list.length === 0) return;
+
+      const reasons: string[] = [];
+      const accepted: ChosenFile[] = [];
+      const existing = replace ? [] : filesRef.current;
+
+      for (const candidate of list) {
+        const lower = candidate.name.toLowerCase();
+        if (!acceptedExtensions.some((extension) => lower.endsWith(extension))) {
+          // Inline, not `alert()`: a modal dialog that steals focus is not a
+          // validation message, and it cannot be read by anything but a human.
+          reasons.push(
+            `${candidate.name} is not a supported format. This build accepts ${formatExtensionList(
+              acceptedExtensions
+            )}.`
+          );
+          continue;
+        }
+        if (exceedsUploadLimit(candidate.size, maxUploadBytes)) {
+          // Refused here, in the picker, naming both numbers -- rather than
+          // after a multi-minute upload that the server was always going to
+          // drop on the floor.
+          reasons.push(
+            `${candidate.name} is ${formatBytes(candidate.size)}. This build imports files up to ${formatBytes(
+              maxUploadBytes
+            )}, so it was not added.`
+          );
+          continue;
+        }
+        const alreadyHere =
+          existing.some((chosen) => isSameFile(chosen.file, candidate)) ||
+          accepted.some((chosen) => isSameFile(chosen.file, candidate));
+        if (alreadyHere) {
+          reasons.push(`${candidate.name} is already in this list.`);
+          continue;
+        }
+        fileKeyCounterRef.current += 1;
+        accepted.push({
+          key: `${candidate.name}:${candidate.size}:${candidate.lastModified}:${fileKeyCounterRef.current}`,
+          file: candidate,
+          scale: null,
+        });
+      }
+
+      setRejections(reasons);
+      if (accepted.length === 0 && !replace) return;
+
+      setBatchSummary(null);
+      setFiles(replace ? accepted : [...existing, ...accepted]);
+      if (replace) {
+        setImports({});
+        setDisplayName("");
+      }
+      // One file: the display name is derived from the filename and editable.
+      // Many: each keeps its own, and there is no single name to show.
+      const nextCount = (replace ? 0 : existing.length) + accepted.length;
+      if (nextCount === 1 && accepted.length === 1) {
+        setDisplayName(
+          stripKnownExtension(accepted[0].file.name, acceptedExtensions)
+        );
+      } else if (nextCount > 1) {
+        setDisplayName("");
+      }
+      for (const entry of accepted) probeFile(entry);
+    },
+    // `setBatchSummary` and `setImports` come from `useImportRun` rather than
+    // from a local `useState`, so they have to be named; both are `useState`
+    // setters and never change identity, so this is the same callback it was.
+    [acceptedExtensions, maxUploadBytes, probeFile, setBatchSummary, setImports]
+  );
 
   useEffect(() => {
-    if (!expanded) {
-      setFileError(null);
-      setPixelSizeError(null);
+    filesRef.current = files;
+  }, [files]);
+
+  const acceptDroppedFiles = useCallback(
+    (dropped: FileList | File[]) => {
+      if (importing) return;
+      acceptFiles(dropped, { replace: false });
+    },
+    [acceptFiles, importing]
+  );
+
+  const openFilePicker = useCallback((replace = false) => {
+    pickerReplacesRef.current = replace;
+    fileInputRef.current?.click();
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({ openFilePicker: () => openFilePicker(false), acceptDroppedFiles }),
+    [acceptDroppedFiles, openFilePicker]
+  );
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const chosen = event.target.files;
+    if (chosen && chosen.length > 0) {
+      acceptFiles(chosen, { replace: pickerReplacesRef.current });
     }
-  }, [expanded]);
+    pickerReplacesRef.current = false;
+    // So picking the same file again after removing it still fires `change`.
+    event.target.value = "";
+  };
+
+  const removeFile = (key: string) => {
+    setFiles((current) => current.filter((entry) => entry.key !== key));
+    setImports((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setRejections([]);
+  };
+
+  const clearChosenFiles = () => {
+    setFiles([]);
+    setImports({});
+    setBatchSummary(null);
+    setDisplayName("");
+    setPixelSizeText("");
+    setNotesText("");
+    setReplaceDeclaredPixelSizes(false);
+    setPixelSizeError(null);
+    setRejections([]);
+    setTickedOrganelles(NO_ORGANELLES_TICKED);
+    setExperimentChoice(NO_GROUP);
+    setDatasetChoice(NO_GROUP);
+    setRunOptionsOpen(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const scale = useImportScale({
+    files,
+    pixelSizeText,
+    replaceDeclaredPixelSizes,
+  });
+  const {
+    singleFile,
+    appliedPixelSize,
+    uncalibratedCount,
+    unknownScaleCount,
+    worstCasePixelSizeNm,
+    uncalibratedIsCertain,
+  } = scale;
+
+  const scaleMismatches = useMemo(
+    () =>
+      scaleMismatchesForOrganelles(
+        catalogue,
+        tickedOrganelles,
+        worstCasePixelSizeNm
+      ),
+    [catalogue, tickedOrganelles, worstCasePixelSizeNm]
+  );
+  const willRunUncalibrated = scaleMismatches.length > 0;
+  /** How many whole-image passes pressing the button would queue, in total. */
+  const runCount = tickedOrganelles.length * Math.max(files.length, 1);
 
   const toggleOrganelle = (id: OrganelleId, checked: boolean) => {
     setTickedOrganelles((current) =>
@@ -256,33 +487,47 @@ export function ImageUploadPanel({
     );
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
-    const lower = selectedFile.name.toLowerCase();
-    if (!acceptedExtensions.some((extension) => lower.endsWith(extension))) {
-      // Inline, not `alert()`: a modal dialog that steals focus is not a
-      // validation message, and it cannot be read by anything but a human.
-      setFileError(
-        `${selectedFile.name} is not a supported format. This build accepts ${formatExtensionList(
-          acceptedExtensions
-        )}.`
-      );
-      setFile(null);
-      e.target.value = "";
-      return;
-    }
-    setFileError(null);
-    setFile(selectedFile);
-    if (!displayName) {
-      setDisplayName(stripKnownExtension(selectedFile.name, acceptedExtensions));
-    }
+  const handleDragEnter = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes("Files")) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setDropActive(true);
   };
 
+  const handleDragOver = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes("Files")) return;
+    // Without this the browser navigates to the dropped file and the whole app
+    // is replaced by the raw image.
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    setDropActive(true);
+  };
+
+  const handleDragLeave = () => {
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDropActive(false);
+  };
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setDropActive(false);
+    const dropped = event.dataTransfer?.files;
+    if (!dropped || dropped.length === 0) return;
+    acceptDroppedFiles(dropped);
+  };
+
+  /**
+   * Start the queue: validate, then hand it to `useImportRun`.
+   *
+   * The loop itself is in that hook; what stays here is the two answers only
+   * this form has — the options each file is posted with, and what to do with
+   * the queue when the batch settles.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) {
-      setFileError("Choose a file to import.");
+    if (files.length === 0) {
+      setRejections(["Choose a file to import."]);
       return;
     }
     const pixelSize = parsePixelSizeInput(pixelSizeText);
@@ -291,259 +536,275 @@ export function ImageUploadPanel({
       return;
     }
     setPixelSizeError(null);
+    setRejections([]);
+    setBatchSummary(null);
 
-    reset();
+    const queue = files.filter(
+      (entry) => imports[entry.key]?.kind !== "imported"
+    );
+    if (queue.length === 0) return;
+
     const notes = notesText.trim();
-    const result = await mutate({
-      file,
-      options: {
-        displayName: displayName.trim() || undefined,
-        pixelSizeNm: pixelSize.value,
-        notes: notes.length > 0 ? notes : undefined,
-        segmentMito: tickedOrganelles.includes("mito"),
-        segmentEr: tickedOrganelles.includes("er"),
-        segmentNucleus: tickedOrganelles.includes("nucleus"),
-        segmentLd: tickedOrganelles.includes("ld"),
+
+    await runImport({
+      queue,
+      buildOptions: (entry, queueLength): UploadImageOptions => {
+        const applied = appliedPixelSize(entry);
+        return {
+          // Derived from the filename, exactly as the single-file form does it,
+          // so a batch does not land forty cards reading "Grid2_Cell04.tif".
+          displayName:
+            (queueLength === 1
+              ? displayName.trim()
+              : stripKnownExtension(entry.file.name, acceptedExtensions)) ||
+            undefined,
+          // Only send a number the user typed *for this file*. Sending the value
+          // a file already declares would restamp a file-declared calibration as
+          // user-entered, which is a provenance lie the rest of the app then
+          // repeats forever.
+          pixelSizeNm: applied.source === "typed" ? applied.valueNm : null,
+          notes: notes.length > 0 ? notes : undefined,
+          segmentMito: tickedOrganelles.includes("mito"),
+          segmentEr: tickedOrganelles.includes("er"),
+          segmentNucleus: tickedOrganelles.includes("nucleus"),
+          segmentLd: tickedOrganelles.includes("ld"),
+          // Whole-batch, like the pixel size and the notes. A typed name is
+          // sent on every file in the queue and the server resolves it to the
+          // same row each time, so forty images land in one experiment rather
+          // than in forty identically named ones.
+          experimentId: chosenId(experimentChoice) || undefined,
+          experimentName: chosenName(experimentChoice) || undefined,
+          datasetId: chosenId(datasetChoice) || undefined,
+          datasetName: chosenName(datasetChoice) || undefined,
+        };
+      },
+      onSettled: (failedKeys) => {
+        // The imports that worked leave the queue; the ones that did not stay
+        // put, with their reason, so the button can retry exactly those. A
+        // completely clean batch also clears the optional fields, which is what
+        // makes the panel ready for the next plate -- but it does not
+        // *collapse*, and it is not the confirmation. The confirmation is the
+        // strip and the highlighted cards the Library draws from the assets
+        // handed up above. A cleared form that looks exactly like a reset is
+        // what the owner read as a failure.
+        setFiles((current) =>
+          current.filter((entry) => failedKeys.has(entry.key))
+        );
+        // A batch that named a new experiment or dataset has just created it.
+        // Re-reading the catalogue is what lets the next import pick it from
+        // the list instead of typing the same name again and relying on the
+        // server to match it.
+        if (isChosen(experimentChoice) || isChosen(datasetChoice)) {
+          void reloadExperiments();
+        }
+        if (failedKeys.size === 0) {
+          setImports({});
+          setDisplayName("");
+          setPixelSizeText("");
+          setNotesText("");
+          setReplaceDeclaredPixelSizes(false);
+          setTickedOrganelles(NO_ORGANELLES_TICKED);
+          setExperimentChoice(NO_GROUP);
+          setDatasetChoice(NO_GROUP);
+          setRunOptionsOpen(false);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }
       },
     });
-
-    if (result && onUploaded) {
-      // Clear form
-      setFile(null);
-      setDisplayName("");
-      setPixelSizeText("");
-      setNotesText("");
-      setTickedOrganelles(NO_ORGANELLES_TICKED);
-      setExpanded(false);
-      // Reset file input
-      const fileInput = document.getElementById(
-        "file-input"
-      ) as HTMLInputElement;
-      if (fileInput) fileInput.value = "";
-      onUploaded(result);
-    }
   };
 
+  const highlightDropZone = dropActive || pageDragActive;
+  const acceptAttribute = acceptedExtensions.join(",");
+  const runOptionsId = `${fieldId}-run-options`;
+  const totalBytes = files.reduce((sum, entry) => sum + entry.file.size, 0);
+  /** Files this batch has finished with, either way. */
+  const settledCount = files.filter((entry) => {
+    const kind = imports[entry.key]?.kind;
+    return kind === "imported" || kind === "failed";
+  }).length;
+  /** Every remaining row failed last time, so the button is a retry. */
+  const retrying =
+    batchSummary !== null &&
+    files.length > 0 &&
+    files.every((entry) => imports[entry.key]?.kind === "failed");
+
+  /**
+   * The caption on the one button that starts everything.
+   *
+   * It says what pressing it will do, counted. "Uncalibrated" is only asserted
+   * when it is a fact: a button that says it over files that turn out to
+   * declare 5 nm/px is how a warning stops being believed.
+   */
+  const submitLabel = (() => {
+    if (importing) {
+      if (batchTotal <= 1) return "Uploading...";
+      return `Importing ${Math.min(settledCount + 1, batchTotal)} of ${batchTotal}…`;
+    }
+    if (retrying) {
+      return files.length === 1 ? "Try it again" : `Try these ${files.length} again`;
+    }
+    const runWord = plural(runCount, "run");
+    if (files.length === 1) {
+      if (runCount === 0) return "Import image";
+      return willRunUncalibrated && uncalibratedIsCertain
+        ? `Import and start ${runCount} uncalibrated ${runWord}`
+        : `Import and start ${runCount} segmentation ${runWord}`;
+    }
+    const subject = `${files.length} images`;
+    if (runCount === 0) return `Import ${subject}`;
+    return willRunUncalibrated && uncalibratedIsCertain
+      ? `Import ${subject} and start ${runCount} uncalibrated ${runWord}`
+      : `Import ${subject} and start ${runCount} segmentation ${runWord}`;
+  })();
+
   return (
-    <div className="upload-panel">
-      <button
-        type="button"
-        className="upload-toggle"
-        onClick={() => setExpanded(!expanded)}
-        aria-expanded={expanded}
-      >
-        {expanded ? "▼" : "▶"} Import image
-      </button>
+    <Panel
+      className="p-4"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      data-testid="import-panel"
+    >
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+        Import an image
+      </h2>
 
-      {expanded && (
-        <form className="upload-form" onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="file-input">
-              Image file ({formatExtensionList(acceptedExtensions)}):
-            </label>
-            <input
-              id="file-input"
-              type="file"
-              accept={acceptedExtensions.join(",")}
-              onChange={handleFileChange}
-              aria-describedby="file-input-help"
-              required
-            />
-            <span className="upload-help" id="file-input-help">
-              Formats this build can read, reported by the server.
-            </span>
-            {file && (
-              <span className="file-name">Selected: {file.name}</span>
-            )}
-            {fileError && (
-              <span className="error-message" role="alert">
-                {fileError}
-              </span>
-            )}
-          </div>
+      {/* The input is the mechanism for both paths and is never hidden from
+          assistive technology: `sr-only` keeps it focusable and labelled, and
+          the visible drop zone is its `<label>`, so one click on the zone opens
+          the OS dialog through the browser's own native handling. `multiple`
+          because the zone says "Choose files…" and because a plate is the
+          normal case. */}
+      <input
+        ref={fileInputRef}
+        id="file-input"
+        className="peer sr-only"
+        type="file"
+        multiple
+        // A stable accessible name in both states. The drop zone is the input's
+        // `<label>` only while no file is chosen; without this the control
+        // would lose its name the moment one is.
+        aria-label="Image file"
+        accept={acceptAttribute}
+        onChange={handleFileChange}
+        aria-describedby={files.length === 0 ? "file-input-help" : undefined}
+      />
 
-          <div className="form-group">
-            <label htmlFor="display-name">Display Name (optional):</label>
-            <input
-              id="display-name"
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Enter display name..."
-            />
-          </div>
+      {/* Panel level, not inside the form: the commonest way to see these is to
+          pick unsupported files when nothing is chosen yet, and the form does
+          not exist in that state. */}
+      {rejections.map((reason) => (
+        <p className="mt-2 text-sm text-red-700" role="alert" key={reason}>
+          {reason}
+        </p>
+      ))}
 
-          <div className="form-group">
-            <label htmlFor="upload-pixel-size">Pixel size, nm per pixel (optional):</label>
-            <input
-              id="upload-pixel-size"
-              type="number"
-              min="0"
-              step="any"
-              inputMode="decimal"
-              value={pixelSizeText}
-              onChange={(e) => setPixelSizeText(e.target.value)}
-              placeholder="e.g. 4.2"
-              aria-describedby="upload-pixel-size-help"
-            />
-            <span className="upload-help" id="upload-pixel-size-help">
-              Leave blank to use the value in the file. Many EM exports carry
-              none; without a pixel size, areas and distances stay in pixels and
-              analysis cannot report µm².{" "}
-              {/* "You can set or change it later" is true of the number and
-                  false of everything downstream of it once a run has been
-                  queued, and read on its own it is what made an uncalibrated
-                  import look reversible. */}
-              {willRunUncalibrated
-                ? "You can set or change it later, but that does not re-run anything segmented now."
-                : "You can set or change it later."}
-            </span>
-            {pixelSizeError && (
-              <span className="error-message" role="alert">
-                {pixelSizeError}
-              </span>
-            )}
-            {/* Answering the question the box asks, from the file itself. The
-                form told people to leave this blank and then warned them for
-                doing it; saying what the file declares is what makes "blank"
-                a legible choice rather than a gamble. */}
-            {declaredPixelSizeNm !== null && (
-              <span className="upload-declared-scale" role="status">
-                {file?.name ?? "This file"} declares{" "}
-                {formatPixelSizeNm(declaredPixelSizeNm)}
-                {draftPixelSizeNm === null
-                  ? ", which this import will use."
-                  : ". The value typed above is used instead."}
-              </span>
-            )}
-          </div>
+      {files.length === 0 ? (
+        <ImportDropZone
+          acceptedExtensions={acceptedExtensions}
+          highlightDropZone={highlightDropZone}
+          batchSummary={batchSummary}
+        />
+      ) : (
+        <form
+          className="mt-3 flex flex-col gap-4"
+          onSubmit={handleSubmit}
+          data-testid="import-form"
+        >
+          <ImportQueue
+            files={files}
+            imports={imports}
+            importing={importing}
+            highlightDropZone={highlightDropZone}
+            batchSummary={batchSummary}
+            totalBytes={totalBytes}
+            appliedPixelSize={appliedPixelSize}
+            onAddMoreFiles={() => openFilePicker(false)}
+            onChooseDifferentFile={() => openFilePicker(true)}
+            onClearChosenFiles={clearChosenFiles}
+            onRemoveFile={removeFile}
+          />
 
-          {/* This was "Tags (comma-separated, optional)". It collected text,
-              posted it as `tag_names`, and the server never read it -- there is
-              no tag field on `Asset` and no tag anywhere in the Python tree, so
-              typing "PV" here did nothing at all and the library went on
-              showing no tags. A field that accepts input and discards it is how
-              people come to believe their images are grouped when they are not.
+          {/* Everything below here is optional. The pixel size is the only
+              field whose absence changes the science, so it is the only one
+              that ever raises its voice -- and only when a file is silent. */}
+          <ImportDetailsFields
+            files={files}
+            scale={scale}
+            displayName={displayName}
+            onDisplayNameChange={setDisplayName}
+            pixelSizeText={pixelSizeText}
+            onPixelSizeTextChange={setPixelSizeText}
+            pixelSizeError={pixelSizeError}
+            notesText={notesText}
+            onNotesTextChange={setNotesText}
+            replaceDeclaredPixelSizes={replaceDeclaredPixelSizes}
+            onReplaceDeclaredPixelSizesChange={setReplaceDeclaredPixelSizes}
+            willRunUncalibrated={willRunUncalibrated}
+            experiments={experiments}
+            experimentChoice={experimentChoice}
+            datasetChoice={datasetChoice}
+            onExperimentChoiceChange={setExperimentChoice}
+            onDatasetChoiceChange={setDatasetChoice}
+          />
 
-              Notes is the field that already exists: it is on `Asset`, it is
-              PATCHable through `update_asset`, and `_filtered_asset_queryset`
-              includes it in the library search alongside the display name and
-              the filename. So the word typed here is findable, which is what
-              the tag box was reached for and never delivered. */}
-          <div className="form-group">
-            <label htmlFor="notes">Notes (optional):</label>
-            <input
-              id="notes"
-              type="text"
-              value={notesText}
-              onChange={(e) => setNotesText(e.target.value)}
-              placeholder="e.g. PV, day 14, control"
-              aria-describedby="notes-help"
-            />
-            <span className="upload-help" id="notes-help">
-              Saved with the image. The library&apos;s search box matches notes
-              as well as names and filenames, so a word typed here is how you
-              find this image again.
-            </span>
-          </div>
+          {/* Closed by default. Importing images imports images. */}
+          <ImportRunOptions
+            runOptionsId={runOptionsId}
+            runOptionsOpen={runOptionsOpen}
+            onToggleRunOptions={() =>
+              setRunOptionsOpen((current) => !current)
+            }
+            runCount={runCount}
+            fileCount={files.length}
+            tickedOrganelles={tickedOrganelles}
+            onToggleOrganelle={toggleOrganelle}
+            catalogue={catalogue}
+          />
 
-          <div className="form-group">
-            {ORGANELLE_CHOICES.map((choice) => {
-              const runnability = runnabilityForPackId(
-                catalogue,
-                DEFAULT_PACK_FOR_ORGANELLE[choice.id]
-              );
-              // Only a definite "blocked" disables, exactly as on the labeling
-              // screen: an unanswered catalogue must not hide a working model.
-              const blocked = runnability.state === "blocked";
-              return (
-                <label key={choice.id} htmlFor={choice.inputId}>
-                  <input
-                    id={choice.inputId}
-                    type="checkbox"
-                    checked={tickedOrganelles.includes(choice.id)}
-                    disabled={blocked}
-                    onChange={(e) =>
-                      toggleOrganelle(choice.id, e.target.checked)
-                    }
-                  />
-                  {choice.label}
-                  {blocked && (
-                    <span className="upload-organelle-blocked">
-                      {" — "}
-                      {runnability.reason ??
-                        `${DEFAULT_PACK_FOR_ORGANELLE[choice.id]} cannot run here.`}
-                    </span>
-                  )}
-                </label>
-              );
-            })}
-            {/* A disabled control with nothing beside it reads as a bug, and
-                the Models screen is the only place the blocker is fixable.
+          {/* Outside the disclosure on purpose. Ticking a box and then folding
+              the section away must not fold away the sentence explaining that
+              those runs will produce a different object set. */}
+          {willRunUncalibrated && files.length > 1 ? (
+            <p className="m-0 text-sm text-slate-800">
+              {uncalibratedCount > 0
+                ? `${uncalibratedCount} of these ${files.length} images ${plural(
+                    uncalibratedCount,
+                    "has",
+                    "have"
+                  )} no pixel size.`
+                : `${unknownScaleCount} of these ${files.length} images could not be read here, so ${plural(
+                    unknownScaleCount,
+                    "it",
+                    "they"
+                  )} may have no pixel size.`}
+            </p>
+          ) : null}
+          <UncalibratedImportWarning
+            mismatches={scaleMismatches}
+            certain={uncalibratedIsCertain}
+            unreadableFileName={
+              singleFile && singleFile.scale?.state === "unknown"
+                ? singleFile.file.name
+                : null
+            }
+          />
 
-                The first sentence is why nothing starts ticked: four ticked
-                boxes were four whole-image CPU passes queued by an import,
-                before the person had seen the image. */}
-            <span className="upload-help">
-              Nothing is segmented unless you tick a box. Each one queues a
-              separate whole-image run after the import — minutes to tens of
-              minutes each — and you can start any of them later from the
-              labeling screen instead. Models that cannot run here are listed
-              but not offered — <a href="#/models">Models</a> says what is
-              missing.
-            </span>
-            {/* Directly under the boxes that cause it, not at the top of the
-                form: this is the moment the choice is being made, and the
-                sentence is about what those four boxes will produce. */}
-            <UncalibratedImportWarning
-              mismatches={scaleMismatches}
-              certain={uncalibratedIsCertain}
-              unreadableFileName={
-                fileScale?.state === "unknown" ? (file?.name ?? null) : null
-              }
-            />
-          </div>
-
-          {error && (
-            <div className="error-message" role="alert">
-              {extractApiErrorMessage(error, "The image could not be imported.")}
-            </div>
-          )}
-
-          <div className="form-actions">
-            {/* What pressing this actually does, counted.
-
-                The caption used to name segmentation only when the run would be
-                *uncalibrated*, so the one case where the runs were certain to
-                happen -- a calibrated image with boxes ticked -- read plain
-                "Upload". The run count leads now, in every case.
-
-                "Uncalibrated" is still only asserted when it is a fact. A button
-                that says it over a file that turns out to declare 5 nm/px is how
-                a warning stops being believed, and this is the warning that has
-                to land when it is right. */}
-            <button type="submit" disabled={loading || !file}>
-              {loading
-                ? "Uploading..."
-                : runCount === 0
-                  ? "Upload"
-                  : willRunUncalibrated && uncalibratedIsCertain
-                    ? `Import and start ${runCount} uncalibrated run${runCount === 1 ? "" : "s"}`
-                    : `Import and start ${runCount} segmentation run${runCount === 1 ? "" : "s"}`}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setExpanded(false);
-                reset();
-              }}
-              disabled={loading}
-            >
+          <div className="flex items-center gap-2">
+            {/* What pressing this actually does, counted. "Uncalibrated" is
+                only asserted when it is a fact: a button that says it over a
+                file that turns out to declare 5 nm/px is how a warning stops
+                being believed. */}
+            <Button variant="primary" type="submit" disabled={importing}>
+              {submitLabel}
+            </Button>
+            <Button onClick={clearChosenFiles} disabled={importing}>
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       )}
-    </div>
+    </Panel>
   );
-}
+});

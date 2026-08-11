@@ -1,11 +1,11 @@
-"""``quantem`` console entry point.
+"""``quantem-app`` console entry point.
 
 This is the seam that makes one codebase serve both distribution channels:
 
-* ``pip install quantem && quantem`` -- starts the loopback server and opens a
+* ``pip install quantem-app && quantem-app`` -- starts the loopback server and opens a
   native window via pywebview (falling back to the default browser).
 * The desktop installer wraps this *same* package plus a frozen interpreter; the
-  shell spawns ``quantem serve --port 0`` and hosts the UI itself.
+  shell spawns ``quantem-app serve --port 0`` and hosts the UI itself.
 
 Nothing here binds to anything but loopback. There is no authentication, no
 multi-user mode and no remote access: this is one person's application running
@@ -14,9 +14,9 @@ on their own machine.
 ``--data-dir`` and where it may appear
 --------------------------------------
 Every subcommand accepts ``--data-dir``, before or after the subcommand name.
-It used to be top-level only, so the obvious ``quantem --data-dir X serve``
-worked and the equally obvious ``quantem serve --data-dir X`` died with an
-unrecognised-argument error -- and ``quantem serve --help`` never mentioned the
+It used to be top-level only, so the obvious ``quantem-app --data-dir X serve``
+worked and the equally obvious ``quantem-app serve --data-dir X`` died with an
+unrecognised-argument error -- and ``quantem-app serve --help`` never mentioned the
 flag at all, so there was nothing to read that would have said which one to
 type. ``$QUANTEM_DATA_DIR`` is honoured too, and the flag wins over it.
 
@@ -34,9 +34,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -59,13 +61,13 @@ def default_data_dir() -> Path:
     Otherwise the data lives **with the installation** -- an owner ruling
     (2026-08-09) that replaced the per-OS user data directory:
 
-    * Frozen desktop build (PyInstaller sets ``sys.frozen``): ``<install>\\data``,
-      derived from this executable's own location. The installer's layout is
-      ``<install>\\QuantEM.exe`` beside
-      ``<install>\\quantem-server\\quantem-server.exe``, and the frozen server
-      is the process resolving this, so the install root is the exe's
-      grandparent. The user chose that directory at install time; their data
-      sits next to it, findable and removed with it.
+    * Frozen desktop build (PyInstaller sets ``sys.frozen``): a ``data``
+      directory in the install root, derived from this executable's own
+      location. The installer's layout puts ``QuantEM.exe`` in the install root
+      and ``quantem-server.exe`` one level below it, in a ``quantem-server``
+      directory, and the frozen server is the process resolving this, so the
+      install root is the exe's grandparent. The user chose that directory at
+      install time; their data sits next to it, findable and removed with it.
     * pip install: ``<sys.prefix>/quantem-data`` -- the environment *is* the
       install location. This covers venvs, conda envs and the dev checkout
       (whose ``.env`` still overrides by setting ``QUANTEM_DATA_DIR``).
@@ -84,6 +86,16 @@ def default_data_dir() -> Path:
             file=sys.stderr,
         )
     if getattr(sys, "frozen", False):
+        if sys.platform == "darwin":
+            # The one platform where storage-with-the-install cannot work.
+            # Gatekeeper's app translocation runs a quarantined, unsigned app
+            # from a randomised read-only mount, so the bundle's own directory
+            # is not writable on exactly the first launch that matters -- and
+            # the path changes between launches, so data written before the
+            # user clears quarantine would be orphaned somewhere they will
+            # never find. macOS gets the location macOS apps are expected to
+            # use; QUANTEM_DATA_DIR still overrides, as everywhere else.
+            return Path.home() / "Library" / "Application Support" / "QuantEM"
         return Path(sys.executable).resolve().parent.parent / "data"
     return Path(sys.prefix).resolve() / "quantem-data"
 
@@ -154,12 +166,30 @@ def _prepare_env(data_dir: Path) -> None:
     # `QUANTEM_DISABLE_JOB_AUTOSTART=1` still opts out, which is what the test
     # suite and CI use.
     os.environ.setdefault("QUANTEM_AUTOSTART_JOBS", "1")
+    # BIG_IMAGE_DESIGN S0 / owner ruling R2, the CLI half. Detect the machine
+    # once and pin OMP_NUM_THREADS, OPENBLAS_NUM_THREADS and MKL_NUM_THREADS
+    # before anything in this process imports numpy -- OpenBLAS and OpenMP read
+    # them at that import to size their per-thread arenas (~27 MB a thread) and
+    # never read them again. MEASURED on the build box: `import numpy, scipy,
+    # torch` commits 1 668 MB unpinned on 28 cores against 252 MB pinned to
+    # two, which on the 8 GB laptop of ruling R3 is most of the budget.
+    #
+    # Here, and not at the top of this module: importing quantem.core runs its
+    # package body, which creates the data directory. Before the line above
+    # publishes QUANTEM_DATA_DIR that would be the *wrong* directory, so an
+    # earlier pin would trade a gigabyte for a stray data folder next to the
+    # installation. Every heavy import in this file is inside a function and
+    # therefore lands after this call. quantem/core/__init__.py carries the
+    # other half for Django entry points that never touch the CLI.
+    from quantem.core.machine import configure_process
+
+    configure_process()
 
 
 def _prepare_storage_only(data_dir: Path) -> None:
     """Point the storage layer at ``data_dir`` without waking the job queue.
 
-    ``quantem models ...`` touches the model cache and nothing else. Starting
+    ``quantem-app models ...`` touches the model cache and nothing else. Starting
     the background workers to copy some files would be a surprising thing for an
     install command to do, and on a machine with no database yet it would be a
     failing one.
@@ -179,6 +209,108 @@ def _wait_until_up(port: int, timeout: float = 60.0) -> bool:
     return False
 
 
+def _human_bytes(count: int) -> str:
+    """``68719476736`` -> ``"64 GB"``. For a sentence, not for a log line."""
+    for unit, size in (("GB", 1024**3), ("MB", 1024**2), ("kB", 1024)):
+        if count >= size:
+            scaled = count / size
+            return f"{scaled:.0f} {unit}" if scaled >= 10 else f"{scaled:.1f} {unit}"
+    return f"{count} bytes"
+
+
+def _install_readable_oversize_error(limit_bytes: int) -> None:
+    """Make waitress's 413 a sentence, in the shape the client already parses.
+
+    waitress refuses an over-limit body the moment it has read the headers --
+    which is the right moment, and the only fast one -- but it says so as
+    ``text/plain`` reading ``exceeds max_body of 1073741824``: an internal
+    phrase and a number with no unit. The client's error path expects
+    ``{"error": ...}`` JSON, so today that text arrives as a failed JSON decode
+    and is shown to the user verbatim.
+
+    Only the message is replaced. The status, the timing and every other
+    waitress error are untouched. ``parser.py`` holds its own reference to the
+    class, so that is the name rebound.
+
+    **What this does not fix.** When the client is still streaming its body,
+    the server's response and immediate close reach it as an aborted
+    connection, and the sentence is never read -- measured: a 1.93 GiB POST
+    died with ``ConnectionAbortedError`` after 55 ms and no status code. The
+    durable fix is for the client to check the file's size against
+    ``max_upload_bytes`` before it starts. This makes the response honest for
+    every client that does get to read it.
+    """
+    import waitress.parser as waitress_parser
+    from waitress.utilities import RequestEntityTooLarge
+
+    base = getattr(waitress_parser, "RequestEntityTooLarge", None)
+    if base is None or not issubclass(base, RequestEntityTooLarge):  # pragma: no cover
+        # A waitress that no longer has this seam: keep its own message rather
+        # than break the server over the wording of an error.
+        return
+
+    sentence = (
+        f"This upload is larger than the {_human_bytes(limit_bytes)} "
+        "QuantEM accepts in one request, so nothing was saved."
+    )
+    payload = json.dumps(
+        {
+            "error": sentence,
+            "error_code": "upload_too_large",
+            "max_upload_bytes": limit_bytes,
+        }
+    ).encode("utf-8")
+
+    class _ReadableRequestEntityTooLarge(RequestEntityTooLarge):
+        def to_response(self, ident=None):  # noqa: ARG002 - waitress's signature
+            del ident
+            return (
+                f"{self.code} {self.reason}",
+                [("Content-Type", "application/json")],
+                payload,
+            )
+
+    waitress_parser.RequestEntityTooLarge = _ReadableRequestEntityTooLarge
+
+
+def _waitress_options() -> dict[str, object]:
+    """The keyword arguments ``cmd_serve`` hands to waitress.
+
+    Separate from the call so the two values that matter -- the body limit and
+    the thread count -- can be asserted without starting a server.
+    """
+    from django.conf import settings
+
+    return {
+        "threads": 8,
+        # Names the application in the ``Server:`` header and in waitress's own
+        # error pages, which otherwise blame a library the user has never
+        # heard of for the app's refusals.
+        "ident": APP_NAME,
+        "max_request_body_size": int(settings.QUANTEM_MAX_UPLOAD_BYTES),
+    }
+
+
+def _keep_temp_files_with_the_data(tmp_dir: Path) -> None:
+    """Point this process's temp directory at the data directory's own.
+
+    ``FILE_UPLOAD_TEMP_DIR`` moves Django's copy of an upload, but waitress
+    spools any request body over 512 kB through ``tempfile.TemporaryFile``
+    *before* Django is entered, and that reads ``TEMP``/``TMP``. Left alone,
+    the first copy of every large import lands in the system temp directory --
+    on Windows a path under ``C:``, which this project forbids and which is
+    usually a different volume from the data directory.
+
+    The desktop shell already exports these for the frozen build. Doing it here
+    as well means ``quantem-app serve`` from a pip install behaves identically, and
+    that the job workers spawned later inherit the same choice.
+    """
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = str(tmp_dir)
+    for name in ("TMP", "TEMP", "TMPDIR"):
+        os.environ[name] = str(tmp_dir)
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Run the local server in the foreground."""
     import logging
@@ -195,25 +327,42 @@ def cmd_serve(args: argparse.Namespace) -> int:
     os.environ.setdefault("QUANTEM_LOG_TO_FILE", "1")
     # The same path quantem.core.settings derives; imported (cheaply, before
     # Django) rather than re-spelled so the two can never disagree.
-    from quantem.core.config import SERVER_LOG_PATH
+    from quantem.core.config import SERVER_LOG_PATH, TMP_DIR, file_logging_enabled
+
+    # One half of "a big import never touches C:" -- the other is
+    # FILE_UPLOAD_TEMP_DIR in quantem.core.settings. Before django.setup(),
+    # because the job scheduler starts during it and every worker it spawns
+    # inherits this process's environment.
+    _keep_temp_files_with_the_data(TMP_DIR)
 
     # Announced before Django wakes up, and flushed. This used to print after
     # the migrations and without a flush, which had two failure modes: on a
     # first launch the user stared at a silent terminal for the whole migrate,
-    # and with stdout piped (a wrapper process, a log file, `quantem serve >
+    # and with stdout piped (a wrapper process, a log file, `quantem-app serve >
     # out.txt`) block buffering held the lines back until the process *exited*
-    # -- which a server never does, so `quantem serve` printed nothing at all,
+    # -- which a server never does, so `quantem-app serve` printed nothing at all,
     # not even the URL to open.
     port = args.port or free_port()
     print(f"{APP_NAME} serving on http://127.0.0.1:{port}", flush=True)
     print(f"data dir: {os.environ[DATA_DIR_ENV_VAR]}", flush=True)
-    print(f"log file: {SERVER_LOG_PATH}", flush=True)
+    # Only when this process is really going to write it. Promising a path that
+    # stays empty sends whoever is debugging to the wrong place.
+    if file_logging_enabled():
+        print(f"log file: {SERVER_LOG_PATH}", flush=True)
     print(
         "models are downloaded on demand: install them from the app's Models "
-        "screen or with `quantem models install --all`; `quantem models list` "
+        "screen or with `quantem-app models install --all`; `quantem-app models list` "
         "shows what is installed.",
         flush=True,
     )
+    # What this machine was measured to be and what the app will therefore do
+    # on it -- worker counts, thread counts, how many heavy jobs run at once.
+    # Printed last so it sits next to whatever the user is about to compare it
+    # against, and printed at all because "why is this slow" and "why did this
+    # refuse" are both answered by this line. _prepare_env computed it above.
+    from quantem.core.machine import get_machine_profile
+
+    print(get_machine_profile().summary(), flush=True)
 
     django.setup()
     from django.core.management import call_command
@@ -228,6 +377,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
         port,
         os.environ[DATA_DIR_ENV_VAR],
     )
+    # And into the log file, where a bug report can reach it. Not from
+    # configure_process itself: that runs before django.setup(), when logging
+    # has no handlers and the line would go nowhere.
+    from quantem.core import machine
+
+    machine.log_profile()
 
     call_command("migrate", interactive=False, verbosity=0)
 
@@ -240,7 +395,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     process_pending_model_installs()
 
-    waitress_serve(get_wsgi_application(), host="127.0.0.1", port=port, threads=8)
+    options = _waitress_options()
+    _install_readable_oversize_error(int(options["max_request_body_size"]))
+    waitress_serve(get_wsgi_application(), host="127.0.0.1", port=port, **options)
     return 0
 
 
@@ -263,7 +420,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         import webview  # type: ignore[import-not-found]
     except ImportError:
         print("pywebview not installed; opening in your browser instead.")
-        print("  for a native window:  pip install 'quantem[desktop]'")
+        print("  for a native window:  pip install 'quantem-app[desktop]'")
         webbrowser.open(url)
         t.join()
         return 0
@@ -281,9 +438,9 @@ def cmd_models_install(args: argparse.Namespace) -> int:
 
     Which route is decided by what was typed, so both obvious commands work:
 
-    * ``quantem models install quantem:mito omniem:ld`` -- pack ids: download
+    * ``quantem-app models install quantem:mito omniem:ld`` -- pack ids: download
       each from the QuantEM Hugging Face repository, verify, install.
-    * ``quantem models install ./quantem-models-0.1.0`` -- a directory: the
+    * ``quantem-app models install ./quantem-models-0.1.0`` -- a directory: the
       offline route, installing from a downloaded, unzipped release bundle.
     """
     _prepare_storage_only(_resolve_data_dir(args))
@@ -340,7 +497,7 @@ def cmd_models_install(args: argparse.Namespace) -> int:
     if not pack_ids:
         print(
             "nothing to do. Name pack ids to download them from Hugging Face "
-            "(e.g. `quantem models install quantem:mito`, or --all), or give the "
+            "(e.g. `quantem-app models install quantem:mito`, or --all), or give the "
             "directory of an unzipped release bundle.",
             file=sys.stderr,
         )
@@ -458,7 +615,7 @@ def _data_dir_parent() -> argparse.ArgumentParser:
 
     ``default=SUPPRESS`` is the whole trick: without it argparse writes the
     subparser's default over a value the user gave before the subcommand, and
-    ``quantem --data-dir X serve`` would silently serve from the default
+    ``quantem-app --data-dir X serve`` would silently serve from the default
     directory instead.
     """
     parent = argparse.ArgumentParser(add_help=False)
@@ -485,7 +642,7 @@ def build_parser() -> argparse.ArgumentParser:
     verbose.add_argument("-v", "--verbose", action="store_true")
 
     p = argparse.ArgumentParser(
-        prog="quantem",
+        prog="quantem-app",
         description=f"{APP_NAME} desktop application",
     )
     p.add_argument(
@@ -556,7 +713,7 @@ def build_parser() -> argparse.ArgumentParser:
     mv.add_argument("packs", nargs="*")
     mv.set_defaults(func=cmd_models_verify)
 
-    # `quantem models` with no action is a help request, not an error with a
+    # `quantem-app models` with no action is a help request, not an error with a
     # stack trace; the subparser is kept so main() can print its help.
     m.set_defaults(_group_parser=m)
     return p

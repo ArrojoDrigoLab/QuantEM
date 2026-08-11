@@ -1,0 +1,42 @@
+/* The dialog shell, and the light skin for the shared progress rows.
+
+   Same overlay geometry and z-index as `ConfirmDialog.css` so the two cannot
+   end up stacked differently; wider and taller, because this one holds a tree
+   the user has to scroll and read. */
+.finetune-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.finetune-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  /* Header and footer stay put; only the body scrolls, so the count and the
+     Fine-tune button are never both off screen at once. */
+  max-height: min(90vh, 780px);
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+}
+
+/* Colours only. The geometry and the wording are the shared component's, so
+   this dialog and the Tasks drawer cannot say different things about one run. */
+.finetune-progress {
+  --run-progress-text: #475569;
+  --run-progress-name: #0f172a;
+  --run-progress-track: #e2e8f0;
+  --run-progress-fill: #0e7490;
+  --run-progress-warning: #b91c1c;
+  --run-progress-download: #6d28d9;
+}

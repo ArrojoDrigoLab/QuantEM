@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ViewerFitBounds, ViewportState } from "@/viewer/types";
 import {
   buildMetrics,
+  clampViewportToImage,
   computeDeckViewState,
   defaultViewport,
   fitBoundsViewport,
   nearlyEqualViewport,
+  oneToOneZoom,
 } from "@/viewer/components/internal/viewerMath";
 
 export function useViewerViewportState(config: {
@@ -33,6 +35,19 @@ export function useViewerViewportState(config: {
   const lastFitKeyRef = useRef<string | null>(null);
   const didApplyInitialViewportRef = useRef(false);
   const [localViewport, setLocalViewport] = useState<ViewportState | null>(null);
+  /**
+   * The view this image opened at, for Reset.
+   *
+   * Captured once, from the first viewport the screen actually settled on --
+   * which is not always the fit view: arriving from a deep link to an ROI opens
+   * fitted to that ROI, and "back to where I started" has to mean that, not the
+   * whole image.
+   */
+  const openingViewportRef = useRef<ViewportState | null>(null);
+  useEffect(() => {
+    if (openingViewportRef.current != null || !localViewport) return;
+    openingViewportRef.current = localViewport;
+  }, [localViewport]);
 
   useEffect(() => {
     if (containerSize.width <= 0 || containerSize.height <= 0) return;
@@ -92,12 +107,20 @@ export function useViewerViewportState(config: {
 
   const setViewport = useCallback(
     (nextViewport: ViewportState, emit = true) => {
-      setLocalViewport(nextViewport);
+      // Every writer goes through here -- pan, wheel, double-click, the two
+      // panels' viewport sync -- so the clamp only has to be true in one place
+      // for the image to be impossible to lose.
+      const clamped = clampViewportToImage(
+        nextViewport,
+        resolvedImageWidth,
+        resolvedImageHeight
+      );
+      setLocalViewport(clamped);
       if (emit) {
-        emitViewportChange(nextViewport);
+        emitViewportChange(clamped);
       }
     },
-    [emitViewportChange]
+    [emitViewportChange, resolvedImageHeight, resolvedImageWidth]
   );
 
   useEffect(() => {
@@ -164,5 +187,57 @@ export function useViewerViewportState(config: {
     [effectiveViewport, resolvedImageWidth]
   );
 
-  return { localViewport: effectiveViewport, setViewport, metrics, deckViewState };
+  /** Show the whole image, as large as it fits: the view an image opens at. */
+  const fitImage = useCallback(() => {
+    setViewport(
+      defaultViewport(
+        resolvedImageWidth,
+        resolvedImageHeight,
+        effectiveViewport.containerWidth,
+        effectiveViewport.containerHeight
+      ),
+      true
+    );
+  }, [effectiveViewport, resolvedImageHeight, resolvedImageWidth, setViewport]);
+
+  /** One image pixel per screen pixel, keeping the current centre. */
+  const zoomOneToOne = useCallback(() => {
+    setViewport(
+      {
+        ...effectiveViewport,
+        zoom: oneToOneZoom(resolvedImageWidth, effectiveViewport.containerWidth),
+      },
+      true
+    );
+  }, [effectiveViewport, resolvedImageWidth, setViewport]);
+
+  /** Back to the view this image opened at. */
+  const resetView = useCallback(() => {
+    const opening = openingViewportRef.current;
+    setViewport(
+      opening
+        ? {
+            ...opening,
+            containerWidth: effectiveViewport.containerWidth,
+            containerHeight: effectiveViewport.containerHeight,
+          }
+        : defaultViewport(
+            resolvedImageWidth,
+            resolvedImageHeight,
+            effectiveViewport.containerWidth,
+            effectiveViewport.containerHeight
+          ),
+      true
+    );
+  }, [effectiveViewport, resolvedImageHeight, resolvedImageWidth, setViewport]);
+
+  return {
+    localViewport: effectiveViewport,
+    setViewport,
+    metrics,
+    deckViewState,
+    fitImage,
+    zoomOneToOne,
+    resetView,
+  };
 }

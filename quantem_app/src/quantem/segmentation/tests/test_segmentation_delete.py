@@ -133,10 +133,21 @@ class DeleteRefusalTests(_DeleteTestBase):
         response = self.client.delete(self.url)
 
         self.assertEqual(response.status_code, 409)
-        # The reason is named, and so is the job, so the user can clear it.
-        self.assertIn(str(job.id), response.data["detail"])
-        self.assertIn("cannot be deleted while", response.data["detail"])
+        # The reason is named the way Tasks & Queues names it, and the screen
+        # with the control on it is named. The job's id and type stay in the
+        # payload as fields: this ``detail`` is rendered verbatim in the confirm
+        # dialog, and it used to read "while a run_segmentation_full_task job is
+        # queued on it (job 04a1...). Wait for it or remove it from the queue
+        # (DELETE /api/jobs/04a1.../)" -- four of invariant I-12's classes in one
+        # sentence, in front of someone who cannot issue a request.
+        detail = response.data["detail"]
+        self.assertIn("Run full-image segmentation", detail)
+        self.assertIn("Tasks & Queues", detail)
+        self.assertNotIn(str(job.id), detail)
+        self.assertNotIn("run_segmentation_full_task", detail)
+        self.assertNotIn("/api/", detail)
         self.assertEqual(response.data["job_id"], str(job.id))
+        self.assertEqual(response.data["job_type"], "run_segmentation_full_task")
         self.assertTrue(
             ImageSegmentation.objects.filter(id=self.segmentation.id).exists()
         )

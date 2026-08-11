@@ -94,8 +94,10 @@ class SegmentCreateView(APIView):
             label_state=label_state,
             source_model="manual",
             confidence_score=None,
-            # No sam_score: SAM is not in this product, and a fabricated 1.0 was
-            # the only thing a hand-drawn object used to carry.
+            # No sam_score: this route is the hand-drawn one, and a fabricated
+            # 1.0 was the only thing such an object used to carry. Objects the
+            # box tool creates do get a real score, but they come through
+            # confirm_segment_geometries, not here.
             features={},
             geometry=polygon,
             centroid=polygon.centroid,

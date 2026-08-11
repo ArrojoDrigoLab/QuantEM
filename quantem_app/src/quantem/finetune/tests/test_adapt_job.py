@@ -101,7 +101,7 @@ class ThresholdOnlyAdaptTests(TestCase):
         segmentation = annotated_segmentation("Adapt no ROI", with_roi=False, organelle="er")
         with pytest.raises(CompletedRoiRequired) as caught:
             _run(segmentation)
-        assert "completed ROI" in str(caught.value)
+        assert "marked as finished" in str(caught.value)
 
     def test_without_a_probability_map_the_job_says_to_run_the_model(self):
         segmentation = annotated_segmentation("Adapt no prob", with_prob=False, organelle="er")

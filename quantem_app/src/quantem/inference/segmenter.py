@@ -12,16 +12,27 @@ assembly of the modules around it:
 
 * :mod:`.specs`        -- which model, what canonical nm/px, what tile size
 * :mod:`.engine`       -- load the pack once, run sliding windows over a region
-* :mod:`.resample`     -- native <-> canonical, mask back with NEAREST
+* :mod:`.resample`     -- native <-> canonical, and the stored native uint8 map
 * :mod:`.postprocess`  -- threshold -> close -> fill -> label -> min area
 * :func:`quantem.seg_core.extraction.build_segment_from_region` -- the shape
   measurements every downstream analysis reads
 
-The one behavioural subtlety: the model predicts on a resampled grid, so the
-foreground decision is made *there* and only the resulting binary mask is
-brought back to native pixels. The native-scale probability map returned in
-``InferenceResult`` is for display and per-object confidence; it is never
-re-thresholded. See :mod:`.resample` for why.
+Where the foreground decision is made
+-------------------------------------
+The model predicts on its own resampled grid, and **nothing is decided there**.
+The probability field is carried back to the image's own pixel coordinates
+(:func:`quantem.inference.resample.probability_to_native`), quantised to uint8
+(:func:`~quantem.inference.resample.quantize_probability`), and *that* array is
+thresholded -- in native coordinates, by
+:func:`~quantem.inference.resample.binarize_quantized` -- after which the
+closing, the hole fill, the labeling and the minimum-area filter all run on
+native pixels too.
+
+The consequence worth stating plainly: a fresh run thresholds the **stored
+uint8 map**, not the in-memory float it came from. That is what makes a later
+threshold movement (the accuracy dial) arithmetically the same operation as the
+run that preceded it instead of a near-miss. See :mod:`.resample` for the
+measured effect of this ordering and for the interpolator it requires.
 """
 
 from __future__ import annotations
@@ -51,6 +62,83 @@ logger = logging.getLogger(__name__)
 #: Single DL output name; also the progress-stage key seen by
 #: ``quantem.seg_core.db.inference``.
 DL_MODEL_NAME = "DINO"
+
+#: ``progress_stage`` values this module writes. They are a subset of
+#: :data:`quantem.jobs.models.PROGRESS_STAGES`, kept as plain strings here so
+#: that :mod:`quantem.inference` stays importable with no Django settings; a
+#: test asserts the two lists agree.
+STAGE_LOADING_MODEL = "loading_model"
+STAGE_INFERENCE = "inference"
+STAGE_EXTRACTING = "extracting"
+
+#: ``progress_unit_label`` for sliding-window inference.
+UNIT_TILE = "tile"
+
+
+def _job_progress():
+    """The running job's progress API, or None when nothing is watching.
+
+    Inference is reached from a CLI call and from tests as well as from a
+    worker, so this is allowed to find nothing. The import is lazy because
+    :mod:`quantem.jobs.reporter` needs Django configured and this module must
+    not.
+    """
+    try:
+        from quantem.jobs import reporter as job_reporter  # noqa: PLC0415
+    except Exception:  # no Django settings, or jobs not installed
+        return None
+    return job_reporter
+
+
+def _report_stage(stage: str, **detail) -> None:
+    progress = _job_progress()
+    if progress is not None:
+        progress.report_stage(stage, detail={k: v for k, v in detail.items() if v is not None})
+
+
+class _NullTileScope:
+    """:class:`~quantem.jobs.reporter.UnitProgressScope`'s surface, no database.
+
+    What inference gets when it is not running under a job.
+    """
+
+    total = 0
+    done = 0
+    write_stats: dict = {}
+
+    def set(self, done: int, *, total: int | None = None) -> None:
+        self.done = int(done)
+        if total is not None:
+            self.total = int(total)
+
+    def advance(self, count: int = 1) -> None:
+        self.done += int(count)
+
+    def finish(self) -> None:
+        return
+
+    def __enter__(self) -> _NullTileScope:
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        return
+
+
+def _tile_scope(total: int, **detail):
+    """A unit-progress scope over ``total`` tiles for the running job.
+
+    Returns a no-op scope with the same surface when there is no job, so the
+    inference path below carries no "is anyone watching" branch.
+    """
+    progress = _job_progress()
+    if progress is None:
+        return _NullTileScope()
+    return progress.unit_scope(
+        total=int(total),
+        label=UNIT_TILE,
+        stage=STAGE_INFERENCE,
+        detail={k: v for k, v in detail.items() if v is not None},
+    )
 
 
 class DinoOrganelleSegmenter(BaseSegmenter):
@@ -92,12 +180,17 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         self._pixel_size_nm = float(pixel_size_nm) if pixel_size_nm else None
         self._overlap = float(overlap)
         self._model: engine.LoadedModel | None = None
-        # Model-scale prediction from the most recent run_dl_inference(), so
-        # extract_instances() can threshold on the grid the model predicted on.
-        self._last_prediction: engine.RegionPrediction | None = None
+        # The stored uint8 probability map, in the image's own pixel
+        # coordinates, from the most recent run_dl_inference() or from
+        # adopt_native_probability_map(). extract_instances() thresholds *this*
+        # -- see the module docstring.
+        self._native_prob: resample.NativeProbabilityMap | None = None
         # Set by apply_adapter(); see there.
         self._adapter_id: str | None = None
         self._adapter_head: Path | None = None
+        # Plain-language sentences about where this run actually ran -- see
+        # ``device_notices``. Empty on the ordinary path.
+        self._device_notices: list[str] = []
 
     # --- Identity ---
 
@@ -119,8 +212,15 @@ class DinoOrganelleSegmenter(BaseSegmenter):
 
     @property
     def persist_probability_maps(self) -> bool:
-        # Probability maps are re-runnable and large; the proofreading UI reads
-        # segments, not maps.
+        # This flag answers exactly one question inside
+        # run_inference_for_segmentation: *may a stored map be substituted for
+        # running the model?* The answer stays no, and it is not the same
+        # question as "is the stored map trustworthy" -- under the native-
+        # coordinate ordering it is, which is what
+        # replay_stored_probability_map exists to use. "Run" means run: a user
+        # who asks for a re-run after fine-tuning, or after changing anything
+        # about the image, must get the model, not last week's bytes. Changing
+        # the *threshold* is a different verb and takes the replay path.
         return False
 
     @property
@@ -131,6 +231,26 @@ class DinoOrganelleSegmenter(BaseSegmenter):
     def fg_threshold(self) -> float:
         """Foreground probability threshold this run will use."""
         return self._fg_threshold
+
+    def set_fg_threshold(self, threshold: float) -> None:
+        """Move the threshold for the next extraction.
+
+        The accuracy dial's backend: with the stored native map in hand
+        (:meth:`adopt_native_probability_map`), changing this and extracting
+        again is the whole operation -- no model, no resampling, no second
+        decision procedure. Setting it does not touch the stored map, which is
+        the point: every threshold reads the same bytes.
+
+        The value lands in provenance through
+        :meth:`get_probability_map_metadata`, alongside the level it becomes and
+        the cut that level actually applies.
+        """
+        value = float(threshold)
+        if not (0.0 <= value <= 1.0):
+            raise ValueError(
+                f"threshold must be a probability in [0, 1]; got {threshold!r}"
+            )
+        self._fg_threshold = value
 
     @property
     def adapter_id(self) -> str | None:
@@ -190,7 +310,18 @@ class DinoOrganelleSegmenter(BaseSegmenter):
     # --- DL inference ---
 
     def load_models(self) -> None:
-        """Resolve and load the pack. Cheap after the first call in a process."""
+        """Resolve and load the pack. Cheap after the first call in a process.
+
+        The first call in a process is *not* cheap -- 4 to 20 s for an exported
+        encoder, minutes for the eager fallback -- and for that whole time the
+        run used to report a hard-coded 5 % and nothing else. Naming the stage
+        before the load starts is what turns that silence into a sentence.
+        """
+        _report_stage(
+            STAGE_LOADING_MODEL,
+            model=self._spec.pack_id,
+            adapter=self._adapter_id,
+        )
         if self._adapter_head is not None:
             self._model = engine.load_adapted_model(
                 self._spec.pack_id,
@@ -213,6 +344,35 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         """
         return getattr(self._model, "encoder_tier", None) if self._model else None
 
+    @property
+    def inference_device(self) -> str | None:
+        """The device the last run finished on: ``cpu`` / ``cuda`` / ``mps``.
+
+        The device the run *finished* on, which is not always the one it was
+        offered: a model that cannot execute on the graphics card, or a card
+        that ran out of memory, moves the run to the processor. Provenance must
+        record what happened, not what was asked for.
+        """
+        return getattr(self._model, "device", None) if self._model else None
+
+    @property
+    def device_notices(self) -> list[str]:
+        """Sentences about where this run ran, for the run record. Usually empty.
+
+        Populated when something changed the arithmetic's location or size --
+        the graphics card could not run this model, or ran short of memory and
+        the batch shrank, or the run moved to the processor part-way through.
+        Each is one plain sentence naming what happened and what it cost, in the
+        app's own vocabulary; none of them asks the user to do anything, because
+        there is nothing for them to do.
+
+        Read by the run task after inference, exactly as ``encoder_tier`` is: a
+        run that took twenty minutes when the estimate said one is the surprise
+        that destroys trust in the estimate, and a silent fallback is how that
+        happens.
+        """
+        return list(self._device_notices)
+
     def get_dl_model_names(self) -> list[str]:
         return [DL_MODEL_NAME]
 
@@ -234,53 +394,127 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         **_kwargs,
     ) -> dict[str, np.ndarray]:
         report = on_progress or (lambda _stage, _fraction: None)
+        self._device_notices = []
         cached = cached_prob_maps.get(DL_MODEL_NAME)
         if cached is not None:
-            self._last_prediction = None
+            # A cached map is already in native coordinates (it was written by
+            # this pipeline). Re-adopting it through the same quantiser is what
+            # makes "thresholds run uniformly on the same stored map" true of
+            # the cached path as well as the fresh one.
+            self.adopt_native_probability_map(
+                resample.NativeProbabilityMap(
+                    data=resample.quantize_probability(cached)
+                )
+            )
+            # The array itself is handed back untouched, as the BaseSegmenter
+            # contract requires; the quantised copy above is what the threshold
+            # will read. For a map this pipeline stored the two are the same
+            # numbers -- the uint8 -> float -> uint8 round trip is exact.
             return {DL_MODEL_NAME: cached}
 
         if self._model is None:
             self.load_models()
 
         report(DL_MODEL_NAME, 0.0)
-        prediction = engine.predict_region(
-            self._model,
-            image,
-            pixel_size_nm=pixel_size_nm or self._pixel_size_nm,
+        effective_pixel_size = pixel_size_nm or self._pixel_size_nm
+        # The denominator goes on the row *before* the first forward pass, so
+        # the run can say "0 of 858 tiles" instead of nothing while the first
+        # tile is in flight. ``on_tile`` then reports whole tiles, and carries
+        # the plan's own total, which supersedes this one if they ever differ.
+        planned_tiles = engine.estimate_tiles(
+            self._spec,
+            image.shape[:2],
+            pixel_size_nm=effective_pixel_size,
             overlap=self._overlap,
-            on_progress=lambda fraction: report(DL_MODEL_NAME, fraction),
         )
-        self._last_prediction = prediction
-
-        native_prob = resample.probability_to_native(
+        with _tile_scope(
+            planned_tiles,
+            model=self._spec.pack_id,
+            organelle=self.ORGANELLE,
+            device=getattr(self._model, "device", None),
+        ) as tiles:
+            prediction = engine.predict_region(
+                self._model,
+                image,
+                pixel_size_nm=effective_pixel_size,
+                overlap=self._overlap,
+                on_progress=lambda fraction: report(DL_MODEL_NAME, fraction),
+                on_tile=lambda done, total: tiles.set(done, total=total),
+            )
+        # Where the run ended up, which a fallback may have changed while those
+        # tiles were being blended. Collected here rather than left in the
+        # engine because the model object is cached across runs and these
+        # sentences belong to this one.
+        self._device_notices = [
+            *getattr(self._model, "load_notices", ()),
+            *getattr(prediction, "notices", ()),
+        ]
+        # Step 3 of the pipeline: the field crosses to the image's own pixel
+        # grid and is quantised, in one call, before anything is decided about
+        # it. The model-scale float is dropped here -- it is not the authority
+        # for anything downstream, and on a 50 MP image it is 200 MB.
+        native = resample.NativeProbabilityMap.from_model_grid(
             prediction.prob, prediction.context
         )
-        if native_prob.shape != image.shape[:2]:
+        if native.shape != tuple(image.shape[:2]):
             raise ValueError(
-                f"prob map shape {native_prob.shape} != image {image.shape[:2]}"
+                f"prob map shape {native.shape} != image {tuple(image.shape[:2])}"
             )
+        self.adopt_native_probability_map(native)
         report(DL_MODEL_NAME, 1.0)
-        return {DL_MODEL_NAME: np.asarray(native_prob, dtype=np.float32)}
+        return {DL_MODEL_NAME: native.as_float()}
 
     def combine_prob_maps(self, prob_maps: dict[str, np.ndarray]) -> np.ndarray:
         return np.asarray(prob_maps[DL_MODEL_NAME], dtype=np.float32)
 
+    # --- The stored native-coordinate map ---
+
+    @property
+    def native_probability_map(self) -> resample.NativeProbabilityMap | None:
+        """The stored uint8 map this segmenter will threshold, or None.
+
+        Public because it is the run's authoritative artifact, not an
+        implementation detail: it is what gets written to disk and what a later
+        threshold movement re-reads.
+        """
+        return self._native_prob
+
+    def adopt_native_probability_map(
+        self, native: resample.NativeProbabilityMap
+    ) -> None:
+        """Use this stored map as the authority for the next extraction.
+
+        Called by :meth:`run_dl_inference` with what the model just produced,
+        and by the replay path
+        (:func:`quantem.seg_core.db.inference.replay_stored_probability_map`)
+        with bytes read back off disk. Both then take the identical threshold
+        path, which is what makes a dial movement and a fresh run agree.
+        """
+        if native.data.dtype != np.uint8:
+            raise TypeError("a stored probability map is uint8")
+        self._native_prob = native
+
     # --- Instance extraction ---
 
     def _foreground_mask(self, prob: np.ndarray) -> np.ndarray:
-        """Binary foreground at native scale.
+        """Binary foreground in the image's own pixel coordinates.
 
-        Threshold on the model's own grid when the last prediction is still the
-        one that produced ``prob``, then map the mask back NEAREST. Falls back to
-        thresholding the native map (cached maps, or a caller that supplied its
-        own probabilities).
+        Thresholds the **stored uint8 map** whenever there is one covering this
+        region -- never the float in ``prob``, which is a dequantised copy of
+        those same bytes and would re-decide them at a different precision.
+
+        The fallback quantises what the caller supplied and thresholds that, so
+        a caller who hands in its own probabilities still gets the one threshold
+        operation this app performs rather than a second, slightly different
+        one.
         """
-        prediction = self._last_prediction
+        native = self._native_prob
         native_shape = tuple(prob.shape[:2])
-        if prediction is not None and prediction.context.native_shape == native_shape:
-            mask = postprocess.binarize(prediction.prob, self._fg_threshold)
-            return resample.mask_to_native(mask, prediction.context)
-        return postprocess.binarize(prob, self._fg_threshold)
+        if native is not None and native.shape == native_shape:
+            return native.foreground(self._fg_threshold)
+        return resample.binarize_quantized(
+            resample.quantize_probability(prob), self._fg_threshold
+        )
 
     def extract_instances(
         self,
@@ -294,12 +528,19 @@ class DinoOrganelleSegmenter(BaseSegmenter):
     ) -> list[ExtractedSegment]:
         report = on_progress or (lambda _fraction: None)
         report(0.0)
+        # Tiles are done; what follows is morphology and measurement, which is
+        # a different kind of work and takes a different amount of time. Saying
+        # so is what stops the tile bar sitting at 100 % looking hung.
+        _report_stage(STAGE_EXTRACTING, organelle=self.ORGANELLE)
 
         area_floor = int(min_area) if min_area is not None else self._min_area
         dx, dy = coordinate_offset or (0.0, 0.0)
 
-        # Morphology and the area filter run at native scale, where
-        # close_radius and min_area are defined.
+        # Every object-level decision is made here, on native pixels: the
+        # threshold (inside _foreground_mask, on the stored uint8 map), then the
+        # closing radius, the hole fill, the labeling and the area floor -- all
+        # of which are defined in native pixels and none of which now sees the
+        # model's grid at all.
         labels = postprocess.postprocess_mask(
             self._foreground_mask(prob),
             close_radius=self._organelle.close_radius,
@@ -335,7 +576,14 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         # a map made at a user-calibrated threshold is not the same artifact as
         # one made at the published default, and the difference has to travel
         # with the pixels rather than live only in a log line.
-        return {
+        #
+        # The map's own provenance is merged in below: which interpolator
+        # carried the field back to native pixels, how it was quantised, the
+        # level the threshold became and the cut that level actually applies,
+        # and that the decision was taken on the stored native map. Those are
+        # the degrees of freedom in the result; a reader who has only the pack
+        # id and the requested threshold cannot reconstruct the boundary.
+        metadata: dict[str, object] = {
             "model_name": model_name,
             "pack_id": self._spec.pack_id,
             "family": self._family,
@@ -348,6 +596,10 @@ class DinoOrganelleSegmenter(BaseSegmenter):
             "adapter_id": self._adapter_id,
             "adapted_head": str(self._adapter_head) if self._adapter_head else None,
         }
+        native = self._native_prob
+        if native is not None:
+            metadata.update(native.provenance(self._fg_threshold))
+        return metadata
 
 
 class DinoMitoSegmenter(DinoOrganelleSegmenter):

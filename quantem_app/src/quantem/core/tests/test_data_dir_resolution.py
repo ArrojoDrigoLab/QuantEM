@@ -150,7 +150,7 @@ def test_the_plugin_is_registered():
 def test_the_pip_default_is_inside_the_environment(monkeypatch):
     """pip channel: the environment *is* the install location.
 
-    ``pip install quantem`` into a venv, conda env or system Python must keep
+    ``pip install quantem-app`` into a venv, conda env or system Python must keep
     its storage with that environment -- delete the environment, and the data
     it owned goes with it -- not in a hidden per-user directory that outlives
     every install and is shared by all of them.

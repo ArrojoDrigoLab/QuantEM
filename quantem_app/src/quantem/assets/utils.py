@@ -539,6 +539,137 @@ def _convert_tiff_to_png_via_numpy(
     return target_file_path
 
 
+def _vips_plane_to_numpy(vips_image) -> np.ndarray:
+    memory = vips_image.write_to_memory()
+    array = np.frombuffer(memory, dtype=np.uint8)
+    return array.reshape(vips_image.height, vips_image.width)
+
+
+def _load_tiff_plane_uint8(tiff_path: Path, metadata: dict) -> np.ndarray:
+    logger = logging.getLogger(__name__)
+
+    if pyvips is not None:
+        try:
+            source_image = pyvips.Image.new_from_file(str(tiff_path), access="sequential")
+            prepared = _prepare_vips_grayscale_uchar(
+                source_image,
+                channels=int(metadata.get("channels", 1) or 1),
+                bit_depth=int(metadata.get("bit_depth", 8) or 8),
+                logger=logger,
+            )
+            return _vips_plane_to_numpy(prepared)
+        except Exception:  # pragma: no cover - exercised only with libvips installed
+            logger.warning(
+                "pyvips could not decode %s; falling back to tifffile",
+                tiff_path,
+                exc_info=True,
+            )
+
+    load_start = time.time()
+    tiff_data = tifffile.imread(str(tiff_path))
+    logger.info(
+        "TIFF decoded in %.2fs, shape: %s, dtype: %s",
+        time.time() - load_start,
+        tiff_data.shape,
+        tiff_data.dtype,
+    )
+    tiff_data = _select_png_grayscale_plane(tiff_data, metadata)
+    if tiff_data.dtype != np.uint8:
+        bit_depth = int(metadata.get("bit_depth", 8) or 8)
+        logger.info("Normalizing %s-bit to 8-bit", bit_depth)
+        tiff_data = _normalize_array_to_uint8(tiff_data, bit_depth=bit_depth)
+    return tiff_data
+
+
+def _load_png_plane_uint8(png_path: Path) -> np.ndarray:
+    with Image.open(png_path) as source_image:
+        if source_image.mode in {"I;16", "I;16B", "I;16L"}:
+            values = np.asarray(source_image, dtype=np.uint16)
+            return _normalize_array_to_uint8(values, bit_depth=16)
+        if source_image.mode == "L":
+            return np.asarray(source_image, dtype=np.uint8)
+        return np.asarray(source_image.convert("L"), dtype=np.uint8)
+
+
+def load_source_plane_uint8(source_path: Path, metadata: dict) -> np.ndarray:
+    """Decode a staged upload to the canonical 8-bit grayscale plane.
+
+    This is the single decode the import pipeline is allowed: the array it
+    returns feeds both the canonical PNG and the NGFF pyramid. The
+    transformation is exactly the one ``convert_tiff_to_png`` /
+    ``convert_png_to_8bit_grayscale`` apply (first band, then native
+    bit-depth scaling for >8-bit integer data, never a min/max stretch), so
+    every consumer sees the same pixels it saw when the PNG was the only
+    canonical form.
+
+    Every failure is reported as a ``ValueError`` that **names this stage**.
+    ``convert_tiff_to_png`` used to do that ("Error converting TIFF to PNG:
+    failed to read 1050000 bytes, got 419846"); when the pipeline stopped going
+    through it, a truncated upload started surfacing as a bare
+    "failed to read 1050000 bytes, got 419846" -- a byte count with nothing to
+    say it was the user's image that would not decode. The decoder's own
+    sentence is kept verbatim inside the message and chained as ``__cause__``.
+    """
+
+    source_path = Path(source_path)
+    is_png = source_path.suffix.lower() in PNG_UPLOAD_SUFFIXES
+    stage = "PNG" if is_png else "TIFF"
+    try:
+        plane = (
+            _load_png_plane_uint8(source_path)
+            if is_png
+            else _load_tiff_plane_uint8(source_path, metadata)
+        )
+        if plane.ndim != 2:
+            raise ValueError(f"unsupported image shape {plane.shape}")
+        # zarr and Pillow both want a contiguous, writable-strided buffer; a
+        # tifffile view or a Pillow-backed asarray can be neither.
+        return np.ascontiguousarray(plane, dtype=np.uint8)
+    except MemoryError as exc:
+        raise ValueError(
+            f"Out of memory: Image is too large to process. {exc}"
+        ) from exc
+    except Exception as exc:
+        raise ValueError(
+            f"Error decoding {stage} to 8-bit grayscale: {exc}"
+        ) from exc
+
+
+def save_plane_as_canonical_png(plane: np.ndarray, target_file_path: Path) -> Path:
+    """Write the canonical 8-bit grayscale PNG from an already-decoded plane.
+
+    Byte-for-byte what the Pillow branch of ``convert_tiff_to_png`` wrote --
+    same mode, same compress level, same ``optimize=False`` -- just without
+    decoding the source a second time to get there.
+    """
+
+    logger = logging.getLogger(__name__)
+    target_file_path = Path(target_file_path)
+    target_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    save_start = time.time()
+    Image.fromarray(plane, mode="L").save(
+        str(target_file_path),
+        "PNG",
+        compress_level=PNG_COMPRESS_LEVEL,
+        optimize=False,
+    )
+    _maybe_sync_png_save(target_file_path)
+
+    if not target_file_path.exists():
+        raise OSError(f"PNG file was not created at {target_file_path}")
+    file_size = target_file_path.stat().st_size
+    if file_size == 0:
+        raise OSError(f"PNG file is empty at {target_file_path}")
+    logger.info(
+        "Canonical PNG written in %.2fs (%s bytes) to %s",
+        time.time() - save_start,
+        file_size,
+        target_file_path,
+    )
+    return target_file_path
+
+
 def validate_upload_file(uploaded_file: UploadedFile) -> tuple[bool, str | None]:
     """
     Validate that the uploaded file is one QuantEM can read.
@@ -597,17 +728,41 @@ def save_uploaded_file_to_temp(uploaded_file: UploadedFile) -> Path:
     return temp_file_path
 
 
+#: Block size for staging an upload. Django's ``UploadedFile.chunks()`` defaults
+#: to 64 kB, which costs ~16k Python-level iterations per GiB for no benefit
+#: when the source is a file on the same volume as the destination.
+UPLOAD_COPY_BLOCK_BYTES = 8 * 1024 * 1024
+
+
 def save_uploaded_file_to_path(uploaded_file: UploadedFile, target_path: Path) -> None:
     """
     Save an uploaded file to a specific target path.
+
+    An upload streamed by :class:`quantem.assets.upload_staging
+    .StagedFileUploadHandler` is already in this directory, so it is claimed
+    with a rename and no bytes move at all. Anything else -- a small in-memory
+    upload, a ``SimpleUploadedFile`` from a test, a caller that did not install
+    the handler -- is copied.
+
+    Note what is deliberately *not* done: renaming Django's own
+    ``TemporaryUploadedFile``. MEASURED on Windows 11 with Python 3.13, its
+    ``tempfile.NamedTemporaryFile`` opens with ``O_TEMPORARY``, so
+    ``os.replace`` on that path either raises ``PermissionError`` or succeeds
+    and is then undone when the handle closes -- ``FILE_FLAG_DELETE_ON_CLOSE``
+    deletes by the file's current name. That is why the handler exists instead.
 
     Args:
         uploaded_file: The uploaded file object
         target_path: Destination path to write to
     """
+    claim = getattr(uploaded_file, "claim", None)
+    if callable(claim):
+        claim(target_path)
+        return
+
     target_path.parent.mkdir(parents=True, exist_ok=True)
     with open(target_path, "wb") as f:
-        for chunk in uploaded_file.chunks():
+        for chunk in uploaded_file.chunks(chunk_size=UPLOAD_COPY_BLOCK_BYTES):
             f.write(chunk)
 
 
@@ -629,14 +784,15 @@ def extract_tiff_metadata(tiff_path: Path) -> dict:
     Nothing measurable works without it: it drives per-organelle resampling and
     every number the analysis suite produces. The same precedence the volume
     reader uses -- OME ``PhysicalSizeX`` first, then the ImageJ/Fiji ``unit``
-    from the ImageDescription block, then the bare
-    ``XResolution``/``ResolutionUnit`` tags (the rule, and what happens when
-    the last two disagree, is documented on
-    ``volume_readers._resolution_tag_nm_and_conflict``) -- so 2D and 3D imports
-    cannot disagree about the same file. Returns ``None`` when the file is
-    silent; a guess would be worse than asking. ``pixel_size_caveat`` carries
-    the conflict note when the file contradicts itself, so it lands in the
-    rendition's ``source_metadata`` and from there on the API payload.
+    from the ImageDescription block, then the Zeiss/Fibics ATLAS record in TIFF
+    tag 51023, then the bare ``XResolution``/``ResolutionUnit`` tags (the rule,
+    and what happens when they disagree, is documented on
+    ``volume_readers.in_plane_pixel_size_nm``) -- so 2D and 3D imports cannot
+    disagree about the same file. Returns ``None`` when the file is silent; a
+    guess would be worse than asking. ``pixel_size_caveat`` carries the conflict
+    note when the file contradicts itself and ``pixel_size_source`` names the
+    tag that supplied the number, so both land in the rendition's
+    ``source_metadata`` and from there on the API payload.
     """
     try:
         with tifffile.TiffFile(str(tiff_path)) as tif:
@@ -666,7 +822,9 @@ def extract_tiff_metadata(tiff_path: Path) -> dict:
         else:
             bit_depth = 8
 
-        pixel_size_nm, pixel_size_caveat = _tiff_pixel_size_nm(tiff_path)
+        pixel_size_nm, pixel_size_caveat, pixel_size_source = _tiff_pixel_size_nm(
+            tiff_path
+        )
 
         return {
             "width": int(width),
@@ -677,25 +835,35 @@ def extract_tiff_metadata(tiff_path: Path) -> dict:
             "shape": shape,
             "pixel_size_nm": pixel_size_nm,
             "pixel_size_caveat": pixel_size_caveat,
+            "pixel_size_source": pixel_size_source,
         }
     except Exception as e:
         raise ValueError(f"Error reading TIFF file: {str(e)}") from e
 
 
 
-def _tiff_pixel_size_nm(tiff_path: Path) -> tuple[float | None, str | None]:
-    """In-plane pixel size in nm plus a conflict note, ``(None, None)`` if silent.
+def _tiff_pixel_size_nm(
+    tiff_path: Path,
+) -> tuple[float | None, str | None, str | None]:
+    """``(nm, caveat, source)``; ``(None, None, None)`` when the file is silent.
 
     Delegates to the same helpers the volume reader uses so a file imported as a
     2D image and the same file imported as a volume report the same scale. The
-    second element is the calibration-conflict caveat from
-    ``volume_readers._resolution_tag_nm_and_conflict`` (a file whose ImageJ
-    unit and baseline ResolutionUnit tag disagree), ``None`` in the normal case.
+    second element is the calibration caveat from
+    ``volume_readers.in_plane_pixel_size_nm`` -- a file that declares its scale
+    twice and disagrees with itself, or a vendor record that no longer matches
+    the raster -- and is ``None`` in the normal case. The third names the tag
+    or block the number came from, so a reader can tell a pixel size the
+    microscope wrote from one a person typed.
+
+    Header reads only; no pixels are decoded, which is what makes this cheap
+    enough to run inside the upload request on a 2 GB file.
     """
     from .volume_readers import (
+        PIXEL_SIZE_SOURCE_OME,
         _imagej_calibration,
         _ome_physical_size,
-        _resolution_tag_nm_and_conflict,
+        in_plane_pixel_size_nm,
     )
 
     try:
@@ -703,16 +871,17 @@ def _tiff_pixel_size_nm(tiff_path: Path) -> tuple[float | None, str | None]:
             if tif.ome_metadata:
                 value = _ome_physical_size(tif.ome_metadata, "X")
                 if value:
-                    return value, None
+                    return value, None, PIXEL_SIZE_SOURCE_OME
             ij = _imagej_calibration(tif)
-            return _resolution_tag_nm_and_conflict(
+            nm, caveat, source = in_plane_pixel_size_nm(
                 tif.pages[0], "XResolution", ij.get("unit")
             )
+            return nm, caveat, source
     except Exception:  # pragma: no cover - a malformed tag must not block upload
         logging.getLogger(__name__).debug(
             "Could not read a pixel size from %s", tiff_path, exc_info=True
         )
-        return None, None
+        return None, None, None
 
 
 # Pillow mode -> (channels, bit depth) for the accepted PNG variants.
@@ -809,7 +978,7 @@ def convert_tiff_to_png(
         )
         raise ValueError(f"Out of memory: Image is too large to process. {str(e)}") from e
     except Exception as e:
-        # pyvips is an optional accelerator (`pip install quantem[vips]`). Its
+        # pyvips is an optional accelerator (`pip install quantem-app[vips]`). Its
         # absence is the normal case for a plain pip install, not a fault, so it
         # is logged at debug; anything else is a real degradation and warns.
         if isinstance(e, RuntimeError) and "pyvips is unavailable" in str(e):
@@ -852,6 +1021,45 @@ def convert_tiff_to_png(
             raise ValueError(f"Error converting TIFF to PNG: {str(fallback_exc)}") from fallback_exc
 
 
+def _save_roi_png_from_ngff(
+    image,
+    roi_path: Path,
+    *,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+) -> bool:
+    """Crop the ROI out of NGFF level 0 instead of the canonical PNG.
+
+    Neither Pillow nor libvips can seek into a PNG, so cropping a 9 MP window
+    out of a 200 MB canonical PNG costs a full decode of the whole image. Level
+    0 of the pyramid holds exactly the same pixels in 1024^2 chunks, so the
+    same window is a handful of chunk reads. Returns ``False`` (and writes
+    nothing) whenever the store is absent or unreadable, which is the normal
+    case for an ROI requested before the pyramid exists.
+    """
+
+    from .task_utils import _ngff_level0_window
+
+    try:
+        window = _ngff_level0_window(image, x, y, width, height)
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "NGFF level-0 ROI crop unavailable for image %s; using the source file",
+            getattr(image, "id", None),
+            exc_info=True,
+        )
+        return False
+    if window is None:
+        # No store, a store whose geometry disagrees with the image, or a
+        # window clipped by the store's bounds -- none of which is the ROI that
+        # was asked for. Fall through rather than write the wrong crop.
+        return False
+    Image.fromarray(window, mode="L").save(str(roi_path))
+    return True
+
+
 @transaction.atomic
 def create_roi_image_from_image(
     image: object,
@@ -874,10 +1082,36 @@ def create_roi_image_from_image(
     roi_filename = f"{roi_id}.png"
     roi_path = ROIS_DIR / roi_filename
 
+    from .task_utils import _source_read_is_already_canonical
+
     file_path = get_file_absolute_path(image)
     logger = logging.getLogger(__name__)
     crop_start = time.time()
-    if pyvips is not None:
+    if _save_roi_png_from_ngff(image, roi_path, x=x, y=y, width=width, height=height):
+        logger.info(
+            "Created ROI %s from image %s via the NGFF pyramid in %.2fs",
+            roi_id,
+            image.id,
+            time.time() - crop_start,
+        )
+    elif not _source_read_is_already_canonical(image):
+        # No pyramid to crop, and the source is >8-bit or multi-band, so the
+        # plain grayscale reads below would saturate or luma-blend it. Decode
+        # the way the importer does instead, or this ROI is a different picture
+        # from the one the user will see in the viewer.
+        from .task_utils import _canonical_plane_from_source_file
+
+        plane = Image.fromarray(_canonical_plane_from_source_file(image), mode="L")
+        plane.crop((x, y, x + width, y + height)).save(
+            str(roi_path), "PNG", compress_level=PNG_COMPRESS_LEVEL, optimize=False
+        )
+        logger.info(
+            "Created ROI %s from image %s via the canonical source decode in %.2fs",
+            roi_id,
+            image.id,
+            time.time() - crop_start,
+        )
+    elif pyvips is not None:
         try:
             source_image = pyvips.Image.new_from_file(str(file_path), access="sequential")
             if source_image.bands > 1:

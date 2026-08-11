@@ -25,7 +25,7 @@ def _resolve_version() -> str:
     from importlib.metadata import PackageNotFoundError, version
 
     try:
-        return version("quantem")
+        return version("quantem-app")
     except PackageNotFoundError:
         pass
 

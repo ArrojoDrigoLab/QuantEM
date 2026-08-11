@@ -138,6 +138,16 @@ def build_and_load_head(
     # Encoder-side parameters: LoRA adapters, or replaced base blocks. An
     # exported encoder already contains them -- see build_segmodel.
     enc_state = ckpt.get("encoder_trainable")
+    # A QuantEM pack whose index is the research tree's carries these tensors in
+    # DINOv3's naming, and its encoder may nonetheless have been built through
+    # timm (see quantem.inference.encoders.build_encoder). The builder attaches
+    # the translation; applying it here rather than inside _load_named_params
+    # keeps the pending_overlay check below comparing like with like. Without
+    # it every fine-tuned block would go unplaced -- which strict mode does
+    # catch, loudly, but only because someone wrote this line.
+    overlay_remap = getattr(model.encoder, "overlay_remap", None)
+    if enc_state and overlay_remap is not None:
+        enc_state = overlay_remap(enc_state)
     exported = bool(getattr(model.encoder, "embeds_pack_state", False))
     if exported:
         info["encoder_state"] = "baked into the exported encoder"

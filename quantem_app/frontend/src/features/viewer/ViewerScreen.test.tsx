@@ -5,20 +5,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ViewerScreen } from "@/features/viewer/ViewerScreen";
 import { useSegmentationOverlayManifests } from "@/hooks/useSegmentationOverlayManifest";
 import { useSelectionStore } from "@/shared/stores/useSelectionStore";
-import type { AssetDetail } from "@/shared/types";
+import type { AssetDetail, StatusStage } from "@/shared/types";
 import {
   createAssetSegmentation,
   getAsset,
   getAssetNgffUrl,
   getAssetSegmentations,
 } from "@/shared/api/assets";
-import { getSegmentationOverlayLutJson } from "@/shared/api/segmentations/overlays";
+import {
+  getSegmentationOverlayLutJson,
+  rebuildSegmentationOverlay,
+} from "@/shared/api/segmentations/overlays";
 import {
   deleteSegmentation,
   getSegmentationDetail,
 } from "@/shared/api/segmentations/lifecycle";
 import { ApiRequestError } from "@/shared/api/core/http";
-import type { SegmentationDeletePreview } from "@/shared/types/segmentation";
+import type {
+  SegmentationDeletePreview,
+  SegmentationOverlayManifest,
+} from "@/shared/types/segmentation";
 
 const { navigateMock, viewerPropsSpy } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -55,6 +61,7 @@ vi.mock("@/shared/api/segmentations/overlays", async () => {
   return {
     ...actual,
     getSegmentationOverlayLutJson: vi.fn(),
+    rebuildSegmentationOverlay: vi.fn(),
   };
 });
 
@@ -76,6 +83,9 @@ vi.mock("@/viewer/components/ImageViewer", () => ({
   },
 }));
 
+// Only the fetching hook is faked. The predicates that decide what a manifest
+// *means* live in `@/hooks/overlayManifestStatus` and are deliberately left
+// real: stubbing them would make the F1 assertions below vacuous.
 vi.mock("@/hooks/useSegmentationOverlayManifest", () => ({
   useSegmentationOverlayManifests: vi.fn(() => ({
     manifests: {},
@@ -108,8 +118,14 @@ function makeImage(overrides: Partial<AssetDetail> = {}): AssetDetail {
 }
 
 function segmentation(
-  status: "COMPLETED" | "RUNNING_INFERENCE" = "COMPLETED",
-  overrides: { id?: string; longName?: string; image?: string } = {}
+  status: StatusStage = "COMPLETED",
+  overrides: {
+    id?: string;
+    longName?: string;
+    image?: string;
+    statusError?: string | null;
+    segmentCounts?: Record<string, number>;
+  } = {}
 ) {
   return {
     id: overrides.id ?? "seg-1",
@@ -126,10 +142,101 @@ function segmentation(
     },
     status_stage: status,
     status_progress: status === "COMPLETED" ? 100 : 30,
-    status_error: null,
-    segment_counts: { CONFIRMED: 3 },
+    status_error: overrides.statusError ?? null,
+    segment_counts: overrides.segmentCounts ?? { CONFIRMED: 3 },
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+  };
+}
+
+/** A built, up-to-date overlay bundle for `segmentationId`. */
+function readyManifest(segmentationId: string) {
+  return {
+    status: "READY" as const,
+    ngff_url: `/segmentation-overlays/${segmentationId}.zarr`,
+    lut_url: `/api/segmentations/${segmentationId}/overlay-lut/`,
+    arrays: ["labels", "border"],
+    label_dtype: "uint32" as const,
+    bundle_version: 1,
+    applied_revision: 4,
+    desired_revision: 4,
+    lut_revision: 4,
+    chunk_size: [256, 256] as [number, number],
+    level_count: 4,
+    width: 1024,
+    height: 1024,
+  };
+}
+
+/**
+ * The shape finding F1 was reproduced from: the run succeeded and left
+ * objects, then the overlay rebuild to revision 6 died on a stray file. The
+ * server has stopped re-queueing, so `desired_revision > applied_revision`
+ * here is permanent.
+ */
+const OVERLAY_BUILD_ERROR =
+  "[WinError 183] Cannot create a file when that file already exists: " +
+  "'D:\\data\\tmp\\segmentation_overlays\\seg-1\\staging'";
+
+function failedManifest(
+  segmentationId: string,
+  overrides: Partial<SegmentationOverlayManifest> = {}
+): SegmentationOverlayManifest {
+  return {
+    ...readyManifest(segmentationId),
+    status: "FAILED",
+    applied_revision: 5,
+    desired_revision: 6,
+    last_error: OVERLAY_BUILD_ERROR,
+    ...overrides,
+  };
+}
+
+type IdMapOverlayProps = {
+  id: string;
+  ngffUrl: string;
+  lut: Uint8Array;
+  maxLabel: number;
+  fillOpacity: number;
+};
+
+function lastIdMapOverlays(): IdMapOverlayProps[] {
+  const lastCall = viewerPropsSpy.mock.calls.at(-1)?.[0] as {
+    overlays?: { idMapOverlays?: IdMapOverlayProps[] };
+  };
+  return lastCall?.overlays?.idMapOverlays ?? [];
+}
+
+/** The alpha byte the LUT assigns `label`: 255 drawn, 0 invisible. */
+function lutAlpha(lut: Uint8Array, label: number): number {
+  return lut[label * 4 + 3];
+}
+
+/**
+ * Drive the interval the component registered at `delay` ms, in place of real
+ * time. Returns a handle that restores the spies.
+ */
+function captureIntervals() {
+  const intervals: Array<{ id: number; delay: number; callback: () => void }> = [];
+  let nextIntervalId = 1;
+  const setIntervalSpy = vi.spyOn(window, "setInterval").mockImplementation(
+    ((handler: TimerHandler, delay?: number) => {
+      const id = nextIntervalId++;
+      if (typeof handler === "function" && typeof delay === "number") {
+        intervals.push({ id, delay, callback: handler as () => void });
+      }
+      return id as unknown as ReturnType<typeof window.setInterval>;
+    }) as unknown as typeof window.setInterval
+  );
+  const clearIntervalSpy = vi
+    .spyOn(window, "clearInterval")
+    .mockImplementation((() => undefined) as typeof window.clearInterval);
+  return {
+    intervals,
+    restore: () => {
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+    },
   };
 }
 
@@ -530,6 +637,206 @@ describe("ViewerScreen", () => {
     });
   });
 
+  /**
+   * Package 0.3: a finished run is visible.
+   *
+   * A run that finishes leaves `CANDIDATES_READY`; `COMPLETED` is written only
+   * by "Mark Image Done" on the labeling screen. The viewer gated both the
+   * overlay's `enabled` flag and its sidebar controls on `COMPLETED`, and then
+   * tinted only `{confirmed, refined, labeled}` — so the result of an 11-27
+   * minute run was undrawn twice over, and the only way to see it was to leave
+   * the viewer and declare the image finished first.
+   */
+  describe("a finished run draws itself", () => {
+    beforeEach(() => {
+      vi.mocked(useSegmentationOverlayManifests).mockReturnValue({
+        manifests: { "seg-1": readyManifest("seg-1") },
+        loading: false,
+        refetching: false,
+        refetch: vi.fn(),
+      });
+    });
+
+    it("draws the objects of a run sitting at CANDIDATES_READY", async () => {
+      vi.mocked(getAssetSegmentations).mockResolvedValue([
+        segmentation("CANDIDATES_READY", { segmentCounts: { CANDIDATE: 17 } }),
+      ]);
+      vi.mocked(getSegmentationOverlayLutJson).mockResolvedValue({
+        lut_revision: 4,
+        bundle_version: 1,
+        max_label: 1,
+        objects: [
+          { label: 1, uuid: "obj-1", is_cell: false, state: "candidate", color: "FF0000" },
+        ],
+      });
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      await screen.findByTestId("image-viewer");
+      // No click, no navigation, no Mark Image Done: the canvas has the layer.
+      await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(1));
+      const overlay = lastIdMapOverlays()[0];
+      expect(overlay.id).toBe("seg-1");
+      expect(lutAlpha(overlay.lut, 1)).toBe(255);
+      // And the segmentation is still CANDIDATES_READY — the card offers the
+      // route to proofreading rather than having taken it.
+      expect(
+        screen.getByRole("button", { name: "Edit / Label" })
+      ).toBeInTheDocument();
+      expect(screen.getByText("Run finished")).toBeInTheDocument();
+    });
+
+    it("gives the checkbox, colour and opacity to a CANDIDATES_READY card", async () => {
+      const user = userEvent.setup();
+      vi.mocked(getAssetSegmentations).mockResolvedValue([
+        segmentation("CANDIDATES_READY"),
+      ]);
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      const checkbox = await screen.findByRole("checkbox");
+      expect(checkbox).toBeChecked();
+      expect(screen.getByText("Color")).toBeInTheDocument();
+      expect(screen.getByText("Opacity")).toBeInTheDocument();
+      expect(screen.getByText("25%")).toBeInTheDocument();
+
+      // The checkbox is live: unticking it takes the layer off the canvas.
+      await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(1));
+      await user.click(checkbox);
+      await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(0));
+    });
+
+    it("switches an overlay on the moment its run finishes", async () => {
+      const timers = captureIntervals();
+      vi.mocked(getAssetSegmentations)
+        .mockResolvedValueOnce([segmentation("RUNNING_INFERENCE")])
+        .mockResolvedValue([segmentation("CANDIDATES_READY")]);
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      try {
+        await screen.findByText("Running inference...");
+        expect(lastIdMapOverlays()).toHaveLength(0);
+
+        const poll = timers.intervals.find((entry) => entry.delay === 3000);
+        expect(poll).toBeDefined();
+        await act(async () => {
+          poll?.callback();
+        });
+
+        // The user did nothing but watch. The overlay appears.
+        await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(1));
+      } finally {
+        timers.restore();
+      }
+    });
+
+    it("leaves an overlay the user turned off turned off across polls", async () => {
+      const user = userEvent.setup();
+      const timers = captureIntervals();
+      // Mito finished; nucleus is still running, which keeps the 3 s poll
+      // alive and re-seeds the overlay config on every tick.
+      const cards = () => [
+        segmentation("CANDIDATES_READY", { id: "seg-1", longName: "Mitochondria" }),
+        segmentation("RUNNING_INFERENCE", { id: "seg-2", longName: "Nucleus" }),
+      ];
+      vi.mocked(getAssetSegmentations).mockResolvedValue(cards());
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      try {
+        const checkbox = await screen.findByRole("checkbox");
+        await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(1));
+        await user.click(checkbox);
+        await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(0));
+
+        const poll = timers.intervals.find((entry) => entry.delay === 3000);
+        expect(poll).toBeDefined();
+        await act(async () => {
+          poll?.callback();
+        });
+
+        expect(screen.getByRole("checkbox")).not.toBeChecked();
+        expect(lastIdMapOverlays()).toHaveLength(0);
+      } finally {
+        timers.restore();
+      }
+    });
+
+    it("draws guesses and kept objects, and not ones the user removed", async () => {
+      vi.mocked(getAssetSegmentations).mockResolvedValue([
+        segmentation("CANDIDATES_READY", {
+          segmentCounts: { CANDIDATE: 1, CONFIRMED: 1, EXCLUDED: 1 },
+        }),
+      ]);
+      vi.mocked(getSegmentationOverlayLutJson).mockResolvedValue({
+        lut_revision: 4,
+        bundle_version: 1,
+        max_label: 3,
+        objects: [
+          { label: 1, uuid: "obj-1", is_cell: false, state: "candidate", color: "FF0000" },
+          { label: 2, uuid: "obj-2", is_cell: false, state: "confirmed", color: "33CC66" },
+          { label: 3, uuid: "obj-3", is_cell: false, state: "excluded", color: "F59E0B" },
+        ],
+      });
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      await screen.findByTestId("image-viewer");
+      await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(1));
+      const { lut } = lastIdMapOverlays()[0];
+      expect(lutAlpha(lut, 1)).toBe(255);
+      expect(lutAlpha(lut, 2)).toBe(255);
+      // A removal is a decision. Painting it back would report it as kept.
+      expect(lutAlpha(lut, 3)).toBe(0);
+    });
+
+    it("says why a run failed instead of the bare word Failed", async () => {
+      vi.mocked(getAssetSegmentations).mockResolvedValue([
+        segmentation("FAILED", {
+          statusError:
+            "Model pack 'quantem:er' is not installed.\n" +
+            "Model packs are downloaded on demand.",
+        }),
+      ]);
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText("Failed")).toBeInTheDocument();
+      expect(
+        screen.getByText(/Model pack 'quantem:er' is not installed\./)
+      ).toBeInTheDocument();
+      // A failed run wrote nothing, so nothing is drawn and nothing is offered
+      // to draw.
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      expect(lastIdMapOverlays()).toHaveLength(0);
+    });
+  });
+
   it("passes layered overlay props to ImageViewer", async () => {
     render(
       <MemoryRouter>
@@ -613,4 +920,171 @@ describe("ViewerScreen", () => {
     });
   });
 
+  /**
+   * Finding F1. A failed overlay build used to leave "Overlay updating…" on
+   * screen for ever (53 consecutive FAILED polls over 6 min 19 s, including a
+   * server restart) while the reason sat unread on every one of those
+   * responses.
+   */
+  describe("a failed overlay build", () => {
+    beforeEach(() => {
+      vi.mocked(getAssetSegmentations).mockResolvedValue([
+        segmentation("CANDIDATES_READY", { segmentCounts: { CANDIDATE: 511 } }),
+      ]);
+      vi.mocked(useSegmentationOverlayManifests).mockReturnValue({
+        manifests: { "seg-1": failedManifest("seg-1") },
+        loading: false,
+        refetching: false,
+        refetch: vi.fn(),
+      });
+    });
+
+    it("stops claiming the overlay is updating", async () => {
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      await screen.findByText("Lipid Droplets");
+      expect(screen.queryByText(/Overlay updating/i)).not.toBeInTheDocument();
+    });
+
+    it("says on screen that the build failed, and why, verbatim", async () => {
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      await screen.findByText("Lipid Droplets");
+
+      // The header slot the eternal spinner used to occupy.
+      expect(
+        screen.getByText(/Overlay could not be rebuilt — see the card/i)
+      ).toBeInTheDocument();
+      // The card: the plain-language part...
+      expect(
+        screen.getByText(/Your objects are safe/i)
+      ).toBeInTheDocument();
+      // ...and the server's actual reason, not a paraphrase of it.
+      expect(
+        screen.getByText(new RegExp(escapeForRegExp(OVERLAY_BUILD_ERROR)))
+      ).toBeInTheDocument();
+      // Which picture they are looking at, and how far behind it is.
+      expect(
+        screen.getByText(/Revision 5 is on disk; revision 6 was requested/i)
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/last overlay that built successfully/i)
+      ).toBeInTheDocument();
+    });
+
+    it("says nothing is drawn when no bundle was ever built", async () => {
+      vi.mocked(useSegmentationOverlayManifests).mockReturnValue({
+        manifests: {
+          "seg-1": failedManifest("seg-1", {
+            ngff_url: null,
+            bundle_version: 0,
+            applied_revision: 0,
+            desired_revision: 1,
+          }),
+        },
+        loading: false,
+        refetching: false,
+        refetch: vi.fn(),
+      });
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      await screen.findByText("Lipid Droplets");
+      expect(
+        screen.getByText(/no version of this overlay has ever finished building/i)
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/last overlay that built successfully/i)
+      ).not.toBeInTheDocument();
+    });
+
+    it("names no reason honestly when the server recorded none", async () => {
+      vi.mocked(useSegmentationOverlayManifests).mockReturnValue({
+        manifests: { "seg-1": failedManifest("seg-1", { last_error: "" }) },
+        loading: false,
+        refetching: false,
+        refetch: vi.fn(),
+      });
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      await screen.findByText("Lipid Droplets");
+      expect(
+        screen.getByText(/The server recorded no reason for it/i)
+      ).toBeInTheDocument();
+    });
+
+    it("retries the build and refetches the manifest", async () => {
+      const user = userEvent.setup();
+      const refetch = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(useSegmentationOverlayManifests).mockReturnValue({
+        manifests: { "seg-1": failedManifest("seg-1") },
+        loading: false,
+        refetching: false,
+        refetch,
+      });
+      vi.mocked(rebuildSegmentationOverlay).mockResolvedValue(
+        readyManifest("seg-1")
+      );
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      await screen.findByText("Lipid Droplets");
+      await user.click(screen.getByRole("button", { name: /Retry overlay build/i }));
+
+      await waitFor(() => {
+        expect(rebuildSegmentationOverlay).toHaveBeenCalledWith(
+          "seg-1",
+          "full",
+          null
+        );
+      });
+      await waitFor(() => expect(refetch).toHaveBeenCalled());
+    });
+
+    it("renders a refused retry instead of swallowing it", async () => {
+      const user = userEvent.setup();
+      vi.mocked(rebuildSegmentationOverlay).mockRejectedValue(
+        new ApiRequestError("Segmentation is complete and locked.", { status: 409 })
+      );
+
+      render(
+        <MemoryRouter>
+          <ViewerScreen />
+        </MemoryRouter>
+      );
+
+      await screen.findByText("Lipid Droplets");
+      await user.click(screen.getByRole("button", { name: /Retry overlay build/i }));
+
+      expect(
+        await screen.findByText(/Segmentation is complete and locked/i)
+      ).toBeInTheDocument();
+    });
+  });
 });
+
+/** Escape a literal (Windows paths are full of regex metacharacters). */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

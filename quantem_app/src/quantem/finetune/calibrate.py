@@ -80,9 +80,36 @@ def masked_dice(
     return 2.0 * float((p & g).sum()) / denom
 
 
+def masked_iou(
+    prob: np.ndarray, gt: np.ndarray, valid: np.ndarray | None, threshold: float
+) -> float | None:
+    """Intersection over union, on the same terms as :func:`masked_dice`.
+
+    Returns ``None`` on the same condition and for the same reason: with no
+    predicted and no true foreground inside the valid region the ratio is 0/0,
+    which is undefined and not zero. Reported beside Dice because they rank
+    identically but do not read identically — a Dice of 0.80 is an IoU of 0.67,
+    and a reader who has one number in mind for "good" needs to be told which.
+    """
+    v = np.ones(prob.shape, dtype=bool) if valid is None else valid.astype(bool)
+    p = (prob >= threshold) & v
+    g = (gt > 0) & v
+    union = int((p | g).sum())
+    if union == 0:
+        return None
+    return float((p & g).sum()) / union
+
+
 def mean_dice(crops: Sequence[Crop], threshold: float) -> float | None:
     """Unweighted mean Dice over crops — each crop counts once, whatever its size."""
     scores = [masked_dice(c.prob, c.gt, c.valid, threshold) for c in crops]
+    scores = [s for s in scores if s is not None]
+    return float(np.mean(scores)) if scores else None
+
+
+def mean_iou(crops: Sequence[Crop], threshold: float) -> float | None:
+    """Unweighted mean IoU over crops. Undefined crops are dropped, not zeroed."""
+    scores = [masked_iou(c.prob, c.gt, c.valid, threshold) for c in crops]
     scores = [s for s in scores if s is not None]
     return float(np.mean(scores)) if scores else None
 

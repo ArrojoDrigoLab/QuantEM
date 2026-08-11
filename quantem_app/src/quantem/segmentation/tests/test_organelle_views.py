@@ -5,6 +5,7 @@ from shapely.geometry import Polygon
 from quantem.assets.roi_state import activate_roi
 from quantem.assets.utils import create_roi_image_from_image
 from quantem.jobs.constants import (
+    JOB_TYPE_LABELS,
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
     JOB_TYPE_RUN_SEGMENTATION_FULL,
     JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -122,9 +123,16 @@ class OrganelleApplyFullImageViewTests(TestCase):
         self.assertEqual(response.status_code, 409)
 
     def test_the_conflict_names_the_blocking_job_and_how_to_clear_it(self):
-        """"A task is already queued or running" with no job id is a dead end:
-        when the blocking job's worker has died, the user cannot cancel what the
-        message will not name."""
+        """"A task is already queued or running" on its own is a dead end: the
+        user cannot clear what the message will not name.
+
+        What names it changed in wave 0c (finding V12). It used to be the job's
+        uuid and ``POST /api/jobs/<id>/cancel/`` -- an identifier that appears
+        nowhere on screen and a request a biologist cannot issue. It is now the
+        task's name as the Tasks & Queues panel writes it, and that panel, which
+        is where the Cancel button actually is. The uuid is still on the payload
+        for clients; it is no longer in the sentence.
+        """
         blocking = Job.objects.create(
             type=JOB_TYPE_RUN_SEGMENTATION_FULL,
             status="RUNNING",
@@ -143,8 +151,11 @@ class OrganelleApplyFullImageViewTests(TestCase):
         self.assertEqual(response.data["job_id"], str(blocking.id))
         self.assertEqual(response.data["job_status"], "RUNNING")
         self.assertEqual(response.data["job_type"], JOB_TYPE_RUN_SEGMENTATION_FULL)
-        self.assertIn(str(blocking.id), response.data["detail"])
-        self.assertIn(f"/api/jobs/{blocking.id}/cancel/", response.data["detail"])
+        detail = response.data["detail"]
+        self.assertIn(JOB_TYPE_LABELS[JOB_TYPE_RUN_SEGMENTATION_FULL], detail)
+        self.assertIn("Cancel it in Tasks & Queues", detail)
+        self.assertNotIn(str(blocking.id), detail)
+        self.assertNotIn("/api/", detail)
 
     def test_a_running_job_is_named_ahead_of_one_queued_behind_it(self):
         Job.objects.create(

@@ -1,10 +1,10 @@
 """Serve the built frontend from the local server.
 
-The pip/conda channel launches ``quantem run``, which starts this server on a
+The pip/conda channel launches ``quantem-app run``, which starts this server on a
 loopback port and opens a window at it — so the server has to serve the UI, not
 just the API. The desktop installer wraps the same package and can either do the
 same or serve ``dist/`` from the shell; either way this is the fallback that
-makes ``pip install quantem && quantem`` a complete application.
+makes ``pip install quantem-app && quantem-app`` a complete application.
 
 Two behaviours that matter:
 
@@ -79,7 +79,7 @@ def _runtime_config_script(request: HttpRequest) -> str:
     ``frontend/src/config.ts::getRuntimeConfig`` has always read this object, and
     nothing ever set it — the seam existed but was dead. The desktop
     shell will inject it before the bundle loads; for the pip channel the server
-    does it here, so ``quantem run`` works with no shell at all.
+    does it here, so ``quantem-app run`` works with no shell at all.
 
     There is no auth token: QuantEM is single-user and loopback-only.
     """

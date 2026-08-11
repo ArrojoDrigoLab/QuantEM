@@ -1,4 +1,4 @@
-"""Model registry endpoints, per ``API_CONTRACT.md`` §Models.
+"""Model registry endpoints, per the API contract's Models section.
 
 Two routes: what models exist and whether they can run here
 (:class:`ModelListView`), and make one usable (:class:`ModelInstallView`). No
@@ -202,11 +202,14 @@ class ModelInstallView(APIView):
             state = "running" if active.status == "RUNNING" else "queued"
             return Response(
                 {
+                    # The job id used to be in this sentence. It is a UUID:
+                    # nothing on any screen shows it, and there is nothing a
+                    # reader can do with it (I-12). It stays in ``job_id``
+                    # below, where the client uses it to find the row.
                     "error": (
-                        f"An install of {pack_id} is already {state} as job "
-                        f"{active.id} (status {active.status}). Not starting "
-                        "another; watch that job in Tasks & Queues, or cancel "
-                        "it first if you meant to start over."
+                        f"{pack_id} is already {state} for download. Not "
+                        "starting another; watch it in Tasks & Queues, or "
+                        "cancel it there first if you meant to start over."
                     ),
                     "job_id": str(active.id),
                     "pack_id": pack_id,
@@ -248,17 +251,30 @@ class ModelInstallView(APIView):
                     "repo_id": hf.HF_REPO_ID,
                     "revision": hf.hf_revision(),
                     "download_bytes": catalogue.download_bytes(spec),
+                    # Read by a person, not by a client: the client already has
+                    # ``job_id`` and the jobs API. An endpoint to poll is not an
+                    # instruction anyone using the app can act on (I-12).
                     "detail": (
-                        f"Downloading {pack_id} from {hf.HF_REPO_URL}. Poll "
-                        f"GET /api/jobs/{job.id}/ for progress."
+                        f"Downloading {pack_id} from {hf.HF_REPO_URL}. "
+                        "Progress appears on this pack's card and in Tasks & Queues."
                     ),
                 },
                 status=status.HTTP_202_ACCEPTED,
             )
 
         source_path = Path(raw_source).expanduser()
-        if not source_path.is_dir():
-            return _error(f"source_path is not a directory on this machine: {source_path}")
+        # ``is_dir()`` does not merely answer False for a path Windows cannot
+        # reach: a disconnected mapped drive raises, and an uncaught OSError
+        # here is a 500 with a Django traceback page in place of a sentence.
+        try:
+            reachable = source_path.is_dir()
+        except OSError:
+            reachable = False
+        if not reachable:
+            return _error(
+                f"There is no folder at {source_path} that QuantEM can read. "
+                "Check the location and try again."
+            )
 
         install_kwargs: dict[str, Any] = {}
         bundle_root = _bundle_root(source_path)

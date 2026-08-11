@@ -1,7 +1,7 @@
 # Building QuantEM release artifacts
 
 Three channels, one package. The pip wheel, the conda package and the desktop
-installer all deliver the same `quantem` Python distribution — the desktop shell
+installer all deliver the same `quantem-app` Python distribution — the desktop shell
 merely wraps it. Model weights ship in **none** of them; they are downloaded at
 runtime (see the README's *Models* section).
 
@@ -29,7 +29,7 @@ pyproject.toml itself (uninstalled checkout). Bump it in one place only.
 **Deliberately not in the wheel:** tests (`**/tests/**`; they assume a dev
 checkout and pytest-django — the sdist keeps them), in-package READMEs
 (`**/README.md`; development documents, the sdist keeps them too), model
-weights, anything from `.scratch`.
+weights, and any build scratch.
 
 **Sdist include patterns are rooted** (`/src/quantem`, `/README.md`, …).
 Hatchling treats an unanchored pattern as a recursive glob — unrooted
@@ -42,28 +42,47 @@ unexpected top-level path, so that cannot recur silently.
 Every artifact that leaves this machine must pass:
 
 ```bash
-python packaging/check_wheel.py dist/quantem-<version>-py3-none-any.whl
-python packaging/check_wheel.py dist/quantem-<version>.tar.gz
+python packaging/check_wheel.py dist/quantem_app-<version>-py3-none-any.whl
+python packaging/check_wheel.py dist/quantem_app-<version>.tar.gz
 ```
 
 It runs `quantem.registry.release.find_local_paths` — the same scanner that
 sanitises model release bundles — over every text file, and fails on model
 weights, `__pycache__`, `node_modules`, any unexpected top-level path, or any
-machine path that is not **pinned**. Three kinds of scanner match are filtered
+machine path that is not **pinned**. Four kinds of scanner match are filtered
 as non-findings: URL routes the app serves (`/api/...`, `/roi/...`),
-data-directory fragments (`<QUANTEM_DATA_DIR>/cache/hf`), and regex/wasm noise
-in minified vendor bundles. Test files are not path-scanned: they ship only in
-the sdist, and the scrubber's own tests hold leak-shaped fixtures by
-construction.
+data-directory fragments (`<QUANTEM_DATA_DIR>/cache/hf`), a platform's own
+documented storage root quoted home-relative in documentation
+(`~/Library/Application Support/QuantEM`), and regex/wasm noise in minified
+vendor bundles.
+
+Extensionless members are scanned by **name** (`METADATA`, `PKG-INFO`,
+`RECORD`, `WHEEL`, `LICENSE`, `NOTICE`). A suffix test cannot see a
+file with no suffix, and `METADATA` embeds the whole README as the long
+description — which is the PyPI project page. Everything in `README.md`
+therefore reached the public through a file the gate could not read.
+
+**Inside tests** the scan is narrowed rather than skipped. Tests ship only in
+the sdist and are genuinely full of path-shaped strings — the scrubber's own
+fixtures have to *be* leaks — but skipping the whole file left 1.8 MB of the
+sdist unread, and four test files carried a live laboratory share, two of them
+as module-level defaults resolved on import. So only one shape is reported
+there: an absolute path that names a specific machine's storage (a drive letter
+or UNC host, then two or more directory-shaped segments). A fixture that needs
+a machine-shaped path writes one with a visibly-example word in a segment —
+`D:\example\legacy\head.pt`, `\\EXAMPLEHOST\share\weights`,
+`C:\Users\someone\AppData\Local\Temp` — and real data lives behind an
+environment variable with no default, so the test skips where the data is
+absent.
 
 What survives filtering must appear in the script's `PINNED` table — exact,
-per-file documentary examples (docstrings of the path-sanitising modules
-themselves, and the Models screen's `e.g. D:\quantem-models-0.1.0`
-placeholder). Pinned hits are printed on every pass, so nothing ships silently;
-any hit not pinned fails.
+per-file documentary examples, chiefly the docstrings of the path-sanitising
+modules themselves. The table **only shrinks** (owner ruling D8): a category
+that deserves to ship becomes a rule, not a new line in it. Pinned hits are
+printed on every pass, so nothing ships silently; any hit not pinned fails.
 
 Then prove the wheel like a stranger would use it: fresh venv, install the
-wheel, `quantem serve`, and check the UI loads, `/api/models/` answers, and an
+wheel, `quantem-app serve`, and check the UI loads, `/api/models/` answers, and an
 image imports and preprocesses against a clean data directory.
 
 ## Conda package
@@ -89,5 +108,6 @@ environment — build in a dedicated environment or CI.
 
 ## Desktop installer
 
-Out of scope here: the shell wraps this same package and spawns
-`quantem serve --port 0`. See the repository's desktop packaging notes.
+Out of scope here: the shell wraps this same package, frozen by PyInstaller into
+a `quantem-server` binary, and spawns `quantem-server serve --port 0` — it does
+not go through the console script. See the repository's desktop packaging notes.

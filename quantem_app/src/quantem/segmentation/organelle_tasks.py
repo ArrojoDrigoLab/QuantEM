@@ -8,10 +8,15 @@ import uuid
 from typing import NoReturn
 
 from quantem.assets.models import ImageROI
+from quantem.jobs.reporter import unit_window
 from quantem.seg_core.db.extraction import extract_and_save_segments, resolve_min_area
-from quantem.seg_core.db.inference import run_inference_for_segmentation
+from quantem.seg_core.db.inference import (
+    TileWindow,
+    _estimate_model_tile_count,
+    run_inference_for_segmentation,
+)
 from quantem.seg_core.model_errors import translate_model_error
-from quantem.seg_core.registry import get_segmenter
+from quantem.seg_core.registry import get_segmenter, get_segmenter_or_none
 
 from .instance_params import supports_instance_params
 from .models import ImageSegmentation, SegmentationConfig, SegmentObject
@@ -110,11 +115,16 @@ def _stale_scale_step(segmentation: ImageSegmentation, uncalibrated: int) -> str
     carries the same caveat, or that the instruction they had just followed
     could never have worked.
 
-    The endpoint is named because it is the only route there is: no screen
-    calls it (the labeling screen's delete actions target CANDIDATE and INFERRED
-    objects), and ``unique_segmentation_per_asset`` refuses a second
-    segmentation of the same organelle on the same image, so "start a new one"
-    is not a way round it either.
+    This used to end by naming the endpoint --
+    ``POST /api/segmentations/<id>/labels/clear`` -- and by saying "No screen
+    offers that yet". Both were wrong by 2026-08-10: I-12 forbids an HTTP verb
+    and a route in a sentence a biologist reads, and the labeling header has
+    carried a **Discard objects and re-run...** button since the
+    calibrated-after-the-fact recovery landed. It now names the button.
+
+    A second segmentation of the same organelle on the same image is refused by
+    ``unique_segmentation_per_asset``, so "start a new one" is still not a way
+    round it.
     """
     now = _asset_pixel_size_nm(segmentation)
     objects = f"{uncalibrated} object(s)"
@@ -134,10 +144,10 @@ def _stale_scale_step(segmentation: ImageSegmentation, uncalibrated: int) -> str
         )
     return (
         f"{opening} A re-run cannot replace them, for the reason above, so they "
-        "have to be discarded first: POST /api/segmentations/"
-        f"{segmentation.id}/labels/clear removes this segmentation's confirmed "
-        "and excluded objects, and inference run after that produces a set "
-        "stamped with the image's pixel size. No screen offers that yet."
+        "have to be discarded first. Discard objects and re-run, on the "
+        "labeling screen, removes this segmentation's confirmed and excluded "
+        "objects and runs the model again; the objects that produces are "
+        "stamped with the image's pixel size."
     )
 
 
@@ -463,8 +473,18 @@ def _run_segmentation(
     source_model: str | None = None,
     force_recompute_prob_maps: bool = False,
     reporter=None,
+    tile_window: TileWindow | None = None,
+    image_array=None,
 ) -> int:
-    """Run inference and save candidates. Returns the number of objects created."""
+    """Run inference and save candidates. Returns the number of objects created.
+
+    ``tile_window`` and ``image_array`` are passed only by
+    :func:`run_segmentation_for_image_task`, which runs several organelles
+    inside one job: the first makes their tile counts add up to one denominator
+    on one row, the second stops the same image being decoded once per
+    organelle. Every other caller leaves both None and gets the behaviour it
+    always had.
+    """
     segmentation, config = _load_segmentation(segmentation_id, segmentation_type)
     segmenter_internal_name = resolve_segmenter_internal_name(
         segmentation_type_internal_name=segmentation.segmentation_type.internal_name,
@@ -516,20 +536,30 @@ def _run_segmentation(
             on_status=on_status,
             on_detail=on_detail,
             force_recompute_prob_maps=force_recompute_prob_maps,
+            tile_window=tile_window,
+            image_array=image_array,
         )
         # Surface a slow-path model load on the job record. The engine has
         # already logged the WARNING (and best-effort rewritten the export);
         # this line is what a user reading Tasks & Queues sees instead of an
         # unexplained multi-minute "Preparing inference workload".
+        #
+        # Plain language, and no artifact name. It used to say the export file
+        # by name and carry a literal "--" (I-12's `double-hyphen`, in a line
+        # the Tasks screen renders); the copy gate could not see it because the
+        # sentence is handed to `reporter.log` positionally, which is the
+        # register the sweep now reads. The filename was also wrong on an
+        # accelerator, where the artifact has a device suffix. The tier is still
+        # in the engine's own WARNING, where a developer can read it.
         encoder_tier = getattr(segmenter, "encoder_tier", None)
         if encoder_tier and encoder_tier != "exported" and reporter is not None:
             try:
                 reporter.log(
                     "warning",
-                    f"The model's exported encoder (encoder_ts.pt) was missing, so it "
-                    f"was rebuilt from raw weights (tier '{encoder_tier}') -- this is "
-                    "why the model load took minutes instead of seconds. QuantEM has "
-                    "tried to rewrite the export so the next run is fast again.",
+                    "This model had to be prepared from scratch before it could "
+                    "run, which is why loading it took minutes instead of "
+                    "seconds. QuantEM has saved the prepared version, so the "
+                    "next run should start quickly.",
                 )
             except Exception:  # a log line must never fail the run
                 logger.debug("Could not record the slow-path note", exc_info=True)
@@ -649,3 +679,351 @@ def run_segmentation_full_task(
         force_recompute_prob_maps=force_recompute_prob_maps,
         reporter=reporter,
     )
+
+
+# --- one run over one image, across every organelle the user ticked -----------
+
+
+def _leg_pack_grid(segmenter) -> tuple[float, int]:
+    """``(canonical nm/px, tile edge)`` -- the grid this pack is walked on.
+
+    Two organelles that share both numbers walk the *same* tile layout over the
+    same resampled image, so running them next to each other keeps the resample
+    and the tiling plan warm and keeps the model cache from thrashing between
+    two different scales. Mitochondria and lipid droplets are both 8 nm; the
+    nucleus head is 25 nm and belongs in its own group.
+
+    Unknown values sort last rather than raising: an unrecognised pack is a
+    newer or older release, not an error, and it still has to run.
+    """
+    spec = getattr(segmenter, "model_spec", None)
+    canonical = getattr(spec, "canonical_nm", None)
+    tile = getattr(spec, "tile_size", None)
+    return (
+        float(canonical) if canonical else float("inf"),
+        int(tile) if tile else 0,
+    )
+
+
+def _publish_legs(reporter, legs: list[dict]) -> None:
+    """Put the per-organelle state on the job row, without losing what is there.
+
+    Read-modify-write, exactly like
+    :class:`quantem.seg_core.db.tile_progress.TileProgressWriter`: the tile
+    count's ``eta_seconds`` and the unit scope's keys live in the same JSON
+    column, and a blind overwrite would drop them a second after they were
+    written.
+
+    Never raises. A run must not fail because a progress row could not be
+    updated -- that is a progress feature breaking the thing it reports on.
+    """
+    job_id = getattr(reporter, "job_id", None)
+    if not job_id:
+        return
+    try:
+        from django.utils import timezone  # noqa: PLC0415
+
+        from quantem.jobs.models import Job  # noqa: PLC0415
+
+        detail = dict(
+            Job.objects.filter(id=job_id)
+            .values_list("progress_detail_json", flat=True)
+            .first()
+            or {}
+        )
+        detail["legs"] = legs
+        Job.objects.filter(id=job_id).update(
+            progress_detail_json=detail, updated_at=timezone.now()
+        )
+    except Exception:
+        logger.debug("could not publish per-organelle progress", exc_info=True)
+
+
+def _plan_legs(asset_shape, raw_legs: list[dict]) -> list[dict]:
+    """Resolve every requested organelle into a leg with its own tile plan.
+
+    The plan is the same arithmetic the run itself will do -- the segmenter is
+    built (which loads no weights) and asked for its tile count over the same
+    region shape -- so the denominator quoted before the run is the number the
+    loop counts to, not a second opinion about it.
+
+    A leg whose segmenter this build cannot construct (the commonest reason
+    being a model that is not installed yet) keeps its place in the list with
+    ``tiles: None``. It is still going to be attempted, and it is still going to
+    be reported; what it cannot do is contribute to a denominator, and a
+    denominator that quietly omits it is how a bar reaches 100 % with an
+    organelle still to run.
+    """
+    planned: list[dict] = []
+    for index, raw in enumerate(raw_legs):
+        segmentation_id = str(raw.get("segmentation_id") or "").strip()
+        if not segmentation_id:
+            raise ValueError("Every organelle in this run needs a segmentation.")
+        segmentation = (
+            ImageSegmentation.objects.select_related("asset", "segmentation_type")
+            .filter(id=segmentation_id)
+            .first()
+        )
+        if segmentation is None:
+            raise ValueError(f"Segmentation {segmentation_id} not found")
+        source_model = normalize_source_model(raw.get("source_model")) or None
+        internal_name = segmentation.segmentation_type.internal_name
+        segmenter_internal_name = resolve_segmenter_internal_name(
+            segmentation_type_internal_name=internal_name,
+            source_model=source_model,
+        )
+        segmenter = get_segmenter_or_none(
+            segmenter_internal_name,
+            source_model=source_model,
+            pixel_size_nm=_asset_pixel_size_nm(segmentation),
+        )
+        tiles = (
+            _estimate_model_tile_count(segmenter, asset_shape)
+            if segmenter is not None and asset_shape is not None
+            else None
+        )
+        planned.append(
+            {
+                "segmentation_id": segmentation_id,
+                "segmentation_type": internal_name,
+                "name": segmentation.segmentation_type.long_name,
+                "source_model": source_model,
+                "tiles": tiles,
+                "grid": _leg_pack_grid(segmenter) if segmenter is not None else
+                (float("inf"), 0),
+                "requested_seq": index,
+            }
+        )
+    # Same grid together, and within a grid the order the user ticked them.
+    planned.sort(key=lambda leg: (leg["grid"], leg["requested_seq"]))
+    return planned
+
+
+def _leg_row(leg: dict, *, status: str, units_done: int = 0) -> dict:
+    """One organelle's line on the job row. Machine-readable; never rendered raw."""
+    return {
+        "segmentation_id": leg["segmentation_id"],
+        "name": leg["name"],
+        "status": status,
+        "units_done": int(units_done),
+        "units_total": int(leg["tiles"]) if leg["tiles"] else 0,
+        "unit_label": "tile",
+    }
+
+
+def run_segmentation_for_image_task(
+    asset_id: str,
+    legs: list[dict],
+    *,
+    force_recompute_prob_maps: bool = False,
+    reporter=None,
+    cancel=None,
+) -> dict:
+    """Run every ticked organelle over one image, in this process, in order.
+
+    Why one job and not four
+    ------------------------
+    Four ``run_segmentation_full_task`` rows over one image measured **45.6 s of
+    repeated cold model loads** for 4.8 s of warm work, and gave the whole-image
+    rollup four independently-moving parts. Running them here, sequentially,
+    inside one worker:
+
+    * the image is decoded **once** and handed to each organelle;
+    * the model cache stays warm across organelles that share a scale, and the
+      cache is sized (``inference.engine.MAX_CACHED_MODELS``) to hold all four;
+    * there is **one** tile denominator, carried by one row, from the moment the
+      job is queued.
+
+    Sequential, not parallel, on purpose: four organelle processes measured
+    8-11 GB resident, and R3's floor is an 8 GB laptop.
+
+    Why one organelle's failure does not end the run
+    ------------------------------------------------
+    Each leg records its own outcome on its own segmentation, so a missing
+    nucleus model does not throw away the mitochondria that already finished.
+    The job still fails at the end if anything failed -- silently succeeding
+    over a partial result is the dishonesty this project's invariants forbid --
+    but it fails *after* the work that could be done was done, and it names
+    which organelles produced objects and which did not.
+    """
+    if not legs:
+        raise ValueError("This run was started without any organelles chosen.")
+
+    asset_shape = _asset_region_shape(asset_id)
+    planned = _plan_legs(asset_shape, legs)
+    grand_total = sum(int(leg["tiles"] or 0) for leg in planned)
+    window = TileWindow(base=0, total=grand_total)
+
+    leg_rows = [_leg_row(leg, status="PENDING") for leg in planned]
+    _publish_legs(reporter, leg_rows)
+
+    # One decode for every organelle. `_run_segmentation` still reads the image
+    # itself when this is None, which is what keeps every other caller unchanged.
+    shared_image = _decode_once(asset_id)
+
+    results: list[dict] = []
+    failures: list[tuple[str, BaseException]] = []
+    for index, leg in enumerate(planned):
+        if cancel is not None:
+            cancel.check_cancelled()
+        leg_rows[index] = _leg_row(leg, status="RUNNING")
+        _publish_legs(reporter, leg_rows)
+        if reporter is not None:
+            reporter.update(message=f"Segmenting {leg['name']}")
+        try:
+            # Everything this leg writes to the job's unit columns -- the tiling
+            # loop's own scope as well as the tile writer -- is offset into the
+            # wave for as long as this block is open. One row, one denominator,
+            # and two writers that cannot disagree about it.
+            with unit_window(window.base, window.total):
+                count = _run_segmentation(
+                    segmentation_id=leg["segmentation_id"],
+                    segmentation_type=leg["segmentation_type"],
+                    roi_id=None,
+                    source_model=leg["source_model"],
+                    force_recompute_prob_maps=force_recompute_prob_maps,
+                    reporter=reporter,
+                    tile_window=window,
+                    image_array=shared_image,
+                )
+        except Exception as exc:  # noqa: BLE001 -- every leg is reported
+            logger.exception(
+                "organelle %s failed inside the image run for asset %s",
+                leg["name"],
+                asset_id,
+            )
+            failures.append((leg["name"], exc))
+            leg_rows[index] = _leg_row(
+                leg, status="FAILED", units_done=window.walked
+            )
+            results.append(
+                {
+                    "segmentation_id": leg["segmentation_id"],
+                    "name": leg["name"],
+                    "status": "FAILED",
+                    "segment_count": 0,
+                    # The sentence `_fail_segmentation` already wrote onto the
+                    # segmentation, so the queue and the labeling header agree.
+                    "detail": str(exc),
+                }
+            )
+        else:
+            # A leg that finished walked its whole plan, whatever the last
+            # progress sample happened to catch.
+            window.note_walked(int(leg["tiles"] or 0))
+            leg_rows[index] = _leg_row(
+                leg, status="SUCCESS", units_done=window.walked
+            )
+            results.append(
+                {
+                    "segmentation_id": leg["segmentation_id"],
+                    "name": leg["name"],
+                    "status": "SUCCESS",
+                    "segment_count": int(count),
+                }
+            )
+        window.advance()
+        _publish_legs(reporter, leg_rows)
+
+    outcome = {
+        "asset_id": str(asset_id),
+        "organelles": results,
+        "segment_count": sum(int(item.get("segment_count") or 0) for item in results),
+        "units_total": grand_total,
+        "units_done": window.base,
+    }
+    if failures:
+        raise _image_run_failure(results, failures)
+    return outcome
+
+
+def _image_run_failure(
+    results: list[dict], failures: list[tuple[str, BaseException]]
+) -> BaseException:
+    """The one sentence a partly-failed image run ends on.
+
+    Names what worked as well as what did not, because the objects the
+    successful organelles produced are real and are already on screen; a bare
+    "failed" over them reads as though the run threw them away.
+
+    Marked as already recorded on the domain objects: every leg wrote its own
+    error onto its own segmentation through :func:`_fail_segmentation`, and the
+    queue's reconciler must not overwrite those with this summary.
+    """
+    from quantem.jobs.failure_reconcile import (  # noqa: PLC0415 -- app cycle
+        mark_domain_status_recorded,
+    )
+
+    done = [item["name"] for item in results if item["status"] == "SUCCESS"]
+    stopped = [name for name, _exc in failures]
+    if done:
+        message = (
+            f"{_join_names(stopped)} did not finish. "
+            f"{_join_names(done)} finished, and those objects are unaffected."
+        )
+    else:
+        message = f"{_join_names(stopped)} did not finish."
+    first = failures[0][1]
+    message = f"{message}\n\n{first}"
+    try:
+        replacement: BaseException = type(first)(message)
+    except Exception:
+        replacement = RuntimeError(message)
+    return mark_domain_status_recorded(replacement)
+
+
+def _join_names(names: list[str]) -> str:
+    if not names:
+        return "Nothing"
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _asset_region_shape(asset_id: str) -> tuple[int, int] | None:
+    """``(height, width)`` the run will tile over, read the way the run reads it.
+
+    Through the same openable inference uses, because a rendition's stored size
+    is what the model sees and the asset's logical size is not always the same
+    number -- and a plan laid out on the wrong one is a denominator that moves
+    when the run starts.
+    """
+    from quantem.assets.asset_openable import get_asset_openable  # noqa: PLC0415
+    from quantem.assets.models import Asset  # noqa: PLC0415
+
+    asset = Asset.objects.filter(id=asset_id).first()
+    if asset is None:
+        raise ValueError(f"Image {asset_id} not found")
+    openable = get_asset_openable(asset, require=False)
+    if openable is None:
+        return None
+    height, width = int(openable.height), int(openable.width)
+    if height <= 0 or width <= 0:
+        return None
+    return (height, width)
+
+
+def _decode_once(asset_id: str):
+    """The image's pixels, decoded once for the whole run, or None.
+
+    None is not a failure: it means this build could not open the image here,
+    and each organelle then reads it for itself exactly as it always did. The
+    run reports the real problem where it happens rather than dying in a
+    performance optimisation.
+    """
+    try:
+        from quantem.assets.asset_openable import get_asset_openable  # noqa: PLC0415
+        from quantem.assets.models import Asset  # noqa: PLC0415
+        from quantem.assets.task_utils import load_image_array  # noqa: PLC0415
+
+        asset = Asset.objects.filter(id=asset_id).first()
+        if asset is None:
+            return None
+        openable = get_asset_openable(asset, require=False)
+        if openable is None:
+            return None
+        img_array, _ = load_image_array(openable)
+        return img_array
+    except Exception:
+        logger.debug("could not pre-decode the image for this run", exc_info=True)
+        return None

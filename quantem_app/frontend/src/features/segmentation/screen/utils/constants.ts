@@ -21,6 +21,12 @@ export const PROCESSING_BANNER_JOB_TYPES = new Set([
   ROI_JOB_TYPE,
   FULL_IMAGE_JOB_TYPE,
 ]);
+/**
+ * A model pack coming down the wire. Watched on this screen because a run
+ * waiting on one looks identical to a run that has hung, and shown as its own
+ * kind of row because bytes are not tiles.
+ */
+export const MODEL_DOWNLOAD_JOB_TYPE = "install_model_pack";
 export const ORGANELLE_ACTION_JOB_TYPES = new Set([
   ROI_JOB_TYPE,
   FULL_IMAGE_JOB_TYPE,

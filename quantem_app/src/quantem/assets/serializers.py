@@ -159,6 +159,46 @@ def file_declared_pixel_size_nm(asset) -> float | None:
     return None
 
 
+def file_declared_pixel_size_source(asset) -> str | None:
+    """Which tag or block in the file supplied the pixel size, or ``None``.
+
+    Travels beside :func:`file_declared_pixel_size_nm`, which can only say
+    *that* the file declared a scale. This says *who declared it*: the
+    microscope (``"TIFF tag 51023 (FibicsXML)"``), Fiji (``"ImageJ
+    ImageDescription unit (TIFF tag 270)"``), the baseline TIFF tags, or
+    OME-XML. The vocabulary is
+    ``volume_readers.PIXEL_SIZE_SOURCE_*``, and the
+    reader records it at import (``source_metadata.pixel_size_source`` for a 2D
+    import, ``volume_metadata.source.extra.calibration_source`` for a volume).
+
+    Absent on assets imported before the vendor-tag reader landed, which is
+    honest: nothing recorded where their number came from, so nothing here can
+    invent it. ``None`` therefore means "not recorded", not "typed by hand" --
+    that comparison is still :func:`file_declared_pixel_size_nm` against
+    ``Asset.pixel_size_nm``.
+    """
+    for rendition in _renditions_full_first(asset):
+        metadata = rendition.metadata
+        if not isinstance(metadata, dict):
+            continue
+
+        source_metadata = metadata.get("source_metadata")
+        if isinstance(source_metadata, dict):
+            source = source_metadata.get("pixel_size_source")
+            if isinstance(source, str) and source.strip():
+                return source
+
+        volume_metadata = metadata.get("volume_metadata")
+        if isinstance(volume_metadata, dict):
+            source_block = volume_metadata.get("source")
+            extra = source_block.get("extra") if isinstance(source_block, dict) else None
+            if isinstance(extra, dict):
+                source = extra.get("calibration_source")
+                if isinstance(source, str) and source.strip():
+                    return source
+    return None
+
+
 def file_declared_pixel_size_caveat(asset) -> str | None:
     """Conflict note recorded when the file's pixel size was read, or ``None``.
 
@@ -195,6 +235,41 @@ def file_declared_pixel_size_caveat(asset) -> str | None:
     return None
 
 
+def _asset_datasets(asset) -> list:
+    """The asset's datasets, from the prefetch when the caller supplied one.
+
+    ``AssetListView`` prefetches them, so a library page costs one extra query
+    for sixty cards rather than sixty.
+    """
+    cache = getattr(asset, "_prefetched_objects_cache", {})
+    prefetched = cache.get("datasets")
+    if prefetched is not None:
+        return list(prefetched)
+    return list(asset.datasets.all())
+
+
+def serialize_asset_grouping(asset) -> dict[str, Any]:
+    """Where this image sits in the library, if anywhere.
+
+    Emitted on the **list** entry and not only on the detail payload, because
+    the library groups and filters on it and a per-card round trip for sixty
+    cards is not a grouping, it is a stampede.
+
+    Every field is nullable or empty and that is the ordinary case: an
+    unorganised library returns ``null`` and ``[]`` here for every image, and
+    nothing downstream may read that as an error or as an incomplete setup.
+    """
+    datasets = _asset_datasets(asset)
+    return {
+        "experiment_id": (
+            str(asset.experiment_id) if asset.experiment_id else None
+        ),
+        "experiment_name": asset.experiment.name if asset.experiment_id else None,
+        "dataset_ids": [str(dataset.id) for dataset in datasets],
+        "dataset_names": [dataset.name for dataset in datasets],
+    }
+
+
 def serialize_asset_entry(asset) -> dict[str, Any]:
     """List-level payload for one Asset."""
 
@@ -220,8 +295,13 @@ def serialize_asset_entry(asset) -> dict[str, Any]:
         # from "entered by hand" without the whole rendition list.
         "file_declared_pixel_size_nm": file_declared_pixel_size_nm(asset),
         # The reader's conflict note when the file declared its scale twice and
-        # the two declarations disagreed (ImageJ unit vs ResolutionUnit tag).
+        # the two declarations disagreed (ImageJ unit vs ResolutionUnit tag vs
+        # the vendor's own tag).
         "file_declared_pixel_size_caveat": file_declared_pixel_size_caveat(asset),
+        # Which tag supplied that number: the microscope's own record, Fiji, or
+        # the baseline TIFF tags. Null on assets imported before the reader
+        # recorded it.
+        "file_declared_pixel_size_source": file_declared_pixel_size_source(asset),
         "metadata_summary": format_image_metadata_summary(
             width=asset.logical_width,
             height=asset.logical_height,
@@ -241,6 +321,7 @@ def serialize_asset_entry(asset) -> dict[str, Any]:
         "can_open": is_workable,
         "can_view": ngff_ready,
         "can_segment": ngff_ready,
+        **serialize_asset_grouping(asset),
     }
 
 

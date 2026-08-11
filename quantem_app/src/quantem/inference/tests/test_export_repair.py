@@ -29,6 +29,14 @@ from quantem.inference.engine import ModelFiles, _repair_export
 from quantem.inference.specs import MODEL_SPECS
 
 
+@pytest.fixture(autouse=True)
+def _forget_refusals():
+    """``_EXPORT_REFUSED`` is process state; no test may inherit another's."""
+    engine._EXPORT_REFUSED.clear()
+    yield
+    engine._EXPORT_REFUSED.clear()
+
+
 @pytest.fixture
 def pack(tmp_path):
     head = tmp_path / "pack" / "head.pt"
@@ -90,9 +98,29 @@ def test_a_failing_rewrite_never_fails_the_run_and_says_why(pack, caplog):
             _repair_export(files, spec, cfg, bundle, model, "cpu")  # must not raise
 
     text = caplog.text
-    assert "could not rewrite" in text
+    assert "could not write" in text
     assert "omniem:mito" in text
     assert "quantem.inference.export" in text  # names the manual route
+
+
+def test_a_refusal_is_not_paid_for_twice_in_one_process(pack):
+    """A trace that cannot be written is expensive to be told about again.
+
+    The QuantEM ViT-B on CUDA is the real case: its trace does not survive the
+    export's own verification, so the artifact is never written and every cold
+    start would otherwise pay the trace to learn that -- MEASURED 51 s against
+    25 s for the eager build alone.
+    """
+    files, spec, cfg, bundle, model = pack
+
+    with patch(
+        "quantem.inference.export.export_built_encoder",
+        side_effect=RuntimeError("does not reproduce the published model"),
+    ) as export:
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+
+    assert export.call_count == 1
 
 
 def test_a_successful_rewrite_is_announced(pack, caplog):
@@ -105,10 +133,59 @@ def test_a_successful_rewrite_is_announced(pack, caplog):
         with caplog.at_level(logging.WARNING, logger="quantem.inference.engine"):
             _repair_export(files, spec, cfg, bundle, model, "cpu")
 
-    assert "rewrote the missing TorchScript encoder" in caplog.text
+    assert "wrote the missing TorchScript encoder for cpu" in caplog.text
 
 
 def test_build_module_and_repair_share_the_export_filename():
     from quantem.inference.encoders import EXPORTED_ENCODER_NAME
 
     assert engine._exported_encoder_name() == EXPORTED_ENCODER_NAME == "encoder_ts.pt"
+
+
+# --- The repair must not poison the pack for another device -----------------
+#
+# MEASURED (gpu_measure): a CUDA run of a pack with no exported encoder wrote a
+# 341 173 139-byte CUDA-traced ``encoder_ts.pt`` into a shared pack directory,
+# after which every CPU run of that pack failed with the mirror device error --
+# permanently, silently, with nothing on screen. These pin the two properties
+# that make it unreachable rather than unlikely.
+
+
+def test_a_cuda_repair_cannot_write_the_cpu_artifact(pack):
+    files, spec, cfg, bundle, model = pack
+
+    with patch("quantem.inference.export.export_built_encoder") as export:
+        export.return_value = SimpleNamespace(
+            path=files.head_path.parent / "encoder_ts.cuda.pt", max_abs_diff=1e-6
+        )
+        _repair_export(files, spec, cfg, bundle, model, "cuda")
+
+    written = Path(export.call_args.kwargs["output"])
+    assert written.name == "encoder_ts.cuda.pt"
+    assert written != files.head_path.parent / "encoder_ts.pt"
+    assert export.call_args.kwargs["device"] == "cuda"
+
+
+def test_a_cpu_artifact_does_not_stop_a_cuda_repair(pack):
+    """The two artifacts are independent: having one is not having the other."""
+    files, spec, cfg, bundle, model = pack
+    (files.head_path.parent / "encoder_ts.pt").write_bytes(b"the cpu one")
+
+    with patch("quantem.inference.export.export_built_encoder") as export:
+        export.return_value = SimpleNamespace(
+            path=files.head_path.parent / "encoder_ts.cuda.pt", max_abs_diff=1e-6
+        )
+        _repair_export(files, spec, cfg, bundle, model, "cuda")
+
+    assert export.call_count == 1
+    assert (files.head_path.parent / "encoder_ts.pt").read_bytes() == b"the cpu one"
+
+
+def test_an_existing_device_artifact_is_never_rewritten(pack):
+    files, spec, cfg, bundle, model = pack
+    (files.head_path.parent / "encoder_ts.cuda.pt").write_bytes(b"already here")
+
+    with patch("quantem.inference.export.export_built_encoder") as export:
+        _repair_export(files, spec, cfg, bundle, model, "cuda")
+
+    export.assert_not_called()

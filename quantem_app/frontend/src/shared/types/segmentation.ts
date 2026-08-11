@@ -94,6 +94,21 @@ export interface SegmentationOverlayMutationState {
  */
 export interface SegmentationOverlayManifest {
   status: "MISSING" | "READY" | "DIRTY" | "BUILDING" | "FAILED";
+  /**
+   * Why the last overlay build failed, verbatim from the server.
+   *
+   * `build_overlay_manifest` has always put this on the payload -- empty when
+   * there is nothing wrong -- and the client threw it away. A `FAILED` status
+   * is terminal: nothing re-queues the build, so if this string is not
+   * rendered the user is left with a spinner that will never stop. It is the
+   * only place the actual cause ("[WinError 183] Cannot create a file when
+   * that file already exists: ...", a full disk, a locked file) is ever said.
+   *
+   * Optional on the type because a `FAILED` manifest from an older server, or
+   * a build that died without recording anything, legitimately has no reason
+   * to give -- and the renderer must say *that* rather than nothing.
+   */
+  last_error?: string;
   ngff_url: string | null;
   lut_url: string;
   arrays: string[];

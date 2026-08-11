@@ -4,6 +4,7 @@ import {
   getAssetPreviewThumbnailUrl,
 } from "@/shared/api/assets";
 import { resolveEntryPixelSize } from "@/shared/pixelSize";
+import { cx } from "@/shared/ui/cx";
 import { Badge, Button } from "@/shared/ui/design";
 import { PixelSizeBadge } from "@/shared/ui/PixelSize";
 import { getStageDisplay } from "@/features/library/components/imageCardUtils";
@@ -17,11 +18,31 @@ export function ImageCard({
   onOpen,
   onDelete,
   deleting = false,
+  justImported = false,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: {
   image: HomeEntry;
   onOpen: (assetId: string) => void;
   onDelete?: (image: HomeEntry) => void;
   deleting?: boolean;
+  /**
+   * This is the image the user just imported. The confirmation strip above the
+   * grid says "it is the first card below"; this is what makes that sentence
+   * point at something.
+   */
+  justImported?: boolean;
+  /**
+   * The library is in selecting mode, so this card carries a tick box.
+   *
+   * Off unless the user asked for it: a permanent checkbox on every card is a
+   * bulk-editing screen, and this is a library. Nothing else about the card
+   * changes -- the name still opens the image, delete is still where it was.
+   */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (assetId: string, selected: boolean) => void;
 }) {
   const assetId = image.id;
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
@@ -29,6 +50,8 @@ export function ImageCard({
     setThumbnailFailed(false);
   }, [image.id, image.updated_at]);
   const ready = image.ngff_ready || image.preprocess_stage === "DONE";
+  const failed =
+    image.preprocess_stage === "FAILED" || image.preprocess_stage === "CANCELLED";
   // Prefer the dedicated PREVIEW rendition when it exists; otherwise fall back
   // to the on-the-fly NGFF thumbnail (the coarsest pyramid level, rendered on
   // demand).
@@ -55,7 +78,31 @@ export function ImageCard({
   // reachable by neither a keyboard nor a touch screen.
   const pixelSize = resolveEntryPixelSize(image);
   return (
-    <article className="relative flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <article
+      className={cx(
+        "relative flex h-full flex-col overflow-hidden rounded-lg border bg-white shadow-sm",
+        justImported
+          ? "border-cyan-500 ring-2 ring-cyan-500 ring-offset-2"
+          : selected
+            ? "border-cyan-600 ring-2 ring-cyan-600"
+            : "border-slate-200"
+      )}
+    >
+      {selectable ? (
+        // Top left, opposite the delete button, so the two destructive-looking
+        // controls are not adjacent. Labelled with the image's name because a
+        // grid of sixty identical unlabelled tick boxes is unusable with a
+        // screen reader.
+        <label className="absolute left-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white/95 shadow-sm">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={selected}
+            aria-label={`Select ${image.display_name}`}
+            onChange={(event) => onToggleSelect?.(assetId, event.target.checked)}
+          />
+        </label>
+      ) : null}
       {onDelete ? (
         <Button
           className="absolute right-2 top-2 z-10 h-8 w-8 border-red-200 bg-white/95 text-red-700 shadow-sm hover:border-red-300 hover:bg-red-50"
@@ -158,7 +205,24 @@ export function ImageCard({
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <Badge tone={ready ? "good" : "warning"}>{getStageDisplay(image)}</Badge>
+          {justImported ? <Badge tone="info">Just imported</Badge> : null}
+          {/* A failed import is not an amber "still working on it". Rendered
+              as its own span rather than through `Badge`'s tone set, which has
+              no danger tone -- and the reason, which is on the payload as
+              `preprocess_error` and was shown nowhere at all, is on the
+              tooltip instead of behind a trip to the Tasks drawer. */}
+          {failed ? (
+            <span
+              className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700"
+              title={image.preprocess_error || undefined}
+            >
+              {getStageDisplay(image)}
+            </span>
+          ) : (
+            <Badge tone={ready ? "good" : "warning"}>
+              {getStageDisplay(image)}
+            </Badge>
+          )}
           <PixelSizeBadge resolved={pixelSize} />
         </div>
       </div>

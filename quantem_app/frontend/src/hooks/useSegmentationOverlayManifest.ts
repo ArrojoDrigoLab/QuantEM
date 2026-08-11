@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { getSegmentationOverlayManifest } from "@/shared/api/segmentations/overlays";
+import { overlayIsUpdating } from "@/hooks/overlayManifestStatus";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import type { SegmentationOverlayManifest } from "@/shared/types/segmentation";
 
@@ -11,13 +12,12 @@ interface UseSegmentationOverlayManifestsOptions {
   pollEnabled?: boolean;
 }
 
+/**
+ * Poll only while a build is genuinely running -- see
+ * `hooks/overlayManifestStatus.ts` for why a FAILED manifest is terminal.
+ */
 function shouldPollManifest(manifest: SegmentationOverlayManifest | undefined): boolean {
-  if (!manifest) return false;
-  return (
-    manifest.status === "BUILDING" ||
-    manifest.status === "DIRTY" ||
-    manifest.desired_revision > manifest.applied_revision
-  );
+  return overlayIsUpdating(manifest);
 }
 
 export function useSegmentationOverlayManifests({
