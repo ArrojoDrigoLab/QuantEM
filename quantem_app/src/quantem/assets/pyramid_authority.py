@@ -419,10 +419,48 @@ _OWNER_LOCKS: dict[str, object] = {}
 OWNER_LOCK_NAME = "owner.lock"
 
 
+def _lock_owner_handle(handle) -> bool:
+    """Try to take the generation-owner lock without waiting.
+
+    Keeping a file open prevents deletion on Windows, but POSIX deliberately
+    permits unlinking open files.  An advisory lock gives both platforms the
+    same liveness signal while retaining Windows' useful delete protection.
+    """
+
+    try:
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt  # noqa: PLC0415 - unavailable on POSIX
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415 - unavailable on Windows
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _unlock_owner_handle(handle) -> None:
+    """Release a lock acquired by :func:`_lock_owner_handle`."""
+
+    with contextlib.suppress(OSError):
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt  # noqa: PLC0415 - unavailable on POSIX
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415 - unavailable on Windows
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def _take_owner_lock(root: Path) -> None:
     """Hold a file open inside this generation for as long as we are building it.
 
-    **A pid is not an identity on Windows.** Measured while writing the kill
+    **A pid is not an identity.** Measured while writing the kill
     harness: after ten kills of a builder, two interrupted generations survived
     the sweep, because Windows had already recycled the dead child's pid onto a
     live python process and the "is that pid alive and is it this app?" test
@@ -430,20 +468,23 @@ def _take_owner_lock(root: Path) -> None:
     would have made the sweep silently useless in exactly the case it exists
     for.
 
-    A held file handle *is* an identity. Windows refuses to delete a file
-    another process has open, and releases the handle when that process dies,
-    however it dies. So the sweeper's liveness test is "can I delete this
-    generation's lock?" -- and if it can, the owner is gone, whatever the pid
-    table says. ``pid`` stays in ``owner.json`` for diagnosis and for the
-    fallback below.
+    A held file lock *is* an identity, and the OS releases it when that process
+    dies however it dies. Windows also refuses to delete the open lock file;
+    POSIX permits unlinking open files, so the advisory lock is the portable
+    signal. The sweeper's liveness test is "can I acquire this generation's
+    lock?" -- and if it can, the owner is gone, whatever the pid table says.
+    ``pid`` stays in ``owner.json`` for diagnosis and for the fallback below.
     """
 
     if str(root) in _OWNER_LOCKS:
         return
     try:
-        handle = (root / OWNER_LOCK_NAME).open("wb")  # noqa: SIM115 - held on purpose
+        handle = (root / OWNER_LOCK_NAME).open("w+b")  # noqa: SIM115 - held on purpose
         handle.write(str(os.getpid()).encode("ascii"))
         handle.flush()
+        if not _lock_owner_handle(handle):
+            handle.close()
+            return
     except OSError:
         return
     _OWNER_LOCKS[str(root)] = handle
@@ -454,6 +495,7 @@ def release_owner_lock(root: Path) -> None:
 
     handle = _OWNER_LOCKS.pop(str(root), None)
     if handle is not None:
+        _unlock_owner_handle(handle)
         with contextlib.suppress(OSError):
             handle.close()
     with contextlib.suppress(OSError):
@@ -471,10 +513,21 @@ def _owner_is_gone(root: Path, owner: dict) -> bool:
     lock = root / OWNER_LOCK_NAME
     if lock.exists():
         try:
-            lock.unlink()
+            probe = lock.open("r+b")
+        except FileNotFoundError:
+            probe = None
         except OSError:
             return False
-        return True
+        if probe is not None:
+            acquired = _lock_owner_handle(probe)
+            if acquired:
+                _unlock_owner_handle(probe)
+            probe.close()
+            if not acquired:
+                return False
+            with contextlib.suppress(OSError):
+                lock.unlink()
+            return True
     pid = owner.get("pid")
     return not isinstance(pid, int) or not _pid_is_this_app(pid)
 

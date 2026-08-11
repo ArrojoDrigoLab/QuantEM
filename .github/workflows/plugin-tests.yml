@@ -31,9 +31,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # CPU-only torch: CI never needs CUDA, and the CUDA wheels are ~2.5 GB. Only Linux
-      # defaults to a CUDA build, so only Linux needs the CPU index; the Windows and macOS
-      # wheels on PyPI are already CPU-only.
+      # CPU-only torch: CI never needs CUDA, and the CUDA wheels are ~2.5 GB. Linux and
+      # Windows both use PyTorch's explicit CPU channel. In particular, this avoids a
+      # Windows PyPI wheel combination that installed successfully but failed while loading
+      # c10.dll. macOS wheels on PyPI are already CPU-only.
       #
       # torchvision is installed *here*, in the same resolve as torch, rather than being
       # left to arrive later as a dependency of timm. Installing only torch from the CPU
@@ -45,11 +46,17 @@ jobs:
       - name: Install torch (CPU)
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
+          if [ "$RUNNER_OS" = "Linux" ] || [ "$RUNNER_OS" = "Windows" ]; then
             pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           else
             pip install torch torchvision
           fi
+
+      - name: Install Linux Qt runtime
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libegl1
 
       - name: Install packages
         run: |

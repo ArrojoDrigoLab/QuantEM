@@ -110,6 +110,14 @@ class DescribeFailureTests(_TempDirMixin, TestCase):
         self.assertIn("target", described)
         self.assertNotIn("'", described)
 
+    def test_an_operation_path_replaces_an_fd_relative_filename(self):
+        blocker = self.temp_dir() / "labels.zarr" / "0"
+        exc = PermissionError(13, "Permission denied", "0")
+
+        described = describe_os_error(exc, operation_path=blocker)
+
+        self.assertEqual(described, f"Permission denied: {blocker}")
+
     def test_our_own_exceptions_keep_their_english(self):
         self.assertEqual(
             describe_failure(OverlayStoreError("The label store is malformed.")),

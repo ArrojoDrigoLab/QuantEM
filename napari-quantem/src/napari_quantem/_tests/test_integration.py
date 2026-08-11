@@ -12,6 +12,15 @@ import os
 import numpy as np
 import pytest
 
+# These are real-weight integration tests. Skip before importing napari or
+# torch when the artifacts are absent: a broken optional accelerator install
+# must not turn an intentionally disabled test module into a collection error.
+if not os.environ.get("QUANTEM_MODEL_DIR"):
+    pytest.skip(
+        "set QUANTEM_MODEL_DIR to a directory of published artifacts",
+        allow_module_level=True,
+    )
+
 napari = pytest.importorskip("napari")
 pytest.importorskip("torch")
 
@@ -19,11 +28,6 @@ from napari_quantem import _models
 from napari_quantem._widget_finetune import FineTuneWidget
 from napari_quantem._widget_measure import MeasureWidget
 from napari_quantem._widget_segment import SegmentWidget
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("QUANTEM_MODEL_DIR"),
-    reason="set QUANTEM_MODEL_DIR to a directory of published artifacts",
-)
 
 
 def _have_artifacts() -> bool:

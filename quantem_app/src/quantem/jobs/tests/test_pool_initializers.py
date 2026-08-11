@@ -224,6 +224,7 @@ def test_a_pool_child_with_the_initializer_can_import_an_app_module():
 #: order.
 _NEGATIVE_CONTROL = textwrap.dedent(
     """
+    import multiprocessing as mp
     import os
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "quantem.core.settings")
 
@@ -243,7 +244,12 @@ _NEGATIVE_CONTROL = textwrap.dedent(
 
     if __name__ == "__main__":
         # No initializer: pool-initializer-exempt, this call IS the bug.
-        executor = ProcessPoolExecutor(max_workers=1)
+        # Force a fresh interpreter on every OS. Linux otherwise defaults to
+        # fork and inherits the parent's already-ready Django app registry.
+        executor = ProcessPoolExecutor(  # pool-initializer-exempt, this call IS the bug.
+            max_workers=1,
+            mp_context=mp.get_context("spawn"),
+        )
         try:
             executor.submit(render.rasterize_tile_worker, payload).result(timeout=120)
         except BrokenProcessPool as exc:

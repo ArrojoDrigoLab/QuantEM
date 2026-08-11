@@ -102,7 +102,7 @@ class PublishRaceTests(SimpleTestCase):
     """Forty publishes under three reading processes."""
 
     def test_no_reader_ever_sees_a_blank_or_partial_window_during_a_publish(self):
-        result = run_driver("publish_race", PUBLISH_ROUNDS, READER_PROCESSES)
+        result = run_driver("publish_race", PUBLISH_ROUNDS, READER_PROCESSES, MINIMUM_READS)
         try:
             verdicts = result["verdicts"]
             self.assertGreaterEqual(
@@ -209,9 +209,9 @@ class StrictStoreTests(TestCase):
 
 
 class SweepUnderOpenHandleTests(TestCase):
-    """A superseded generation that a reader still holds is not "removed"."""
+    """Deletion accounting matches whether the obsolete path survived."""
 
-    def test_a_held_generation_is_reported_still_held_and_collected_afterwards(self):
+    def test_an_open_generation_is_reported_according_to_filesystem_semantics(self):
         source = Path(DATA_DIR) / f"held-{uuid.uuid4().hex[:8]}.tif"
         tifffile.imwrite(str(source), (np.mgrid[0:1152, 0:1152][1] % 200).astype(np.uint8))
         asset = stage_asset(source)
@@ -230,20 +230,30 @@ class SweepUnderOpenHandleTests(TestCase):
             owner["sealed_at"] = owner["sealed_at"] - NGFF_DRAIN_SECONDS - 10
             (first / "owner.json").write_text(json.dumps(owner), encoding="utf-8")
             result = sweep_asset(asset.id, published_generation=second.name)
-            self.assertEqual(
-                result.still_held,
-                1,
-                "a generation with a chunk open inside it was reported as removed; "
-                "rmtree(ignore_errors=True) silently leaves the root behind, which "
-                "is how a 44 MB build root survived a restart",
-            )
-            self.assertEqual(result.removed, 0)
-            self.assertTrue(first.exists())
+            if os.name == "nt":
+                self.assertEqual(
+                    result.still_held,
+                    1,
+                    "a generation with a chunk open inside it was reported as removed; "
+                    "rmtree(ignore_errors=True) silently leaves the root behind, which "
+                    "is how a 44 MB build root survived a restart",
+                )
+                self.assertEqual(result.removed, 0)
+                self.assertTrue(first.exists())
+            else:
+                # POSIX unlinks an open file safely: the reader keeps its inode
+                # until close, while the obsolete path and its disk-space claim
+                # disappear immediately. Reporting that as removed is honest.
+                self.assertEqual(result.still_held, 0)
+                self.assertEqual(result.removed, 1)
+                self.assertFalse(first.exists())
+                handle.seek(0)
+                self.assertTrue(handle.read(1))
         finally:
             handle.close()
         _open_generation_level_cache_clear()
         after = sweep_asset(asset.id, published_generation=second.name)
-        self.assertEqual(after.removed, 1)
+        self.assertEqual(after.removed, 1 if os.name == "nt" else 0)
         self.assertFalse(first.exists())
         self.assertEqual(
             sorted(child.name for child in asset_generation_dir(asset.id).iterdir()),

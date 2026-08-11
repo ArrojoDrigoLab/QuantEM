@@ -159,13 +159,14 @@ def test_the_pip_default_is_inside_the_environment(monkeypatch):
     assert default_data_dir() == Path(sys.prefix).resolve() / "quantem-data"
 
 
-def test_the_frozen_default_sits_beside_the_install(monkeypatch, tmp_path):
-    """Executable channel: ``<install>\\data``, derived from the exe path.
+def test_the_frozen_default_uses_the_platform_install_location(monkeypatch, tmp_path):
+    """Executable channel: writable storage appropriate to its install layout.
 
     The installer's layout is ``<install>\\QuantEM.exe`` plus
     ``<install>\\quantem-server\\quantem-server.exe``; the frozen server is the
     process that resolves the data directory, so the install root is its exe's
-    grandparent.
+    grandparent. macOS is the exception: a translocated application bundle is
+    read-only, so it uses the standard Application Support directory.
     """
     from quantem.cli import default_data_dir
 
@@ -174,7 +175,12 @@ def test_the_frozen_default_sits_beside_the_install(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(exe))
 
-    assert default_data_dir() == tmp_path / "SomeChosenDir" / "data"
+    expected = (
+        Path.home() / "Library" / "Application Support" / "QuantEM"
+        if sys.platform == "darwin"
+        else tmp_path / "SomeChosenDir" / "data"
+    )
+    assert default_data_dir() == expected
 
 
 def test_the_env_var_still_wins_in_a_frozen_build(monkeypatch, tmp_path):

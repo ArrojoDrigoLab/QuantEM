@@ -111,7 +111,7 @@ def _spawn(mode: str, *args) -> subprocess.Popen:
 # ---------------------------------------------------------------------------
 
 
-def mode_publish_race(rounds: str, readers: str, workdir: str) -> dict:
+def mode_publish_race(rounds: str, readers: str, minimum_reads: str, workdir: str) -> dict:
     import numpy as np
 
     from quantem.assets.canonical_decode import decode_canonical_plane
@@ -140,7 +140,22 @@ def mode_publish_race(rounds: str, readers: str, workdir: str) -> dict:
     for _ in range(int(rounds)):
         regenerate_ngff_from_plane(openable, plane)
         published += 1
-    time.sleep(1.0)
+    # A fixed sleep made the coverage assertion depend on runner speed. Wait
+    # for the readers themselves to report the requested sample count instead.
+    read_deadline = time.time() + 120
+    observed_reads = 0
+    while time.time() < read_deadline:
+        observed_reads = 0
+        for progress in work.glob("reader-*.progress"):
+            try:
+                observed_reads += int(progress.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+        if observed_reads >= int(minimum_reads):
+            break
+        if any(child.poll() is not None for child in children):
+            break
+        time.sleep(0.05)
     stop.write_text("stop", encoding="utf-8")
     for child in children:
         child.wait(timeout=120)
@@ -179,6 +194,8 @@ def mode_reader(asset_id: str, workdir: str, index: str) -> dict:
 
     verdicts: dict[str, int] = {}
     samples: list[dict] = []
+    reads = 0
+    progress = work / f"reader-{index}.progress"
     (work / f"reader-{index}.ready").write_text("ready", encoding="utf-8")
     stop = work / "stop"
     while not stop.exists():
@@ -186,12 +203,18 @@ def mode_reader(asset_id: str, workdir: str, index: str) -> dict:
             window = load_image_roi_array(openable, x, y, width, height)
         except PyramidChunkMissing:
             verdicts["CHUNK_MISSING"] = verdicts.get("CHUNK_MISSING", 0) + 1
+            reads += 1
+            if reads % 64 == 0:
+                progress.write_text(str(reads), encoding="utf-8")
             continue
         except Exception as exc:  # noqa: BLE001
             key = f"ERROR:{type(exc).__name__}"
             verdicts[key] = verdicts.get(key, 0) + 1
             if len(samples) < 5:
                 samples.append({"verdict": key, "detail": str(exc)[:200]})
+            reads += 1
+            if reads % 64 == 0:
+                progress.write_text(str(reads), encoding="utf-8")
             continue
         if np.array_equal(window, expected):
             verdict = "OK"
@@ -209,6 +232,10 @@ def mode_reader(asset_id: str, workdir: str, index: str) -> dict:
                     }
                 )
         verdicts[verdict] = verdicts.get(verdict, 0) + 1
+        reads += 1
+        if reads % 64 == 0:
+            progress.write_text(str(reads), encoding="utf-8")
+    progress.write_text(str(reads), encoding="utf-8")
     (work / f"reader-{index}.json").write_text(
         json.dumps({"verdicts": verdicts, "samples": samples}), encoding="utf-8"
     )
@@ -251,12 +278,18 @@ def _read_owner_json(root: Path) -> dict | None:
 def _hard_kill(child: subprocess.Popen) -> None:
     """Stop a builder we started, by pid, and be sure it is gone.
 
-    ``taskkill /T /F`` first (it takes any grandchildren with it); ``kill()``
-    as the backstop so a driver never hangs waiting for a process that ignored
-    the first attempt.
+    Windows needs ``taskkill /T /F`` to include grandchildren. POSIX
+    ``Popen.kill`` is SIGKILL and this builder has no child processes.
     """
 
-    subprocess.run(["taskkill", "/PID", str(child.pid), "/T", "/F"], capture_output=True, text=True)
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(child.pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+        )
+    else:
+        child.kill()
     try:
         child.wait(timeout=30)
         return

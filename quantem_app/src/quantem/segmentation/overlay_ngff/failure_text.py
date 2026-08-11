@@ -32,7 +32,7 @@ def _clean(value: object) -> str:
     return str(value).strip() if value is not None else ""
 
 
-def describe_os_error(exc: OSError) -> str:
+def describe_os_error(exc: OSError, *, operation_path: object | None = None) -> str:
     """``"<what went wrong>: <real path>"`` for a filesystem failure.
 
     Both halves are optional in principle -- an :class:`OSError` raised by hand
@@ -41,10 +41,18 @@ def describe_os_error(exc: OSError) -> str:
 
     ``filename2`` is included when the operation had two of them (a rename, a
     copy): saying only the source of a failed rename hides half the problem.
+    ``operation_path`` supplies the full path when an fd-based stdlib operation
+    records only a child name in ``filename``.
     """
     reason = _clean(getattr(exc, "strerror", None))
-    filename = _clean(getattr(exc, "filename", None))
-    filename2 = _clean(getattr(exc, "filename2", None))
+    if operation_path is None:
+        filename = _clean(getattr(exc, "filename", None))
+        filename2 = _clean(getattr(exc, "filename2", None))
+    else:
+        # fd-based shutil operations may report only the child name ("0") in
+        # OSError.filename. Its callback carries the complete failing path.
+        filename = _clean(operation_path)
+        filename2 = ""
 
     if filename and filename2 and filename2 != filename:
         where = f"{filename} -> {filename2}"

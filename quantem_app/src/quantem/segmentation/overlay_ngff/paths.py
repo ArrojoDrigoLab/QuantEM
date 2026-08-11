@@ -124,9 +124,9 @@ def _remove_tree(path: Path) -> None:
             last_error = exc
             time.sleep(0.05 * (attempt + 1))
 
-    final_error: OSError | None = None
+    final_error: tuple[OSError, object] | None = None
 
-    def _record(_func, _path, exc: BaseException) -> None:
+    def _record(_func, failed_path, exc: BaseException) -> None:
         # `onexc` without a re-raise is `ignore_errors=True` that keeps the
         # evidence. Only the *first* failure of this pass is kept: everything
         # after it is a consequence -- the held chunk file cannot be unlinked,
@@ -135,14 +135,16 @@ def _remove_tree(path: Path) -> None:
         # least useful reason of the three.
         nonlocal final_error
         if final_error is None and isinstance(exc, OSError):
-            final_error = exc
+            final_error = (exc, failed_path)
 
     shutil.rmtree(path, onexc=_record)
     if path.exists():
-        blocker = final_error or last_error
+        blocker = final_error[0] if final_error is not None else last_error
+        blocker_path = final_error[1] if final_error is not None else None
         if blocker is not None:
             raise OverlayStoreError(
-                f"Could not remove the overlay folder. {describe_os_error(blocker)}"
+                "Could not remove the overlay folder. "
+                f"{describe_os_error(blocker, operation_path=blocker_path)}"
             )
         raise OverlayStoreError(f"Could not remove the overlay folder: {path}")
 
