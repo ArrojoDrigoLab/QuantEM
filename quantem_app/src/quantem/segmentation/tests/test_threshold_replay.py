@@ -185,12 +185,15 @@ class ThresholdReplayTests(TestCase):
                 return_value=segmenter,
             ),
         ):
-            count = run_segmentation_full_task(
+            stored_count = run_segmentation_full_task(
                 segmentation_id=str(self.segmentation.id),
                 segmentation_type=MITO_INTERNAL_NAME,
                 source_model=SOURCE_MODEL,
             )
-        return count, segmenter
+        assert stored_count == 1
+        # A first run now publishes only the saved threshold result. The first
+        # Apply is the operation that materializes its candidate objects.
+        return self._replay(threshold), segmenter
 
     def _replay(self, threshold: float) -> int:
         """The dial: no model, no engine patch -- nothing may try to load one."""

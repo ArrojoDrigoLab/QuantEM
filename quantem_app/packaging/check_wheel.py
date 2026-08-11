@@ -85,7 +85,7 @@ URL_PREFIXES = (
     # route fragments in core/urls.py under the segmentation include
     "/overlay-manifest/", "/overlay-rebuild/", "/overlay-lut/", "/roi/",
     "/user-feedback/", "/config/", "/rerun-roi/", "/apply-full-image/",
-    "/spot-check/", "/spot-check/answer", "/runs/",
+    "/spot-check/", "/spot-check/answer", "/runs/", "/include-level/",
     # The SAM app's box route. Only the fragment is listed, because the scanner
     # never sees the whole route: a path converter is not a path character, so
     # ``sam/segmentations/<uuid:seg_id>/box/`` reads as a POSIX absolute path

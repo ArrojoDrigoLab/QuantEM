@@ -161,27 +161,41 @@ def handle_reextract_at_include_level(
     # so ``classify_exception`` gives the failure the code the client renders a
     # "Run inference again" control for. Catching it here could only make the
     # message vaguer and drop the code.
+    stored_metadata: dict[str, object] = {}
     result, image_array = replay_stored_probability_map(
         segmenter,
         segmentation,
         threshold=include_level,
         roi=roi,
         on_detail=lambda message: reporter.log("info", message),
+        on_stored_metadata=stored_metadata.update,
     )
 
     cancel.check_cancelled()
     reporter.update(progress=40.0, message="finding the objects at the new level")
 
     area_floor = resolve_min_area(segmenter, None)
+    stored_finished_at = stored_metadata.get("run_finished_at")
     run_identity = run_identity_from_segmenter(
         segmenter,
-        run_id=str(getattr(reporter, "job_id", "") or "include-level"),
+        run_id=str(
+            stored_metadata.get("run_id")
+            or getattr(reporter, "job_id", "")
+            or "include-level"
+        ),
         pack_id_fallback=source_model or segmenter.name,
         native_pixel_size_nm=_asset_pixel_size_nm(segmentation),
         min_area=area_floor,
+        finished_at=str(stored_finished_at) if stored_finished_at else None,
         scope=RUN_SCOPE_PATCH if roi is not None else RUN_SCOPE_FULL,
         include_level=include_level,
     )
+    if "adapter_id" in stored_metadata:
+        adapter_id = stored_metadata.get("adapter_id")
+        run_identity["adapter_id"] = str(adapter_id) if adapter_id else None
+    if "device" in stored_metadata:
+        device = stored_metadata.get("device")
+        run_identity["device"] = str(device) if device else None
 
     segment_count = extract_and_save_segments(
         segmenter,

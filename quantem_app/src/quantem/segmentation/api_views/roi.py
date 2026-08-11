@@ -201,8 +201,8 @@ class SegmentationRoiListCreateView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            roi_min_size = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "6000"))
-            roi_size = int(os.environ.get("ROI_SIZE", "3000"))
+            roi_min_size = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "512"))
+            roi_size = int(os.environ.get("ROI_SIZE", "512"))
             if target_image.width >= roi_min_size and target_image.height >= roi_min_size:
                 roi_result = select_roi_for_image(target_image, roi_size=roi_size, seed=seed)
                 roi_x, roi_y, roi_w, roi_h = (

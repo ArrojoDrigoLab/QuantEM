@@ -227,6 +227,11 @@ class _StubReporter:
         return None
 
 
+class _StubCancel:
+    def check_cancelled(self) -> None:
+        return None
+
+
 class RunIdentityOnRealObjectsTests(TestCase):
     """The whole path: a run, then the objects it wrote.
 
@@ -257,7 +262,9 @@ class RunIdentityOnRealObjectsTests(TestCase):
         engine.cache_model(
             engine.LoadedModel(
                 spec=MODEL_SPECS["quantem:mito"],
-                device="cpu",
+                # Match the auto-selected device so a CUDA test environment
+                # does not miss this stand-in cache and reach for real weights.
+                device=engine.select_device(None),
                 module=None,
                 forward=forward,
                 encoder_tier="stand-in",
@@ -266,14 +273,29 @@ class RunIdentityOnRealObjectsTests(TestCase):
         self.addCleanup(engine.clear_model_cache)
 
     def _run(self, reporter=None) -> int:
+        from quantem.jobs.handlers.rethreshold import (
+            handle_reextract_at_include_level,
+        )
         from quantem.segmentation.organelle_tasks import run_segmentation_full_task
 
-        return run_segmentation_full_task(
+        stored_count = run_segmentation_full_task(
             segmentation_id=str(self.segmentation.id),
             segmentation_type=self.segmentation.segmentation_type.internal_name,
             source_model="quantem:mito",
             reporter=reporter,
         )
+        self.assertEqual(stored_count, 1)
+        apply_reporter = reporter or _StubReporter("include-level")
+        outcome = handle_reextract_at_include_level(
+            {
+                "segmentation_id": str(self.segmentation.id),
+                "source_model": "quantem:mito",
+                "include_level": self.CALIBRATED,
+            },
+            apply_reporter,
+            _StubCancel(),
+        )
+        return int(outcome["segment_count"])
 
     def _adapter(self, **overrides):
         from django.utils import timezone

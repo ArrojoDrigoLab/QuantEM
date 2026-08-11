@@ -292,6 +292,7 @@ export interface SegmentationType {
 export type StatusStage =
   | "UNSTARTED"
   | "RUNNING_INFERENCE"
+  | "THRESHOLD_READY"
   | "EXTRACTING_CANDIDATES"
   | "CANDIDATES_READY"
   | "UPDATING"

@@ -36,6 +36,7 @@ export function buildLeftPanelWorkflowState({
   correctionMode,
   isGroupActionModeActive,
   roiPlacementActive,
+  samBoxActive,
 }: {
   isTissueSegmentation: boolean;
   tissueTool: "brush" | "polygon" | "exclude";
@@ -48,6 +49,7 @@ export function buildLeftPanelWorkflowState({
   };
   isGroupActionModeActive: boolean;
   roiPlacementActive: boolean;
+  samBoxActive?: boolean;
 }) {
   if (isTissueSegmentation) {
     // The tissue brush reuses the existing correction-draw brush plumbing; the
@@ -63,6 +65,7 @@ export function buildLeftPanelWorkflowState({
         groupConfirmActive: false,
         targetCursorActive: false,
         roiPlacementActive: false,
+        samBoxActive: false,
       };
     }
     return {
@@ -74,6 +77,7 @@ export function buildLeftPanelWorkflowState({
       groupConfirmActive: false,
       targetCursorActive: false,
       roiPlacementActive: false,
+      samBoxActive: false,
     };
   }
   return {
@@ -85,14 +89,17 @@ export function buildLeftPanelWorkflowState({
     groupConfirmActive: isGroupActionModeActive,
     targetCursorActive: false,
     roiPlacementActive,
+    samBoxActive: Boolean(samBoxActive),
   };
 }
 
 export function buildSegmentationRoiViewModel(
-  activeRoi: SegmentationLeftPanelProps["roi"]["activeRoi"]
+  activeRoi: SegmentationLeftPanelProps["roi"]["activeRoi"],
+  completedRois: SegmentationLeftPanelProps["roi"]["completedRois"] = []
 ): SegmentationLeftPanelProps["roi"] {
   return {
     activeRoi,
+    completedRois,
     roiPoints: [],
     roiPointsSubmitted: 0,
     roiComplete: Boolean(activeRoi?.is_complete),

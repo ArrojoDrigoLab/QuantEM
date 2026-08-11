@@ -6,7 +6,6 @@ import { SegmentationRightPanel } from "@/features/segmentation/components/Segme
 import { SegmentationLeftPanel } from "@/features/segmentation/components/SegmentationLeftPanel";
 import { CompletedRoiBackgroundNotice } from "@/features/segmentation/components/CompletedRoiBackgroundNotice";
 import { SegmentationSidebar } from "@/features/segmentation/screen/components/SegmentationSidebar";
-import { ErPreviewControls } from "@/features/segmentation/erPreview/ErPreviewControls";
 import { SegmentationJobBanner } from "@/features/segmentation/screen/components/SegmentationJobBanner";
 import { SegmentationScreenState } from "@/features/segmentation/screen/components/SegmentationScreenState";
 import { useSegmentationRouteState } from "@/features/segmentation/screen/hooks/useSegmentationRouteState";
@@ -217,7 +216,7 @@ export function SegmentationScreen() {
 
   const erRoi = useErRoiWorkflow({
     currentSegmentationId: route.currentSegmentationId,
-    isErSegmentation: route.isErSegmentation,
+    enabled: !route.isTissueSegmentation && Boolean(route.currentSegmentationId),
     image: route.image,
     isPointInsideImageBounds,
     refetchSegmentationRois: processing.refetchSegmentationRois,
@@ -310,6 +309,7 @@ export function SegmentationScreen() {
     correctionMode: reviewMode.correctionMode,
     leftNavigateMode: ui.leftNavigateMode,
     isTissueSegmentation: route.isTissueSegmentation,
+    onCorrectionToolChange: reviewMode.handleCorrectionToolChange,
     onOverlayMutation: (overlayMutation) =>
       overlayRefresh.handleOverlayMutationRefresh(
         (overlayMutation ?? null) as Parameters<
@@ -324,7 +324,7 @@ export function SegmentationScreen() {
   const interactions = useSegmentationInteractionRouter({
     currentSegmentationId: route.currentSegmentationId,
     leftNavigateMode: ui.leftNavigateMode,
-    roiPlacementActive: route.isErSegmentation ? erRoi.placementActive : false,
+    roiPlacementActive: erRoi.placementActive,
     isPointInsideImageBounds,
     applyLabelOverrides: overlayOptimistic.applyLabelOverrides,
     scheduleHoverSegmentQuery: hover.scheduleHoverSegmentQuery,
@@ -550,15 +550,6 @@ export function SegmentationScreen() {
         <SegmentationJobBanner jobs={processing.processingJobs} />
       )}
       <SegmentationHeader {...viewModels.headerProps} />
-      {route.isErSegmentation && (
-        <ErPreviewControls
-          assetId={route.image?.id ?? null}
-          segmentationId={route.currentSegmentationId}
-          sourceModel={route.activeSourceModel}
-          roi={processing.activeRoi}
-          onPinned={overlayRefresh.refreshSegmentViews}
-        />
-      )}
       <main
         className={`segmentation-main ${
           ui.showConfirmedPanel ? "show-confirmed" : "hide-confirmed"
@@ -613,6 +604,18 @@ export function SegmentationScreen() {
               ? {
                   segmentationId: route.currentSegmentation.id,
                   sourceModel: route.activeSourceModel,
+                  segmentationInternalName: route.segmentationInternalName,
+                  statusStage: route.currentSegmentation.status_stage,
+                  onSourceModelChange: route.handleSourceModelChange,
+                  onRunQueued: () => {
+                    void Promise.all([
+                      processing.refetchJobs(),
+                      route.refetchSegmentations(),
+                    ]);
+                  },
+                  onRunFinished: () => {
+                    void route.refetchSegmentations();
+                  },
                   onReextracted: overlayRefresh.refreshSegmentViews,
                 }
               : undefined

@@ -120,7 +120,7 @@ def handle_run_segmentation_roi_task(
         default=False,
     )
     reporter.update(progress=5.0, message="running ROI segmentation")
-    segment_count = run_segmentation_roi_task(
+    stored_output_count = run_segmentation_roi_task(
         segmentation_id=str(segmentation.id),
         segmentation_type=segmentation.segmentation_type.internal_name,
         roi_id=str(roi_id) if roi_id else None,
@@ -128,16 +128,15 @@ def handle_run_segmentation_roi_task(
         force_recompute_prob_maps=force_recompute_prob_maps,
         reporter=reporter,
     )
-    message, outcome = _segmentation_run_outcome(
-        segment_count, segmentation=segmentation
-    )
-    reporter.update(progress=100.0, message=f"ROI segmentation {message}")
+    reporter.update(progress=100.0, message="ROI threshold preview ready")
     return {
         "segmentation_id": str(segmentation.id),
         "segmentation_type": segmentation.segmentation_type.internal_name,
         "roi_id": str(roi_id) if roi_id else None,
         "source_model": normalize_source_model(payload.get("source_model")) or None,
-        **outcome,
+        "segment_count": 0,
+        "stored_output_count": stored_output_count,
+        "threshold_ready": True,
     }
 
 
@@ -152,22 +151,21 @@ def handle_run_segmentation_full_task(
         default=False,
     )
     reporter.update(progress=5.0, message="running full-image segmentation")
-    segment_count = run_segmentation_full_task(
+    stored_output_count = run_segmentation_full_task(
         segmentation_id=str(segmentation.id),
         segmentation_type=segmentation.segmentation_type.internal_name,
         source_model=normalize_source_model(payload.get("source_model")) or None,
         force_recompute_prob_maps=force_recompute_prob_maps,
         reporter=reporter,
     )
-    message, outcome = _segmentation_run_outcome(
-        segment_count, segmentation=segmentation
-    )
-    reporter.update(progress=100.0, message=f"full-image segmentation {message}")
+    reporter.update(progress=100.0, message="Threshold preview ready")
     return {
         "segmentation_id": str(segmentation.id),
         "segmentation_type": segmentation.segmentation_type.internal_name,
         "source_model": normalize_source_model(payload.get("source_model")) or None,
-        **outcome,
+        "segment_count": 0,
+        "stored_output_count": stored_output_count,
+        "threshold_ready": True,
     }
 
 
@@ -218,16 +216,7 @@ def handle_run_segmentation_for_image(
         reporter=reporter,
         cancel=cancel,
     )
-    found = [
-        item for item in outcome["organelles"] if int(item.get("segment_count") or 0)
-    ]
-    if found:
-        message = "completed: " + ", ".join(
-            f"{item['name']} {item['segment_count']} objects" for item in found
-        )
-    else:
-        message = "completed: no objects found"
-    reporter.update(progress=100.0, message=message)
+    reporter.update(progress=100.0, message="Threshold previews ready")
     return outcome
 
 

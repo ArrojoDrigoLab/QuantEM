@@ -1,12 +1,13 @@
 """The include-level dial: read where it is, and ask for it to be moved.
 
-The include level is the foreground threshold under a name a biologist can use
-(:mod:`quantem.segmentation.run_identity`). Moving it does **not** run the
-model: it re-thresholds the probability map that run already stored and
-re-extracts, which is a few seconds of arithmetic and produces exactly the
-objects a fresh run at that level would have produced. The backend of it is
-:func:`~quantem.seg_core.db.inference.replay_stored_probability_map`; the
-worker is :mod:`quantem.jobs.handlers.rethreshold`.
+The threshold is the foreground cutoff (:mod:`quantem.segmentation.run_identity`).
+Moving it does **not** run the model or change candidate objects: the browser
+recolors the probability map that the run already stored. Pressing Apply is the
+separate commit step; it re-thresholds that stored map, replaces only the
+unconfirmed candidates, and leaves confirmed/manual annotations intact. The
+backend of that commit is
+:func:`~quantem.seg_core.db.inference.replay_stored_probability_map`; the worker
+is :mod:`quantem.jobs.handlers.rethreshold`.
 
 Why the refusals happen *here*, before anything is queued
 ---------------------------------------------------------
@@ -34,9 +35,11 @@ that file.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlencode
 
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
-from django.urls import path
+from django.urls import path, reverse
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -48,6 +51,7 @@ from quantem.jobs.constants import (
     QUEUE_P1_INTERACTIVE,
 )
 from quantem.jobs.models import Job
+from quantem.seg_core.db.prob_maps import get_prob_map_file_path
 from quantem.seg_core.registry import get_segmenter_or_none
 from quantem.segmentation.models import (
     ImageSegmentation,
@@ -191,7 +195,44 @@ def _dial_state(segmentation: ImageSegmentation, source_model: str) -> dict:
         return state
 
     state["can_move"] = True
+    query = urlencode({"source_model": source_model}) if source_model else ""
+    preview_url = reverse("segmentation-include-level-map", args=[segmentation.id])
+    state["preview_url"] = f"{preview_url}{'?' + query if query else ''}"
     return state
+
+
+class SegmentationIncludeLevelMapView(APIView):
+    """Serve the saved grayscale result used by the live threshold preview."""
+
+    def get(self, request, seg_id):
+        segmentation = get_object_or_404(
+            ImageSegmentation.objects.select_related("asset", "segmentation_type"),
+            id=seg_id,
+        )
+        source_model = normalize_source_model(request.query_params.get("source_model"))
+        segmenter, resolved = _resolve_segmenter(segmentation, source_model)
+        if segmenter is None:
+            return _refusal(resolved)
+
+        readiness = stored_map_readiness(
+            segmentation=segmentation,
+            segmenter=segmenter,
+            model_name=resolved,
+        )
+        if not readiness.ready:
+            return _refusal(
+                readiness.detail, code=ErrorCode.PROBABILITY_MAP_MISSING
+            )
+
+        file_path = get_prob_map_file_path(
+            segmentation,
+            resolved,
+            str(getattr(segmenter, "prob_map_prefix", "") or ""),
+            None,
+        )
+        response = FileResponse(file_path.open("rb"), content_type="image/png")
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class SegmentationIncludeLevelView(APIView):
@@ -200,9 +241,8 @@ class SegmentationIncludeLevelView(APIView):
     ``GET`` is free: two filesystem stats and two indexed queries, no map
     decoded. It is meant to be called whenever the panel opens.
 
-    ``POST`` queues one re-extract. It is **not** a live scrub -- one request is
-    one job, and the client is expected to send it when the user settles on a
-    level, not while they are dragging.
+    ``POST`` queues one re-extract. It is the explicit Apply action, never a
+    slider event: one request replaces the prior candidate set once.
     """
 
     def get(self, request, seg_id):
@@ -305,6 +345,11 @@ class SegmentationIncludeLevelView(APIView):
 
 
 urlpatterns = [
+    path(
+        "segmentations/<uuid:seg_id>/include-level/map",
+        SegmentationIncludeLevelMapView.as_view(),
+        name="segmentation-include-level-map",
+    ),
     path(
         "segmentations/<uuid:seg_id>/include-level",
         SegmentationIncludeLevelView.as_view(),

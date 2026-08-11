@@ -70,6 +70,7 @@ export function makeLeftPanelProps(
       groupConfirmActive: false,
       targetCursorActive: true,
       roiPlacementActive: false,
+      samBoxActive: false,
     },
     segments: {
       items: [],
@@ -85,6 +86,7 @@ export function makeLeftPanelProps(
     },
     roi: {
       activeRoi: null,
+      completedRois: [],
       roiPoints: [],
       roiPointsSubmitted: 0,
       roiComplete: false,

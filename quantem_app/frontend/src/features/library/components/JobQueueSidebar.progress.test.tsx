@@ -169,7 +169,7 @@ describe("the Tasks drawer during a run", () => {
     expect(percentages).toEqual(["30%"]);
   });
 
-  it("says loading the model, with the denominator already known", async () => {
+  it("names model and image preparation, with the denominator already known", async () => {
     vi.mocked(getJobQueueStatus).mockResolvedValue(
       makeStatus({
         running: [
@@ -194,10 +194,37 @@ describe("the Tasks drawer during a run", () => {
     const row = await screen.findByTestId("run-progress-row-organelle");
 
     expect(
-      within(row).getByText("loading the model — 0 of 56 tiles")
+      within(row).getByText("preparing the model and image — 0 of 56 tiles")
     ).toBeInTheDocument();
     // The frozen 5% is gone: there is no fraction to claim yet.
     expect(container.textContent).not.toContain("5%");
+  });
+
+  it("names threshold preparation after the last tile", async () => {
+    vi.mocked(getJobQueueStatus).mockResolvedValue(
+      makeStatus({
+        running: [
+          makeRunningRunJob({
+            progress: 99,
+            progress_stage: "preparing_threshold",
+            unit_progress: {
+              done: 56,
+              total: 56,
+              label: "tile",
+              percent: 100,
+              stage: "preparing_threshold",
+              eta_seconds: null,
+            },
+          }),
+        ],
+      })
+    );
+
+    render(<JobQueueSidebar isOpen onClose={vi.fn()} />);
+    const row = await screen.findByTestId("run-progress-row-organelle");
+
+    expect(within(row).getByText(/56 of 56 tiles/)).toBeInTheDocument();
+    expect(within(row).getByText(/preparing the threshold preview/)).toBeInTheDocument();
   });
 
   it("rolls every organelle on the image into one line, drawn once", async () => {

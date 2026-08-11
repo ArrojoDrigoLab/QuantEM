@@ -10,11 +10,12 @@ import { generateRoiFrameOverlay } from "@/features/segmentation/overlays/roi";
 import type { Point } from "@/utils/geometry";
 import type { SegmentOverlay } from "@/viewer/types";
 
-/** Fixed ER benchmark ROI size, in source pixels. */
-export const ER_ROI_SIZE = 2048;
+/** Fixed labeling ROI size, in source pixels. */
+export const LABELING_ROI_SIZE = 512;
 
 /** An ROI rectangle that has been placed but not yet created server-side. */
 export interface PendingRoi {
+  /** The ROI to replace when the user chose Move; null means create a new one. */
   roiId: string | null;
   x: number;
   y: number;
@@ -24,12 +25,12 @@ export interface PendingRoi {
 
 interface UseErRoiWorkflowArgs {
   currentSegmentationId: string | null;
-  isErSegmentation: boolean;
+  enabled: boolean;
   image: { width: number; height: number } | null;
   isPointInsideImageBounds: (point: Point) => boolean;
   refetchSegmentationRois: () => Promise<unknown> | void;
   registerAnnotationActivity?: () => void;
-  /** Called after a new ROI is successfully created (used to switch to Correct mode). */
+  /** Called after an ROI is created or moved (to enter Correct mode). */
   onRoiConfirmed?: () => void;
   showErrorToast: (message: string) => void;
 }
@@ -37,22 +38,19 @@ interface UseErRoiWorkflowArgs {
 function errorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "message" in error) {
     const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message) {
-      return message;
-    }
+    if (typeof message === "string" && message) return message;
   }
   return fallback;
 }
 
 /**
- * ER-only ROI workflow: place a fixed 2048x2048 ROI by clicking a point in the
- * image, then create it; plus per-organelle "mark ROI as done". Reuses the
- * generic ROI-placement slots of {@link useSegmentationInteractionRouter}, so
- * the screen feeds these handlers into those slots when the segmentation is ER.
+ * Place, relocate, activate, remove, and mark ROI windows for any organelle
+ * labeling workflow. Moving safely creates the new window before removing the
+ * old one, so a failed placement never strands the user without an ROI.
  */
 export function useErRoiWorkflow({
   currentSegmentationId,
-  isErSegmentation,
+  enabled,
   image,
   isPointInsideImageBounds,
   refetchSegmentationRois,
@@ -62,45 +60,53 @@ export function useErRoiWorkflow({
 }: UseErRoiWorkflowArgs) {
   const [placementActive, setPlacementActive] = useState(false);
   const [pendingRoi, setPendingRoi] = useState<PendingRoi | null>(null);
+  const [relocatingRoiId, setRelocatingRoiId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [markingRoiId, setMarkingRoiId] = useState<string | null>(null);
   const [deletingRoiId, setDeletingRoiId] = useState<string | null>(null);
   const [activatingRoiId, setActivatingRoiId] = useState<string | null>(null);
 
-  const startPlacement = useCallback(() => {
-    if (!isErSegmentation) return;
-    setPlacementActive(true);
-    setPendingRoi(null);
-  }, [isErSegmentation]);
+  const beginPlacement = useCallback(
+    (roiId: string | null) => {
+      if (!enabled) return;
+      setRelocatingRoiId(roiId);
+      setPlacementActive(true);
+      setPendingRoi(null);
+    },
+    [enabled]
+  );
+
+  const startPlacement = useCallback(() => beginPlacement(null), [beginPlacement]);
+  const moveRoi = useCallback((roiId: string) => beginPlacement(roiId), [beginPlacement]);
 
   const cancelPlacement = useCallback(() => {
     setPlacementActive(false);
     setPendingRoi(null);
+    setRelocatingRoiId(null);
   }, []);
 
   const resolvePendingRoi = useCallback(
     (point: Point): PendingRoi | null => {
-      if (!image || !isPointInsideImageBounds(point)) {
-        return null;
-      }
-      const width = Math.max(1, Math.min(ER_ROI_SIZE, image.width));
-      const height = Math.max(1, Math.min(ER_ROI_SIZE, image.height));
+      if (!image || !isPointInsideImageBounds(point)) return null;
+
+      const width = Math.max(1, Math.min(LABELING_ROI_SIZE, image.width));
+      const height = Math.max(1, Math.min(LABELING_ROI_SIZE, image.height));
       const x = Math.round(
         Math.max(0, Math.min(point.x - width / 2, image.width - width))
       );
       const y = Math.round(
         Math.max(0, Math.min(point.y - height / 2, image.height - height))
       );
-      return { roiId: null, x, y, width, height };
+      return { roiId: relocatingRoiId, x, y, width, height };
     },
-    [image, isPointInsideImageBounds]
+    [image, isPointInsideImageBounds, relocatingRoiId]
   );
 
   const confirmRoi = useCallback(async () => {
-    if (!currentSegmentationId || !pendingRoi || confirming) {
-      return;
-    }
+    if (!currentSegmentationId || !pendingRoi || confirming) return;
+
     setConfirming(true);
+    let created = false;
     try {
       await createSegmentationRoi(currentSegmentationId, {
         x: pendingRoi.x,
@@ -109,32 +115,48 @@ export function useErRoiWorkflow({
         height: pendingRoi.height,
         source: "MANUAL",
       });
+      created = true;
+
+      if (pendingRoi.roiId) {
+        await deleteSegmentationRoi(currentSegmentationId, pendingRoi.roiId);
+      }
+
       await refetchSegmentationRois();
       setPendingRoi(null);
       setPlacementActive(false);
+      setRelocatingRoiId(null);
       registerAnnotationActivity?.();
-      // Hand off to Correct mode now that the ROI exists and is the active ROI.
       onRoiConfirmed?.();
     } catch (error) {
-      showErrorToast(errorMessage(error, "Failed to create ROI."));
+      if (created) {
+        // The replacement exists and is active even if deleting the old window
+        // failed. Refresh before reporting it so the user can remove it later.
+        await refetchSegmentationRois();
+        setPendingRoi(null);
+        setPlacementActive(false);
+        setRelocatingRoiId(null);
+        showErrorToast(
+          "The new ROI was created, but the previous ROI could not be removed."
+        );
+      } else {
+        showErrorToast(errorMessage(error, "Failed to create ROI."));
+      }
     } finally {
       setConfirming(false);
     }
   }, [
     confirming,
     currentSegmentationId,
+    onRoiConfirmed,
     pendingRoi,
     refetchSegmentationRois,
     registerAnnotationActivity,
-    onRoiConfirmed,
     showErrorToast,
   ]);
 
   const markRoiDone = useCallback(
     async (roiId: string, done: boolean) => {
-      if (!currentSegmentationId) {
-        return;
-      }
+      if (!currentSegmentationId) return;
       setMarkingRoiId(roiId);
       try {
         await setRoiCompleteForSegmentation(currentSegmentationId, roiId, done);
@@ -150,14 +172,10 @@ export function useErRoiWorkflow({
 
   const activateRoi = useCallback(
     async (roiId: string) => {
-      if (!currentSegmentationId || activatingRoiId) {
-        return;
-      }
+      if (!currentSegmentationId || activatingRoiId) return;
       setActivatingRoiId(roiId);
       try {
         await activateSegmentationRoi(currentSegmentationId, roiId);
-        // Refetching updates the active ROI, which re-fits the labeling viewer
-        // to its bounds (keyed on the active ROI id) — i.e. "show it".
         await refetchSegmentationRois();
       } catch (error) {
         showErrorToast(errorMessage(error, "Failed to switch ROI."));
@@ -170,9 +188,7 @@ export function useErRoiWorkflow({
 
   const deleteRoi = useCallback(
     async (roiId: string) => {
-      if (!currentSegmentationId) {
-        return;
-      }
+      if (!currentSegmentationId) return;
       setDeletingRoiId(roiId);
       try {
         await deleteSegmentationRoi(currentSegmentationId, roiId);
@@ -202,7 +218,7 @@ export function useErRoiWorkflow({
               width: pendingRoi.width,
               height: pendingRoi.height,
             },
-            "er-roi-pending"
+            "labeling-roi-pending"
           )
         : null,
     [pendingRoi]
@@ -212,11 +228,13 @@ export function useErRoiWorkflow({
     placementActive,
     pendingRoi,
     pendingRoiOverlay,
+    relocatingRoiId,
     confirming,
     markingRoiId,
     deletingRoiId,
     activatingRoiId,
     startPlacement,
+    moveRoi,
     cancelPlacement,
     resolvePendingRoi,
     setPendingRoi,

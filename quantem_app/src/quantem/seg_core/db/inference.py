@@ -773,6 +773,7 @@ def replay_stored_probability_map(
     threshold: float | None = None,
     roi: ImageROI | None = None,
     on_detail: Callable[[str], None] | None = None,
+    on_stored_metadata: Callable[[dict[str, object]], None] | None = None,
 ) -> tuple[InferenceResult, np.ndarray]:
     """Re-threshold a stored probability map. No model is loaded or run.
 
@@ -795,6 +796,8 @@ def replay_stored_probability_map(
             wants, e.g. to re-extract after the objects were cleared.
         roi: replay the map stored for this ROI rather than the full image.
         on_detail: optional job-log callback.
+        on_stored_metadata: optional receiver for the model-run provenance
+            saved beside the probability bytes.
 
     Returns:
         ``(InferenceResult, image_array)``, the same pair
@@ -856,6 +859,9 @@ def replay_stored_probability_map(
                 "cannot be moved here without running the model again."
             )
         raise StoredMapUnavailable(NO_STORED_MAP_MESSAGE)
+
+    if on_stored_metadata is not None:
+        on_stored_metadata(dict(stored.metadata))
 
     target_image = get_asset_openable(segmentation.asset)
     if roi is not None:

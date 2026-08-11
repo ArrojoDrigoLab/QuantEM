@@ -31,8 +31,8 @@ from .utils import create_roi_image_from_image, save_plane_as_canonical_png
 
 logger = logging.getLogger(__name__)
 
-ROI_SIZE_DEFAULT = int(os.environ.get("ROI_SIZE", "3000"))
-ROI_MIN_IMAGE_SIZE = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "6000"))
+ROI_SIZE_DEFAULT = int(os.environ.get("ROI_SIZE", "512"))
+ROI_MIN_IMAGE_SIZE = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "512"))
 
 
 def _get_asset_or_none(asset_id: str) -> Asset | None:

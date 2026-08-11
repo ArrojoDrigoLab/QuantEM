@@ -188,7 +188,13 @@ class AnnotationPreservationTestCase(TestCase):
     # --- acts -------------------------------------------------------------
 
     def run_model(self) -> int:
-        """A full-image model run, exactly as the job handler performs one."""
+        """Run the model, then accept its default threshold.
+
+        The preservation invariant is exercised by candidate replacement, and
+        candidate replacement now belongs exclusively to Apply. Keeping both
+        user actions here makes every test below cover the accepted result
+        rather than passing vacuously on the preview-only model run.
+        """
         segmenter = _segmenter()
         with (
             patch("quantem.inference.segmenter.engine", _fake_engine()),
@@ -197,11 +203,12 @@ class AnnotationPreservationTestCase(TestCase):
                 return_value=segmenter,
             ),
         ):
-            return run_segmentation_full_task(
+            run_segmentation_full_task(
                 segmentation_id=str(self.segmentation.id),
                 segmentation_type=MITO_INTERNAL_NAME,
                 source_model=SOURCE_MODEL,
             )
+        return self.move_the_dial(0.5)
 
     def move_the_dial(self, include_level: float) -> int:
         """A re-extract from the stored map, as the include-level job performs it."""
@@ -547,3 +554,25 @@ class AreasTheUserMarkedFinishedTests(AnnotationPreservationTestCase):
             "moving the include level put fresh candidates inside an area the "
             "user had already marked finished"
         )
+
+    def test_a_candidate_may_cross_a_finished_area_when_its_center_is_outside(self):
+        """Finished areas suppress objects centered inside, not boundary crossings."""
+        self.run_model()
+        target = self.fresh_candidates()[0]
+        min_x, min_y, _max_x, max_y = target.geometry.bounds
+        center_x = target.geometry.centroid.x
+        overlap_strip = box(min_x - 1, min_y - 1, center_x - 1, max_y + 1)
+        CompletedROI.objects.create(
+            segmentation=self.segmentation,
+            geometry=overlap_strip,
+        )
+
+        self.move_the_dial(0.5)
+
+        crossing = [
+            candidate
+            for candidate in self.fresh_candidates()
+            if candidate.geometry.intersects(overlap_strip)
+            and not overlap_strip.contains(candidate.geometry.centroid)
+        ]
+        assert crossing, "a boundary-crossing candidate was incorrectly suppressed"

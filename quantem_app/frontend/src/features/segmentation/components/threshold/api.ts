@@ -29,6 +29,10 @@ export interface IncludeLevelState {
   run_version: number;
   object_count: number;
   can_move: boolean;
+  /** Saved grayscale result for the live overlay. Present only when ready. */
+  preview_url?: string;
+  /** [x, y, width, height] in source-image pixels. */
+  preview_bounds?: [number, number, number, number];
   /** Why it cannot move. Empty when it can. */
   detail: string;
   error_code?: string;

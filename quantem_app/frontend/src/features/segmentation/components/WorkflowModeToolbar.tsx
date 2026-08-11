@@ -90,11 +90,7 @@ interface WorkflowModeToolbarProps {
   polygonCanClose?: boolean;
   /** ER polygon tool: close the draft and commit it as a filled ER object. */
   onClosePolygon?: () => void;
-  /**
-   * Extra mode buttons, rendered beside Review / Correct.
-   *
-   * For controls that change what a click on the image does.
-   */
+  /** Extra correction sub-tools, rendered beneath Review / Correct. */
   extraModes?: ReactNode;
   /**
    * Extra tool controls, rendered at the end of the toolbar.
@@ -157,7 +153,6 @@ export function WorkflowModeToolbar({
           >
             Correct
           </button>
-          {extraModes}
         </div>
       )}
 
@@ -256,6 +251,7 @@ export function WorkflowModeToolbar({
               <EraseIcon />
             </button>
           </div>
+          {extraModes && <div className="mode-toolbar-group mode-toolbar-subtools">{extraModes}</div>}
 
           {/* Confirmed area is a separate, distinct control (training mask).
               The explanation sits next to the button because it is the only
@@ -345,6 +341,7 @@ export function WorkflowModeToolbar({
               {CONFIRMED_AREA_LABEL}
             </button>
           </div>
+          {extraModes && <div className="mode-toolbar-group mode-toolbar-subtools">{extraModes}</div>}
 
           <p className="mode-toolbar-explainer" id="confirmed-area-explainer-simple">
             {CONFIRMED_AREA_EXPLANATION}{" "}

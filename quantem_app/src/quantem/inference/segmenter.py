@@ -595,6 +595,7 @@ class DinoOrganelleSegmenter(BaseSegmenter):
             "default_threshold": self._spec.threshold,
             "adapter_id": self._adapter_id,
             "adapted_head": str(self._adapter_head) if self._adapter_head else None,
+            "device": self.inference_device,
         }
         native = self._native_prob
         if native is not None:

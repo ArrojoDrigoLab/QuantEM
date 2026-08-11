@@ -84,12 +84,6 @@ export function ViewerHeader({
             >
               Analysis
             </Link>
-            <Link
-              className="viewer-header-link"
-              to={`/assets/${selectedAssetId}/adapt`}
-            >
-              Adapt a model
-            </Link>
           </>
         ) : null}
       </div>

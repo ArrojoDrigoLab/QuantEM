@@ -88,6 +88,7 @@ interface SegmentationHeaderProps {
    * when there is no raster overlay.
    */
   displayedSourceModel?: string | null;
+  fineTuneEligibilityRevision?: string;
   fullImageActive?: boolean;
   fullImageProgress?: number | null;
   onBackToHome: () => void;
@@ -152,6 +153,7 @@ export function SegmentationHeader({
   sourceModelOptions = [],
   activeSourceModel = null,
   displayedSourceModel = null,
+  fineTuneEligibilityRevision = "",
   fullImageActive = false,
   fullImageProgress = null,
   onBackToHome,
@@ -313,7 +315,11 @@ export function SegmentationHeader({
           modelBlocked={modelBlocked}
           modelRunnability={modelRunnability}
         />
-        <HeaderRouteLinks image={image} currentSegmentation={currentSegmentation} />
+        <HeaderRouteLinks
+          image={image}
+          currentSegmentation={currentSegmentation}
+          fineTuneEligibilityRevision={fineTuneEligibilityRevision}
+        />
         <button
           className="segmentation-complete-button"
           onClick={() => {

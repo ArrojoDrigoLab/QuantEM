@@ -1,9 +1,3 @@
-/* The include-level dial, in the 280px labeling sidebar.
-
-   Column, not row, for the reason ErRoiControls.css records: the sidebar is
-   narrow and anything laid out in a row there is unreadable. Contrast ratios
-   are quoted against the sidebar's own #f8fafc, as the neighbouring
-   stylesheets do, because these are read at a glance beside a picture. */
 .include-level-dial {
   display: flex;
   flex-direction: column;
@@ -11,40 +5,19 @@
   gap: 0.5rem;
 }
 
+.include-level-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
 .include-level-title {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  /* #1e293b on #f8fafc -> 14.5:1. */
   color: #1e293b;
 }
 
-.include-level-note {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  /* #475569 on #f8fafc -> 7.4:1. */
-  color: #475569;
-}
-
-.include-level-slider {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 12px;
-  color: #334155;
-}
-
-.include-level-slider-label {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-/* Tabular figures so the number does not jitter sideways while dragging --
-   at two decimals a proportional font moves it by a pixel per digit, which
-   reads as the control being unstable. */
 .include-level-value {
   font-variant-numeric: tabular-nums;
   font-size: 13px;
@@ -52,59 +25,39 @@
   color: #1e293b;
 }
 
-.include-level-slider input[type="range"] {
+.include-level-help {
+  color: #64748b;
+  cursor: help;
+  font-size: 13px;
+}
+
+.include-level-slider {
   width: 100%;
 }
 
-.include-level-slider input[type="range"]:disabled {
+.include-level-slider:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.include-level-status {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #334155;
-}
-
-/* Why the dial cannot move. Bordered rather than plain: it replaces a control
-   the user came here to use, so it has to survive a skim. */
-.include-level-blocked {
-  margin: 0;
-  padding: 6px 8px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #eef2f7;
-  font-size: 12px;
-  line-height: 1.45;
-  /* #334155 on #eef2f7 -> 9.7:1. */
-  color: #334155;
-}
-
-/* The preservation promise. Green, matching the emerald note Improve uses for
-   the same sentence, so the two screens are recognisably making one promise. */
-.include-level-preserved {
-  margin: 0;
-  padding: 6px 8px;
-  border: 1px solid #a7f3d0;
-  border-radius: 6px;
-  background: #ecfdf5;
-  font-size: 12px;
-  line-height: 1.45;
-  /* #065f46 on #ecfdf5 -> 8.6:1. */
-  color: #065f46;
-}
-
+.include-level-blocked,
 .include-level-problem {
   margin: 0;
   padding: 6px 8px;
-  border: 1px solid #fecaca;
   border-radius: 6px;
-  background: #fef2f2;
   font-size: 12px;
   line-height: 1.45;
-  /* #991b1b on #fef2f2 -> 8.2:1. */
+}
+
+.include-level-blocked {
+  border: 1px solid #cbd5e1;
+  background: #eef2f7;
+  color: #334155;
+}
+
+.include-level-problem {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
   color: #991b1b;
 }
 
@@ -126,7 +79,6 @@
 .include-level-apply:disabled {
   border-color: #cbd5e1;
   background: #e2e8f0;
-  /* #64748b on #e2e8f0 -> 4.6:1, which clears AA for this size. */
   color: #64748b;
   cursor: not-allowed;
 }

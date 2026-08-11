@@ -27,6 +27,8 @@ function getStageLabel(stage: StatusStage): string {
       return "Running inference...";
     case "EXTRACTING_CANDIDATES":
       return "Extracting candidates...";
+    case "THRESHOLD_READY":
+      return "Threshold ready";
     case "CANDIDATES_READY":
       return "Run finished";
     case "UPDATING":

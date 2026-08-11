@@ -29,6 +29,7 @@ export const TISSUE_INTERNAL_NAME = "quantem_internal_tissue";
  * failure card names rather than silently paints.
  */
 export const SEGMENTATION_RESULT_STAGES: readonly StatusStage[] = [
+  "THRESHOLD_READY",
   "CANDIDATES_READY",
   "UPDATING",
   "COMPUTING_FEATURES",

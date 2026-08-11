@@ -101,6 +101,7 @@ class ImageSegmentation(TimeStampedModel):
     STATUS_STAGE_CHOICES = [
         ("UNSTARTED", "Unstarted"),
         ("RUNNING_INFERENCE", "Running inference"),
+        ("THRESHOLD_READY", "Threshold ready"),
         ("EXTRACTING_CANDIDATES", "Extracting candidates"),
         ("CANDIDATES_READY", "Candidates ready"),
         ("UPDATING", "Updating with feedback"),

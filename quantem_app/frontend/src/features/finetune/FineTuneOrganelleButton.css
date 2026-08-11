@@ -10,6 +10,10 @@
   font-size: 12px;
 }
 
+.finetune-header-button-tooltip {
+  display: inline-flex;
+}
+
 .finetune-header-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;

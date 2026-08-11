@@ -1,16 +1,5 @@
-/**
- * What the include-level dial must and must not do.
- *
- * Two of these are about restraint rather than function. The dial must not
- * queue work while the user is dragging -- one job rewrites every candidate on
- * the image, and a job per pixel of travel would queue a hundred for one
- * gesture against a one-slot queue. And when it cannot move it must show the
- * server's own sentence, because the two reasons it can be blocked are
- * different futures and a generic "try running again" hides which one the user
- * is in.
- */
-
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
@@ -23,15 +12,6 @@ import type { IncludeLevelState } from "./api";
 const SEG_ID = "11111111-1111-4111-8111-111111111111";
 const BASE = "http://127.0.0.1:8000";
 const DIAL_URL = `${BASE}/api/segmentations/${SEG_ID}/include-level`;
-
-const NO_MAP_SENTENCE =
-  "No stored result is kept for this image, so the include level cannot be " +
-  "moved without running the model again. Running it once saves one, and the " +
-  "level can be moved freely from then on.";
-
-const LEGACY_SENTENCE =
-  "The stored result for this image was written by an earlier version of " +
-  "QuantEM, which recorded probabilities differently.";
 
 function state(overrides: Partial<IncludeLevelState> = {}): IncludeLevelState {
   return {
@@ -51,42 +31,39 @@ function serveState(value: IncludeLevelState) {
   server.use(http.get(DIAL_URL, () => HttpResponse.json(value)));
 }
 
-function renderDial(props: Partial<{ onReextracted: () => void }> = {}) {
+function renderDial(props: Partial<ComponentProps<typeof IncludeLevelDial>> = {}) {
   return render(<IncludeLevelDial segmentationId={SEG_ID} {...props} />);
 }
 
 describe("IncludeLevelDial", () => {
-  it("starts at the model's own level when nobody has moved the dial", async () => {
-    serveState(state({ include_level: null, default_include_level: 0.5 }));
+  it("uses Threshold as the compact title and keeps the explanation on hover", async () => {
+    serveState(state());
 
     renderDial();
 
-    expect(await screen.findByTestId("include-level-value")).toHaveTextContent(
-      "0.50"
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Threshold" })).toBeInTheDocument()
     );
-    expect(screen.getByTestId("include-level-status")).toHaveTextContent(
-      "came straight from the model"
-    );
+    expect(screen.getByRole("img")).toHaveAccessibleName(/saved model result/i);
+    expect(screen.getByRole("slider")).toHaveAccessibleName("Threshold");
   });
 
-  it("shows the level the objects on screen were actually found at", async () => {
-    serveState(state({ include_level: 0.32, object_count: 41 }));
+  it("places only the slider and action below the title in the normal state", async () => {
+    serveState(state({ include_level: 0.32 }));
 
-    renderDial();
+    const { container } = renderDial();
+    await screen.findByTestId("include-level-value");
 
-    expect(await screen.findByTestId("include-level-value")).toHaveTextContent(
-      "0.32"
-    );
-    expect(screen.getByTestId("include-level-status")).toHaveTextContent(
-      "41 objects"
-    );
+    expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.32");
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(container.textContent).not.toMatch(/model does not run|objects at this/i);
   });
 
   it("queues nothing while the slider is being dragged", async () => {
     serveState(state({ include_level: 0.5 }));
     const posted = vi.fn();
     server.use(
-      http.post(DIAL_URL, async () => {
+      http.post(DIAL_URL, () => {
         posted();
         return HttpResponse.json({ job_id: "job-1", include_level: 0.2 });
       })
@@ -94,8 +71,6 @@ describe("IncludeLevelDial", () => {
 
     renderDial();
     const slider = await screen.findByRole("slider");
-
-    // A drag, as the browser delivers one: a change event per step of travel.
     for (const value of [0.45, 0.4, 0.35, 0.3, 0.25, 0.2]) {
       fireEvent.change(slider, { target: { value: String(value) } });
     }
@@ -104,17 +79,7 @@ describe("IncludeLevelDial", () => {
     expect(posted).not.toHaveBeenCalled();
   });
 
-  it("cannot be applied until the level actually moves", async () => {
-    serveState(state({ include_level: 0.5 }));
-
-    renderDial();
-
-    await waitFor(() =>
-      expect(screen.getByTestId("include-level-apply")).toBeDisabled()
-    );
-  });
-
-  it("queues one job when the level is applied", async () => {
+  it("queues one job when the selected threshold is applied", async () => {
     serveState(state({ include_level: 0.5 }));
     const bodies: unknown[] = [];
     server.use(
@@ -132,11 +97,10 @@ describe("IncludeLevelDial", () => {
     fireEvent.change(slider, { target: { value: "0.2" } });
     await userEvent.click(screen.getByTestId("include-level-apply"));
 
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ include_level: 0.2 });
+    await waitFor(() => expect(bodies).toEqual([{ include_level: 0.2 }]));
   });
 
-  it("tells the screen to redraw once the re-extract lands", async () => {
+  it("refreshes the screen once re-extraction succeeds", async () => {
     serveState(state({ include_level: 0.5 }));
     const onReextracted = vi.fn();
     server.use(
@@ -149,83 +113,119 @@ describe("IncludeLevelDial", () => {
     );
 
     renderDial({ onReextracted });
-    const slider = await screen.findByRole("slider");
-    fireEvent.change(slider, { target: { value: "0.48" } });
+    fireEvent.change(await screen.findByRole("slider"), { target: { value: "0.48" } });
     await userEvent.click(screen.getByTestId("include-level-apply"));
 
     await waitFor(() => expect(onReextracted).toHaveBeenCalled());
   });
 
-  describe("when the dial cannot move", () => {
-    it("shows the sentence for a result that was never saved", async () => {
-      serveState(
-        state({
-          can_move: false,
-          detail: NO_MAP_SENTENCE,
-          error_code: "probability_map_missing",
-        })
-      );
-
-      renderDial();
-
-      const blocked = await screen.findByTestId("include-level-blocked");
-      expect(blocked).toHaveTextContent("No stored result is kept");
-      expect(blocked).toHaveTextContent("from then on");
-      expect(screen.getByTestId("include-level-apply")).toBeDisabled();
-    });
-
-    it("shows a different sentence for a result from an older build", async () => {
-      serveState(
-        state({
-          can_move: false,
-          detail: LEGACY_SENTENCE,
-          error_code: "probability_map_missing",
-        })
-      );
-
-      renderDial();
-
-      const blocked = await screen.findByTestId("include-level-blocked");
-      expect(blocked).toHaveTextContent("earlier version");
-      // The one assertion that catches the two cases being collapsed into one
-      // generic "run it again": that message belongs to the other case only.
-      expect(blocked).not.toHaveTextContent("No stored result is kept");
-    });
-
-    it("names a control rather than a request", async () => {
-      serveState(state({ can_move: false, detail: NO_MAP_SENTENCE }));
-
-      renderDial();
-
-      const blocked = await screen.findByTestId("include-level-blocked");
-      const text = blocked.textContent ?? "";
-      // Invariant I-12: no route, no verb, no internal name in copy.
-      expect(text).not.toMatch(/\/api\//);
-      expect(text).not.toMatch(/\bPOST\b/);
-      expect(text).not.toMatch(/reextract_at_include_level/);
-      expect(text).toMatch(/labeling header/);
-    });
-  });
-
-  it("promises preservation, and says the model does not re-run", async () => {
-    serveState(state({ include_level: 0.5 }));
+  it("moves the unavailable explanation into a tooltip and shows Run model", async () => {
+    serveState(
+      state({
+        can_move: false,
+        detail: "No stored probability map is available for this image.",
+        error_code: "probability_map_missing",
+      })
+    );
 
     renderDial();
 
-    expect(
-      await screen.findByText(/Only my own guesses are redone/)
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/The model does not run again/)
-    ).toBeInTheDocument();
+    const help = await screen.findByRole("img");
+    expect(help).toHaveAccessibleName(
+      "No stored result is kept for this image, so the include level cannot be moved without running the model again. Running it once saves one, and the level can be moved freely from then on. Run the model on this image from the labeling header, and the threshold can be adjusted afterwards."
+    );
+    expect(screen.queryByText(/No stored probability map/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run model" })).toBeEnabled();
   });
 
-  it("never says the word threshold to the user", async () => {
-    serveState(state({ include_level: 0.4 }));
+  it("allows the first saved result to be applied at the model default", async () => {
+    serveState(state({ include_level: null, default_include_level: 0.41 }));
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(DIAL_URL, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ job_id: "job-default", include_level: 0.41 });
+      }),
+      http.get(`${BASE}/api/jobs/job-default/`, () =>
+        HttpResponse.json({ id: "job-default", status: "PENDING" })
+      )
+    );
 
-    const { container } = renderDial();
-    await screen.findByTestId("include-level-value");
+    renderDial();
+    await userEvent.click(await screen.findByRole("button", { name: "Apply" }));
 
-    expect(container.textContent ?? "").not.toMatch(/threshold/i);
+    await waitFor(() => expect(bodies).toEqual([{ include_level: 0.41 }]));
+  });
+
+  it("downloads an organelle model before running it when none is installed", async () => {
+    serveState(
+      state({
+        can_move: false,
+        error_code: "probability_map_missing",
+        detail: "No stored result is available.",
+      })
+    );
+    let catalogueCalls = 0;
+    const installCalls = vi.fn();
+    const runBodies: unknown[] = [];
+    server.use(
+      http.get(`${BASE}/api/models/`, () => {
+        catalogueCalls += 1;
+        const installed = catalogueCalls > 1;
+        return HttpResponse.json({
+          packs: [
+            {
+              id: "quantem:mito",
+              family: "quantem",
+              organelle: "mito",
+              title: "QuantEM Mitochondria",
+              installed,
+              download_bytes: 10,
+              canonical_nm: 8,
+              tile_size: 512,
+              default_threshold: 0.5,
+              decoder: "affinity",
+              neck: "naive",
+              adapt: "last4",
+              licence: "MIT",
+              notes: "",
+              runnable: installed,
+              reason: installed ? null : "Not installed yet.",
+            },
+          ],
+          adapted: [],
+          device: null,
+        });
+      }),
+      http.post(/\/api\/models\/quantem(?::|%3A)mito\/install\/$/, () => {
+        installCalls();
+        return HttpResponse.json({ job_id: "install-job" });
+      }),
+      http.get(`${BASE}/api/jobs/install-job/`, () =>
+        HttpResponse.json({ id: "install-job", status: "SUCCESS" })
+      ),
+      http.post(
+        `${BASE}/api/segmentations/${SEG_ID}/apply-full-image/`,
+        async ({ request }) => {
+          runBodies.push(await request.json());
+          return HttpResponse.json({ job_id: "run-job" });
+        }
+      ),
+      http.get(`${BASE}/api/jobs/run-job/`, () =>
+        HttpResponse.json({ id: "run-job", status: "PENDING" })
+      )
+    );
+    const onSourceModelChange = vi.fn();
+
+    renderDial({
+      sourceModel: "quantem:mito",
+      segmentationInternalName: "quantem_internal_mito",
+      onSourceModelChange,
+    });
+    await userEvent.click(await screen.findByRole("button", { name: "Run model" }));
+
+    await waitFor(() => expect(installCalls).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(runBodies).toEqual([{ source_model: "quantem:mito" }]));
+    expect(onSourceModelChange).toHaveBeenCalledWith("quantem:mito");
   });
 });

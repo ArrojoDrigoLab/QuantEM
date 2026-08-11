@@ -32,13 +32,15 @@ function renderToolbar(extra: Partial<Parameters<typeof WorkflowModeToolbar>[0]>
 }
 
 describe("WorkflowModeToolbar slots", () => {
-  it("renders an extra mode beside Review and Correct", () => {
+  it("renders an extra mode as a Correct sub-tool, not beside Review and Correct", () => {
     renderToolbar({
+      reviewPhase: "correction",
       extraModes: <button type="button">Focus queue</button>,
     });
 
-    const group = screen.getByRole("button", { name: "Review" }).parentElement;
-    expect(group?.textContent).toContain("Focus queue");
+    const topLevelGroup = screen.getByRole("button", { name: "Review" }).parentElement;
+    expect(topLevelGroup?.textContent).not.toContain("Focus queue");
+    expect(screen.getByRole("button", { name: "Focus queue" })).toBeInTheDocument();
   });
 
   it("renders extra tools at the end of the toolbar", () => {

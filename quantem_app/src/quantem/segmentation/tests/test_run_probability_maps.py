@@ -30,7 +30,6 @@ from quantem.segmentation.models import (
     SegmentObject,
 )
 from quantem.segmentation.organelle_tasks import (
-    NO_OBJECTS_MESSAGE,
     run_segmentation_full_task,
     run_segmentation_roi_task,
 )
@@ -311,23 +310,21 @@ class EmptyRunReportingTests(TestCase):
             )
         return count, reporter
 
-    def test_a_run_that_finds_nothing_says_so_and_says_what_to_try(self):
-        count, reporter = self._run(np.zeros((SIZE, SIZE), dtype=np.float32))
+    def test_a_run_saves_the_threshold_result_without_creating_candidates(self):
+        stored_count, reporter = self._run(np.zeros((SIZE, SIZE), dtype=np.float32))
 
-        assert count == 0
-        warnings = [message for level, message in reporter.logs if level == "warning"]
-        assert NO_OBJECTS_MESSAGE in warnings
-        assert "threshold" in NO_OBJECTS_MESSAGE
-        # The stage is unchanged so the viewer still treats the run as finished;
-        # what distinguishes it is the reported outcome, not a new stage.
+        assert stored_count == 1
+        assert SegmentObject.objects.filter(segmentation=self.segmentation).count() == 0
+        assert reporter.logs == []
         self.segmentation.refresh_from_db()
-        assert self.segmentation.status_stage == "CANDIDATES_READY"
+        assert self.segmentation.status_stage == "THRESHOLD_READY"
         assert self.segmentation.status_error == ""
 
-    def test_a_run_that_finds_objects_does_not_warn(self):
-        count, reporter = self._run(_blob_prob())
+    def test_a_nonempty_model_result_still_waits_for_apply(self):
+        stored_count, reporter = self._run(_blob_prob())
 
-        assert count == 1
+        assert stored_count == 1
+        assert SegmentObject.objects.filter(segmentation=self.segmentation).count() == 0
         assert [message for level, message in reporter.logs if level == "warning"] == []
 
 

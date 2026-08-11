@@ -47,8 +47,10 @@ export interface LeftPanelWorkflowState {
   navigateMode: boolean;
   groupConfirmActive: boolean;
   targetCursorActive: boolean;
-  /** ER ROI placement is active -- the viewer must route clicks to placement. */
+  /** ROI placement is active -- the viewer must route clicks to placement. */
   roiPlacementActive: boolean;
+  /** Box-to-object owns the next drag instead of the brush. */
+  samBoxActive?: boolean;
 }
 
 export interface LeftPanelSegmentState {
@@ -69,6 +71,8 @@ export interface LeftPanelSegmentState {
 
 export interface LeftPanelRoiState {
   activeRoi: SegmentationRoi | null;
+  /** Every rectangular ROI marked done for this segmentation. */
+  completedRois: SegmentationRoi[];
   roiPoints: Array<{ x: number; y: number; label: number; size: number }>;
   roiPointsSubmitted: number;
   roiComplete: boolean;

@@ -15,7 +15,6 @@
 
 import { useEffect, useState } from "react";
 import { previewFineTuneScope } from "@/shared/api/finetune";
-import { TRAINING_ANNOTATION_SOURCES } from "@/shared/constants/confirmedArea";
 import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
 import type { AssetDetail, ImageSegmentation } from "@/shared/types";
 import "./FineTuneOrganelleButton.css";
@@ -23,9 +22,11 @@ import "./FineTuneOrganelleButton.css";
 export function FineTuneOrganelleButton({
   image,
   currentSegmentation,
+  eligibilityRevision = "",
 }: {
   image: AssetDetail;
   currentSegmentation: ImageSegmentation | null;
+  eligibilityRevision?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [annotationCount, setAnnotationCount] = useState<number | null>(null);
@@ -54,30 +55,31 @@ export function FineTuneOrganelleButton({
     return () => {
       cancelled = true;
     };
-  }, [segmentationTypeId, image.id]);
+  }, [eligibilityRevision, segmentationTypeId, image.id]);
 
   const organelle =
     currentSegmentation?.segmentation_type?.short_name ||
     currentSegmentation?.segmentation_type?.long_name ||
     "this organelle";
   const enabled = (annotationCount ?? 0) > 0;
+  const tooltip = enabled
+    ? `Train a ${organelle.toLowerCase()} model on your own annotations.`
+    : "Mark an ROI as Done or outline a Confirmed area you have annotated to enable fine-tuning";
 
   return (
     <>
-      <button
-        type="button"
-        className="header-route-link finetune-header-button"
-        data-testid="finetune-organelle-button"
-        disabled={!enabled}
-        title={
-          enabled
-            ? `Train a ${organelle.toLowerCase()} model on your own annotations.`
-            : `Nothing to train on yet for ${organelle.toLowerCase()} on this image. ${TRAINING_ANNOTATION_SOURCES}`
-        }
-        onClick={() => setOpen(true)}
-      >
-        Fine-Tune
-      </button>
+      <span className="finetune-header-button-tooltip" title={tooltip}>
+        <button
+          type="button"
+          className="header-route-link finetune-header-button"
+          data-testid="finetune-organelle-button"
+          disabled={!enabled}
+          title={tooltip}
+          onClick={() => setOpen(true)}
+        >
+          Fine-Tune
+        </button>
+      </span>
       <FineTuneDialog
         open={open}
         onClose={() => setOpen(false)}

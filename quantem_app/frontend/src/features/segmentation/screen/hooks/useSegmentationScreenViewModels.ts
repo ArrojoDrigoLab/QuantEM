@@ -133,7 +133,8 @@ export function useSegmentationScreenViewModels({
       leftMode: reviewMode.leftMode,
       correctionMode: reviewMode.correctionMode,
       isGroupActionModeActive: reviewMode.isGroupActionModeActive,
-      roiPlacementActive: route.isErSegmentation ? erRoi.placementActive : false,
+      roiPlacementActive: erRoi.placementActive,
+      samBoxActive: samBox.isSelected,
     });
 
     const headerProps = buildSegmentationHeaderProps({
@@ -145,6 +146,14 @@ export function useSegmentationScreenViewModels({
       // What the raster on screen was actually built from, straight off the
       // manifest -- not the selector, which is a request rather than a fact.
       displayedSourceModel: overlayManifest.overlayManifest?.source_model ?? null,
+      fineTuneEligibilityRevision: [
+        ...completedRoi.items.map((item) => item.id),
+        ...(processing.segmentationRois ?? [])
+          .filter((roi) => Boolean(roi.completed_for_segmentation))
+          .map((roi) => roi.id),
+      ]
+        .sort()
+        .join(":"),
       fullImageActive: processing.fullImageActive,
       fullImageProgress: processing.fullImageProgress,
       onBackToHome: route.handleBackToHome,
@@ -194,7 +203,12 @@ export function useSegmentationScreenViewModels({
           groupSelectionBBox: reviewGroup.groupSelectionBBox,
           groupHighlightedSegmentIds: reviewGroup.groupBboxHighlightedSegmentIds,
         },
-        roi: buildSegmentationRoiViewModel(processing.activeRoi),
+        roi: buildSegmentationRoiViewModel(
+          processing.activeRoi,
+          (processing.segmentationRois ?? []).filter((roi) =>
+            Boolean(roi.completed_for_segmentation)
+          )
+        ),
         drawing: {
           pendingPolygon: drawing.pendingPolygon,
           brushStrokes: drawing.brushStrokes,
@@ -393,18 +407,21 @@ export function useSegmentationScreenViewModels({
       headerProps,
       leftPanelProps,
       rightPanelProps,
-      sidebarProps: route.isErSegmentation
+      sidebarProps: route.currentSegmentation && !route.isTissueSegmentation
         ? {
             ...sidebarProps,
             erRoi: {
               placementActive: erRoi.placementActive,
               pendingRoiActive: erRoi.pendingRoi !== null,
+              relocatingRoiId: erRoi.relocatingRoiId,
               confirming: erRoi.confirming,
               rois: processing.segmentationRois ?? [],
               activeRoiId: processing.activeRoi?.id ?? null,
               markingRoiId: erRoi.markingRoiId,
               deletingRoiId: erRoi.deletingRoiId,
+              activatingRoiId: erRoi.activatingRoiId,
               onStartPlacement: erRoi.startPlacement,
+              onMoveRoi: erRoi.moveRoi,
               onCancelPlacement: erRoi.cancelPlacement,
               onConfirmRoi: () => {
                 void erRoi.confirmRoi();
@@ -434,6 +451,7 @@ export function useSegmentationScreenViewModels({
     handleCorrectionDrawComplete,
     handleLeftViewportChange,
     handleRightViewportChange,
+    onClearMislabeledObjects,
     interactions,
     samBox,
     leftSegments,

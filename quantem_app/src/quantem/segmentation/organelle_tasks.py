@@ -9,7 +9,6 @@ from typing import NoReturn
 
 from quantem.assets.models import ImageROI
 from quantem.jobs.reporter import unit_window
-from quantem.seg_core.db.extraction import extract_and_save_segments, resolve_min_area
 from quantem.seg_core.db.inference import (
     TileWindow,
     _estimate_model_tile_count,
@@ -21,7 +20,7 @@ from quantem.seg_core.registry import get_segmenter, get_segmenter_or_none
 from .instance_params import supports_instance_params
 from .models import ImageSegmentation, SegmentationConfig, SegmentObject
 from .prob_maps.persistence import persist_run_probability_maps
-from .run_identity import read_run_identity, run_identity_from_segmenter
+from .run_identity import read_run_identity, utc_timestamp
 from .source_models import normalize_source_model, resolve_segmenter_internal_name
 
 logger = logging.getLogger(__name__)
@@ -346,14 +345,7 @@ def _fail_segmentation(
 
 
 def _run_id(reporter) -> str:
-    """The id this run is recorded under: its job's, or a fresh one.
-
-    Objects from one run must share an id so a manifest can group them, and the
-    job id is the one a user can look up in Tasks & Queues. A run driven outside
-    the queue (a CLI call, a test) still gets a real id rather than ``None`` --
-    the alternative is objects that claim to come from a model and cannot say
-    which run, which is the gap this record closes.
-    """
+    """Stable identity for the model pass whose probability map is stored."""
     job_id = getattr(reporter, "job_id", None)
     text = str(job_id).strip() if job_id is not None else ""
     return text or str(uuid.uuid4())
@@ -476,7 +468,13 @@ def _run_segmentation(
     tile_window: TileWindow | None = None,
     image_array=None,
 ) -> int:
-    """Run inference and save candidates. Returns the number of objects created.
+    """Run inference and save the result used by the threshold preview.
+
+    Candidate extraction deliberately does not happen here. Moving the
+    threshold previews the saved result, and Apply is the only action that
+    turns a selected threshold into candidates.
+
+    Returns the number of stored model outputs.
 
     ``tile_window`` and ``image_array`` are passed only by
     :func:`run_segmentation_for_image_task`, which runs several organelles
@@ -528,7 +526,7 @@ def _run_segmentation(
         on_status("RUNNING_INFERENCE", 0)
         if on_detail is not None:
             on_detail("Preparing inference workload")
-        result, img_array = run_inference_for_segmentation(
+        result, _img_array = run_inference_for_segmentation(
             segmenter,
             segmentation,
             config,
@@ -563,69 +561,44 @@ def _run_segmentation(
                 )
             except Exception:  # a log line must never fail the run
                 logger.debug("Could not record the slow-path note", exc_info=True)
-        # Store the map before extracting candidates. Guided fine-tuning scores
+        # Store the map before publishing the threshold as ready. Guided fine-tuning scores
         # itself against what the model predicted here, and until this ran there
         # was no sequence of actions that produced one. See
         # quantem.segmentation.prob_maps.persistence for why it is not the
         # segmenter's own persist_probability_maps that does this.
-        persist_run_probability_maps(
+        if reporter is not None:
+            try:
+                reporter.update(
+                    stage="preparing_threshold",
+                    message="Preparing the threshold preview",
+                )
+            except TypeError:
+                # Lightweight reporters used by callers predating structured
+                # stages still receive the useful sentence.
+                reporter.update(message="Preparing the threshold preview")
+        written = persist_run_probability_maps(
             segmentation=segmentation,
             segmenter=segmenter,
             prob_maps=result.prob_maps,
             roi=roi,
             on_detail=on_detail,
-        )
-        # Built after inference returns, so `fg_threshold` and `adapter_id` are
-        # the values the run actually wore (apply_adapter can have replaced the
-        # published threshold), and stamped onto every object extraction
-        # creates.
-        area_floor = resolve_min_area(segmenter, None)
-        run_identity = run_identity_from_segmenter(
-            segmenter,
             run_id=_run_id(reporter),
-            pack_id_fallback=resolved_source_model or segmenter.name,
-            native_pixel_size_nm=_asset_pixel_size_nm(segmentation),
-            min_area=area_floor,
+            run_finished_at=utc_timestamp(),
         )
-        logger.info(
-            "Run %s: pack=%s threshold=%s adapter=%s ran_at_nm=%s min_area=%s",
-            run_identity["id"],
-            run_identity["pack_id"],
-            run_identity["threshold"],
-            run_identity["adapter_id"],
-            run_identity["ran_at_nm"],
-            run_identity["min_area"],
-        )
-        count = extract_and_save_segments(
-            segmenter,
-            segmentation,
-            result,
-            img_array,
-            roi,
-            min_area=area_floor,
-            on_status=on_status,
-            on_detail=on_detail,
-            run_identity=run_identity,
-        )
-        logger.info("Created %d %s segments", count, segmenter.name)
-        if count == 0:
-            logger.info(
-                "%s run over segmentation %s found no objects",
-                segmenter.name.upper(),
-                segmentation_id,
+        stored_count = len(written)
+        if not stored_count and not bool(
+            getattr(segmenter, "persist_probability_maps", True)
+        ):
+            raise RuntimeError(
+                "The model finished, but its threshold result could not be saved. "
+                "No candidates were changed. Check available disk space and try again."
             )
-            zero_message, _ = zero_object_outcome(segmentation)
-            # A re-run over a proofread image finding nothing is the expected
-            # result, not something to warn about.
-            level = "warning" if zero_message == NO_OBJECTS_MESSAGE else "info"
-            if reporter is not None:
-                reporter.log(level, zero_message)
-            if on_detail is not None:
-                on_detail(zero_message)
-        elif on_detail is not None:
-            on_detail(f"Created {count} candidate segments")
-        on_status("CANDIDATES_READY", 100.0)
-        return count
+        if not stored_count:
+            stored_count = len(result.prob_maps)
+        if on_detail is not None:
+            on_detail("Threshold preview ready")
+        on_status("THRESHOLD_READY", 100.0)
+        return stored_count
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         logger.exception(
             "%s inference failed for segmentation %s: %s",
@@ -652,7 +625,7 @@ def run_segmentation_roi_task(
     force_recompute_prob_maps: bool = False,
     reporter=None,
 ) -> int:
-    """Run segmentation inference scoped to an ROI. Returns the object count."""
+    """Run inference scoped to an ROI. Returns the stored-output count."""
     return _run_segmentation(
         segmentation_id=segmentation_id,
         segmentation_type=segmentation_type,
@@ -670,7 +643,7 @@ def run_segmentation_full_task(
     force_recompute_prob_maps: bool = False,
     reporter=None,
 ) -> int:
-    """Run segmentation inference over the full image. Returns the object count."""
+    """Run inference over the full image. Returns the stored-output count."""
     return _run_segmentation(
         segmentation_id=segmentation_id,
         segmentation_type=segmentation_type,
@@ -876,7 +849,7 @@ def run_segmentation_for_image_task(
             # wave for as long as this block is open. One row, one denominator,
             # and two writers that cannot disagree about it.
             with unit_window(window.base, window.total):
-                count = _run_segmentation(
+                stored_count = _run_segmentation(
                     segmentation_id=leg["segmentation_id"],
                     segmentation_type=leg["segmentation_type"],
                     roi_id=None,
@@ -919,7 +892,9 @@ def run_segmentation_for_image_task(
                     "segmentation_id": leg["segmentation_id"],
                     "name": leg["name"],
                     "status": "SUCCESS",
-                    "segment_count": int(count),
+                    "segment_count": 0,
+                    "stored_output_count": int(stored_count),
+                    "threshold_ready": True,
                 }
             )
         window.advance()
@@ -929,6 +904,10 @@ def run_segmentation_for_image_task(
         "asset_id": str(asset_id),
         "organelles": results,
         "segment_count": sum(int(item.get("segment_count") or 0) for item in results),
+        "stored_output_count": sum(
+            int(item.get("stored_output_count") or 0) for item in results
+        ),
+        "threshold_ready": not failures,
         "units_total": grand_total,
         "units_done": window.base,
     }

@@ -1,28 +1,11 @@
-/**
- * Every sentence the include-level dial can show, in one place.
- *
- * The vocabulary rule this feature inherits (see `features/improve/copy.ts`):
- * **include level**, never "threshold"; **kept** and **removed**, never
- * "confirmed" and "excluded". The word "threshold" appears in this directory's
- * name and in the backend, and nowhere a user can read.
- *
- * No sentence here names a route, an HTTP verb, a job type or a file path
- * (invariant I-12). Where a failure has a way out, the sentence names the
- * *control* that takes it.
- */
+/** User-facing copy for the threshold control. */
 
-/** How a level is written wherever one is shown. Two decimals, matching Improve. */
+/** How a threshold is written wherever one is shown. */
 export function formatIncludeLevel(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : value.toFixed(2);
 }
 
-/**
- * Below this, two levels are the same level.
- *
- * The slider steps in hundredths, so this only has to be small enough not to
- * swallow one step and large enough to absorb float noise from a round trip
- * through JSON.
- */
+/** The slider steps in hundredths; this only absorbs JSON float noise. */
 export const LEVEL_EPSILON = 0.005;
 
 export function levelsDiffer(
@@ -34,60 +17,22 @@ export function levelsDiffer(
   return Math.abs(a - b) > LEVEL_EPSILON;
 }
 
-export const DIAL_TITLE = "Include level";
+export const DIAL_TITLE = "Threshold";
 
-/**
- * What the dial *is*, in one line, before the user moves anything.
- *
- * Says which way is which, because a bare 0-1 number over a picture of cells
- * carries no direction and guessing wrong costs a re-run.
- */
-export const DIAL_EXPLANATION =
-  "How sure I have to be before I call something an object. Lower finds more " +
-  "and includes shakier ones; higher finds fewer and keeps only the clear ones.";
+/** Available on hover without taking space from the control. */
+export const DIAL_TOOLTIP =
+  "Adjust the saved model result before creating candidates. Lower values include " +
+  "weaker evidence; higher values keep only stronger evidence.";
 
-/** Shown when no dial move has been recorded against this image. */
-export const LEVEL_NOT_SET =
-  "These objects came straight from the model, at its own level.";
-
-/**
- * What it costs. The honest headline of the whole feature: it is not a re-run.
- */
-export const DIAL_COST =
-  "Takes a few seconds. The model does not run again — I re-read the result it " +
-  "already saved.";
-
-/**
- * The preservation promise, in this feature's own words.
- *
- * Not a reassurance: it is a description of what the extraction code does, and
- * `segmentation/tests/test_annotation_preservation_invariant.py` is what keeps
- * it true on this path as well as on the model path.
- */
-export const DIAL_PRESERVATION =
-  "Nothing you have kept, removed or drawn by hand changes, and areas you have " +
-  "marked finished are left exactly as they are. Only my own guesses are redone.";
+export const DIAL_BLOCKED_TOOLTIP =
+  "No stored result is kept for this image, so the include level cannot be moved " +
+  "without running the model again. Running it once saves one, and the level can " +
+  "be moved freely from then on. Run the model on this image from the labeling " +
+  "header, and the threshold can be adjusted afterwards.";
 
 /** While the re-extract is queued or running. */
-export const DIAL_WORKING = "Finding the objects at the new level…";
+export const DIAL_WORKING = "Applying threshold…";
 
-/** After it lands. */
-export function dialDone(objectCount: number): string {
-  return objectCount === 1
-    ? "1 object at this include level."
-    : `${objectCount} objects at this include level.`;
-}
-
-/**
- * What a user can do when the dial cannot move.
- *
- * The server's own sentence says *why* -- and the two reasons are different
- * futures, so it is never replaced with a generic one. This is appended after
- * it, naming the control rather than the request.
- */
-export const DIAL_BLOCKED_ACTION =
-  "Run the model on this image from the labeling header, and the dial works " +
-  "from then on.";
-
+/** Appended to the server's specific reason when the control is unavailable. */
 export const DIAL_FAILED_FALLBACK =
-  "The objects could not be redone at that include level.";
+  "The objects could not be re-extracted at that threshold.";

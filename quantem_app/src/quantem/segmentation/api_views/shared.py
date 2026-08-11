@@ -31,8 +31,8 @@ def get_or_create_roi_image(image) -> ImageROI:
     if existing:
         return existing
 
-    roi_min_size = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "6000"))
-    roi_size = int(os.environ.get("ROI_SIZE", "3000"))
+    roi_min_size = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "512"))
+    roi_size = int(os.environ.get("ROI_SIZE", "512"))
     if image.width >= roi_min_size and image.height >= roi_min_size:
         roi_result = select_roi_for_image(image, roi_size=roi_size)
         return create_roi_image_from_image(

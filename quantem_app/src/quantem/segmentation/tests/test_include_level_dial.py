@@ -200,7 +200,7 @@ class TheWorkerTests(IncludeLevelDialTestCase):
         """
         self.run_the_model(0.5)
         at_half = self.live_candidates()
-        assert at_half > 0
+        assert at_half == 0, "running the model must not create candidates"
 
         with patch.object(
             DinoMitoSegmenter, "load_models", side_effect=AssertionError("loaded")
@@ -209,13 +209,11 @@ class TheWorkerTests(IncludeLevelDialTestCase):
 
         assert outcome["segment_count"] == self.live_candidates()
         assert outcome["include_level"] == 0.25
-        assert self.live_candidates() != at_half, (
-            "the object count did not move, so this would pass on a dial that "
-            "ignored its input"
-        )
+        assert self.live_candidates() > at_half
 
     def test_the_new_object_set_is_its_own_numbered_result(self):
         self.run_the_model(0.5)
+        self.work_the_job(0.5)
         first = SegmentationResultVersion.current_version_for(self.segmentation)
 
         self.work_the_job(0.3)
@@ -238,13 +236,12 @@ class TheWorkerTests(IncludeLevelDialTestCase):
         """
         self.run_the_model(0.5)
 
-        latest = SegmentationResultVersion.objects.filter(
+        assert not SegmentationResultVersion.objects.filter(
             segmentation=self.segmentation
-        ).order_by("-version").first()
-        assert latest is not None
-        assert latest.include_level is None
+        ).exists(), "a preview is not yet a candidate result"
         self.segmentation.refresh_from_db()
         assert self.segmentation.include_level is None
+        assert self.segmentation.status_stage == "THRESHOLD_READY"
 
     def test_the_level_is_written_where_every_screen_reads_it(self):
         self.run_the_model(0.5)
@@ -393,7 +390,23 @@ class TheRouteTests(IncludeLevelDialTestCase):
         assert body["detail"] == ""
         assert body["minimum"] == 0.0
         assert body["maximum"] == 1.0
-        assert body["object_count"] > 0
+        assert body["object_count"] == 0
+        assert body["preview_url"].endswith("/include-level/map")
+
+    def test_the_preview_route_serves_the_saved_map_without_caching_it(self):
+        self.run_the_model(0.5)
+        response = self.client.get(
+            reverse(
+                "segmentation-include-level-map",
+                args=[str(self.segmentation.id)],
+            ),
+            {"source_model": SOURCE_MODEL},
+        )
+
+        assert response.status_code == 200
+        assert response["Content-Type"] == "image/png"
+        assert response["Cache-Control"] == "no-store"
+        assert b"".join(response.streaming_content).startswith(b"\x89PNG")
 
     def test_asking_for_a_level_queues_one_job_and_says_so(self):
         self.run_the_model(0.5)

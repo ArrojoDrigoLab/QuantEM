@@ -96,4 +96,29 @@ describe("buildLeftPanelViewerConfig", () => {
     expect(viewerProps.interactions?.draw?.enabled).toBe(false);
     expect(viewerProps.viewport?.disablePan).toBe(true);
   });
+
+  it("reserves the drag for box-to-object instead of the correction brush", () => {
+    const props = makeLeftPanelProps({
+      workflow: {
+        ...makeLeftPanelProps().workflow,
+        mode: "review",
+        reviewPhase: "correction",
+        correctionTool: "sam",
+        leftMode: "hover",
+        navigateMode: false,
+        samBoxActive: true,
+      },
+    });
+
+    const viewerProps = buildLeftPanelViewerConfig({
+      ...props,
+      overlayScene: { persistent: [], transient: [] },
+    });
+
+    expect(viewerProps.interactions?.brush?.enabled).toBe(false);
+    expect(viewerProps.interactions?.draw?.enabled).toBe(false);
+    expect(viewerProps.interactions?.onImageClick).toBeUndefined();
+    expect(viewerProps.viewport?.disablePan).toBe(true);
+    expect(viewerProps.highlighting?.hoverCursor).toBe(false);
+  });
 });

@@ -36,10 +36,13 @@ export function buildLeftPanelViewerConfig({
     workflow.mode === "review" &&
     workflow.reviewPhase === "correction" &&
     workflow.correctionTool === "add";
-  // While placing an ER ROI, the click must reach the placement handler: keep
+  // While placing an ROI, the click must reach the placement handler: keep
   // clicks live (even in navigate mode), force brush/draw off, and disable pan
   // so a placement click is never swallowed as a brush stroke or a pan gesture.
   const roiPlacementActive = workflow.roiPlacementActive;
+  // Box-to-object owns the entire drag. In particular, the normal draw brush
+  // must be off or it consumes pointer-up before the box tool can submit.
+  const samBoxActive = workflow.samBoxActive;
   const fitBounds = viewer.transientFitBounds
     ? viewer.transientFitBounds
     : roi.activeRoi
@@ -70,7 +73,7 @@ export function buildLeftPanelViewerConfig({
     viewport: {
       state: viewer.viewport ?? undefined,
       onChange: viewer.onViewportChange,
-      disablePan: disablePanForGroup || roiPlacementActive,
+      disablePan: Boolean(disablePanForGroup || roiPlacementActive || samBoxActive),
       fitBounds,
       fitBoundsKey,
     },
@@ -83,7 +86,9 @@ export function buildLeftPanelViewerConfig({
     },
     interactions: {
       onImageClick:
-        workflow.navigateMode && !roiPlacementActive ? undefined : segments.onClick,
+        (workflow.navigateMode && !roiPlacementActive) || samBoxActive
+          ? undefined
+          : segments.onClick,
       onImageMouseMove: workflow.navigateMode ? undefined : segments.onMouseMove,
       onImageMouseLeave: workflow.navigateMode ? undefined : segments.onMouseLeave,
       onImagePress: workflow.navigateMode ? undefined : segments.onPress,
@@ -92,6 +97,7 @@ export function buildLeftPanelViewerConfig({
       draw: {
         enabled:
           !roiPlacementActive &&
+          !samBoxActive &&
           !workflow.navigateMode &&
           workflow.leftMode === "draw" &&
           !(
@@ -105,6 +111,7 @@ export function buildLeftPanelViewerConfig({
       brush: {
         enabled:
           !roiPlacementActive &&
+          !samBoxActive &&
           !workflow.navigateMode &&
           (isAddMode ||
             (workflow.mode === "review" &&
@@ -148,7 +155,7 @@ export function buildLeftPanelViewerConfig({
     },
     highlighting: {
       highlightedSegmentId: viewerHighlightedId,
-      hoverCursor: !workflow.navigateMode && showHoverCursor,
+      hoverCursor: !workflow.navigateMode && !samBoxActive && showHoverCursor,
       cursorMode: !workflow.navigateMode && workflow.targetCursorActive ? "target" : undefined,
       hoverBadge: workflow.navigateMode
         ? undefined

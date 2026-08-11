@@ -19,3 +19,8 @@
 .confirmed-area-group {
   align-items: flex-start;
 }
+
+/* A sub-tool belongs to Correct, not to the top-level Review/Correct switch. */
+.mode-toolbar-subtools {
+  margin-left: 0.4rem;
+}

@@ -18,7 +18,8 @@ import type { JobDownloadProgress, JobQueueItem } from "@/shared/types/jobs";
  */
 export const STAGE_PHRASES: Record<string, string> = {
   queued: "waiting to start",
-  loading_model: "loading the model",
+  loading_model: "preparing the model and image",
+  preparing_threshold: "preparing the threshold preview",
   extracting: "finding objects",
   saving: "saving objects",
   downloading_model: "downloading the model",

@@ -10,7 +10,7 @@ import { LeftPanelDrawingActions } from "@/features/segmentation/components/left
 import { LeftPanelRoiSection } from "@/features/segmentation/components/leftPanel/LeftPanelRoiSection";
 import { LeftPanelStatusMessage } from "@/features/segmentation/components/leftPanel/LeftPanelStatusMessage";
 import type { SegmentationLeftPanelProps } from "@/features/segmentation/components/leftPanel/types";
-import { useErPreviewStore } from "@/features/segmentation/erPreview/useErPreviewStore";
+import { useThresholdPreviewStore } from "@/features/segmentation/components/threshold/useThresholdPreviewStore";
 import { colorizeProb } from "@/features/segmentation/erPreview/overlayCanvas";
 import "./SegmentationLeftPanel.css";
 
@@ -18,33 +18,50 @@ export type { SegmentationLeftPanelProps } from "@/features/segmentation/compone
 
 export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
   const overlayScene = useMemo(() => buildLeftPanelVectorScene(props), [props]);
-  const erOverlay = useErPreviewStore((state) => state.overlay);
-  const erThreshold = useErPreviewStore((state) => state.threshold);
-  const erOpacity = useErPreviewStore((state) => state.opacity);
-  const erCanvas = useMemo(
-    () => (erOverlay ? colorizeProb(erOverlay, erThreshold, erOpacity) : null),
-    [erOverlay, erThreshold, erOpacity]
+  const thresholdOverlay = useThresholdPreviewStore((state) => state.overlay);
+  const threshold = useThresholdPreviewStore((state) => state.threshold);
+  const thresholdOpacity = useThresholdPreviewStore((state) => state.opacity);
+  const thresholdCanvas = useMemo(
+    () =>
+      thresholdOverlay
+        ? colorizeProb(thresholdOverlay, threshold, thresholdOpacity, {
+            polygons: props.completedRoi.items,
+            rectangles: props.roi.completedRois.map((roi) => ({
+              x: roi.x,
+              y: roi.y,
+              width: roi.width,
+              height: roi.height,
+            })),
+          })
+        : null,
+    [
+      props.completedRoi.items,
+      props.roi.completedRois,
+      threshold,
+      thresholdOpacity,
+      thresholdOverlay,
+    ]
   );
   const viewerProps = useMemo(() => {
     const config = buildLeftPanelViewerConfig({
       ...props,
       overlayScene,
     });
-    if (erOverlay && erCanvas) {
+    if (thresholdOverlay && thresholdCanvas) {
       config.overlays = {
         ...config.overlays,
         bitmapOverlays: [
           {
-            id: `er-preview-${erOverlay.sourceModel}-${erThreshold.toFixed(2)}-${erOpacity.toFixed(2)}`,
-            image: erCanvas,
-            bounds: erOverlay.bounds,
+            id: `threshold-preview-${thresholdOverlay.sourceModel}-${threshold.toFixed(2)}`,
+            image: thresholdCanvas,
+            bounds: thresholdOverlay.bounds,
             opacity: 1,
           },
         ],
       };
     }
     return config;
-  }, [overlayScene, props, erOverlay, erCanvas, erThreshold, erOpacity]);
+  }, [overlayScene, props, thresholdOverlay, thresholdCanvas, threshold]);
 
   return (
     <section className="seg-left">

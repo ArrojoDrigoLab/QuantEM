@@ -172,6 +172,8 @@ def persist_run_probability_maps(
     prob_maps: dict[str, np.ndarray],
     roi: ImageROI | None = None,
     on_detail: Callable[[str], None] | None = None,
+    run_id: str | None = None,
+    run_finished_at: str | None = None,
 ) -> list[ProbabilityMap]:
     """Store the maps a completed run produced. Never raises.
 
@@ -183,6 +185,8 @@ def persist_run_probability_maps(
             float array in ``[0, 1]``.
         roi: the ROI the run was scoped to, or ``None`` for a full-image run.
         on_detail: optional job-log callback, used to say when a map was skipped.
+        run_id: identity of the model run that produced the stored bytes.
+        run_finished_at: completion time of that model run, as an ISO string.
 
     Returns:
         The ``ProbabilityMap`` rows written (empty when nothing was stored).
@@ -249,6 +253,10 @@ def persist_run_probability_maps(
             metadata: dict[str, object] = dict(
                 segmenter.get_probability_map_metadata(model_name) or {}
             )
+            if run_id:
+                metadata["run_id"] = str(run_id)
+            if run_finished_at:
+                metadata["run_finished_at"] = str(run_finished_at)
             metadata["run_scope"] = SCOPE_ROI if roi is not None else SCOPE_FULL
             if roi is not None:
                 # The offset the crop reader needs; without it an ROI-sized map

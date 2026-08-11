@@ -121,10 +121,10 @@ export function organelleRow(job: JobQueueItem): ProgressRow {
       units ? formatUnits(0, units.total, units.label) : null,
     ]);
   } else if (stage === "loading_model") {
-    // The plan's line, verbatim: "loading the model — 0 of 357 tiles".
+    // Name both pieces of setup before tile 1.
     detail = units
-      ? `loading the model — ${formatUnits(units.done, units.total, units.label)}`
-      : "loading the model";
+      ? `preparing the model and image — ${formatUnits(units.done, units.total, units.label)}`
+      : "preparing the model and image";
   } else if (units && units.done < units.total) {
     percent = units.percent;
     showPercentText = true;

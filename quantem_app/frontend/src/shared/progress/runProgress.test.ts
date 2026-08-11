@@ -92,14 +92,14 @@ describe("the per-organelle line", () => {
     expect(row.detail).toContain("17 of 56 tiles");
   });
 
-  it("says loading the model with the denominator, and claims no fraction done", () => {
+  it("says it is preparing the model and image, with no fraction done", () => {
     const row = organelleRow(
       runJob({
         progress_stage: "loading_model",
         unit_progress: units({ done: 0, total: 357, percent: 0 }),
       })
     );
-    expect(row.detail).toBe("loading the model — 0 of 357 tiles");
+    expect(row.detail).toBe("preparing the model and image — 0 of 357 tiles");
     // No bar at all: this is the window that used to read as a frozen 5%.
     expect(row.percent).toBeNull();
   });

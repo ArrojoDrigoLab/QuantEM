@@ -33,9 +33,16 @@ function megabytes(bytes: number): string {
 
 export interface SamBoxToolControlsProps {
   tool: SamBoxTool;
+  /** Whether box-to-object is the selected correction sub-tool. */
+  selected: boolean;
+  onToggle: () => void;
 }
 
-export function SamBoxToolControls({ tool }: SamBoxToolControlsProps) {
+export function SamBoxToolControls({
+  tool,
+  selected,
+  onToggle,
+}: SamBoxToolControlsProps) {
   const { model } = tool;
   const download = model?.download;
   const downloading = download?.status === "RUNNING";
@@ -44,9 +51,9 @@ export function SamBoxToolControls({ tool }: SamBoxToolControlsProps) {
     <div className="sam-box-tool">
       <button
         type="button"
-        className={`icon-tool-button ${tool.isActive ? "active" : ""}`}
-        onClick={() => tool.setActive(!tool.isActive)}
-        aria-pressed={tool.isActive}
+        className={`icon-tool-button ${selected ? "active" : ""}`}
+        onClick={onToggle}
+        aria-pressed={selected}
         aria-label="Box to object"
         title="Box to object: drag a box around one object and it is segmented and added"
       >

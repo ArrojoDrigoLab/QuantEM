@@ -1,20 +1,15 @@
-/**
- * Binds the box-to-object tool to the labeling screen.
- *
- * The tool itself lives in `features/sam` and knows nothing about this screen.
- * This adapter supplies the three things it needs from here -- what counts as
- * "available", what to refresh once an object lands, and where an error goes --
- * and hands back the slot content and the transient overlays the screen already
- * knows how to render.
- */
+/** Binds the box-to-object correction tool to the labeling screen. */
 
-import { useCallback, useMemo } from "react";
-import { createElement, type ReactNode } from "react";
+import { createElement, type ReactNode, useCallback, useEffect, useMemo } from "react";
+
 import { SamBoxToolControls } from "@/features/sam/SamBoxToolControls";
 import { useSamBoxTool, type SamBoxTool } from "@/features/sam/useSamBoxTool";
 import type { SamBoxResponse } from "@/features/sam/types";
 import type { WorkflowMode } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
-import type { CorrectionModeState } from "@/shared/types/segmentation";
+import type {
+  CorrectionModeState,
+  CorrectionTool,
+} from "@/shared/types/segmentation";
 import type { SegmentOverlay } from "@/viewer/types";
 
 interface UseReviewSamBoxControllerArgs {
@@ -24,7 +19,8 @@ interface UseReviewSamBoxControllerArgs {
   leftNavigateMode: boolean;
   /** Tissue segmentations run a different toolbar entirely. */
   isTissueSegmentation: boolean;
-  /** Refetch the objects and the overlay raster once the object is stored. */
+  onCorrectionToolChange: (tool: CorrectionTool) => void;
+  /** Refetch the objects and overlay raster after an object is stored. */
   onOverlayMutation: (overlay: unknown) => void;
   showErrorToast: (message: string) => void;
   showNoticeToast?: (message: string) => void;
@@ -33,9 +29,11 @@ interface UseReviewSamBoxControllerArgs {
 
 export interface ReviewSamBoxController {
   tool: SamBoxTool;
-  /** True while the tool owns the pointer -- the router checks this. */
+  /** The user selected box-to-object, so the viewer reserves the drag for it. */
+  isSelected: boolean;
+  /** True while the tool has claimed the pointer. */
   isActive: boolean;
-  /** Rendered into the toolbar's `extraModes` slot. */
+  /** Rendered as a correction sub-tool, beneath Review / Correct. */
   controls: ReactNode;
   /** Appended to the viewer's transient overlay list. */
   overlays: SegmentOverlay[];
@@ -59,26 +57,24 @@ export function useReviewSamBoxController({
   correctionMode,
   leftNavigateMode,
   isTissueSegmentation,
+  onCorrectionToolChange,
   onOverlayMutation,
   showErrorToast,
   showNoticeToast,
   registerAnnotationActivity,
 }: UseReviewSamBoxControllerArgs): ReviewSamBoxController {
-  // Offered in the same place as the other correction tools, and never while
-  // Navigate owns the pointer.
-  const available =
+  const visible =
     !isTissueSegmentation &&
     !leftNavigateMode &&
     workflowMode === "review" &&
     correctionMode.reviewPhase === "correction" &&
     Boolean(currentSegmentationId);
+  const isSelected = visible && correctionMode.correctionTool === "sam";
 
   const handleCreated = useCallback(
     (response: SamBoxResponse) => {
       onOverlayMutation(response.overlay);
       if (response.created === 0 && showNoticeToast) {
-        // The request succeeded and stored nothing -- a mask that came back
-        // thinner than a pixel. Saying so beats a box that silently vanishes.
         showNoticeToast(
           "Nothing was stored: the object found in that box was too thin to keep."
         );
@@ -89,19 +85,38 @@ export function useReviewSamBoxController({
 
   const tool = useSamBoxTool({
     segmentationId: currentSegmentationId,
-    available,
+    available: isSelected,
     onObjectCreated: handleCreated,
     onError: showErrorToast,
     registerActivity: registerAnnotationActivity,
   });
+  const setToolActive = tool.setActive;
+
+  // Selecting this correction tool must claim the pointer immediately. Leaving
+  // it restores the standard draw tool, which also clears any partial box.
+  useEffect(() => {
+    setToolActive(isSelected);
+  }, [isSelected, setToolActive]);
+
+  const toggleTool = useCallback(() => {
+    onCorrectionToolChange(isSelected ? "draw" : "sam");
+  }, [isSelected, onCorrectionToolChange]);
 
   const controls = useMemo(
-    () => (available ? createElement(SamBoxToolControls, { tool }) : null),
-    [available, tool]
+    () =>
+      visible
+        ? createElement(SamBoxToolControls, {
+            tool,
+            selected: isSelected,
+            onToggle: toggleTool,
+          })
+        : null,
+    [isSelected, toggleTool, tool, visible]
   );
 
   return {
     tool,
+    isSelected,
     isActive: tool.isActive,
     controls,
     overlays: tool.overlays,

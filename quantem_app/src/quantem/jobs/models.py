@@ -67,6 +67,8 @@ STAGE_QUEUED = "queued"
 STAGE_LOADING_MODEL = "loading_model"
 #: Sliding windows over the image. This is the stage that reports tiles.
 STAGE_INFERENCE = "inference"
+#: Saving the result that makes the threshold preview available.
+STAGE_PREPARING_THRESHOLD = "preparing_threshold"
 #: Turning the probability map into objects.
 STAGE_EXTRACTING = "extracting"
 #: Writing objects and overlays.
@@ -90,6 +92,7 @@ PROGRESS_STAGES = (
     STAGE_QUEUED,
     STAGE_LOADING_MODEL,
     STAGE_INFERENCE,
+    STAGE_PREPARING_THRESHOLD,
     STAGE_EXTRACTING,
     STAGE_SAVING,
     STAGE_DOWNLOADING_MODEL,

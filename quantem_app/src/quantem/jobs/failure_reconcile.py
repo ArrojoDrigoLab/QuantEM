@@ -255,7 +255,7 @@ def _reconcile_segmentation(
         # the mitochondria failed because the nucleus model was missing. The
         # single-organelle case is untouched: there, the job's failure and the
         # segmentation's are the same event.
-        protected = protected | {"CANDIDATES_READY"}
+        protected = protected | {"THRESHOLD_READY", "CANDIDATES_READY"}
     updated = (
         model.objects.filter(id__in=segmentation_ids)
         .exclude(status_stage__in=protected)

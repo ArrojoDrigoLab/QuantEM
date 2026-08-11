@@ -369,7 +369,9 @@ class ImageRunDriverTests(TestCase):
                 legs=[{"segmentation_id": leg["segmentation_id"]} for leg in self.legs],
             )
         self.assertEqual(len(calls), 2)
-        self.assertEqual(outcome["segment_count"], 14)
+        self.assertEqual(outcome["segment_count"], 0)
+        self.assertEqual(outcome["stored_output_count"], 14)
+        self.assertTrue(outcome["threshold_ready"])
         self.assertEqual(
             {item["status"] for item in outcome["organelles"]}, {"SUCCESS"}
         )

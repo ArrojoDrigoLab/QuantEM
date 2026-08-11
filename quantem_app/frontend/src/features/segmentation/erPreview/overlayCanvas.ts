@@ -1,4 +1,4 @@
-export interface ErProbOverlay {
+export interface ProbabilityOverlay {
   probData: Uint8ClampedArray; // RGBA from the decoded grayscale prob PNG; R holds prob*255
   width: number;
   height: number;
@@ -6,6 +6,8 @@ export interface ErProbOverlay {
   color: [number, number, number];
   sourceModel: string;
 }
+
+export type ErProbOverlay = ProbabilityOverlay;
 
 /** Decode the grayscale probability PNG (data URL) into raw pixel data. */
 export async function decodeProbImage(
@@ -33,9 +35,16 @@ export async function decodeProbImage(
  * below. Cheap enough to recompute live on every slider tick — no model re-run.
  */
 export function colorizeProb(
-  overlay: ErProbOverlay,
+  overlay: ProbabilityOverlay,
   threshold: number,
-  opacity: number
+  opacity: number,
+  mask?: {
+    polygons?: Array<{
+      polygon_coords: Array<[number, number]>;
+      holes?: Array<Array<[number, number]>>;
+    }>;
+    rectangles?: Array<{ x: number; y: number; width: number; height: number }>;
+  }
 ): HTMLCanvasElement {
   const { probData, width, height, color } = overlay;
   const out = new Uint8ClampedArray(width * height * 4);
@@ -58,5 +67,33 @@ export function colorizeProb(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("2D canvas context unavailable");
   ctx.putImageData(new ImageData(out, width, height), 0, 0);
+
+  const [boundsX, boundsY, boundsWidth, boundsHeight] = overlay.bounds;
+  const canvasX = (x: number) => ((x - boundsX) * width) / boundsWidth;
+  const canvasY = (y: number) => ((y - boundsY) * height) / boundsHeight;
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  for (const polygon of mask?.polygons ?? []) {
+    if (polygon.polygon_coords.length < 3) continue;
+    ctx.beginPath();
+    const traceRing = (ring: Array<[number, number]>) => {
+      if (!ring.length) return;
+      ctx.moveTo(canvasX(ring[0][0]), canvasY(ring[0][1]));
+      for (const [x, y] of ring.slice(1)) ctx.lineTo(canvasX(x), canvasY(y));
+      ctx.closePath();
+    };
+    traceRing(polygon.polygon_coords);
+    for (const hole of polygon.holes ?? []) traceRing(hole);
+    ctx.fill("evenodd");
+  }
+  for (const rectangle of mask?.rectangles ?? []) {
+    ctx.fillRect(
+      canvasX(rectangle.x),
+      canvasY(rectangle.y),
+      (rectangle.width * width) / boundsWidth,
+      (rectangle.height * height) / boundsHeight
+    );
+  }
+  ctx.restore();
   return canvas;
 }

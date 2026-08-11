@@ -55,18 +55,18 @@ class OrganelleTaskInstanceParamsTests(TestCase):
             on_status("RUNNING_INFERENCE", 100.0, "ResNet34: 100% (Tile 120/120)")
         return self._mock_inference_result()
 
-    @patch("quantem.segmentation.organelle_tasks.extract_and_save_segments")
+    @patch("quantem.segmentation.organelle_tasks.persist_run_probability_maps")
     @patch("quantem.segmentation.organelle_tasks.run_inference_for_segmentation")
     @patch("quantem.segmentation.organelle_tasks.get_segmenter")
     def test_full_image_run_uses_persisted_instance_params(
         self,
         mock_get_segmenter,
         mock_run_inference,
-        mock_extract,
+        mock_persist,
     ):
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.return_value = self._mock_inference_result()
-        mock_extract.return_value = 0
+        mock_persist.return_value = [object()]
 
         run_segmentation_full_task(
             segmentation_id=str(self.mito_segmentation.id),
@@ -79,14 +79,14 @@ class OrganelleTaskInstanceParamsTests(TestCase):
             self.mito_config.get_instance_params(),
         )
 
-    @patch("quantem.segmentation.organelle_tasks.extract_and_save_segments")
+    @patch("quantem.segmentation.organelle_tasks.persist_run_probability_maps")
     @patch("quantem.segmentation.organelle_tasks.run_inference_for_segmentation")
     @patch("quantem.segmentation.organelle_tasks.get_segmenter")
     def test_roi_run_uses_persisted_instance_params_and_roi(
         self,
         mock_get_segmenter,
         mock_run_inference,
-        mock_extract,
+        mock_persist,
     ):
         roi = create_roi_image_from_image(
             self.image,
@@ -98,7 +98,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
         )
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.return_value = self._mock_inference_result()
-        mock_extract.return_value = 0
+        mock_persist.return_value = [object()]
 
         run_segmentation_roi_task(
             segmentation_id=str(self.mito_segmentation.id),
@@ -113,18 +113,18 @@ class OrganelleTaskInstanceParamsTests(TestCase):
         )
         self.assertEqual(mock_run_inference.call_args.args[3].id, roi.id)
 
-    @patch("quantem.segmentation.organelle_tasks.extract_and_save_segments")
+    @patch("quantem.segmentation.organelle_tasks.persist_run_probability_maps")
     @patch("quantem.segmentation.organelle_tasks.run_inference_for_segmentation")
     @patch("quantem.segmentation.organelle_tasks.get_segmenter")
     def test_er_run_does_not_pass_instance_params(
         self,
         mock_get_segmenter,
         mock_run_inference,
-        mock_extract,
+        mock_persist,
     ):
         mock_get_segmenter.return_value = SimpleNamespace(name="er")
         mock_run_inference.return_value = self._mock_inference_result()
-        mock_extract.return_value = 0
+        mock_persist.return_value = [object()]
 
         run_segmentation_full_task(
             segmentation_id=str(self.er_segmentation.id),
@@ -134,18 +134,18 @@ class OrganelleTaskInstanceParamsTests(TestCase):
         kwargs = mock_get_segmenter.call_args.kwargs
         self.assertNotIn("instance_params", kwargs)
 
-    @patch("quantem.segmentation.organelle_tasks.extract_and_save_segments")
+    @patch("quantem.segmentation.organelle_tasks.persist_run_probability_maps")
     @patch("quantem.segmentation.organelle_tasks.run_inference_for_segmentation")
     @patch("quantem.segmentation.organelle_tasks.get_segmenter")
     def test_full_image_status_forwards_tile_text_to_reporter(
         self,
         mock_get_segmenter,
         mock_run_inference,
-        mock_extract,
+        mock_persist,
     ):
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.side_effect = self._mock_inference_with_status_message
-        mock_extract.return_value = 0
+        mock_persist.return_value = [object()]
         reporter = Mock()
 
         run_segmentation_full_task(
@@ -163,14 +163,14 @@ class OrganelleTaskInstanceParamsTests(TestCase):
             any("Tile 120/120" in message for message in recorded_messages)
         )
 
-    @patch("quantem.segmentation.organelle_tasks.extract_and_save_segments")
+    @patch("quantem.segmentation.organelle_tasks.persist_run_probability_maps")
     @patch("quantem.segmentation.organelle_tasks.run_inference_for_segmentation")
     @patch("quantem.segmentation.organelle_tasks.get_segmenter")
     def test_roi_status_does_not_forward_tile_text_to_reporter(
         self,
         mock_get_segmenter,
         mock_run_inference,
-        mock_extract,
+        mock_persist,
     ):
         roi = create_roi_image_from_image(
             self.image,
@@ -182,7 +182,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
         )
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.side_effect = self._mock_inference_with_status_message
-        mock_extract.return_value = 0
+        mock_persist.return_value = [object()]
         reporter = Mock()
 
         run_segmentation_roi_task(
@@ -199,18 +199,18 @@ class OrganelleTaskInstanceParamsTests(TestCase):
         ]
         self.assertFalse(any("Tile" in message for message in recorded_messages))
 
-    @patch("quantem.segmentation.organelle_tasks.extract_and_save_segments")
+    @patch("quantem.segmentation.organelle_tasks.persist_run_probability_maps")
     @patch("quantem.segmentation.organelle_tasks.run_inference_for_segmentation")
     @patch("quantem.segmentation.organelle_tasks.get_segmenter")
     def test_force_recompute_flag_is_forwarded_to_inference(
         self,
         mock_get_segmenter,
         mock_run_inference,
-        mock_extract,
+        mock_persist,
     ):
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.return_value = self._mock_inference_result()
-        mock_extract.return_value = 0
+        mock_persist.return_value = [object()]
 
         run_segmentation_full_task(
             segmentation_id=str(self.mito_segmentation.id),

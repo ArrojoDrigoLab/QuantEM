@@ -25,11 +25,6 @@ const AnalysisScreen = lazy(() =>
     default: module.AnalysisScreen,
   }))
 );
-const ImprovePanel = lazy(() =>
-  import("@/features/improve/ImprovePanel").then((module) => ({
-    default: module.ImprovePanel,
-  }))
-);
 const ModelsScreen = lazy(() =>
   import("@/features/models/ModelsScreen").then((module) => ({
     default: module.ModelsScreen,
@@ -49,14 +44,9 @@ export const APP_ROUTES: AppRoute[] = [
   // opens Adapt still needs to know what is installed and what can run.
   { path: "/models", element: <ModelsScreen /> },
   { path: "/assets/:assetId", element: <AssetRedirect /> },
-  // Declared before the generic :view route so "analysis", "improve" and
-  // "adapt" are never mistaken for a viewer/labeling view name.
+  // Declared before the generic :view route so "analysis" is never mistaken
+  // for a viewer/labeling view name.
   { path: "/assets/:assetId/analysis", element: <AnalysisScreen /> },
-  { path: "/assets/:assetId/improve", element: <ImprovePanel /> },
-  // The address the six-step wizard used to answer. Kept, pointing at the panel
-  // that replaced it, because a bookmark or a copied link is not a reason to
-  // show someone a 404 -- and because two screens elsewhere still link here.
-  { path: "/assets/:assetId/adapt", element: <ImprovePanel /> },
   { path: "/assets/:assetId/:view/:segmentationTypeName?", element: <AssetRoute /> },
   // An address the router does not know says so. It used to redirect to the
   // library without a word, which recovers the session and hides the fact that

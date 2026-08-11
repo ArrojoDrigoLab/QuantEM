@@ -350,7 +350,8 @@ export type CorrectionTool =
   | "erase"
   | "add"
   | "polygon"
-  | "completed_roi";
+  | "completed_roi"
+  | "sam";
 
 export interface CorrectionModeState {
   reviewPhase: "model" | "correction";

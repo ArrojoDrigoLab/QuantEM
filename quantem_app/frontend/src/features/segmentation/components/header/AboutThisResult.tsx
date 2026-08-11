@@ -116,9 +116,11 @@ export function AboutThisResult({
 export function HeaderRouteLinks({
   image,
   currentSegmentation,
+  fineTuneEligibilityRevision,
 }: {
   image: AssetDetail;
   currentSegmentation: ImageSegmentation | null;
+  fineTuneEligibilityRevision?: string;
 }) {
   return (
     <>
@@ -130,23 +132,10 @@ export function HeaderRouteLinks({
       >
         Analysis
       </a>
-      {/* "Adapt model" named a technique; this names the outcome, which is why
-          it is still called this and not something with "adapter" in it. That
-          is a judgement about this one link, not a ban: the rule UX_PLAN §1.0
-          used to assert -- that "adapt", "fine-tune" and "adapter" never appear
-          in the product -- was retired by the owner along with the arrival of
-          the Fine-Tune button beside it. */}
-      <a
-        className="header-route-link"
-        href={`#/assets/${image.id}/improve${
-          currentSegmentation ? `?seg=${currentSegmentation.id}` : ""
-        }`}
-      >
-        Make it better
-      </a>
       <FineTuneOrganelleButton
         image={image}
         currentSegmentation={currentSegmentation}
+        eligibilityRevision={fineTuneEligibilityRevision}
       />
     </>
   );
