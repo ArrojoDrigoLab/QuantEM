@@ -7,6 +7,10 @@ a failure here means someone edited third-party source in place, which is the
 one thing a vendored directory must not quietly allow. If a change is genuinely
 wanted, mark it with a ``QUANTEM:`` comment, note it in the package docstring
 and update the digest in the same commit.
+
+The digests use upstream's LF line endings. Git for Windows may materialize a
+CRLF worktree even though the indexed source is unchanged, so the comparison
+normalizes that checkout-only difference before hashing.
 """
 
 from __future__ import annotations
@@ -37,13 +41,22 @@ VERBATIM = {
 OMITTED = ("automatic_mask_generator.py", "utils/amg.py", "utils/onnx.py")
 
 
+def _upstream_digest(source: bytes) -> str:
+    source = source.replace(b"\r\n", b"\n")
+    return hashlib.sha256(source).hexdigest()
+
+
 class VendoredSourceTests(SimpleTestCase):
     def test_upstream_files_are_unmodified(self):
         for name, expected in VERBATIM.items():
             path = VENDOR / name
             self.assertTrue(path.is_file(), f"{name} is missing from the vendored copy")
-            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            actual = _upstream_digest(path.read_bytes())
             self.assertEqual(actual, expected, f"{name} no longer matches upstream")
+
+    def test_windows_checkout_newlines_do_not_look_like_a_vendor_edit(self):
+        source = b"Copyright (c) Meta Platforms, Inc.\nsource line\n"
+        self.assertEqual(_upstream_digest(source), _upstream_digest(source.replace(b"\n", b"\r\n")))
 
     def test_the_omitted_modules_stayed_out(self):
         for name in OMITTED:
