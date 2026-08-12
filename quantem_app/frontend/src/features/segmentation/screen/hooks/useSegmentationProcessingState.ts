@@ -320,14 +320,20 @@ export function useSegmentationProcessingState({
   ]);
 
   const handleRerunRoi = useCallback(async () => {
-    if (!currentSegmentation || isRerunningRoi || hasQueuedOrRunningOrganelleTask) {
+    if (
+      !currentSegmentation ||
+      !activeRoi ||
+      activeRoi.completed_for_segmentation === true ||
+      isRerunningRoi ||
+      hasQueuedOrRunningOrganelleTask
+    ) {
       return;
     }
     setIsRerunningRoi(true);
     try {
       await rerunSegmentationRoi(
         currentSegmentation.id,
-        activeRoi?.id ?? undefined,
+        activeRoi.id,
         activeSourceModel
       );
       await Promise.all([refetchJobs(), refetchSegmentations()]);

@@ -11,8 +11,11 @@ interface OverlayCursorState {
   variant: "brush" | "target";
 }
 
-const BRUSH_CURSOR_MIN_OUTER_SIZE = 20;
-const BRUSH_CURSOR_MIN_BORDER_WIDTH = 2;
+// The cursor's opening represents the brush diameter in image space. Keep the
+// ring itself a constant screen-space width, so a small brush at low zoom stays
+// small instead of becoming a thick, fixed-diameter circle.
+const BRUSH_CURSOR_BORDER_WIDTH = 2;
+const MIN_BRUSH_CURSOR_OPENING = 1;
 const TARGET_CURSOR_OUTER_SIZE = 20;
 const TARGET_CURSOR_BORDER_WIDTH = 2;
 
@@ -29,8 +32,8 @@ export function useViewerCursorState(config: {
   const [overlayCursorState, setOverlayCursorState] = useState<OverlayCursorState>({
     x: 0,
     y: 0,
-    outerSize: BRUSH_CURSOR_MIN_OUTER_SIZE,
-    borderWidth: BRUSH_CURSOR_MIN_BORDER_WIDTH,
+    outerSize: MIN_BRUSH_CURSOR_OPENING + BRUSH_CURSOR_BORDER_WIDTH * 2,
+    borderWidth: BRUSH_CURSOR_BORDER_WIDTH,
     visible: false,
     variant: "brush",
   });
@@ -53,21 +56,17 @@ export function useViewerCursorState(config: {
         return;
       }
       const rawBrushPixels = (brushSize / metrics.visibleWidth) * metrics.containerWidth;
-      const brushSizeInPixels = Math.max(rawBrushPixels, 1);
-      let outerSize: number;
-      let borderWidth: number;
-      if (brushSizeInPixels < BRUSH_CURSOR_MIN_OUTER_SIZE) {
-        outerSize = BRUSH_CURSOR_MIN_OUTER_SIZE;
-        borderWidth = (BRUSH_CURSOR_MIN_OUTER_SIZE - brushSizeInPixels) / 2;
-      } else {
-        outerSize = brushSizeInPixels + BRUSH_CURSOR_MIN_BORDER_WIDTH * 2;
-        borderWidth = BRUSH_CURSOR_MIN_BORDER_WIDTH;
-      }
+      // `boxSizing: border-box` on the ring means its CSS width includes the
+      // border. Add the two fixed-width borders so the *open* diameter remains
+      // exactly the scaled brush diameter. A one-pixel floor is only for the
+      // physically unrepresentable case where the brush is sub-pixel on screen.
+      const brushSizeInPixels = Math.max(rawBrushPixels, MIN_BRUSH_CURSOR_OPENING);
+      const outerSize = brushSizeInPixels + BRUSH_CURSOR_BORDER_WIDTH * 2;
       setOverlayCursorState({
         x: screenPoint.x,
         y: screenPoint.y,
         outerSize,
-        borderWidth,
+        borderWidth: BRUSH_CURSOR_BORDER_WIDTH,
         visible: isPointerInside && Number.isFinite(imagePoint.x) && Number.isFinite(imagePoint.y),
         variant: "brush",
       });
@@ -96,4 +95,3 @@ export function useViewerCursorState(config: {
     hoverBadgeStyle,
   };
 }
-

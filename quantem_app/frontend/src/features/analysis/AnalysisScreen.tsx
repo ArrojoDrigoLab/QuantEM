@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { getAsset, getAssetSegmentations } from "@/shared/api/assets";
+import { segmentationDisplayName } from "@/shared/segmentationNames";
 import { getAnalysisRun, getAnalysisRuns, startAnalysisRun } from "@/shared/api/analysis";
 import { cancelJob, deleteJob } from "@/shared/api/jobs";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
@@ -294,7 +295,7 @@ export function AnalysisScreen() {
               >
                 {segmentations.map((seg) => (
                   <option key={seg.id} value={seg.id}>
-                    {seg.segmentation_type.long_name}
+                    {segmentationDisplayName(seg)}
                   </option>
                 ))}
               </select>

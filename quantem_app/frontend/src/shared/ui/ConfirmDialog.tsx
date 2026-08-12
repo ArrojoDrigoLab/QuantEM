@@ -19,6 +19,7 @@ export interface ConfirmDialogProps {
   detailsTone?: "default" | "warning";
   confirmText?: string;
   cancelText?: string;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -31,6 +32,7 @@ export function ConfirmDialog({
   detailsTone = "default",
   confirmText = "Confirm",
   cancelText = "Cancel",
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -39,6 +41,11 @@ export function ConfirmDialog({
   const detailsId = useId();
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const onCancelRef = useRef(onCancel);
+
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  }, [onCancel]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -49,7 +56,7 @@ export function ConfirmDialog({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCancel();
+        onCancelRef.current();
       }
     };
 
@@ -58,7 +65,7 @@ export function ConfirmDialog({
       document.removeEventListener("keydown", handleKeyDown);
       restoreFocusRef.current?.focus();
     };
-  }, [isOpen, onCancel]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -101,6 +108,7 @@ export function ConfirmDialog({
           <button
             className="confirm-dialog-button confirm-dialog-button-confirm"
             onClick={onConfirm}
+            disabled={confirmDisabled}
           >
             {confirmText}
           </button>

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useApiMutation } from "@/shared/hooks/useApiMutation";
-import { createAssetSegmentation } from "@/shared/api/assets";
+import { createAssetSegmentation, getSegmentationTypes } from "@/shared/api/assets";
+import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useModelCatalogue } from "@/features/models/useModelCatalogue";
 import {
@@ -15,13 +16,18 @@ import {
 } from "@/features/models/scaleMismatch";
 import { UncalibratedScaleWarning } from "@/features/models/components/UncalibratedScaleWarning";
 import type { ModelCatalogue, ModelPack } from "@/shared/types/finetune";
-import type { ImageSegmentation } from "@/shared/types/images";
+import type {
+  ImageSegmentation,
+  ImageSegmentationCreatePayload,
+  SegmentationType,
+} from "@/shared/types/images";
 import "./SegmentationCreatePanel.css";
 
 interface SegmentationCreatePanelProps {
   imageId: string;
   onCreated?: (segmentation: ImageSegmentation) => void;
   existingSegmentationTypes?: string[];
+  existingSegmentationTypeIds?: string[];
   title?: string;
   description?: string;
   /**
@@ -36,8 +42,24 @@ interface QuickSegmentationOption {
   id: string;
   label: string;
   name: string;
-  group: "standard" | "masks";
+  group: "organelle";
   sourceModel?: string;
+}
+
+const BUILTIN_SEGMENTATION_INTERNAL_NAMES = new Set([
+  "quantem_internal_mito",
+  "quantem_internal_er",
+  "quantem_internal_nucleus",
+  "quantem_internal_ld",
+  "quantem_internal_tissue",
+  "quantem_internal_analysis_mask",
+]);
+
+function isReusableCustomType(type: SegmentationType): boolean {
+  return (
+    type.kind === "custom" ||
+    (!type.kind && !BUILTIN_SEGMENTATION_INTERNAL_NAMES.has(type.internal_name))
+  );
 }
 
 /**
@@ -94,11 +116,15 @@ export function SegmentationCreatePanel({
   imageId,
   onCreated,
   existingSegmentationTypes,
+  existingSegmentationTypeIds,
   title = "Create a Segmentation Type",
   description = "Choose a preset workflow or create a custom segmentation name.",
   pixelSizeNm,
 }: SegmentationCreatePanelProps) {
-  const [newSegmentationName, setNewSegmentationName] = useState("");
+  const [newCustomSegmentationName, setNewCustomSegmentationName] = useState("");
+  const [customDialogOpen, setCustomDialogOpen] = useState(false);
+  const [customIsObjectBased, setCustomIsObjectBased] = useState(true);
+  const [newAnalysisMaskName, setNewAnalysisMaskName] = useState("");
   const [pendingOption, setPendingOption] =
     useState<QuickSegmentationOption | null>(null);
   // The model the pending run will use. `null` means "the preferred pack" —
@@ -106,35 +132,26 @@ export function SegmentationCreatePanel({
   // the dialog opens so one preset's choice never leaks onto another.
   const [pendingPackChoice, setPendingPackChoice] = useState<string | null>(null);
   const { catalogue } = useModelCatalogue();
+  const { data: segmentationTypes } = useApiQuery(getSegmentationTypes, []);
 
-  // The built-in segmentation types the backend ships: four organelles, each
-  // served by the QuantEM/OmniEM model pair, plus the manual-only tissue mask.
+  // The released model-backed segmentations. Manual masks are presented in
+  // their own named sections below so an image-specific analysis mask cannot
+  // be mistaken for a reusable custom type.
   const quickSegmentationOptions = useMemo<QuickSegmentationOption[]>(
     () => [
-      {
-        id: "mito",
-        label: "Mitochondria",
-        name: "Mitochondria",
-        group: "standard",
-      },
+      { id: "mito", label: "Mitochondria", name: "Mitochondria", group: "organelle" },
       {
         id: "er",
         label: "ER",
         name: "Endoplasmic Reticulum",
-        group: "standard",
+        group: "organelle",
       },
-      { id: "nucleus", label: "Nucleus", name: "Nucleus", group: "standard" },
+      { id: "nucleus", label: "Nucleus", name: "Nucleus", group: "organelle" },
       {
         id: "ld",
         label: "Lipid Droplets",
         name: "Lipid Droplets",
-        group: "standard",
-      },
-      {
-        id: "tissue",
-        label: "Tissue Mask",
-        name: "Tissue Mask",
-        group: "masks",
+        group: "organelle",
       },
     ],
     []
@@ -149,29 +166,29 @@ export function SegmentationCreatePanel({
     );
   }, [quickSegmentationOptions, existingSegmentationTypes]);
 
+  const reusableCustomTypes = useMemo(
+    () => (segmentationTypes ?? []).filter(isReusableCustomType),
+    [segmentationTypes]
+  );
+  const existingTypeIds = useMemo(
+    () => new Set(existingSegmentationTypeIds ?? []),
+    [existingSegmentationTypeIds]
+  );
+
   const {
     mutate: createSegmentation,
     loading: creatingSegmentation,
     error: createSegmentationError,
-  } = useApiMutation(async (option: Pick<QuickSegmentationOption, "name" | "sourceModel">) => {
-    return createAssetSegmentation(imageId, {
-      segmentation_type_name: option.name,
-      ...(option.sourceModel ? { source_model: option.sourceModel } : {}),
-    });
-  });
+  } = useApiMutation(async (payload: ImageSegmentationCreatePayload) =>
+    createAssetSegmentation(imageId, payload)
+  );
 
   const handleCreateSegmentation = useCallback(
-    async (nameOrOption: string | Pick<QuickSegmentationOption, "name" | "sourceModel">) => {
-      const option =
-        typeof nameOrOption === "string"
-          ? { name: nameOrOption, sourceModel: undefined }
-          : nameOrOption;
-      const trimmed = option.name.trim();
-      if (!trimmed) return;
-      const created = await createSegmentation({ ...option, name: trimmed });
-      if (!created) return;
-      setNewSegmentationName("");
+    async (payload: ImageSegmentationCreatePayload) => {
+      const created = await createSegmentation(payload);
+      if (!created) return null;
       onCreated?.(created);
+      return created;
     },
     [createSegmentation, onCreated]
   );
@@ -186,18 +203,15 @@ export function SegmentationCreatePanel({
    * only as a progress banner stuck at 5%. So: name the cost, name the model,
    * and say up front when that model cannot run.
    *
-   * Manual-only types (the tissue mask) queue nothing and are created directly.
+   * Analysis and custom masks are manual-only; this confirmation belongs only
+   * to a model-backed organelle run.
    */
   const requestCreate = useCallback(
     (option: QuickSegmentationOption) => {
-      if (option.group === "masks") {
-        void handleCreateSegmentation(option);
-        return;
-      }
       setPendingPackChoice(null);
       setPendingOption(option);
     },
-    [handleCreateSegmentation]
+    []
   );
 
   // The default pack for the pending organelle — what the server would run
@@ -222,15 +236,30 @@ export function SegmentationCreatePanel({
     const option = pendingOption;
     setPendingOption(null);
     void handleCreateSegmentation({
-      name: option.name,
+      segmentation_type_name: option.name,
       // Stated only when it differs from the server's own default, so a
       // build with no catalogue keeps the exact request shape it always sent.
-      sourceModel:
+      source_model:
         pendingPackId && pendingPackId !== defaultPackId
           ? pendingPackId
           : undefined,
     });
   }, [defaultPackId, handleCreateSegmentation, pendingOption, pendingPackId]);
+
+  const confirmCreateCustom = useCallback(() => {
+    const name = newCustomSegmentationName.trim();
+    if (!name) return;
+    setCustomDialogOpen(false);
+    void handleCreateSegmentation({
+      segmentation_type_name: name,
+      measurement_mode: customIsObjectBased ? "objects" : "global",
+    }).then((created) => {
+      if (created) {
+        setNewCustomSegmentationName("");
+        setCustomIsObjectBased(true);
+      }
+    });
+  }, [customIsObjectBased, handleCreateSegmentation, newCustomSegmentationName]);
 
   const pendingRunnability = runnabilityForPackId(catalogue, pendingPackId);
   const device = describeDevice(catalogue);
@@ -309,31 +338,80 @@ export function SegmentationCreatePanel({
         onConfirm={confirmCreate}
         onCancel={() => setPendingOption(null)}
       />
+      <ConfirmDialog
+        isOpen={customDialogOpen}
+        title="Create custom segmentation"
+        message="Custom segmentations are available in every image and open directly in manual labeling."
+        details={
+          <div className="segmentation-custom-dialog">
+            <label htmlFor="new-custom-segmentation-name">
+              Segmentation name
+              <input
+                id="new-custom-segmentation-name"
+                type="text"
+                value={newCustomSegmentationName}
+                onChange={(event) => setNewCustomSegmentationName(event.target.value)}
+                placeholder="e.g. Vesicles"
+                autoFocus
+              />
+            </label>
+            <label className="segmentation-custom-object-checkbox">
+              <input
+                type="checkbox"
+                checked={customIsObjectBased}
+                onChange={(event) => setCustomIsObjectBased(event.target.checked)}
+              />
+              Object-based segmentation
+            </label>
+            <details>
+              <summary>Object-based or global?</summary>
+              <p>
+                Object-based segmentations keep individual objects so you can
+                measure circularity, area per object, and distances to nearby
+                objects. They work well for mitochondria and nuclei.
+              </p>
+              <p>
+                Global segmentations treat the result as one overall mask. They
+                suit features such as ER, where individual-object measurements
+                are not needed, and are typically faster to analyse when there
+                are many disconnected regions.
+              </p>
+            </details>
+            <p className="segmentation-custom-training-note">
+              Once created, this custom segmentation is available in all images.
+              You can combine annotations from those images to train a model for
+              the new class. New models need substantially more data than
+              fine-tuning: start with at least 50 ROIs. Training may run slowly
+              on machines without CUDA enabled.
+            </p>
+          </div>
+        }
+        confirmText="Create custom segmentation"
+        cancelText="Cancel"
+        confirmDisabled={!newCustomSegmentationName.trim() || creatingSegmentation}
+        onConfirm={confirmCreateCustom}
+        onCancel={() => setCustomDialogOpen(false)}
+      />
       <h3>{title}</h3>
       <p>{description}</p>
       <div className="segmentation-quick-groups">
-        {(["standard", "masks"] as const).map((group) => {
-          const options = filteredQuickOptions.filter((option) => option.group === group);
-          if (options.length === 0) return null;
-          const groupTitle = group === "standard" ? "Standard" : "Masks";
-          return (
-            <div className="segmentation-quick-group" key={group}>
-              <div className="segmentation-quick-group-title">{groupTitle}</div>
-              <div className="segmentation-quick-buttons">
-                {options.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => requestCreate(option)}
-                    disabled={creatingSegmentation}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+        {filteredQuickOptions.length > 0 ? (
+          <div className="segmentation-quick-group">
+            <div className="segmentation-quick-group-title">Built-in organelles</div>
+            <div className="segmentation-quick-buttons">
+              {filteredQuickOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => requestCreate(option)}
+                  disabled={creatingSegmentation}
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
-          );
-        })}
+          </div>
+        ) : null}
       </div>
       {filteredQuickOptions.length === 0 && (
         <div className="segmentation-error">
@@ -341,20 +419,72 @@ export function SegmentationCreatePanel({
         </div>
       )}
 
-      <label htmlFor="new-segmentation-name">Custom segmentation name</label>
-      <input
-        id="new-segmentation-name"
-        type="text"
-        value={newSegmentationName}
-        onChange={(event) => setNewSegmentationName(event.target.value)}
-        placeholder="e.g. Vesicles"
-      />
+      <div className="segmentation-manual-section">
+        <div className="segmentation-quick-group-title">
+          Analysis Segmentation Mask
+          <span
+            className="segmentation-info-tooltip"
+            title="Make a mask with specific areas to analyze in this image (ex. tissue or cell outlines)"
+            aria-label="Make a mask with specific areas to analyze in this image (ex. tissue or cell outlines)"
+          >
+            i
+          </span>
+        </div>
+        <label htmlFor="new-analysis-mask-name">Mask name</label>
+        <input
+          id="new-analysis-mask-name"
+          type="text"
+          value={newAnalysisMaskName}
+          onChange={(event) => setNewAnalysisMaskName(event.target.value)}
+          placeholder="e.g. Tissue mask"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            const name = newAnalysisMaskName.trim();
+            if (!name) return;
+            void handleCreateSegmentation({
+              segmentation_type_name: "Analysis Segmentation Mask",
+              analysis_name: name,
+            }).then((created) => {
+              if (created) setNewAnalysisMaskName("");
+            });
+          }}
+          disabled={creatingSegmentation || !newAnalysisMaskName.trim()}
+        >
+          {creatingSegmentation ? "Creating..." : "Create analysis mask"}
+        </button>
+      </div>
+
+      {reusableCustomTypes.length > 0 ? (
+        <div className="segmentation-manual-section">
+          <div className="segmentation-quick-group-title">Custom</div>
+          <div className="segmentation-quick-buttons">
+            {reusableCustomTypes.map((type) => {
+              const alreadyAdded = existingTypeIds.has(type.id);
+              return (
+                <button
+                  key={type.id}
+                  type="button"
+                  disabled={creatingSegmentation || alreadyAdded}
+                  title={alreadyAdded ? "Already added to this image" : undefined}
+                  onClick={() => {
+                    void handleCreateSegmentation({ segmentation_type_id: type.id });
+                  }}
+                >
+                  {type.short_name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <button
+        className="segmentation-create-custom-button"
         type="button"
-        onClick={() => {
-          void handleCreateSegmentation(newSegmentationName);
-        }}
-        disabled={creatingSegmentation || !newSegmentationName.trim()}
+        onClick={() => setCustomDialogOpen(true)}
+        disabled={creatingSegmentation}
       >
         {creatingSegmentation ? "Creating..." : "Create custom segmentation"}
       </button>

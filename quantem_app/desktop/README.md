@@ -5,6 +5,23 @@ opens the QuantEM window with nothing pre-installed — model weights are pulled
 from Hugging Face at runtime (or installed from a release bundle with
 `quantem models install`); they are **not** part of this distribution.
 
+## Updating an installed copy
+
+Updater-enabled releases check QuantEM's stable GitHub Release channel from
+inside the installed desktop app. When a signed newer build is available, a
+top banner offers **Update**, shows download progress, then waits for queued or
+running tasks and any unsaved annotation draft to clear before restarting.
+Application updates replace the shell and server only: the data directory
+below, including images, segmentations, objects, analysis results, and model
+cache, stays in place. The first updater-enabled version is installed normally;
+later versions update from the banner. Release-key setup and the atomic publish
+workflow are documented in [BUNDLING.md](BUNDLING.md).
+
+Windows has one installer, not separate CPU and CUDA installers. It detects a
+compatible NVIDIA driver, preselects CUDA when appropriate, allows an explicit
+choice, and downloads the matching frozen server payload during installation.
+That runtime choice is retained by later automatic updates.
+
 ## Architecture
 
 Three pieces, one process tree:
@@ -53,7 +70,8 @@ and the WebView2 profile — lives **with the installation**:
 
 ### Install-time model selection
 
-The NSIS installer shows a "Model downloads" page (eight packs, the four
+After its hardware-acceleration page, the NSIS installer shows a "Model
+downloads" page (eight packs, the four
 OmniEM ones pre-checked, honest download sizes) and records the choice in
 `<install>\data\pending-model-installs.json` (`{"packs": ["omniem:mito",
 ...]}`). The installer itself downloads nothing: on first launch the server
@@ -61,13 +79,16 @@ reads that file, queues the installs through the normal verified download
 machinery (digest checks, progress, cancel, AV-retry), and deletes it. See
 `src-tauri/nsis/hooks.nsh` and [BUNDLING.md](BUNDLING.md).
 
-### Why the sidecar is a resource, not `externalBin`
+### Sidecar layout
 
 Tauri's `externalBin` copies a *single file* next to the shell executable.
 The server is a PyInstaller **onedir** build — an exe plus an `_internal/`
 tree — because onefile would unpack multi-GB of torch to temp on every
-launch. So the whole directory ships via `bundle.resources` (mapped to
-`quantem-server/`), and the shell resolves the sidecar itself, in order:
+launch. On macOS the whole directory ships via the platform-specific
+`bundle.resources` mapping. On Windows, the bootstrap installer extracts the
+selected CPU/CUDA payload to the same `quantem-server/` layout; the portable
+builder stages it there directly. The shell resolves the sidecar itself, in
+order:
 
 1. `QUANTEM_SERVER_EXE` (env override, used in dev),
 2. `<exe dir>\quantem-server\quantem-server.exe` (portable zip and NSIS both

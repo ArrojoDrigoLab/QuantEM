@@ -17,6 +17,7 @@ from quantem.assets.asset_resolver import get_active_asset
 from quantem.assets.roi_state import get_active_roi_for_asset
 from quantem.jobs.constants import JOB_TYPE_RUN_SEGMENTATION_ROI, QUEUE_P3_ROI
 from quantem.jobs.models import Job
+from quantem.seg_core.db.prob_maps import delete_probability_maps_for_segmentation
 from quantem.seg_core.registry import get_segmenter_or_none
 from quantem.segmentation.completion import (
     archive_and_discard,
@@ -51,7 +52,8 @@ from quantem.segmentation.status_reconcile import (
     reconcile_segmentation_statuses,
 )
 from quantem.segmentation.type_definitions import (
-    MANUAL_ONLY_INTERNAL_NAMES,
+    ANALYSIS_MASK,
+    ORGANELLE_INTERNAL_NAMES,
     find_builtin_segmentation_type,
 )
 from quantem.segmentation.type_service import (
@@ -116,6 +118,7 @@ def _create_segmentation_for_asset(request, *, asset):
     validated_data = create_serializer.validated_data
     segmentation_type = None
     source_model = normalize_source_model(validated_data.get("source_model"))
+    measurement_mode = validated_data.get("measurement_mode")
     if validated_data.get("segmentation_type_id"):
         segmentation_type = get_object_or_404(
             SegmentationType,
@@ -132,18 +135,56 @@ def _create_segmentation_for_asset(request, *, asset):
             segmentation_type = ensure_segmentation_type(canonical_definition)
             source_model = resolved_source_model
         else:
-            segmentation_type = resolve_or_create_segmentation_type(requested_name)
+            segmentation_type = resolve_or_create_segmentation_type(
+                requested_name,
+                measurement_mode=(measurement_mode or SegmentationType.MEASUREMENT_MODE_OBJECTS),
+            )
             source_model = source_model or default_source_model_for_organelle(
                 segmentation_type.internal_name
             )
-    source_model = source_model or default_source_model_for_organelle(
-        segmentation_type.internal_name
-    )
+    is_analysis_mask = segmentation_type.internal_name == ANALYSIS_MASK.internal_name
+    analysis_name = (validated_data.get("analysis_name") or "").strip()
+    if is_analysis_mask and not analysis_name:
+        return Response(
+            {"analysis_name": ["Give this analysis mask a name."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not is_analysis_mask and analysis_name:
+        return Response(
+            {
+                "analysis_name": [
+                    "An analysis name can only be used with Analysis Segmentation Mask."
+                ]
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if measurement_mode and (
+        validated_data.get("segmentation_type_id")
+        or find_builtin_segmentation_type(segmentation_type.internal_name)
+    ):
+        return Response(
+            {
+                "measurement_mode": [
+                    "Choose a measurement mode only when creating a new custom segmentation."
+                ]
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-    manual_only_workflow = segmentation_type.internal_name in MANUAL_ONLY_INTERNAL_NAMES
+    # Only the four released organelles are model-backed. Tissue, analysis,
+    # and reusable custom segmentations open directly into equivalent manual
+    # labeling workflows and never queue a model run.
+    manual_only_workflow = segmentation_type.internal_name not in ORGANELLE_INTERNAL_NAMES
+    if not manual_only_workflow:
+        source_model = source_model or default_source_model_for_organelle(
+            segmentation_type.internal_name
+        )
+    else:
+        source_model = None
     image_segmentation, created = ImageSegmentation.objects.get_or_create(
         asset=asset,
         segmentation_type=segmentation_type,
+        display_name=analysis_name if is_analysis_mask else "",
     )
     # This endpoint is get_or_create, and it queues a run for what it returns.
     # For an organelle already marked done that would start a run over a locked
@@ -240,7 +281,7 @@ def _segmentation_delete_preview(segmentation: ImageSegmentation) -> dict:
 
     return {
         "segmentation_id": str(segmentation.id),
-        "segmentation_type": segmentation.segmentation_type.long_name,
+        "segmentation_type": segmentation.display_name or segmentation.segmentation_type.long_name,
         "object_count": int(object_count),
         "objects_by_label_state": {
             state: int(label_counts.get(state, 0))
@@ -595,6 +636,13 @@ class SegmentationCompleteView(APIView):
                 dirty_bbox=full_image_dirty_bbox(segmentation),
                 force_full_rebuild=True,
             )
+
+        removed_probability_maps = delete_probability_maps_for_segmentation(segmentation)
+        logger.info(
+            "Reclaimed %d probability map(s) for completed segmentation %s.",
+            removed_probability_maps,
+            segmentation.id,
+        )
 
         serializer = ImageSegmentationSerializer(segmentation)
         response_payload = dict(serializer.data)

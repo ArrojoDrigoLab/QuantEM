@@ -12,19 +12,24 @@ import { Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import { RouteFallback } from "./AssetRoute";
 import { APP_ROUTES } from "./routes";
+import { DesktopUpdateBanner } from "@/features/update/DesktopUpdateBanner";
+import { RestartGuardProvider } from "@/features/update/restartGuard";
 import "./App.css";
 
 function App() {
   return (
-    <div className="app">
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          {APP_ROUTES.map((route) => (
-            <Route key={route.path} path={route.path} element={route.element} />
-          ))}
-        </Routes>
-      </Suspense>
-    </div>
+    <RestartGuardProvider>
+      <div className="app">
+        <DesktopUpdateBanner />
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            {APP_ROUTES.map((route) => (
+              <Route key={route.path} path={route.path} element={route.element} />
+            ))}
+          </Routes>
+        </Suspense>
+      </div>
+    </RestartGuardProvider>
   );
 }
 

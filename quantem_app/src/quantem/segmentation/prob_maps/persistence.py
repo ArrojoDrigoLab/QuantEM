@@ -56,21 +56,16 @@ Storage policy
 * **One file per (segmentation, model).** A full-image re-run overwrites the same
   path, and the superseded ``ProbabilityMap`` rows pointing at it are deleted, so
   N runs cost one file and one row rather than N.
-* **An ROI run stores only the window it ran**, plus the full-image composite that
-  :func:`save_probability_map` already maintains. The window is recorded in
+* **An ROI run stores only the window it ran.** The window is recorded in
   ``metadata["roi"]`` so :func:`~quantem.segmentation.services.adapt.collect_crops`
-  can place it at the right offset instead of falling back to the composite (which
-  reads as confident background everywhere the model never ran).
-* **A size ceiling**, :data:`MAX_MEGAPIXELS_ENV` (default
-  :data:`DEFAULT_MAX_MEGAPIXELS`). Above it a full-image map is skipped. Note
-  what that now costs: the run itself is unaffected (it holds the map in memory
-  and thresholds it there), but with nothing on disk the threshold cannot be
-  moved afterwards without re-running the model, and guided fine-tuning still
-  needs an ROI run. The ceiling was chosen when the map was an optional artifact
-  for fine-tuning; at 1 byte/px a 2-3 GB image needs a 2-3 GB map, which is the
-  size question this number now really asks. Flagged in the R11 report rather
-  than changed here, because raising it is a storage decision and lowering the
-  stored map's resolution would change what the dial can do.
+  can place it at the right offset. A small full-image composite is also made for
+  viewing when practical, but it is never required for the ROI result to work.
+* **Full-image maps have no size ceiling by default.** A native uint8 map is the
+  only persisted artifact needed to move a threshold exactly, and at one byte per
+  pixel it is substantially smaller than the source image. An installation with a
+  deliberately constrained data volume may set :data:`MAX_MEGAPIXELS_ENV`; in
+  that case the run refuses rather than silently finishing without a reusable
+  threshold result.
 """
 
 from __future__ import annotations
@@ -100,10 +95,10 @@ from quantem.segmentation.models import ImageSegmentation, ProbabilityMap
 
 logger = logging.getLogger(__name__)
 
-#: Full-image maps larger than this are not written. Chosen so every ordinary EM
-#: field fits (a 22k x 22k image is 484 MP) while a stitched gigapixel montage
-#: does not silently consume hundreds of MB per organelle.
-DEFAULT_MAX_MEGAPIXELS = 512.0
+#: Full-image maps are part of a completed model run, not an optional preview.
+#: ``0`` disables the ceiling, which is the default. Operators who explicitly
+#: need a storage policy can still set :data:`MAX_MEGAPIXELS_ENV`.
+DEFAULT_MAX_MEGAPIXELS = 0.0
 
 #: Override for :data:`DEFAULT_MAX_MEGAPIXELS`. ``0`` disables the ceiling.
 MAX_MEGAPIXELS_ENV = "QUANTEM_PROB_MAP_MAX_MEGAPIXELS"
@@ -112,6 +107,15 @@ MAX_MEGAPIXELS_ENV = "QUANTEM_PROB_MAP_MAX_MEGAPIXELS"
 #: without reconstructing it from the file path.
 SCOPE_FULL = "full"
 SCOPE_ROI = "roi"
+
+
+class ProbabilityMapPersistenceError(RuntimeError):
+    """A completed model run could not retain its local uint8 threshold map.
+
+    The caller must surface this as a failed run. Continuing would claim a
+    threshold preview is ready even though the one artifact that makes it exact
+    is missing.
+    """
 
 
 def max_megapixels() -> float:
@@ -175,7 +179,7 @@ def persist_run_probability_maps(
     run_id: str | None = None,
     run_finished_at: str | None = None,
 ) -> list[ProbabilityMap]:
-    """Store the maps a completed run produced. Never raises.
+    """Store the maps a completed run produced.
 
     Args:
         segmentation: the segmentation that was run.
@@ -190,6 +194,11 @@ def persist_run_probability_maps(
 
     Returns:
         The ``ProbabilityMap`` rows written (empty when nothing was stored).
+
+    Raises:
+        ProbabilityMapPersistenceError: a model run that needs an externally
+            persisted map could not keep one. The exception text is suitable for
+            the job result, rather than guessing that disk space was the cause.
     """
     report = on_detail or (lambda _message: None)
 
@@ -231,13 +240,10 @@ def persist_run_probability_maps(
 
         if roi is None and ceiling_px and array.size > ceiling_px:
             message = (
-                f"Probability map not stored: this image is "
+                f"QuantEM is configured not to keep a full-image threshold map: this image is "
                 f"{array.size / 1e6:.0f} MP, above the {max_megapixels():.0f} MP "
-                f"ceiling ({MAX_MEGAPIXELS_ENV}). The objects from this run are "
-                "unaffected, but changing the threshold later will need a full "
-                "re-run rather than being instant. Guided fine-tuning needs a "
-                "map, so run the model over an ROI that covers the area you "
-                "annotated."
+                f"ceiling ({MAX_MEGAPIXELS_ENV}). Set that value to 0 to retain "
+                "the local uint8 map, or run the model over an ROI."
             )
             logger.info(
                 "Skipping probability map for segmentation %s (%s): %d px > %d px",
@@ -247,7 +253,7 @@ def persist_run_probability_maps(
                 int(ceiling_px),
             )
             report(message)
-            continue
+            raise ProbabilityMapPersistenceError(message)
 
         try:
             metadata: dict[str, object] = dict(
@@ -262,6 +268,7 @@ def persist_run_probability_maps(
                 # The offset the crop reader needs; without it an ROI-sized map
                 # is unusable and only the composite (which reads unrun area as
                 # background) is left.
+                metadata["roi_id"] = str(roi.id)
                 metadata["roi"] = {
                     "x": int(roi.x),
                     "y": int(roi.y),
@@ -277,20 +284,19 @@ def persist_run_probability_maps(
                 roi_id,
                 extra_metadata=_scalar_metadata(metadata),
             )
-        except Exception:
-            # The candidates are the run's product; losing the map costs guided
-            # fine-tuning, not the segmentation, so say so and carry on.
+        except Exception as exc:
             logger.warning(
                 "Failed to store probability map for segmentation %s (%s)",
                 segmentation.id,
                 model_name,
                 exc_info=True,
             )
-            report(
-                f"Probability map for {model_name} could not be stored; guided "
-                "fine-tuning will ask you to run the model again."
+            message = (
+                f"QuantEM could not save the local uint8 threshold map for {model_name}: "
+                f"{exc}. No candidates were changed."
             )
-            continue
+            report(message)
+            raise ProbabilityMapPersistenceError(message) from exc
 
         _prune_superseded(saved)
         written.append(saved)
@@ -306,7 +312,12 @@ def persist_run_probability_maps(
     if written:
         scope = "ROI" if roi is not None else "full image"
         report(f"Stored {len(written)} probability map(s) for the {scope} run")
-    return written
+        return written
+
+    raise ProbabilityMapPersistenceError(
+        "The model finished without a native probability map that QuantEM could store. "
+        "No candidates were changed."
+    )
 
 
 # --- Reading a stored map back, for replay ----------------------------------

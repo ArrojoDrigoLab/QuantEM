@@ -52,10 +52,23 @@ class SegmentationTypeTag(TimeStampedModel):
 class SegmentationType(TimeStampedModel):
     """Global segmentation type (e.g., 'mitochondria', 'nucleus')."""
 
+    MEASUREMENT_MODE_OBJECTS = "objects"
+    MEASUREMENT_MODE_GLOBAL = "global"
+    MEASUREMENT_MODE_CHOICES = [
+        (MEASUREMENT_MODE_OBJECTS, "Object-based"),
+        (MEASUREMENT_MODE_GLOBAL, "Global"),
+    ]
+
     internal_name = models.CharField(max_length=100, unique=True)
     short_name = models.CharField(max_length=100, unique=True)
     long_name = models.CharField(max_length=100, unique=True)
     default_color = models.CharField(max_length=7, blank=True)  # '#RRGGBB'
+    # This setting belongs to the reusable type, not one image's instance.
+    measurement_mode = models.CharField(
+        max_length=16,
+        choices=MEASUREMENT_MODE_CHOICES,
+        default=MEASUREMENT_MODE_OBJECTS,
+    )
     tags = models.ManyToManyField(
         SegmentationTypeTag, related_name="segmentation_types", blank=True
     )
@@ -96,6 +109,11 @@ class ImageSegmentation(TimeStampedModel):
         on_delete=models.PROTECT,
         related_name="image_segmentations",
     )
+    # Most segmentations are named by their reusable type. Analysis masks are
+    # deliberately different: one image can carry several named masks (for
+    # example, a tissue mask and a cells mask) that must not become reusable
+    # custom types on every other image.
+    display_name = models.CharField(max_length=100, blank=True, default="")
 
     # Status of the segmentation pipeline
     STATUS_STAGE_CHOICES = [
@@ -134,16 +152,17 @@ class ImageSegmentation(TimeStampedModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["asset", "segmentation_type"],
+                fields=["asset", "segmentation_type", "display_name"],
                 condition=models.Q(asset__isnull=False),
-                name="unique_segmentation_per_asset",
+                name="unique_segmentation_name_per_asset",
             ),
         ]
         ordering = ["created_at"]
 
     def __str__(self):
         target_name = self.asset.display_name if self.asset_id else str(self.id)
-        return f"{target_name} - {self.segmentation_type.long_name}"
+        name = self.display_name or self.segmentation_type.long_name
+        return f"{target_name} - {name}"
 
 
 class SegmentObject(TimeStampedModel):

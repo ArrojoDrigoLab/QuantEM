@@ -12,6 +12,7 @@ class SegmentationTypeDefinition:
     internal_name: str
     short_name: str
     long_name: str
+    measurement_mode: str = "objects"
 
 
 MITOCHONDRIA = SegmentationTypeDefinition(
@@ -24,6 +25,7 @@ ER = SegmentationTypeDefinition(
     internal_name="quantem_internal_er",
     short_name="ER",
     long_name="Endoplasmic Reticulum",
+    measurement_mode="global",
 )
 
 NUCLEUS = SegmentationTypeDefinition(
@@ -46,6 +48,18 @@ TISSUE = SegmentationTypeDefinition(
     internal_name="quantem_internal_tissue",
     short_name="Tissue",
     long_name="Tissue Mask",
+    measurement_mode="global",
+)
+
+# A manual mask that belongs to one image rather than to a reusable
+# segmentation type. Its label is stored on ``ImageSegmentation.display_name``
+# so one image can have, for example, both a tissue mask and a cells mask
+# without making either name appear as a reusable option on another image.
+ANALYSIS_MASK = SegmentationTypeDefinition(
+    internal_name="quantem_internal_analysis_mask",
+    short_name="Analysis mask",
+    long_name="Analysis Segmentation Mask",
+    measurement_mode="global",
 )
 
 # The four released organelles. TISSUE is deliberately excluded: it is a
@@ -60,6 +74,7 @@ ORGANELLE_SEGMENTATION_TYPES: tuple[SegmentationTypeDefinition, ...] = (
 BUILTIN_SEGMENTATION_TYPES: tuple[SegmentationTypeDefinition, ...] = (
     *ORGANELLE_SEGMENTATION_TYPES,
     TISSUE,
+    ANALYSIS_MASK,
 )
 
 BUILTIN_SEGMENTATION_TYPES_BY_INTERNAL_NAME: dict[str, SegmentationTypeDefinition] = {
@@ -68,7 +83,11 @@ BUILTIN_SEGMENTATION_TYPES_BY_INTERNAL_NAME: dict[str, SegmentationTypeDefinitio
 
 # Segmentation types that are labeled entirely by hand: creating one never
 # enqueues a segmenter job and the segmentation is immediately ready to label.
-MANUAL_ONLY_INTERNAL_NAMES = frozenset({TISSUE.internal_name})
+MANUAL_ONLY_INTERNAL_NAMES = frozenset({TISSUE.internal_name, ANALYSIS_MASK.internal_name})
+
+ORGANELLE_INTERNAL_NAMES = frozenset(
+    definition.internal_name for definition in ORGANELLE_SEGMENTATION_TYPES
+)
 
 
 def find_builtin_segmentation_type(

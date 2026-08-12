@@ -18,7 +18,8 @@ export function ViewerHeader({
   overlayManifestRefetching,
   overlayUpdating,
   overlayBuildFailureCount,
-  onBackToLibrary,
+  onBackToHome,
+  onBackToExperiment,
   onPixelSizeSaved,
 }: {
   image: AssetDetail;
@@ -27,7 +28,8 @@ export function ViewerHeader({
   overlayManifestRefetching: boolean;
   overlayUpdating: boolean;
   overlayBuildFailureCount: number;
-  onBackToLibrary: () => void;
+  onBackToHome: () => void;
+  onBackToExperiment: () => void;
   onPixelSizeSaved: () => void;
 }) {
   return (
@@ -40,12 +42,29 @@ export function ViewerHeader({
         <button
           type="button"
           className="viewer-back-button"
-          onClick={onBackToLibrary}
+          onClick={onBackToHome}
         >
-          ← Back to Library
+          ← Home
         </button>
-        <h2>{image.display_name}</h2>
-        <span className="viewer-filename">{image.original_filename}</span>
+        <button
+          type="button"
+          className="viewer-back-button"
+          onClick={onBackToExperiment}
+          disabled={!image.experiment_id}
+          title={
+            image.experiment_id
+              ? "Back to this experiment"
+              : "This image is not in an experiment"
+          }
+        >
+          ← Experiment
+        </button>
+        <div className="viewer-header-image-name">
+          <span className="viewer-experiment-name">
+            {image.experiment_name || "Unassigned"}
+          </span>
+          <h2>{image.display_name}</h2>
+        </div>
         {/* The viewer is the first screen where the image is a single
             concrete thing, so it is where calibration belongs. Editing it
             PATCHes the asset and refetches, which is the only route by
@@ -53,6 +72,7 @@ export function ViewerHeader({
         <PixelSizeEditor
           className="viewer-pixel-size"
           asset={image}
+          compact
           onSaved={() => {
             onPixelSizeSaved();
           }}

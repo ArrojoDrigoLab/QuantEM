@@ -43,6 +43,7 @@ from quantem.testing import create_small_test_image
 
 BEFORE = ("segmentation", "0002_segmentationcompletionarchive")
 AFTER = ("segmentation", "0003_v2_push")
+LATEST = ("segmentation", "0006_segmentationtype_measurement_mode")
 
 
 def _migrate_to(target) -> None:
@@ -107,7 +108,7 @@ class MigrationRoundTripTests(TransactionTestCase):
         # Leave the database where the rest of the suite expects it, whatever
         # happened above. Idempotent: migrating to a target already applied is
         # an empty plan.
-        _migrate_to(AFTER)
+        _migrate_to(LATEST)
 
     @staticmethod
     def _segmentation_columns() -> set[str]:
@@ -166,9 +167,11 @@ class MigrationRoundTripTests(TransactionTestCase):
         self.assertEqual(segment.run_version, 1)
         self.assertIsNone(segment.superseded_at)
 
-        segmentation = ImageSegmentation.objects.get(id=self.segmentation.id)
-        self.assertEqual(segmentation.preview_rows_ready, 0)
-        self.assertIsNone(segmentation.include_level)
+        segmentation = ImageSegmentation.objects.values("preview_rows_ready", "include_level").get(
+            id=self.segmentation.id
+        )
+        self.assertEqual(segmentation["preview_rows_ready"], 0)
+        self.assertIsNone(segmentation["include_level"])
 
     def test_reversing_costs_the_quality_answers_and_nothing_else(self):
         _migrate_to(BEFORE)

@@ -29,7 +29,10 @@ export function RunControls({
   modelRunnability,
   showFullImageProgress,
   fullImageProgress,
+  showActiveRoiRun,
+  applyActiveRoiDisabled,
   onApplyFullImage,
+  onApplyActiveRoi,
   onRequestRunConfirm,
 }: {
   isOrganelle: boolean;
@@ -42,7 +45,11 @@ export function RunControls({
   modelRunnability: Runnability;
   showFullImageProgress: boolean;
   fullImageProgress: number | null;
+  /** An unfinished active ROI can be processed independently of the image. */
+  showActiveRoiRun: boolean;
+  applyActiveRoiDisabled: boolean;
   onApplyFullImage?: () => void;
+  onApplyActiveRoi?: () => void;
   onRequestRunConfirm: () => void;
 }) {
   if (!isOrganelle) return null;
@@ -73,6 +80,25 @@ export function RunControls({
       >
         {showFullImageProgress ? "Running..." : "Run Full Segmentation"}
       </button>
+      {showActiveRoiRun && (
+        <button
+          type="button"
+          className="apply-roi-button"
+          onClick={onApplyActiveRoi}
+          disabled={applyActiveRoiDisabled}
+          title={
+            isComplete
+              ? "This segmentation is locked. Unlock it to run again."
+              : modelBlocked
+                ? `${runTargetLabel} cannot run here: ${modelRunnability.reason ?? "no reason given"}`
+                : isBusy
+                  ? "Processing in progress"
+                  : `Run ${runTargetLabel} only in the active ROI`
+          }
+        >
+          Run Active ROI
+        </button>
+      )}
       {showFullImageProgress && (
         <span className="apply-full-progress">
           <span className="apply-full-spinner" aria-hidden />

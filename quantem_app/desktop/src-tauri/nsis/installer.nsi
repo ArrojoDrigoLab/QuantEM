@@ -5,8 +5,8 @@
 ; -- NSIS page order is fixed at compile time, and the installerHooks file is
 ; included before any page is declared, so a hooks-only approach would put the
 ; custom page before the Welcome page. Every QuantEM change is fenced with
-; "QuantEM insertion" markers; there are exactly TWO fenced blocks (the model
-; page after MUI_PAGE_DIRECTORY, and the uninstall data-checkbox copy in
+; "QuantEM insertion" markers; the principal fenced blocks add the runtime and
+; model pages after MUI_PAGE_DIRECTORY and the uninstall data-checkbox copy in
 ; un.ConfirmShow). When the @tauri-apps/cli dependency is upgraded, re-extract
 ; the upstream template and re-apply those blocks (see desktop/BUNDLING.md,
 ; "The vendored NSIS template").
@@ -400,12 +400,17 @@ FunctionEnd
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_DIRECTORY
 
-; --- QuantEM insertion (model downloads page) -------------------------------
-; 5b. Model pack selection page. All logic lives in nsis/hooks.nsh
+; --- QuantEM insertion (runtime and model pages) -----------------------------
+; 5b. Hardware runtime selection, followed by model pack selection. All logic
+; lives in nsis/hooks.nsh
 ; (bundle.windows.nsis.installerHooks); the page functions are wrapped in a
 ; macro and expanded HERE -- after the template's Var declarations
 ; ($PassiveMode, $UpdateMode), which do not exist yet at the point where the
 ; hooks file itself is !include'd.
+!ifmacrodef QUANTEM_RUNTIME_PAGE_FUNCTIONS
+  !insertmacro QUANTEM_RUNTIME_PAGE_FUNCTIONS
+  Page custom PageQuantemRuntime PageLeaveQuantemRuntime
+!endif
 !ifmacrodef QUANTEM_MODEL_PAGE_FUNCTIONS
   !insertmacro QUANTEM_MODEL_PAGE_FUNCTIONS
   Page custom PageQuantemModels PageLeaveQuantemModels
@@ -675,11 +680,13 @@ SectionEnd
 Section Install
   SetOutPath $INSTDIR
 
+  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+
+  ; QuantEM downloads and transactionally replaces its frozen server only
+  ; after the running-app check, so no open runtime files can be disturbed.
   !ifmacrodef NSIS_HOOK_PREINSTALL
     !insertmacro NSIS_HOOK_PREINSTALL
   !endif
-
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
   ; Copy main executable
   File "${MAINBINARYSRCPATH}"

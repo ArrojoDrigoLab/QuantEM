@@ -150,6 +150,17 @@ class ApiErrorShapeMiddleware:
     def process_exception(self, request, exception):
         if not request.path.startswith("/api/"):
             return None
+        # A single enqueue seam protects every job-producing endpoint from a
+        # race with a desktop update.  Some endpoints intentionally create
+        # jobs deep in a service rather than in their view, so shape that
+        # exception here instead of duplicating the same guard in each one.
+        from quantem.jobs.update_maintenance import UpdateApplyInProgress
+
+        if isinstance(exception, UpdateApplyInProgress):
+            return JsonResponse(
+                {"error": exception.message, "detail": exception.message},
+                status=409,
+            )
         for kind, sentence in _UNREADABLE_REQUEST_COPY:
             if isinstance(exception, kind):
                 logger.warning(

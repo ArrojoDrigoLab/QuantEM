@@ -49,13 +49,15 @@ def handle_train_organelle_adapter(
 ) -> dict:
     """Adapt a released model's head to the user's own annotated crops.
 
-    The payload is passed through untouched; ``segmentation_id`` and
-    ``base_model`` are validated here because a job that fails three minutes in
-    on a missing key is worse than one that never starts.
+    The payload is passed through untouched. The older, single-segmentation
+    route requires ``segmentation_id``; the scoped Fine-Tune dialog instead
+    carries ``segmentation_type_id`` and ``asset_ids``. Both shapes share this
+    worker, so reject only a payload that identifies neither kind of run.
     """
     cancel.check_cancelled()
     segmentation_id = str(payload.get("segmentation_id") or "").strip()
-    if not segmentation_id:
+    scoped = bool(payload.get("asset_ids")) and bool(payload.get("segmentation_type_id"))
+    if not segmentation_id and not scoped:
         raise ValueError("payload.segmentation_id is required")
     base_model = str(payload.get("base_model") or "").strip()
     if not base_model:

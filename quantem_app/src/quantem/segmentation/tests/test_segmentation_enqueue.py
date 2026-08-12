@@ -5,6 +5,7 @@ from quantem.assets.utils import create_roi_image_from_image
 from quantem.jobs.constants import JOB_TYPE_RUN_SEGMENTATION_ROI, QUEUE_P3_ROI
 from quantem.jobs.models import Job
 from quantem.segmentation.type_service import (
+    get_or_create_analysis_mask_type,
     get_or_create_mitochondria_type,
     get_or_create_tissue_type,
 )
@@ -85,3 +86,63 @@ class SegmentationCreateEnqueueTests(TestCase):
             ["manual"],
         )
         self.assertFalse(Job.objects.filter(type=JOB_TYPE_RUN_SEGMENTATION_ROI).exists())
+
+    def test_analysis_masks_are_named_per_image_and_never_queue_a_model(self):
+        response = self.client.post(
+            self._segmentations_url(),
+            {
+                "segmentation_type_name": "Analysis Segmentation Mask",
+                "analysis_name": "Tissue mask",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["display_name"], "Tissue mask")
+        self.assertEqual(
+            response.data["segmentation_type"]["id"],
+            str(get_or_create_analysis_mask_type().id),
+        )
+        self.assertEqual(response.data["status_stage"], "CANDIDATES_READY")
+        self.assertIsNone(response.data["config"])
+        self.assertEqual([entry["value"] for entry in response.data["source_models"]], ["manual"])
+        self.assertFalse(Job.objects.filter(type=JOB_TYPE_RUN_SEGMENTATION_ROI).exists())
+
+        second = self.client.post(
+            self._segmentations_url(),
+            {
+                "segmentation_type_name": "Analysis Segmentation Mask",
+                "analysis_name": "Cells mask",
+            },
+            format="json",
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.data["display_name"], "Cells mask")
+        self.assertNotEqual(second.data["id"], response.data["id"])
+
+    def test_custom_segmentation_is_manual_only_and_reusable(self):
+        response = self.client.post(
+            self._segmentations_url(),
+            {"segmentation_type_name": "Vesicles"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["segmentation_type"]["long_name"], "Vesicles")
+        self.assertEqual(response.data["segmentation_type"]["kind"], "custom")
+        self.assertEqual(response.data["status_stage"], "CANDIDATES_READY")
+        self.assertIsNone(response.data["config"])
+        self.assertFalse(Job.objects.filter(type=JOB_TYPE_RUN_SEGMENTATION_ROI).exists())
+
+    def test_custom_segmentation_records_its_global_measurement_mode(self):
+        response = self.client.post(
+            self._segmentations_url(),
+            {
+                "segmentation_type_name": "ER-like network",
+                "measurement_mode": "global",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["segmentation_type"]["measurement_mode"], "global")

@@ -9,6 +9,7 @@ Parameterized by prefix (e.g. "er", "mito") and generated_flag.
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -17,11 +18,17 @@ from PIL import Image
 from quantem.assets.asset_openable import get_asset_openable
 from quantem.assets.models import ImageROI
 from quantem.core.config import PROB_MAPS_DIR, STORAGE_DIR, TMP_DIR
+from quantem.core.local_storage import StorageError, storage_path
 from quantem.inference.resample import quantize_probability
 from quantem.segmentation.models import ImageSegmentation, ProbabilityMap
 from quantem.segmentation.prob_maps.io import resolve_probability_map_path
 
 logger = logging.getLogger(__name__)
+
+#: ROI maps are canonical on their own. The composited full-image raster is a
+#: convenience for small images only; allocating a gigapixel canvas after an
+#: otherwise small ROI run defeats the point of an ROI run.
+MAX_ROI_COMPOSITE_MEGAPIXELS = 512.0
 
 
 def _probability_map_name(prefix: str, model_name: str) -> str:
@@ -63,6 +70,121 @@ def get_composite_prob_map_file_path(
     storage_dir = PROB_MAPS_DIR / str(segmentation.id) / "composite"
     filename = f"{prefix}_{model_name.lower()}_prob.png"
     return storage_dir / filename
+
+
+def _metadata_describes_roi(metadata: object, roi: ImageROI) -> bool:
+    """Whether a legacy or uploaded map records this ROI's rectangle.
+
+    Run-created maps now have both an ROI-specific path and ``roi_id`` metadata.
+    Older and uploaded ROI maps only recorded their rectangle, so retain that
+    comparison when reclaiming a completed ROI's cache.
+    """
+    if not isinstance(metadata, dict):
+        return False
+    if str(metadata.get("roi_id") or "") == str(roi.id):
+        return True
+    window = metadata.get("roi")
+    if not isinstance(window, dict):
+        return False
+    try:
+        return (
+            int(window["x"]) == int(roi.x)
+            and int(window["y"]) == int(roi.y)
+            and int(window["width"]) == int(roi.width)
+            and int(window["height"]) == int(roi.height)
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _unlink_unshared_probability_map_file(prob_map: ProbabilityMap) -> None:
+    """Remove one file unless another surviving map record still uses it."""
+    if ProbabilityMap.objects.filter(file_path=prob_map.file_path).exists():
+        return
+    try:
+        storage_path(prob_map.file_path).unlink(missing_ok=True)
+    except (OSError, StorageError):
+        logger.warning(
+            "Could not remove probability-map file %s after reclaiming its record.",
+            prob_map.file_path,
+            exc_info=True,
+        )
+
+
+def _remove_directory_if_unreferenced(path: Path) -> None:
+    """Remove an owned map directory unless a surviving DB row still uses it."""
+    try:
+        relative_prefix = str(path.relative_to(STORAGE_DIR)).replace("\\", "/")
+    except ValueError:
+        logger.warning("Refusing to remove probability-map directory outside storage: %s", path)
+        return
+    if ProbabilityMap.objects.filter(file_path__startswith=f"{relative_prefix}/").exists():
+        return
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except OSError:  # pragma: no cover - rmtree(ignore_errors) rarely raises
+        logger.warning("Could not remove probability-map directory %s.", path, exc_info=True)
+
+
+def delete_probability_maps_for_roi(
+    segmentation: ImageSegmentation,
+    roi: ImageROI,
+) -> int:
+    """Reclaim maps scoped to one ROI after that ROI is marked done.
+
+    A full-image map remains available for any unfinished parts of the image.
+    The composited full-view cache is discarded for matching models: it cannot
+    remove just one ROI's pixels without allocating another full-image canvas,
+    and it is never a canonical inference cache.
+    """
+    roi_dir = TMP_DIR / "prob_maps" / str(segmentation.id) / str(roi.id)
+    roi_prefix = str(roi_dir.relative_to(STORAGE_DIR)).replace("\\", "/")
+    maps = list(ProbabilityMap.objects.filter(segmentation=segmentation))
+    roi_maps = [
+        prob_map
+        for prob_map in maps
+        if prob_map.file_path.replace("\\", "/").startswith(f"{roi_prefix}/")
+        or _metadata_describes_roi(prob_map.metadata, roi)
+    ]
+    model_names = {prob_map.name for prob_map in roi_maps}
+    composite_maps = [
+        prob_map
+        for prob_map in maps
+        if prob_map.name in model_names
+        and isinstance(prob_map.metadata, dict)
+        and prob_map.metadata.get("composite") is True
+    ]
+    to_delete = {prob_map.id: prob_map for prob_map in [*roi_maps, *composite_maps]}
+    if not to_delete:
+        _remove_directory_if_unreferenced(roi_dir)
+        return 0
+
+    records = list(to_delete.values())
+    ProbabilityMap.objects.filter(id__in=list(to_delete)).delete()
+    for record in records:
+        _unlink_unshared_probability_map_file(record)
+    _remove_directory_if_unreferenced(roi_dir)
+    composite_dir = PROB_MAPS_DIR / str(segmentation.id) / "composite"
+    _remove_directory_if_unreferenced(composite_dir)
+    return len(records)
+
+
+def delete_probability_maps_for_segmentation(segmentation: ImageSegmentation) -> int:
+    """Reclaim every reusable map for a completed segmentation.
+
+    This removes only probability-map records and their cache files. Confirmed
+    objects, stored masks, overlays, and analysis outputs are deliberately not
+    part of this cleanup.
+    """
+    records = list(ProbabilityMap.objects.filter(segmentation=segmentation))
+    if records:
+        ProbabilityMap.objects.filter(id__in=[record.id for record in records]).delete()
+        for record in records:
+            _unlink_unshared_probability_map_file(record)
+    segmentation_id = str(segmentation.id)
+    _remove_directory_if_unreferenced(PROB_MAPS_DIR / segmentation_id)
+    _remove_directory_if_unreferenced(TMP_DIR / "prob_maps" / segmentation_id)
+    return len(records)
 
 
 def _latest_map_for_file_path(
@@ -229,6 +351,15 @@ def _composite_roi_into_full_image_prob_map(
         return
     parent = get_asset_openable(roi.asset)
     full_h, full_w = parent.height, parent.width
+    full_megapixels = (full_h * full_w) / 1e6
+    if full_megapixels > MAX_ROI_COMPOSITE_MEGAPIXELS:
+        logger.info(
+            "Skipping ROI probability-map composite for segmentation %s: parent image is %.0f MP "
+            "(ROI map remains available at its native window).",
+            segmentation.id,
+            full_megapixels,
+        )
+        return
 
     # Composite path is separate from canonical full-image cache path.
     composite_path = get_composite_prob_map_file_path(segmentation, model_name, prefix)

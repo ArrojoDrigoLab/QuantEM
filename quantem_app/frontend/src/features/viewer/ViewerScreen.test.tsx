@@ -283,11 +283,38 @@ describe("ViewerScreen", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Viewer Overlays");
+    await screen.findByText("Segmentations");
     expect(
       screen.getByText(/Overlays are unavailable until preprocessing is complete/i)
     ).toBeInTheDocument();
     expect(screen.getByText(/Encoding image \(40%\)/i)).toBeInTheDocument();
+  });
+
+  it("shows the experiment above the image name and returns to that experiment", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getAsset).mockResolvedValue(
+      makeImage({
+        experiment_id: "exp-1",
+        experiment_name: "Glucose infusion",
+        pixel_size_nm: 5,
+      })
+    );
+
+    render(
+      <MemoryRouter>
+        <ViewerScreen />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Glucose infusion")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Image 1" })).toBeInTheDocument();
+    expect(screen.queryByText("source.tif")).not.toBeInTheDocument();
+    expect(screen.getByText("5 nm/px")).toBeInTheDocument();
+    expect(screen.queryByText(/entered by hand|from file/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit pixel size" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Experiment/ }));
+    expect(navigateMock).toHaveBeenCalledWith("/?experiment=exp-1");
   });
 
   it("navigates to labeling route when edit segmentation is clicked", async () => {
@@ -300,8 +327,10 @@ describe("ViewerScreen", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Lipid Droplets");
-    await user.click(screen.getByTitle("Open labeling"));
+    await screen.findByRole("button", { name: "Edit Labels for Lipid Droplets" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit Labels for Lipid Droplets" })
+    );
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith(
@@ -408,6 +437,7 @@ describe("ViewerScreen", () => {
   });
 
   it("polls segmentation status while processing and stops after completion", async () => {
+    const user = userEvent.setup();
     type IntervalEntry = { id: number; delay: number; callback: () => void };
     const intervals: IntervalEntry[] = [];
     let nextIntervalId = 1;
@@ -435,7 +465,10 @@ describe("ViewerScreen", () => {
     );
 
     try {
-      await screen.findByText("Running inference...");
+      await user.click(
+        await screen.findByRole("button", { name: "Expand Lipid Droplets" })
+      );
+      expect(screen.getByText("Running inference...")).toBeInTheDocument();
       const initialCalls = vi.mocked(getAssetSegmentations).mock.calls.length;
       expect(initialCalls).toBeGreaterThan(0);
       await waitFor(() => expect(setIntervalSpy).toHaveBeenCalled());
@@ -505,10 +538,10 @@ describe("ViewerScreen", () => {
           <ViewerScreen />
         </MemoryRouter>
       );
-      await screen.findByText("Lipid Droplets");
       await user.click(
-        screen.getByRole("button", { name: "Delete Lipid Droplets" })
+        await screen.findByRole("button", { name: "Expand Lipid Droplets" })
       );
+      await user.click(screen.getByRole("button", { name: "Delete" }));
       return screen.findByRole("dialog");
     }
 
@@ -658,6 +691,7 @@ describe("ViewerScreen", () => {
     });
 
     it("draws the objects of a run sitting at CANDIDATES_READY", async () => {
+      const user = userEvent.setup();
       vi.mocked(getAssetSegmentations).mockResolvedValue([
         segmentation("CANDIDATES_READY", { segmentCounts: { CANDIDATE: 17 } }),
       ]);
@@ -684,8 +718,11 @@ describe("ViewerScreen", () => {
       expect(lutAlpha(overlay.lut, 1)).toBe(255);
       // And the segmentation is still CANDIDATES_READY — the card offers the
       // route to proofreading rather than having taken it.
+      await user.click(
+        screen.getByRole("button", { name: "Expand Lipid Droplets" })
+      );
       expect(
-        screen.getByRole("button", { name: "Edit / Label" })
+        screen.getByRole("button", { name: "Edit Labels" })
       ).toBeInTheDocument();
       expect(screen.getByText("Run finished")).toBeInTheDocument();
     });
@@ -704,6 +741,10 @@ describe("ViewerScreen", () => {
 
       const checkbox = await screen.findByRole("checkbox");
       expect(checkbox).toBeChecked();
+      expect(screen.queryByText("Color")).not.toBeInTheDocument();
+      await user.click(
+        screen.getByRole("button", { name: "Expand Lipid Droplets" })
+      );
       expect(screen.getByText("Color")).toBeInTheDocument();
       expect(screen.getByText("Opacity")).toBeInTheDocument();
       expect(screen.getByText("25%")).toBeInTheDocument();
@@ -715,6 +756,7 @@ describe("ViewerScreen", () => {
     });
 
     it("switches an overlay on the moment its run finishes", async () => {
+      const user = userEvent.setup();
       const timers = captureIntervals();
       vi.mocked(getAssetSegmentations)
         .mockResolvedValueOnce([segmentation("RUNNING_INFERENCE")])
@@ -727,7 +769,10 @@ describe("ViewerScreen", () => {
       );
 
       try {
-        await screen.findByText("Running inference...");
+        await user.click(
+          await screen.findByRole("button", { name: "Expand Lipid Droplets" })
+        );
+        expect(screen.getByText("Running inference...")).toBeInTheDocument();
         expect(lastIdMapOverlays()).toHaveLength(0);
 
         const poll = timers.intervals.find((entry) => entry.delay === 3000);
@@ -761,7 +806,9 @@ describe("ViewerScreen", () => {
       );
 
       try {
-        const checkbox = await screen.findByRole("checkbox");
+        const checkbox = await screen.findByRole("checkbox", {
+          name: "Show Mitochondria",
+        });
         await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(1));
         await user.click(checkbox);
         await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(0));
@@ -772,7 +819,9 @@ describe("ViewerScreen", () => {
           poll?.callback();
         });
 
-        expect(screen.getByRole("checkbox")).not.toBeChecked();
+        expect(
+          screen.getByRole("checkbox", { name: "Show Mitochondria" })
+        ).not.toBeChecked();
         expect(lastIdMapOverlays()).toHaveLength(0);
       } finally {
         timers.restore();
@@ -812,6 +861,7 @@ describe("ViewerScreen", () => {
     });
 
     it("says why a run failed instead of the bare word Failed", async () => {
+      const user = userEvent.setup();
       vi.mocked(getAssetSegmentations).mockResolvedValue([
         segmentation("FAILED", {
           statusError:
@@ -826,13 +876,16 @@ describe("ViewerScreen", () => {
         </MemoryRouter>
       );
 
-      expect(await screen.findByText("Failed")).toBeInTheDocument();
+      await user.click(
+        await screen.findByRole("button", { name: "Expand Lipid Droplets" })
+      );
+      expect(screen.getByText("Failed")).toBeInTheDocument();
       expect(
         screen.getByText(/Model pack 'quantem:er' is not installed\./)
       ).toBeInTheDocument();
       // A failed run wrote nothing, so nothing is drawn and nothing is offered
       // to draw.
-      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("checkbox")).toBeDisabled();
       expect(lastIdMapOverlays()).toHaveLength(0);
     });
   });
@@ -946,18 +999,21 @@ describe("ViewerScreen", () => {
         </MemoryRouter>
       );
 
-      await screen.findByText("Lipid Droplets");
+      await screen.findByRole("button", { name: "Expand Lipid Droplets" });
       expect(screen.queryByText(/Overlay updating/i)).not.toBeInTheDocument();
     });
 
     it("says on screen that the build failed, and why, verbatim", async () => {
+      const user = userEvent.setup();
       render(
         <MemoryRouter>
           <ViewerScreen />
         </MemoryRouter>
       );
 
-      await screen.findByText("Lipid Droplets");
+      await user.click(
+        await screen.findByRole("button", { name: "Expand Lipid Droplets" })
+      );
 
       // The header slot the eternal spinner used to occupy.
       expect(
@@ -981,6 +1037,7 @@ describe("ViewerScreen", () => {
     });
 
     it("says nothing is drawn when no bundle was ever built", async () => {
+      const user = userEvent.setup();
       vi.mocked(useSegmentationOverlayManifests).mockReturnValue({
         manifests: {
           "seg-1": failedManifest("seg-1", {
@@ -1001,7 +1058,9 @@ describe("ViewerScreen", () => {
         </MemoryRouter>
       );
 
-      await screen.findByText("Lipid Droplets");
+      await user.click(
+        await screen.findByRole("button", { name: "Expand Lipid Droplets" })
+      );
       expect(
         screen.getByText(/no version of this overlay has ever finished building/i)
       ).toBeInTheDocument();
@@ -1011,6 +1070,7 @@ describe("ViewerScreen", () => {
     });
 
     it("names no reason honestly when the server recorded none", async () => {
+      const user = userEvent.setup();
       vi.mocked(useSegmentationOverlayManifests).mockReturnValue({
         manifests: { "seg-1": failedManifest("seg-1", { last_error: "" }) },
         loading: false,
@@ -1024,7 +1084,9 @@ describe("ViewerScreen", () => {
         </MemoryRouter>
       );
 
-      await screen.findByText("Lipid Droplets");
+      await user.click(
+        await screen.findByRole("button", { name: "Expand Lipid Droplets" })
+      );
       expect(
         screen.getByText(/The server recorded no reason for it/i)
       ).toBeInTheDocument();
@@ -1049,7 +1111,9 @@ describe("ViewerScreen", () => {
         </MemoryRouter>
       );
 
-      await screen.findByText("Lipid Droplets");
+      await user.click(
+        await screen.findByRole("button", { name: "Expand Lipid Droplets" })
+      );
       await user.click(screen.getByRole("button", { name: /Retry overlay build/i }));
 
       await waitFor(() => {
@@ -1074,7 +1138,9 @@ describe("ViewerScreen", () => {
         </MemoryRouter>
       );
 
-      await screen.findByText("Lipid Droplets");
+      await user.click(
+        await screen.findByRole("button", { name: "Expand Lipid Droplets" })
+      );
       await user.click(screen.getByRole("button", { name: /Retry overlay build/i }));
 
       expect(

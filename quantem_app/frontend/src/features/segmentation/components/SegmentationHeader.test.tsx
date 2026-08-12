@@ -171,6 +171,53 @@ describe("SegmentationHeader", () => {
     expect(onRunFull).toHaveBeenCalledTimes(1);
   });
 
+  it("offers an unfinished active ROI as a smaller model run", async () => {
+    const user = userEvent.setup();
+    const onRunActiveRoi = vi.fn();
+    renderHeader({
+      activeRoi: {
+        id: "roi-1",
+        segmentation: "seg-1",
+        x: 100,
+        y: 200,
+        width: 512,
+        height: 512,
+        source: "MANUAL",
+        is_active: true,
+        is_complete: false,
+        completed_for_segmentation: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      onApplyActiveRoi: onRunActiveRoi,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Run Active ROI" }));
+    expect(onRunActiveRoi).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer a run for an ROI already marked done", () => {
+    renderHeader({
+      activeRoi: {
+        id: "roi-1",
+        segmentation: "seg-1",
+        x: 100,
+        y: 200,
+        width: 512,
+        height: 512,
+        source: "MANUAL",
+        is_active: true,
+        is_complete: false,
+        completed_for_segmentation: true,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      onApplyActiveRoi: vi.fn(),
+    });
+
+    expect(screen.queryByRole("button", { name: "Run Active ROI" })).not.toBeInTheDocument();
+  });
+
   /**
    * "Marking it done locks the segmentation" is a promise the dialog has always
    * made and the app did not keep: every mutation control stayed enabled. The

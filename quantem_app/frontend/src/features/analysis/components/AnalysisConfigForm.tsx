@@ -13,6 +13,7 @@ import type { ChangeEvent } from "react";
 import { Button, Panel } from "@/shared/ui/design";
 import { describeObjectsPixelSize } from "@/shared/objectsPixelSize";
 import type { ImageSegmentation } from "@/shared/types/images";
+import { segmentationDisplayName } from "@/shared/segmentationNames";
 import {
   MAX_REPLICATES,
   parseBandEdges,
@@ -166,7 +167,7 @@ export function AnalysisConfigForm({
           <option value="">Whole image (no tissue mask)</option>
           {segmentations.map((seg) => (
             <option key={seg.id} value={seg.id}>
-              {seg.segmentation_type.long_name}
+              {segmentationDisplayName(seg)}
             </option>
           ))}
         </select>

@@ -16,7 +16,6 @@ import { BandHistogram } from "@/features/analysis/components/BandHistogram";
 import { CompositionPanel } from "@/features/analysis/components/CompositionPanel";
 import { MonteCarloPanel } from "@/features/analysis/components/MonteCarloPanel";
 import { ObjectsPanel } from "@/features/analysis/components/ObjectsPanel";
-import { PointsPanel } from "@/features/analysis/components/PointsPanel";
 
 const EXPORT_DESCRIPTIONS: Record<string, string> = {
   "objects.csv": "One row per confirmed object, every metric.",
@@ -109,8 +108,6 @@ function DistanceCoverage({
  */
 export function AnalysisResults({ run }: AnalysisResultsProps) {
   const calibrated = Boolean(run.calibrated);
-  const pointsSource =
-    typeof run.params?.points_source === "string" ? run.params.points_source : null;
   const wholeImage = !run.params?.tissue_segmentation_id;
 
   // Defensive: rendering half-written numbers from a run that has not finished
@@ -190,25 +187,6 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
           downloadStem={run.id}
         />
       ) : null}
-
-      {run.points ? (
-        <PointsPanel
-          points={run.points}
-          composition={run.composition}
-          pointsSource={pointsSource}
-        />
-      ) : (
-        <Panel className="p-4">
-          <h3 className="m-0 text-sm font-semibold text-slate-900">
-            Point distribution
-          </h3>
-          <p className="m-0 mt-1 text-sm text-slate-600">
-            This run imported no point set, so there is no enrichment, no
-            distance histogram and no Monte-Carlo null. Choose a point source in
-            the configuration to measure them.
-          </p>
-        </Panel>
-      )}
 
       {run.distances ? (
         <Panel className="p-4">

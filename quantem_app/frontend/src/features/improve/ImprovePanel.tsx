@@ -43,6 +43,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { getAsset, getAssetSegmentations } from "@/shared/api/assets";
+import { segmentationDisplayName } from "@/shared/segmentationNames";
 import {
   applyAdapter,
   getAdaptCrops,
@@ -492,7 +493,7 @@ export function ImprovePanel() {
               >
                 {segmentations.map((seg) => (
                   <option key={seg.id} value={seg.id}>
-                    {seg.segmentation_type.long_name}
+                    {segmentationDisplayName(seg)}
                   </option>
                 ))}
               </select>

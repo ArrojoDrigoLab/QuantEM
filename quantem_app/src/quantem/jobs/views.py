@@ -21,6 +21,11 @@ from quantem.jobs.serializers import (
     batch_progress_map,
     job_progress_block,
 )
+from quantem.jobs.update_maintenance import (
+    is_update_apply_locked,
+    release_update_apply_lock,
+    try_acquire_update_apply_lock,
+)
 from quantem.segmentation.models import ImageSegmentation
 
 DONE_JOB_STATUSES = ("SUCCESS", "FAILED", "CANCELLED")
@@ -229,6 +234,13 @@ class JobCancelView(APIView):
 
 class JobRetryView(APIView):
     def post(self, request, job_id):
+        if is_update_apply_locked():
+            return Response(
+                {
+                    "detail": "QuantEM is applying an update. It will reopen shortly; then try again."
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         job = get_object_or_404(Job, id=job_id)
         if job.status not in MANUAL_RETRY_JOB_STATUSES:
             detail = (
@@ -353,6 +365,31 @@ class JobQueueStatusView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class UpdateApplyLockView(APIView):
+    """Atomically fence new work when a downloaded update can restart safely."""
+
+    def post(self, request):
+        del request
+        result = try_acquire_update_apply_lock()
+        return Response(
+            {
+                "ready": result.ready,
+                "open_jobs": result.open_jobs,
+                "reason": result.reason,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class UpdateApplyReleaseView(APIView):
+    """Release the update fence if download/install did not complete."""
+
+    def post(self, request):
+        del request
+        release_update_apply_lock()
+        return Response({"released": True}, status=status.HTTP_200_OK)
 
 
 class JobClearDoneView(APIView):

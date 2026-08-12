@@ -38,6 +38,7 @@ from quantem.segmentation.prob_maps.persistence import (
     MAX_MEGAPIXELS_ENV,
     SCOPE_FULL,
     SCOPE_ROI,
+    ProbabilityMapPersistenceError,
     persist_run_probability_maps,
 )
 from quantem.segmentation.services.adapt import collect_crops
@@ -256,21 +257,43 @@ class ProbabilityMapPersistedByRunTests(TestCase):
         assert crop.prob[20, 20] > 0.9  # image (40, 40)
         assert crop.prob[110, 110] < 0.1  # image (130, 130)
 
-    def test_an_oversized_image_is_skipped_and_says_why(self):
+    def test_a_configured_full_image_ceiling_refuses_with_its_real_reason(self):
         details: list[str] = []
         segmenter = FakeOrganelleSegmenter(_blob_prob())
         # SIZE*SIZE = 65536 px = 0.065 MP, so a 0.01 MP ceiling refuses it.
         with set_env({MAX_MEGAPIXELS_ENV: "0.01"}):
-            written = persist_run_probability_maps(
-                segmentation=self.segmentation,
-                segmenter=segmenter,
-                prob_maps={"DINO": _blob_prob()},
-                on_detail=details.append,
-            )
+            with self.assertRaises(ProbabilityMapPersistenceError) as caught:
+                persist_run_probability_maps(
+                    segmentation=self.segmentation,
+                    segmenter=segmenter,
+                    prob_maps={"DINO": _blob_prob()},
+                    on_detail=details.append,
+                )
 
-        assert written == []
         assert ProbabilityMap.objects.filter(segmentation=self.segmentation).count() == 0
-        assert any("run the model over an ROI" in message for message in details)
+        assert "configured not to keep" in str(caught.exception)
+        assert any("Set that value to 0" in message for message in details)
+
+    def test_a_configured_ceiling_does_not_masquerade_as_a_disk_space_error(self):
+        reporter = _Reporter()
+        segmenter = FakeOrganelleSegmenter(_blob_prob())
+        with (
+            set_env({MAX_MEGAPIXELS_ENV: "0.01"}),
+            patch("quantem.segmentation.organelle_tasks.get_segmenter", return_value=segmenter),
+        ):
+            with self.assertRaises(ProbabilityMapPersistenceError) as caught:
+                run_segmentation_full_task(
+                    segmentation_id=str(self.segmentation.id),
+                    segmentation_type=MITO_INTERNAL_NAME,
+                    source_model="quantem:mito",
+                    reporter=reporter,
+                )
+
+        self.segmentation.refresh_from_db()
+        assert "configured not to keep" in str(caught.exception)
+        assert self.segmentation.status_stage == "FAILED"
+        assert "configured not to keep" in self.segmentation.status_error
+        assert "disk space" not in self.segmentation.status_error.lower()
 
     def test_a_segmenter_that_persists_its_own_maps_is_not_written_twice(self):
         segmenter = FakeOrganelleSegmenter(_blob_prob())

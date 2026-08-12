@@ -35,7 +35,7 @@ def _should_autostart_scheduler() -> bool:
     return True
 
 
-def _start_scheduler_if_needed() -> None:
+def start_scheduler_if_needed() -> None:
     global _scheduler_started
     if _scheduler_started:
         return
@@ -60,7 +60,7 @@ def _start_scheduler_if_needed() -> None:
 def _on_connection_created(sender, connection, **kwargs) -> None:
     if connection.alias != "default":
         return
-    _start_scheduler_if_needed()
+    start_scheduler_if_needed()
 
 
 class JobsConfig(AppConfig):

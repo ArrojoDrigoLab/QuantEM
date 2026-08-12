@@ -142,7 +142,10 @@ function FineTuneDialogBody({
   const [overwriteAdapterId, setOverwriteAdapterId] = useState("");
   const [baseModel, setBaseModel] = useState("");
   const [modeChoice, setModeChoice] = useState<FineTuneModeChoice>("use_all");
-  const [modeTouched, setModeTouched] = useState(false);
+  // A ref, rather than state, so a preview already in flight cannot overwrite
+  // a radio choice made before its response arrives. It also lets the preview
+  // and its server-selected default land in the same render.
+  const modeTouchedRef = useRef(false);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -269,6 +272,9 @@ function FineTuneDialogBody({
       void previewFineTuneScope(toSelectionPayload(chosenTypeId, selection))
         .then((response) => {
           if (cancelled) return;
+          if (!modeTouchedRef.current) {
+            setModeChoice(modeChoiceFromDefault(response.default_mode));
+          }
           setPreview(response);
           setPreviewKey(currentSelectionKey);
           setPreviewError(null);
@@ -295,11 +301,6 @@ function FineTuneDialogBody({
   // the count would keep showing the previous selection's total while the new
   // request was out, which is the one moment a user is watching it change.
   const livePreview = previewKey === currentSelectionKey ? preview : null;
-
-  useEffect(() => {
-    if (modeTouched || !livePreview) return;
-    setModeChoice(modeChoiceFromDefault(livePreview.default_mode));
-  }, [livePreview, modeTouched]);
 
   const modelChoices = useMemo(() => toModelChoices(catalogue), [catalogue]);
   const resolvedType = useMemo(
@@ -706,8 +707,8 @@ function FineTuneDialogBody({
                         value={option.value}
                         checked={modeChoice === option.value}
                         onChange={() => {
+                          modeTouchedRef.current = true;
                           setModeChoice(option.value);
-                          setModeTouched(true);
                         }}
                       />
                       <span>

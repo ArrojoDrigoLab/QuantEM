@@ -631,6 +631,7 @@ def _run_capped_child(script: Path, work: Path, *, arm: str, headroom_mb: int) -
     }
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(sys.platform != "win32", reason="Job Objects are Windows-only")
 def test_the_parent_survives_a_cap_the_unbounded_backlog_does_not(tmp_path):
     """25 macro tiles on the ``small`` profile, under a committed-memory cap.

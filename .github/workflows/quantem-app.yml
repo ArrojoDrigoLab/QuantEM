@@ -1,7 +1,8 @@
 name: quantem-app
 
-# The lane is deliberately cheap: no GPU, no model weights, no database service.
-# That is possible only because the app dropped PostGIS for plain SQLite.
+# Routine app CI: frontend and backend checks plus platform packaging smoke tests.
+# It uses no GPU, model weights, or database service. Tagged production builds
+# and GitHub Release publication remain in quantem-app-desktop-release.yml.
 
 on:
   push:
@@ -89,3 +90,222 @@ jobs:
           name: quantem-frontend-dist
           path: quantem_app/frontend/dist
           retention-days: 1
+
+  windows-installer-contract:
+    name: Windows installer contract
+    needs: frontend
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: quantem_app/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: quantem_app/desktop/src-tauri
+      - uses: actions/download-artifact@v4
+        with:
+          name: quantem-frontend-dist
+          path: quantem_app/frontend/dist
+
+      - name: Test payload tooling
+        shell: pwsh
+        env:
+          PYTHONPATH: ${{ github.workspace }}\quantem_app\src
+        run: |
+          python -m pip install pytest ruff
+          python -m ruff check packaging/installer
+          python -m ruff format --check packaging/installer
+          python -m pytest -p no:cacheprovider packaging/installer/tests -q
+
+      - name: Build tiny CPU/CUDA fixtures and installer manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = [string](& python desktop/scripts/verify_release_versions.py)
+          "QUANTEM_VERSION=$version" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $assets = Join-Path $env:RUNNER_TEMP "fixture-assets"
+          $cpu = Join-Path $env:RUNNER_TEMP "fixture-cpu/quantem-server"
+          $cuda = Join-Path $env:RUNNER_TEMP "fixture-cuda/quantem-server"
+          New-Item -ItemType Directory -Force $assets,$cpu,$cuda | Out-Null
+          [IO.File]::WriteAllBytes((Join-Path $cpu "quantem-server.exe"), [byte[]](77,90,0,0))
+          [IO.File]::WriteAllBytes((Join-Path $cuda "quantem-server.exe"), [byte[]](77,90,0,0))
+          [IO.File]::WriteAllBytes((Join-Path $cuda "torch_cuda.dll"), [byte[]](77,90,0,0))
+          python packaging/installer/build_windows_payload.py --source $cpu --output "$assets/quantem-server_$version`_windows-x64-cpu.zip" --manifest-output "$assets/cpu.payload-manifest.json" --version $version --variant cpu --torch-version 2.13.0
+          python packaging/installer/build_windows_payload.py --source $cuda --output "$assets/quantem-server_$version`_windows-x64-cuda.zip" --manifest-output "$assets/cuda.payload-manifest.json" --version $version --variant cuda --torch-version 2.13.0 --cuda-runtime cu126 --cuda-driver-api 12060
+          python packaging/installer/build_payload_manifest.py --manifest "$assets/cpu.payload-manifest.json" --manifest "$assets/cuda.payload-manifest.json" --tag "v$version" --base-url http://127.0.0.1:8765 --allow-unsigned --nsis-output desktop/src-tauri/nsis/payload-manifest.nsh --json-output "$assets/public.json"
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Push-Location desktop
+          npm ci
+          Remove-Item -Recurse -Force "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis" -ErrorAction SilentlyContinue
+          & scripts/invoke_tauri_build.ps1 -Target x86_64-pc-windows-msvc
+          Pop-Location
+
+      - name: Exercise payload download, verification, and extraction
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "payload-mirror"
+          $tagDir = Join-Path $root "v$env:QUANTEM_VERSION"
+          New-Item -ItemType Directory -Force $tagDir | Out-Null
+          Get-ChildItem (Join-Path $env:RUNNER_TEMP "fixture-assets") -File -Filter "*.zip" | Copy-Item -Destination $tagDir
+          $serverStdout = Join-Path $env:RUNNER_TEMP "payload-server.stdout.log"
+          $serverStderr = Join-Path $env:RUNNER_TEMP "payload-server.stderr.log"
+          $server = Start-Process python -ArgumentList @("-m", "http.server", "8765", "--directory", $root) -WindowStyle Hidden -RedirectStandardOutput $serverStdout -RedirectStandardError $serverStderr -PassThru
+          try {
+            $serverReady = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Method Head -Uri "http://127.0.0.1:8765/" | Out-Null
+                $serverReady = $true
+                break
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $serverReady) { throw "Local payload mirror did not become ready" }
+            $bundle = Resolve-Path "desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+            $installer = Get-ChildItem $bundle -File -Filter "QuantEM_$env:QUANTEM_VERSION`_x64-setup.exe" | Select-Object -First 1
+            if (-not $installer) { throw "Built installer was not found under $bundle" }
+            $installDir = Join-Path $env:RUNNER_TEMP "QuantEMInstallerCheck"
+            $process = Start-Process $installer -ArgumentList @("/S", "/QUANTEM_VARIANT=cpu", "/D=$installDir") -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              Get-Content $serverStdout,$serverStderr -ErrorAction SilentlyContinue
+              Get-Content (Join-Path $installDir ".quantem-install/failure.log") -ErrorAction SilentlyContinue
+              Get-ChildItem $installDir -Force -Recurse -ErrorAction SilentlyContinue | Select-Object FullName,Length
+              throw "Installer exited $($process.ExitCode)"
+            }
+            $info = Join-Path $installDir "quantem-server/build-info.json"
+            if (-not (Test-Path $info -PathType Leaf)) { throw "Runtime payload was not installed" }
+            if ((Get-Content -Raw $info | ConvertFrom-Json).variant -ne "cpu") { throw "Wrong runtime installed" }
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }
+
+  macos-desktop-build:
+    name: macOS desktop build check
+    needs: frontend
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      # Exercise the updater plugin configuration on ordinary CI builds. The
+      # public key is not secret; the fallback keeps forked PRs buildable.
+      TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY || 'ci-release-config-check' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: quantem_app/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: quantem_app/desktop/src-tauri
+      - uses: actions/download-artifact@v4
+        with:
+          name: quantem-frontend-dist
+          path: quantem_app/frontend/dist
+
+      - name: Write release-shaped updater configuration
+        shell: bash
+        run: |
+          config="$RUNNER_TEMP/tauri.ci.conf.json"
+          python desktop/scripts/write_release_tauri_config.py \
+            --template desktop/src-tauri/tauri.release.conf.template.json \
+            --output "$config"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "tauri.ci.conf.json"
+          document = json.loads(path.read_text(encoding="utf-8"))
+          document["bundle"]["createUpdaterArtifacts"] = False
+          path.write_text(json.dumps(document) + "\n", encoding="utf-8")
+          PY
+          echo "TAURI_CI_CONFIG=$config" >> "$GITHUB_ENV"
+
+      - name: Install the package and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build the sidecar
+        env:
+          PYTHONPATH: ${{ github.workspace }}/quantem_app/src
+        run: |
+          python -m PyInstaller packaging/pyinstaller/quantem-server.spec \
+            --noconfirm \
+            --workpath "${RUNNER_TEMP}/pyi-build" \
+            --distpath packaging/pyinstaller/dist
+
+      - name: Check the sidecar runs before bundling it
+        run: |
+          ./packaging/pyinstaller/dist/quantem-server/quantem-server --help > /dev/null
+          echo "sidecar starts"
+
+      - name: Build the app
+        working-directory: quantem_app/desktop
+        run: |
+          npm ci
+          npm run tauri build -- --target aarch64-apple-darwin --bundles app --config "$TAURI_CI_CONFIG"
+
+      - name: Ad-hoc sign
+        working-directory: quantem_app/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+        run: |
+          find QuantEM.app -type f \( -name "*.dylib" -o -name "*.so" -o -name "quantem-server" \) \
+            -exec codesign --force -s - {} \;
+          codesign --force -s - QuantEM.app
+          codesign --verify --strict --verbose=2 QuantEM.app
+
+      - name: Make the dmg
+        working-directory: quantem_app/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "QuantEM" \
+            --icon "QuantEM.app" 160 190 \
+            --app-drop-link 480 190 \
+            --window-size 640 400 \
+            --no-internet-enable \
+            "QuantEM-macos-arm64.dmg" \
+            "QuantEM.app"
+          shasum -a 256 QuantEM-macos-arm64.dmg | tee QuantEM-macos-arm64.dmg.sha256
+
+      - name: Verify the dmg carries a working app
+        working-directory: quantem_app/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+        run: |
+          hdiutil attach QuantEM-macos-arm64.dmg -mountpoint /Volumes/QuantEMCheck -nobrowse
+          codesign --verify --strict /Volumes/QuantEMCheck/QuantEM.app
+          /Volumes/QuantEMCheck/QuantEM.app/Contents/Resources/quantem-server/quantem-server --help > /dev/null
+          hdiutil detach /Volumes/QuantEMCheck
+          echo "dmg mounts, app is signed, sidecar runs from inside it"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QuantEM-macos-arm64
+          path: |
+            quantem_app/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/QuantEM-macos-arm64.dmg
+            quantem_app/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/QuantEM-macos-arm64.dmg.sha256
+          if-no-files-found: error
+          retention-days: 7

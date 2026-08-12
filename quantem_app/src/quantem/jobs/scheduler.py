@@ -232,6 +232,13 @@ class JobScheduler:
         )
 
     def _get_ready_jobs(self):
+        # The apply lock is normally acquired only with an empty queue, but
+        # checking here makes the fence defense-in-depth if an older client or
+        # a manually edited database leaves queued work behind.
+        from quantem.jobs.update_maintenance import is_update_apply_locked
+
+        if is_update_apply_locked():
+            return _get_job_model().objects.none()
         Job = _get_job_model()
         now = timezone.now()
         return (

@@ -1,7 +1,8 @@
 .overlay-sidebar {
+  order: -1;
   width: 260px;
   padding: 16px;
-  border-left: 1px solid #2a2a2a;
+  border-right: 1px solid #2a2a2a;
   background: #121212;
   color: #f5f5f5;
   display: flex;
@@ -12,6 +13,15 @@
 .overlay-sidebar h3 {
   margin: 0 0 8px;
   font-size: 16px;
+}
+
+.overlay-sidebar h4 {
+  margin: 0 0 8px;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .overlay-empty {
@@ -27,7 +37,7 @@
 }
 
 .overlay-item {
-  padding: 10px;
+  padding: 8px;
   border-radius: 8px;
   background: #1c1c1c;
   display: flex;
@@ -60,6 +70,49 @@
 
 .overlay-name {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overlay-open-button,
+.overlay-accordion-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111827;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.overlay-open-button svg,
+.overlay-accordion-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.overlay-open-button:hover:not(:disabled),
+.overlay-accordion-button:hover {
+  background: #1f2937;
+}
+
+.overlay-open-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.overlay-accordion-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #2f2f2f;
 }
 
 .overlay-count {

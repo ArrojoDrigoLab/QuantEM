@@ -1231,8 +1231,6 @@ def write_bundle(
         "segmentation_ids": sorted(
             {r.get("segmentation_id") for r in results if r.get("segmentation_id")}
         ),
-        # Not the same thing as the version string: 0.1.0 is every build
-        # between two releases, and a commit is one of them.
         "release": provenance.release(),
         "environment": provenance.environment(),
         "n_images": len(results),

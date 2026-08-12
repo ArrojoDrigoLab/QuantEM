@@ -1,6 +1,6 @@
 import uuid
 
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from quantem.jobs.constants import (
@@ -142,6 +142,10 @@ def batch_key_for_payload(payload: dict | None) -> str | None:
 
 
 class Job(models.Model):
+    # Kept here too (rather than only in update_maintenance) because the
+    # scheduler and API can use the status vocabulary without importing a
+    # second model just to inspect the queue.
+    OPEN_STATUSES = OPEN_JOB_STATUSES
     STATUS_CHOICES = [
         ("PENDING", "Pending"),
         ("RUNNING", "Running"),
@@ -293,29 +297,60 @@ class Job(models.Model):
         reported a three-run wave as 100 % complete while two of the three runs
         had never started.
         """
-        if batch_id is None:
-            batch_id, batch_seq = cls.resolve_batch(job_type, payload)
-        else:
-            batch_seq = cls.objects.filter(batch_id=batch_id).count()
-        planned = planned_units_for(job_type, payload)
-        units_total, unit_label = planned if planned else (None, "")
-        return cls.objects.create(
-            type=job_type,
-            payload_json=payload,
-            priority=priority,
-            resource_class=resource_class,
-            queue_name=queue_name,
-            max_attempts=max_attempts,
-            tags=tags or [],
-            batch_id=batch_id,
-            batch_seq=batch_seq,
-            # Null when the plan is not knowable, which reads as "this job does
-            # not count units" -- never 0 of 0, which reads as finished.
-            progress_units_total=units_total,
-            progress_units_done=0 if units_total is not None else None,
-            progress_unit_label=unit_label,
-            progress_stage=STAGE_QUEUED if units_total is not None else "",
+        # The desktop updater takes this lock only after it has observed an
+        # empty queue.  Join that lock transaction at the one creation seam
+        # rather than relying on every API view to remember an update-specific
+        # conditional: the final queue check and insert must be indivisible.
+        from quantem.jobs.update_maintenance import (  # noqa: PLC0415
+            assert_job_submission_allowed,
         )
+
+        with transaction.atomic():
+            assert_job_submission_allowed()
+            if batch_id is None:
+                batch_id, batch_seq = cls.resolve_batch(job_type, payload)
+            else:
+                batch_seq = cls.objects.filter(batch_id=batch_id).count()
+            planned = planned_units_for(job_type, payload)
+            units_total, unit_label = planned if planned else (None, "")
+            return cls.objects.create(
+                type=job_type,
+                payload_json=payload,
+                priority=priority,
+                resource_class=resource_class,
+                queue_name=queue_name,
+                max_attempts=max_attempts,
+                tags=tags or [],
+                batch_id=batch_id,
+                batch_seq=batch_seq,
+                # Null when the plan is not knowable, which reads as "this job does
+                # not count units" -- never 0 of 0, which reads as finished.
+                progress_units_total=units_total,
+                progress_units_done=0 if units_total is not None else None,
+                progress_unit_label=unit_label,
+                progress_stage=STAGE_QUEUED if units_total is not None else "",
+            )
+
+
+class UpdateMaintenance(models.Model):
+    """A singleton fence used only while a downloaded app update is applying."""
+
+    SINGLETON_ID = 1
+    STATE_IDLE = "IDLE"
+    STATE_APPLYING = "APPLYING"
+    STATE_CHOICES = [
+        (STATE_IDLE, "Idle"),
+        (STATE_APPLYING, "Applying update"),
+    ]
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=SINGLETON_ID)
+    state = models.CharField(max_length=16, choices=STATE_CHOICES, default=STATE_IDLE)
+    acquired_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "update maintenance state"
+        verbose_name_plural = "update maintenance state"
 
 
 class JobLog(models.Model):

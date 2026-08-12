@@ -1,0 +1,427 @@
+name: quantem-app desktop release
+
+# A tag builds two Windows server payloads but only one user-facing installer.
+# The installer detects CUDA, lets the user override it, and downloads the
+# selected signed/hash-pinned payload directly into the chosen install drive.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v<version> tag to release"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: quantem_app
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  windows-payload:
+    name: Windows ${{ matrix.variant }} runtime
+    runs-on: windows-latest
+    environment: quantem-desktop-release
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            torch_index: cpu
+            cuda_runtime: ""
+            cuda_driver_api: ""
+          - variant: cuda
+            torch_index: cu126
+            cuda_runtime: cu126
+            cuda_driver_api: "12060"
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      # Passwordless updater keys are supported; an absent optional secret is
+      # passed to Tauri as the empty password it expects.
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: quantem_app/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            quantem_app/frontend/package-lock.json
+            quantem_app/desktop/package-lock.json
+
+      - name: Verify tag and signing configuration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = [string](& python desktop/scripts/verify_release_versions.py --tag $env:RELEASE_TAG)
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw "TAURI_SIGNING_PRIVATE_KEY is not configured" }
+          "QUANTEM_VERSION=$version" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build frontend required by the Python package
+        working-directory: quantem_app/frontend
+        env:
+          VITE_API_BASE_URL: ""
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install the pinned ${{ matrix.variant }} build environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pip install --upgrade pip
+          python -m pip install "torch==2.13.0" "torchvision==0.28.0" --index-url "https://download.pytorch.org/whl/${{ matrix.torch_index }}"
+          python -m pip install -e . pyinstaller pyinstaller-hooks-contrib
+          python -c "import torch; print(torch.__version__, torch.version.cuda)"
+
+      - name: Freeze and verify the server
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $python = (Get-Command python).Source
+          $scratch = Join-Path $env:RUNNER_TEMP "quantem-pyinstaller-${{ matrix.variant }}"
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File packaging/pyinstaller/build.ps1 -Python $python -Scratch $scratch
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+          $sidecar = Resolve-Path packaging/pyinstaller/dist/quantem-server/quantem-server.exe
+          & $sidecar --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Frozen server does not start" }
+          $reportedCuda = [string](& python -c "import torch; print(torch.version.cuda or '')")
+          if ('${{ matrix.variant }}' -eq 'cpu' -and $reportedCuda) { throw "CPU payload contains CUDA torch $reportedCuda" }
+          if ('${{ matrix.variant }}' -eq 'cuda' -and $reportedCuda -ne '12.6') { throw "Expected CUDA 12.6 torch, got '$reportedCuda'" }
+
+      - name: Archive, sign, and split the runtime payload
+        shell: pwsh
+        working-directory: quantem_app
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out = Join-Path $env:RUNNER_TEMP "payload-assets"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $archive = Join-Path $out "quantem-server_$env:QUANTEM_VERSION`_windows-x64-${{ matrix.variant }}.zip"
+          $manifest = Join-Path $out "${{ matrix.variant }}.payload-manifest.json"
+          $args = @(
+            "packaging/installer/build_windows_payload.py",
+            "--source", "packaging/pyinstaller/dist/quantem-server",
+            "--output", $archive,
+            "--manifest-output", $manifest,
+            "--version", $env:QUANTEM_VERSION,
+            "--variant", "${{ matrix.variant }}",
+            "--torch-version", "2.13.0"
+          )
+          if ('${{ matrix.variant }}' -eq 'cuda') {
+            $args += @("--cuda-runtime", "${{ matrix.cuda_runtime }}", "--cuda-driver-api", "${{ matrix.cuda_driver_api }}")
+          }
+          & python @args
+          if ($LASTEXITCODE -ne 0) { throw "Payload archive validation failed" }
+          Push-Location desktop
+          npm ci
+          & npx tauri signer sign $archive
+          if ($LASTEXITCODE -ne 0) { throw "Payload signing failed" }
+          Pop-Location
+          if (-not (Test-Path -LiteralPath "$archive.sig")) { throw "Payload signature was not created" }
+          python packaging/installer/split_windows_payload.py --archive $archive --manifest $manifest --remove-archive
+          if ($LASTEXITCODE -ne 0) { throw "Payload splitting failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quantem-release-windows-payload-${{ matrix.variant }}
+          path: ${{ runner.temp }}/payload-assets
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    environment: quantem-desktop-release
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Intel
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: darwin-x86_64
+            python: "3.12"
+            torch: "2.2.2"
+            torchvision: "0.17.2"
+          - name: macOS Apple Silicon
+            os: macos-14
+            target: aarch64-apple-darwin
+            platform: darwin-aarch64
+            python: "3.13"
+            torch: "2.13.0"
+            torchvision: "0.28.0"
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+      TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: quantem_app/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            quantem_app/frontend/package-lock.json
+            quantem_app/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: quantem_app/desktop/src-tauri
+
+      - name: Verify release version and updater key
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python desktop/scripts/verify_release_versions.py --tag "$RELEASE_TAG")"
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          test -n "$TAURI_UPDATER_PUBKEY"
+          echo "QUANTEM_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Write updater and ad-hoc signing configuration
+        shell: bash
+        run: |
+          python desktop/scripts/write_release_tauri_config.py --template desktop/src-tauri/tauri.release.conf.template.json --output "$RUNNER_TEMP/tauri.release.conf.json"
+          echo "TAURI_RELEASE_CONFIG=$RUNNER_TEMP/tauri.release.conf.json" >> "$GITHUB_ENV"
+      - name: Build frontend
+        working-directory: quantem_app/frontend
+        env:
+          VITE_API_BASE_URL: ""
+        run: |
+          npm ci
+          npm run build
+      - name: Build the embedded CPU server
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/quantem_app/src
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "torch==${{ matrix.torch }}" "torchvision==${{ matrix.torchvision }}" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e . pyinstaller pyinstaller-hooks-contrib
+          python -c "import platform, sys, torch, torchvision; print(platform.machine(), sys.version, torch.__version__, torchvision.__version__); assert torch.__version__.split('+')[0] == '${{ matrix.torch }}'; assert torchvision.__version__.split('+')[0] == '${{ matrix.torchvision }}'"
+          python -m PyInstaller packaging/pyinstaller/quantem-server.spec --noconfirm --workpath "$RUNNER_TEMP/quantem-pyinstaller" --distpath packaging/pyinstaller/dist
+      - name: Build ad-hoc signed macOS bundles
+        working-directory: quantem_app/desktop
+        run: |
+          npm ci
+          if [[ "${{ matrix.platform }}" == "darwin-x86_64" ]]; then
+            npx tauri build --target "${{ matrix.target }}" --bundles app --config "$TAURI_RELEASE_CONFIG"
+            app="$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos" -name '*.app' -type d | head -n 1)"
+            test -n "$app"
+            bash scripts/build_macos_dmg.sh "$app" "src-tauri/target/${{ matrix.target }}/release/bundle/dmg/QuantEM_${QUANTEM_VERSION}_x64.dmg" QuantEM
+          else
+            npx tauri build --target "${{ matrix.target }}" --bundles app,dmg --config "$TAURI_RELEASE_CONFIG"
+          fi
+      - name: Verify and collect macOS artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="desktop/src-tauri/target/${{ matrix.target }}/release/bundle"
+          dmg="$(find "$bundle" -name '*.dmg' -type f | head -n 1)"
+          app="$(find "$bundle" -name '*.app' -type d | head -n 1)"
+          update="$(find "$bundle" -name '*.app.tar.gz' -type f | head -n 1)"
+          test -n "$dmg" && test -n "$app" && test -n "$update" && test -f "$update.sig"
+          codesign --verify --strict --verbose=2 "$app"
+          "$app/Contents/Resources/quantem-server/quantem-server" --help > /dev/null
+          out="$RUNNER_TEMP/release-assets"
+          mkdir -p "$out"
+          dmg_name="QuantEM_${QUANTEM_VERSION}_${{ matrix.platform }}.dmg"
+          update_name="QuantEM_${QUANTEM_VERSION}_${{ matrix.platform }}.app.tar.gz"
+          cp "$dmg" "$out/$dmg_name"
+          cp "$update" "$out/$update_name"
+          cp "$update.sig" "$out/$update_name.sig"
+          shasum -a 256 "$out/$dmg_name" > "$out/$dmg_name.sha256"
+          python -c "import json,os,pathlib; p=pathlib.Path(os.environ['RUNNER_TEMP'])/'release-assets'; n='QuantEM_${QUANTEM_VERSION}_${{ matrix.platform }}.app.tar.gz'; (p/'${{ matrix.platform }}.update-manifest.json').write_text(json.dumps({'platform':'${{ matrix.platform }}','update_filename':n,'signature_filename':n+'.sig'})+'\n')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quantem-release-${{ matrix.platform }}
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-installer:
+    name: Windows single CPU/CUDA installer
+    needs: windows-payload
+    runs-on: windows-latest
+    environment: quantem-desktop-release
+    timeout-minutes: 90
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+      TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            quantem_app/frontend/package-lock.json
+            quantem_app/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: quantem_app/desktop/src-tauri
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: quantem-release-windows-payload-*
+          path: runtime-assets
+          merge-multiple: true
+
+      - name: Generate the immutable installer payload manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = [string](& python desktop/scripts/verify_release_versions.py --tag $env:RELEASE_TAG)
+          if (-not $env:TAURI_UPDATER_PUBKEY) { throw "TAURI_UPDATER_PUBKEY is not configured" }
+          "QUANTEM_VERSION=$version" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          python packaging/installer/build_payload_manifest.py --manifest ../runtime-assets/cpu.payload-manifest.json --manifest ../runtime-assets/cuda.payload-manifest.json --tag $env:RELEASE_TAG --nsis-output desktop/src-tauri/nsis/payload-manifest.nsh --json-output ../runtime-assets/quantem-app-windows-payloads.json
+
+      - name: Build frontend and signed installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Push-Location frontend
+          $env:VITE_API_BASE_URL = ""
+          npm ci
+          npm run build
+          Pop-Location
+          python desktop/scripts/write_release_tauri_config.py --template desktop/src-tauri/tauri.release.conf.template.json --output "$env:RUNNER_TEMP/tauri.release.conf.json"
+          Push-Location desktop
+          npm ci
+          Remove-Item -Recurse -Force "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis" -ErrorAction SilentlyContinue
+          & scripts/invoke_tauri_build.ps1 -Target x86_64-pc-windows-msvc -Config "$env:RUNNER_TEMP/tauri.release.conf.json"
+          Pop-Location
+
+      - name: Collect release installer and updater
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundle = Resolve-Path desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis
+          $installer = Get-ChildItem $bundle -File -Filter "*_x64-setup.exe" | Select-Object -First 1
+          if (-not $installer -or -not (Test-Path "$($installer.FullName).sig")) { throw "Missing signed Windows artifacts" }
+          $out = Join-Path $env:RUNNER_TEMP "release-assets"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $installerName = "QuantEM_$env:QUANTEM_VERSION`_x64-setup.exe"
+          Copy-Item $installer.FullName (Join-Path $out $installerName)
+          Copy-Item "$($installer.FullName).sig" (Join-Path $out "$installerName.sig")
+          Copy-Item ../runtime-assets/quantem-app-windows-payloads.json $out
+          $hash = "{0} *{1}`n" -f (Get-FileHash (Join-Path $out $installerName) -Algorithm SHA256).Hash.ToLower(), $installerName
+          [IO.File]::WriteAllText((Join-Path $out "$installerName.sha256"), $hash, [Text.Encoding]::ASCII)
+          @{ platform = "windows-x86_64"; update_filename = $installerName; signature_filename = "$installerName.sig" } | ConvertTo-Json | Set-Content (Join-Path $out "windows-x86_64.update-manifest.json") -Encoding utf8
+
+      - name: Smoke-test a silent CPU install against a local payload mirror
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $mirror = Join-Path $env:RUNNER_TEMP "payload-mirror/$env:RELEASE_TAG"
+          New-Item -ItemType Directory -Force $mirror | Out-Null
+          Get-ChildItem ../runtime-assets -File | Where-Object { $_.Name -notlike "*.json" } | Copy-Item -Destination $mirror
+          python packaging/installer/build_payload_manifest.py --manifest ../runtime-assets/cpu.payload-manifest.json --manifest ../runtime-assets/cuda.payload-manifest.json --tag $env:RELEASE_TAG --base-url http://127.0.0.1:8765 --nsis-output desktop/src-tauri/nsis/payload-manifest.nsh --json-output "$env:RUNNER_TEMP/local-payloads.json"
+          Push-Location desktop
+          Remove-Item -Recurse -Force "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis" -ErrorAction SilentlyContinue
+          & scripts/invoke_tauri_build.ps1 -Target x86_64-pc-windows-msvc -Config "$env:RUNNER_TEMP/tauri.release.conf.json"
+          Pop-Location
+          $serverStdout = Join-Path $env:RUNNER_TEMP "payload-server.stdout.log"
+          $serverStderr = Join-Path $env:RUNNER_TEMP "payload-server.stderr.log"
+          $server = Start-Process python -ArgumentList @("-m", "http.server", "8765", "--directory", (Split-Path $mirror -Parent)) -WindowStyle Hidden -RedirectStandardOutput $serverStdout -RedirectStandardError $serverStderr -PassThru
+          try {
+            $serverReady = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Method Head -Uri "http://127.0.0.1:8765/" | Out-Null
+                $serverReady = $true
+                break
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $serverReady) { throw "Local payload mirror did not become ready" }
+            $bundle = Resolve-Path "desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+            $installer = Get-ChildItem $bundle -File -Filter "QuantEM_$env:QUANTEM_VERSION`_x64-setup.exe" | Select-Object -First 1
+            if (-not $installer) { throw "Built installer was not found under $bundle" }
+            $installDir = Join-Path $env:RUNNER_TEMP "QuantEMInstallerCheck"
+            $process = Start-Process $installer -ArgumentList @("/S", "/QUANTEM_VARIANT=cpu", "/D=$installDir") -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              Get-Content $serverStdout,$serverStderr -ErrorAction SilentlyContinue
+              Get-Content (Join-Path $installDir ".quantem-install/failure.log") -ErrorAction SilentlyContinue
+              Get-ChildItem $installDir -Force -Recurse -ErrorAction SilentlyContinue | Select-Object FullName,Length
+              throw "Installer exited $($process.ExitCode)"
+            }
+            $sidecar = Join-Path $installDir "quantem-server/quantem-server.exe"
+            if (-not (Test-Path $sidecar -PathType Leaf)) { throw "Downloaded server was not installed" }
+            & $sidecar --help | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Installed server does not start" }
+            $variant = (Get-Content -Raw (Join-Path $installDir "quantem-server/build-info.json") | ConvertFrom-Json).variant
+            if ($variant -ne "cpu") { throw "Expected CPU runtime, got $variant" }
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quantem-release-windows-x86_64
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [windows-payload, windows-installer, macos]
+    runs-on: ubuntu-latest
+    environment: quantem-desktop-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: quantem-release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish only after every platform and payload passed
+        working-directory: quantem_app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(python desktop/scripts/verify_release_versions.py --tag "$RELEASE_TAG")"
+          rm -f ../release-assets/*.payload-manifest.json
+          gh release create "$RELEASE_TAG" --draft --generate-notes
+          gh release view "$RELEASE_TAG" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
+          python desktop/scripts/build_update_metadata.py --version "$version" --tag "$RELEASE_TAG" --assets-dir ../release-assets --notes-file "$RUNNER_TEMP/release-notes.md" --output ../release-assets/quantem-app-latest.json
+          python -m json.tool ../release-assets/quantem-app-latest.json > /dev/null
+          find ../release-assets -type f -size 0 -print -quit | (! read)
+          gh release upload "$RELEASE_TAG" ../release-assets/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

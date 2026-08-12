@@ -52,6 +52,13 @@ datas = [
 binaries = []
 hiddenimports = ["quantem_server_settings", "waitress"]
 
+# PyTorch 2.13 imports parts of its internal testing namespace from production
+# modules: torch.utils.checkpoint needs logging_tensor and torch._refs needs
+# common_dtype. PyInstaller's torch hook currently finds these too, but keeping
+# them explicit makes the frozen runtime contract independent of hook details.
+# This is the small Python support package, not torch's test suite or pytest.
+hiddenimports += collect_submodules("torch.testing._internal")
+
 # Packages whose submodules are imported dynamically (Django app/command/
 # migration discovery, DRF renderers named in settings strings, codec
 # registries). collect_all = submodules + data files + binaries.
@@ -111,10 +118,6 @@ a = Analysis(
         # upgrade that puts one of those on an eagerly-imported path would
         # re-admit ~70 MB with no diff in this repository to explain it.
         "sympy",
-        # torch's own test harness (~5 MB of Python). Imported by torch's test
-        # suite only; ``torch.testing/__init__.py`` pulls in ``_comparison``,
-        # never ``_internal``, and its modules want pytest/expecttest anyway.
-        "torch.testing._internal",
         # imagecodecs is reached only through tifffile -- this application
         # never imports it (assets/tests/test_ngff_decode_chokepoint.py bans
         # the direct import), and tifffile's compression table names neither of

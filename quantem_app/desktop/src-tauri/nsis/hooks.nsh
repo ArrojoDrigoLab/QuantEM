@@ -41,6 +41,7 @@
 ; counted once), so the number the user sees is the number that downloads.
 
 !include "nsDialogs.nsh"
+!include "${__FILEDIR__}\payload-manifest.nsh"
 
 ; ---- Storage-model copy (uat13, round 14) ----------------------------------
 ; 1. Directory chooser top text. MUI_PAGE_DIRECTORY (inserted later by the
@@ -84,6 +85,356 @@ Var QMdlStQemLd
 ; passive or update install never shows the page and must not invent or
 ; clobber a selection.
 Var QMdlConfigured
+
+; ---- CPU/CUDA runtime selection and web payload installation --------------
+; The signed installer carries only the Tauri shell. CI publishes the frozen
+; server as immutable, hash-pinned release assets. This keeps one installer
+; while allowing it to choose the right PyTorch runtime on the user's machine.
+Var QRuntimeDialog
+Var QRuntimeCpuRadio
+Var QRuntimeCudaRadio
+Var QRuntimeStatusLabel
+Var QRuntimeVariant
+Var QRuntimeInitialized
+Var QRuntimeCudaDetected
+Var QRuntimeCudaDriverApi
+Var QRuntimeUrl1
+Var QRuntimeUrl2
+Var QRuntimeUrl3
+Var QRuntimeUrl4
+Var QRuntimeHash1
+Var QRuntimeHash2
+Var QRuntimeHash3
+Var QRuntimeHash4
+Var QRuntimePartCount
+Var QRuntimeArchiveHash
+Var QRuntimeArchive
+Var QRuntimeStage
+Var QRuntimeBackup
+Var QDownloadUrl
+Var QDownloadHash
+Var QDownloadPath
+Var QVerifyPath
+Var QVerifyHash
+Var QVerifyOk
+
+!macro QUANTEM_RUNTIME_PAGE_FUNCTIONS
+
+Function QuantemDetectCuda
+  StrCpy $QRuntimeCudaDetected 0
+  StrCpy $QRuntimeCudaDriverApi 0
+  System::Call 'kernel32::LoadLibraryW(w "nvcuda.dll") p .r0'
+  ${If} $0 = 0
+    Return
+  ${EndIf}
+  System::Call 'kernel32::GetProcAddress(p r0, m "cuInit") p .r1'
+  ${If} $1 = 0
+    System::Call 'kernel32::FreeLibrary(p r0)'
+    Return
+  ${EndIf}
+  System::Call '::$1(i 0) i .r2'
+  ${If} $2 <> 0
+    System::Call 'kernel32::FreeLibrary(p r0)'
+    Return
+  ${EndIf}
+  System::Call 'kernel32::GetProcAddress(p r0, m "cuDriverGetVersion") p .r1'
+  ${If} $1 <> 0
+    System::Call '::$1(*i .r3) i .r2'
+    ${If} $2 = 0
+      StrCpy $QRuntimeCudaDriverApi $3
+      ${If} $3 >= ${QPAYLOAD_CUDA_MIN_DRIVER_API}
+        StrCpy $QRuntimeCudaDetected 1
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  System::Call 'kernel32::FreeLibrary(p r0)'
+FunctionEnd
+
+Function QuantemInitializeRuntimeChoice
+  ${If} $QRuntimeInitialized = 1
+    Return
+  ${EndIf}
+  StrCpy $QRuntimeInitialized 1
+  StrCpy $QRuntimeVariant "cpu"
+
+  ; Updates always preserve the installed flavor. A legacy installation has
+  ; no marker and safely enters the new scheme as CPU.
+  ${If} $UpdateMode = 1
+    StrCpy $0 ""
+    ClearErrors
+    FileOpen $1 "$INSTDIR\.quantem-runtime-variant" r
+    ${IfNot} ${Errors}
+      FileRead $1 $0
+      FileClose $1
+    ${EndIf}
+    ${If} $0 == ""
+      ReadRegStr $0 SHCTX "${MANUPRODUCTKEY}" "RuntimeVariant"
+    ${EndIf}
+    ${If} $0 == "cuda"
+      StrCpy $QRuntimeVariant "cuda"
+    ${EndIf}
+    Return
+  ${EndIf}
+
+  ; An explicit flag is useful for managed/silent installs and CI smoke tests.
+  ClearErrors
+  ${GetOptions} $CMDLINE "/QUANTEM_VARIANT=" $0
+  ${IfNot} ${Errors}
+    ${If} $0 == "cpu"
+    ${OrIf} $0 == "cuda"
+      StrCpy $QRuntimeVariant $0
+      Return
+    ${EndIf}
+  ${EndIf}
+
+  Call QuantemDetectCuda
+  ${If} $QRuntimeCudaDetected = 1
+    StrCpy $QRuntimeVariant "cuda"
+  ${EndIf}
+FunctionEnd
+
+Function PageQuantemRuntime
+  ${If} $PassiveMode = 1
+  ${OrIf} $UpdateMode = 1
+    Abort
+  ${EndIf}
+  Call QuantemInitializeRuntimeChoice
+
+  !insertmacro MUI_HEADER_TEXT "Hardware acceleration" "Choose the runtime installed inside QuantEM."
+  nsDialogs::Create 1018
+  Pop $QRuntimeDialog
+  ${If} $QRuntimeDialog == error
+    Abort
+  ${EndIf}
+
+  ${NSD_CreateLabel} 0 0 100% 30u "QuantEM checked your NVIDIA driver and selected the recommended runtime. You can change it here; this choice is retained by future automatic updates."
+  Pop $0
+  ${NSD_CreateRadioButton} 0 36u 100% 16u "NVIDIA CUDA acceleration (${QPAYLOAD_CUDA_SIZE_MB} MB download)"
+  Pop $QRuntimeCudaRadio
+  ${NSD_CreateRadioButton} 0 58u 100% 16u "CPU (${QPAYLOAD_CPU_SIZE_MB} MB download; works on every supported Windows PC)"
+  Pop $QRuntimeCpuRadio
+  ${NSD_CreateLabel} 0 82u 100% 36u ""
+  Pop $QRuntimeStatusLabel
+
+  Call QuantemDetectCuda
+  ${If} $QRuntimeCudaDetected = 1
+    IntOp $0 $QRuntimeCudaDriverApi / 1000
+    IntOp $1 $QRuntimeCudaDriverApi % 1000
+    IntOp $1 $1 / 10
+    ${NSD_SetText} $QRuntimeStatusLabel "Compatible NVIDIA CUDA driver detected (CUDA API $0.$1). CUDA is recommended."
+  ${ElseIf} $QRuntimeCudaDriverApi > 0
+    ${NSD_SetText} $QRuntimeStatusLabel "An NVIDIA driver was found, but it is too old for this CUDA runtime. CPU is recommended unless you update the driver."
+  ${Else}
+    ${NSD_SetText} $QRuntimeStatusLabel "No compatible NVIDIA CUDA driver was detected. CPU is recommended."
+  ${EndIf}
+
+  ${If} $QRuntimeVariant == "cuda"
+    ${NSD_Check} $QRuntimeCudaRadio
+  ${Else}
+    ${NSD_Check} $QRuntimeCpuRadio
+  ${EndIf}
+  nsDialogs::Show
+FunctionEnd
+
+Function PageLeaveQuantemRuntime
+  ${NSD_GetState} $QRuntimeCudaRadio $0
+  ${If} $0 = ${BST_CHECKED}
+    StrCpy $QRuntimeVariant "cuda"
+  ${Else}
+    StrCpy $QRuntimeVariant "cpu"
+  ${EndIf}
+FunctionEnd
+
+Function QuantemSelectPayload
+  StrCpy $QRuntimeUrl1 ""
+  StrCpy $QRuntimeUrl2 ""
+  StrCpy $QRuntimeUrl3 ""
+  StrCpy $QRuntimeUrl4 ""
+  StrCpy $QRuntimeHash1 ""
+  StrCpy $QRuntimeHash2 ""
+  StrCpy $QRuntimeHash3 ""
+  StrCpy $QRuntimeHash4 ""
+  ${If} $QRuntimeVariant == "cuda"
+    StrCpy $QRuntimePartCount ${QPAYLOAD_CUDA_PART_COUNT}
+    StrCpy $QRuntimeArchiveHash "${QPAYLOAD_CUDA_SHA256}"
+    StrCpy $QRuntimeUrl1 "${QPAYLOAD_CUDA_PART1_URL}"
+    StrCpy $QRuntimeHash1 "${QPAYLOAD_CUDA_PART1_SHA256}"
+    !if ${QPAYLOAD_CUDA_PART_COUNT} >= 2
+      StrCpy $QRuntimeUrl2 "${QPAYLOAD_CUDA_PART2_URL}"
+      StrCpy $QRuntimeHash2 "${QPAYLOAD_CUDA_PART2_SHA256}"
+    !endif
+    !if ${QPAYLOAD_CUDA_PART_COUNT} >= 3
+      StrCpy $QRuntimeUrl3 "${QPAYLOAD_CUDA_PART3_URL}"
+      StrCpy $QRuntimeHash3 "${QPAYLOAD_CUDA_PART3_SHA256}"
+    !endif
+    !if ${QPAYLOAD_CUDA_PART_COUNT} >= 4
+      StrCpy $QRuntimeUrl4 "${QPAYLOAD_CUDA_PART4_URL}"
+      StrCpy $QRuntimeHash4 "${QPAYLOAD_CUDA_PART4_SHA256}"
+    !endif
+  ${Else}
+    StrCpy $QRuntimePartCount ${QPAYLOAD_CPU_PART_COUNT}
+    StrCpy $QRuntimeArchiveHash "${QPAYLOAD_CPU_SHA256}"
+    StrCpy $QRuntimeUrl1 "${QPAYLOAD_CPU_PART1_URL}"
+    StrCpy $QRuntimeHash1 "${QPAYLOAD_CPU_PART1_SHA256}"
+    !if ${QPAYLOAD_CPU_PART_COUNT} >= 2
+      StrCpy $QRuntimeUrl2 "${QPAYLOAD_CPU_PART2_URL}"
+      StrCpy $QRuntimeHash2 "${QPAYLOAD_CPU_PART2_SHA256}"
+    !endif
+    !if ${QPAYLOAD_CPU_PART_COUNT} >= 3
+      StrCpy $QRuntimeUrl3 "${QPAYLOAD_CPU_PART3_URL}"
+      StrCpy $QRuntimeHash3 "${QPAYLOAD_CPU_PART3_SHA256}"
+    !endif
+    !if ${QPAYLOAD_CPU_PART_COUNT} >= 4
+      StrCpy $QRuntimeUrl4 "${QPAYLOAD_CPU_PART4_URL}"
+      StrCpy $QRuntimeHash4 "${QPAYLOAD_CPU_PART4_SHA256}"
+    !endif
+  ${EndIf}
+FunctionEnd
+
+Function QuantemVerifyFile
+  StrCpy $QVerifyOk 0
+  ; Windows PowerShell's Get-FileHash cmdlet is not present in every minimal
+  ; Windows image. The underlying .NET SHA-256 API is part of every supported
+  ; Windows PowerShell runtime and avoids that optional-module dependency.
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if ([String]::Equals([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::OpenRead($\'$QVerifyPath$\'))).Replace($\'-$\',$\'$\'),$\'$QVerifyHash$\',[StringComparison]::OrdinalIgnoreCase)) { exit 0 } else { exit 1 }"'
+  Pop $0
+  Pop $1
+  ${If} $0 = 0
+    StrCpy $QVerifyOk 1
+  ${Else}
+    DetailPrint "SHA-256 verification failed: $1"
+    FileOpen $R8 "$INSTDIR\.quantem-install\failure.log" a
+    FileWrite $R8 "SHA-256 verification command failed ($0): $1$\r$\n"
+    FileClose $R8
+  ${EndIf}
+FunctionEnd
+
+Function QuantemDownloadPart
+  quantem_download_retry:
+  Delete "$QDownloadPath"
+  DetailPrint "Downloading $QRuntimeVariant runtime: $QDownloadUrl"
+  nsExec::ExecToStack '"$SYSDIR\curl.exe" --fail --location --retry 3 --connect-timeout 30 --silent --show-error --output "$QDownloadPath" "$QDownloadUrl"'
+  Pop $0
+  Pop $1
+  ; curl.exe is part of current Windows, but 32-bit process redirection can
+  ; hide it on some installations. Windows PowerShell is the compatibility
+  ; fallback and writes to the same install-drive staging directory.
+  ${If} $0 <> 0
+    DetailPrint "Native curl was unavailable or failed; retrying with Windows PowerShell."
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri $\'$QDownloadUrl$\' -OutFile $\'$QDownloadPath$\'"'
+    Pop $0
+    Pop $1
+  ${EndIf}
+  ${If} $0 <> 0
+    DetailPrint "Runtime download failed: $1"
+    FileOpen $R8 "$INSTDIR\.quantem-install\failure.log" a
+    FileWrite $R8 "Runtime download failed ($0): $1$\r$\n"
+    FileClose $R8
+    ${If} ${Silent}
+      Abort "The QuantEM runtime download failed."
+    ${EndIf}
+    MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "The QuantEM runtime download failed.$\r$\n$\r$\nCheck your internet connection, then click Retry." IDRETRY quantem_download_retry
+    Abort "The QuantEM runtime download was cancelled."
+  ${EndIf}
+  StrCpy $QVerifyPath "$QDownloadPath"
+  StrCpy $QVerifyHash "$QDownloadHash"
+  Call QuantemVerifyFile
+  ${If} $QVerifyOk <> 1
+    Delete "$QDownloadPath"
+    ${If} ${Silent}
+      Abort "The downloaded QuantEM runtime failed its security check."
+    ${EndIf}
+    MessageBox MB_ICONSTOP|MB_RETRYCANCEL "The downloaded runtime failed its SHA-256 security check.$\r$\n$\r$\nClick Retry to download it again." IDRETRY quantem_download_retry
+    Abort "The QuantEM runtime download was cancelled."
+  ${EndIf}
+FunctionEnd
+
+Function QuantemInstallRuntime
+  Call QuantemInitializeRuntimeChoice
+  Call QuantemSelectPayload
+  StrCpy $QRuntimeArchive "$INSTDIR\.quantem-install\payload.zip"
+  StrCpy $QRuntimeStage "$INSTDIR\.quantem-install\new"
+  StrCpy $QRuntimeBackup "$INSTDIR\.quantem-install\old"
+  RMDir /r "$INSTDIR\.quantem-install"
+  CreateDirectory "$QRuntimeStage"
+
+  StrCpy $QDownloadUrl $QRuntimeUrl1
+  StrCpy $QDownloadHash $QRuntimeHash1
+  StrCpy $QDownloadPath "$INSTDIR\.quantem-install\part01"
+  Call QuantemDownloadPart
+  ${If} $QRuntimePartCount >= 2
+    StrCpy $QDownloadUrl $QRuntimeUrl2
+    StrCpy $QDownloadHash $QRuntimeHash2
+    StrCpy $QDownloadPath "$INSTDIR\.quantem-install\part02"
+    Call QuantemDownloadPart
+  ${EndIf}
+  ${If} $QRuntimePartCount >= 3
+    StrCpy $QDownloadUrl $QRuntimeUrl3
+    StrCpy $QDownloadHash $QRuntimeHash3
+    StrCpy $QDownloadPath "$INSTDIR\.quantem-install\part03"
+    Call QuantemDownloadPart
+  ${EndIf}
+  ${If} $QRuntimePartCount >= 4
+    StrCpy $QDownloadUrl $QRuntimeUrl4
+    StrCpy $QDownloadHash $QRuntimeHash4
+    StrCpy $QDownloadPath "$INSTDIR\.quantem-install\part04"
+    Call QuantemDownloadPart
+  ${EndIf}
+
+  ${If} $QRuntimePartCount = 1
+    Rename "$INSTDIR\.quantem-install\part01" "$QRuntimeArchive"
+  ${ElseIf} $QRuntimePartCount = 2
+    nsExec::ExecToStack '"$SYSDIR\cmd.exe" /D /C copy /B "$INSTDIR\.quantem-install\part01"+"$INSTDIR\.quantem-install\part02" "$QRuntimeArchive" >NUL'
+    Pop $0
+    Pop $1
+  ${ElseIf} $QRuntimePartCount = 3
+    nsExec::ExecToStack '"$SYSDIR\cmd.exe" /D /C copy /B "$INSTDIR\.quantem-install\part01"+"$INSTDIR\.quantem-install\part02"+"$INSTDIR\.quantem-install\part03" "$QRuntimeArchive" >NUL'
+    Pop $0
+    Pop $1
+  ${Else}
+    nsExec::ExecToStack '"$SYSDIR\cmd.exe" /D /C copy /B "$INSTDIR\.quantem-install\part01"+"$INSTDIR\.quantem-install\part02"+"$INSTDIR\.quantem-install\part03"+"$INSTDIR\.quantem-install\part04" "$QRuntimeArchive" >NUL'
+    Pop $0
+    Pop $1
+  ${EndIf}
+
+  StrCpy $QVerifyPath "$QRuntimeArchive"
+  StrCpy $QVerifyHash "$QRuntimeArchiveHash"
+  Call QuantemVerifyFile
+  ${If} $QVerifyOk <> 1
+    Abort "The assembled QuantEM runtime failed its security check."
+  ${EndIf}
+
+  DetailPrint "Extracting the verified $QRuntimeVariant runtime..."
+  nsExec::ExecToStack '"$SYSDIR\tar.exe" -xf "$QRuntimeArchive" -C "$QRuntimeStage"'
+  Pop $0
+  Pop $1
+  ${If} $0 <> 0
+    DetailPrint "Runtime extraction failed: $1"
+    Abort "The QuantEM runtime could not be extracted."
+  ${EndIf}
+  IfFileExists "$QRuntimeStage\quantem-server\quantem-server.exe" runtime_ready 0
+    Abort "The verified runtime archive is incomplete."
+
+  runtime_ready:
+  IfFileExists "$INSTDIR\quantem-server\*.*" 0 runtime_promote
+    ClearErrors
+    Rename "$INSTDIR\quantem-server" "$QRuntimeBackup"
+    ${If} ${Errors}
+      Abort "The existing QuantEM runtime could not be replaced."
+    ${EndIf}
+  runtime_promote:
+  ClearErrors
+  Rename "$QRuntimeStage\quantem-server" "$INSTDIR\quantem-server"
+  ${If} ${Errors}
+    Rename "$QRuntimeBackup" "$INSTDIR\quantem-server"
+    Abort "The new QuantEM runtime could not be activated; the previous runtime was restored."
+  ${EndIf}
+  RMDir /r "$QRuntimeBackup"
+  RMDir /r "$INSTDIR\.quantem-install"
+  DetailPrint "Installed QuantEM $QRuntimeVariant runtime ${QPAYLOAD_VERSION}."
+FunctionEnd
+
+!macroend
 
 !macro QUANTEM_MODEL_PAGE_FUNCTIONS
 
@@ -303,7 +654,18 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  WriteRegStr SHCTX "${MANUPRODUCTKEY}" "RuntimeVariant" "$QRuntimeVariant"
+  WriteRegStr SHCTX "${MANUPRODUCTKEY}" "RuntimeVersion" "${QPAYLOAD_VERSION}"
+  FileOpen $0 "$INSTDIR\.quantem-runtime-variant.tmp" w
+  FileWrite $0 "$QRuntimeVariant"
+  FileClose $0
+  Delete "$INSTDIR\.quantem-runtime-variant"
+  Rename "$INSTDIR\.quantem-runtime-variant.tmp" "$INSTDIR\.quantem-runtime-variant"
   Call QuantemWritePendingInstalls
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  Call QuantemInstallRuntime
 !macroend
 
 ; The app's data directory lives at <INSTDIR>\data (DB, models, HF cache,
@@ -312,6 +674,9 @@ FunctionEnd
 ; even when the user asked for their data to be deleted.
 !macro NSIS_HOOK_POSTUNINSTALL
   ${If} $UpdateMode <> 1
+    Delete "$INSTDIR\.quantem-runtime-variant"
+    RMDir /r "$INSTDIR\quantem-server"
+    RMDir /r "$INSTDIR\.quantem-install"
     ; The pending file is installer metadata, not user data.
     Delete "$INSTDIR\data\pending-model-installs.json"
     ${If} $DeleteAppDataCheckboxState = 1

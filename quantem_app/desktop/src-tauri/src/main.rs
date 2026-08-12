@@ -141,8 +141,8 @@ impl Sidecar {
 /// 1. `QUANTEM_SERVER_EXE` -- explicit override, used by `tauri dev` and tests;
 /// 2. `<exe dir>/quantem-server/quantem-server.exe` -- the shipped layout: the
 ///    PyInstaller onedir sits whole next to the shell (portable zip and the
-///    NSIS `bundle.resources` mapping both produce this);
-/// 3. the Tauri resource dir, for any packaging that separates resources.
+///    Windows bootstrap installer both produce this);
+/// 3. the Tauri resource dir, used by the macOS bundle.
 fn find_sidecar(app: &tauri::AppHandle) -> Option<PathBuf> {
     let exe_name = if cfg!(windows) {
         "quantem-server.exe"
@@ -386,6 +386,12 @@ fn main() {
     let sidecar_for_exit = sidecar.clone();
 
     tauri::Builder::default()
+        // The updater is deliberately configured only in the release overlay:
+        // local development builds must never poll a public release channel.
+        // Its webview permissions are restricted to the main window in
+        // capabilities/default.json.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -540,6 +546,7 @@ fn main() {
                                     &h,
                                     &format!(
                                         "the QuantEM server exited during startup (status {status}).\n\
+                                         If a database migration failed, its pre-migration recovery snapshot was retained under backups\\pre-migration.\n\
                                          See logs\\quantem-desktop.log in the QuantEM data directory."
                                     ),
                                 );

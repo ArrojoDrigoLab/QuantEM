@@ -2,10 +2,11 @@ name: quantem-core + napari-quantem
 
 on:
   push:
+    branches: [main]
     paths: ["quantem-core/**", "napari-quantem/**", ".github/workflows/plugin-tests.yml"]
   pull_request:
+    branches: [main]
     paths: ["quantem-core/**", "napari-quantem/**", ".github/workflows/plugin-tests.yml"]
-  workflow_dispatch:
 
 jobs:
   test:

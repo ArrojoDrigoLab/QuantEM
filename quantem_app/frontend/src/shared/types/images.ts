@@ -283,6 +283,10 @@ export interface SegmentationType {
   short_name: string;
   long_name: string;
   default_color?: string | null;
+  /** Object types export per-object metrics; global types use the whole mask. */
+  measurement_mode?: "objects" | "global";
+  /** Built-in types ship with QuantEM; custom types can be reused across images. */
+  kind?: "builtin" | "custom";
   tags: SegmentationTypeTag[];
   tag_ids?: string[];
   created_at: string;
@@ -412,6 +416,8 @@ export interface ImageSegmentation {
   asset?: string | null;
   segmentation_type: SegmentationType;
   segmentation_type_id?: string;
+  /** Image-specific label for an analysis mask; empty for type-named segmentations. */
+  display_name?: string;
   segment_counts?: SegmentCounts;
   source_models?: SourceModelOption[];
   segment_counts_by_source_model?: Record<string, SegmentCounts> | null;
@@ -448,6 +454,10 @@ export interface ImageSegmentation {
 export interface ImageSegmentationCreatePayload {
   segmentation_type_id?: string;
   segmentation_type_name?: string;
+  /** Required when creating the image-specific Analysis Segmentation Mask. */
+  analysis_name?: string;
+  /** Chosen once when first creating a reusable custom segmentation type. */
+  measurement_mode?: "objects" | "global";
   source_model?: string;
 }
 

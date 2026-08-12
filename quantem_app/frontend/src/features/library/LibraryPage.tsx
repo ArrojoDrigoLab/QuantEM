@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   deleteAsset,
   deleteExperiment,
@@ -402,6 +402,7 @@ function ImageGrid({
 }
 
 export function LibraryPage() {
+  const [searchParams] = useSearchParams();
   const [initialStoredControls] = useState<StoredLibraryControls>(() =>
     loadStoredLibraryControls()
   );
@@ -457,7 +458,9 @@ export function LibraryPage() {
    * experiment that has since been renamed or deleted, presents an empty
    * library with no visible cause. These reset with the session.
    */
-  const [experimentFilter, setExperimentFilter] = useState("");
+  const [experimentFilter, setExperimentFilter] = useState(
+    () => searchParams.get("experiment") ?? ""
+  );
   const [datasetFilter, setDatasetFilter] = useState("");
   const [groupByDataset, setGroupByDataset] = useState(false);
   /** Selecting mode, and what is selected in it. Off until asked for. */

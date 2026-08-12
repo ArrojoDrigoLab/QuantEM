@@ -36,27 +36,9 @@ Model weights are available at https://huggingface.co/ArrojoeDrigoLab/quantem
 
 ## Citation
 
-If you use QuantEM — the software, the released model weights, or the dataset directory — please
-cite:
+If you use QuantEM, please cite:
 
 > Acree C, Krystofiak E, Coate K, DelGiorno KE, Winn NCE, Novak SW, Zaganjor E, Magnuson MA,
 > Arrojo e Drigo R. **QuantEM: An optimized platform of vision transformer-based models for
 > segmentation and analysis of electron microscopy data.** *bioRxiv* 2026.08.06.743293 (2026).
 > doi: [10.64898/2026.08.06.743293](https://doi.org/10.64898/2026.08.06.743293)
-
-```bibtex
-@article{acree2026quantem,
-  title   = {QuantEM: An optimized platform of vision transformer-based models for
-             segmentation and analysis of electron microscopy data},
-  author  = {Acree, Christopher and Krystofiak, Evan and Coate, Kathryn and
-             DelGiorno, Kathleen E. and Winn, Nathan C. E. and Novak, Sammy Weiser and
-             Zaganjor, Elma and Magnuson, Mark A. and {Arrojo e Drigo}, Rafael},
-  journal = {bioRxiv},
-  year    = {2026},
-  doi     = {10.64898/2026.08.06.743293},
-  url     = {https://www.biorxiv.org/content/10.64898/2026.08.06.743293v1}
-}
-```
-
-Machine-readable metadata is in [`CITATION.cff`](CITATION.cff).
-

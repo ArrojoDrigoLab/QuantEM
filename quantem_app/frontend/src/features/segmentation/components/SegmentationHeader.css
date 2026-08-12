@@ -227,8 +227,18 @@
   background: #2471a3;
 }
 
+.apply-roi-button {
+  background: #2d6a4f;
+  color: #e0e0e0;
+}
+
+.apply-roi-button:hover:not(:disabled) {
+  background: #40916c;
+}
+
 .refine-button:disabled,
-.apply-full-button:disabled {
+.apply-full-button:disabled,
+.apply-roi-button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

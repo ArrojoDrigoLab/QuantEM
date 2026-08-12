@@ -38,6 +38,7 @@ import { scaleMismatchForPack } from "@/features/models/scaleMismatch";
 import { clearSegmentationManualLabels } from "@/shared/api/segmentations/annotations";
 import { resolvePixelSize } from "@/shared/pixelSize";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
+import { useRestartBlocker } from "@/features/update/restartGuardHooks";
 import { CONFIRMED_AREA_EXPLANATION } from "@/shared/constants/confirmedArea";
 import type { Point } from "@/utils/geometry";
 import "./SegmentationScreen.css";
@@ -271,6 +272,24 @@ export function SegmentationScreen() {
     setOverlayManifestPollingEnabled: overlay.manifest.setOverlayManifestPollingEnabled,
     clearHoverInteraction: hover.clearHoverInteraction,
   });
+
+  // These shapes exist only in React until their respective Save/Confirm
+  // action succeeds. A desktop update replaces the running application, so it
+  // must wait for the user to finish or clear them rather than discarding an
+  // annotation-in-progress.
+  const hasUnsavedAnnotationDraft =
+    Boolean(drawing.pendingPolygon?.length) ||
+    drawing.brushStrokes.length > 0 ||
+    Boolean(erRoi.pendingRoi) ||
+    completedRoi.hasDraft ||
+    erPolygon.hasDraft ||
+    removeArea.removeAreaDrawing.brushStrokes.length > 0 ||
+    tissue.addPolygon.hasDraft ||
+    tissue.excludePolygon.hasDraft;
+  useRestartBlocker(
+    hasUnsavedAnnotationDraft,
+    "Finish or clear the unsaved annotation draft before QuantEM restarts."
+  );
 
   const handleCorrectionDrawComplete = useCallback(
     (points: Point[]) => {

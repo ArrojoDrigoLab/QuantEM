@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,14 +44,19 @@ describe("SegmentationCreatePanel", () => {
     vi.clearAllMocks();
   });
 
-  it("offers the four organelle presets plus the tissue mask", () => {
+  it("offers the four organelle presets, analysis masks, and custom creation", () => {
     render(<SegmentationCreatePanel imageId="img-1" />);
 
     expect(screen.getByRole("button", { name: "Mitochondria" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "ER" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Nucleus" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Lipid Droplets" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Tissue Mask" })).toBeInTheDocument();
+    expect(screen.getByText("Analysis Segmentation Mask")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Create custom segmentation" })
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Segmentation name")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tissue Mask" })).not.toBeInTheDocument();
   });
 
   it("does not offer segmentation types QuantEM dropped", () => {
@@ -89,6 +94,37 @@ describe("SegmentationCreatePanel", () => {
     expect(
       screen.queryByLabelText(/membrane refinement/i)
     ).not.toBeInTheDocument();
+  });
+
+  it("lists reusable custom types and creates the selected type without a model run", async () => {
+    server.use(
+      http.get("http://127.0.0.1:8000/api/segmentation-types/", () =>
+        HttpResponse.json([
+          {
+            id: "custom-vesicles",
+            internal_name: "Vesicles",
+            short_name: "Vesicles",
+            long_name: "Vesicles",
+            kind: "custom",
+            default_color: null,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ])
+      )
+    );
+    const user = userEvent.setup();
+    vi.mocked(createAssetSegmentation).mockResolvedValue({ id: "seg-2" } as never);
+    render(<SegmentationCreatePanel imageId="img-1" />);
+
+    await user.click(await screen.findByRole("button", { name: "Vesicles" }));
+
+    await waitFor(() => {
+      expect(createAssetSegmentation).toHaveBeenCalledWith("img-1", {
+        segmentation_type_id: "custom-vesicles",
+      });
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("asks before creating, because creating queues a whole-image run", async () => {
@@ -411,18 +447,58 @@ describe("SegmentationCreatePanel", () => {
     expect(chip.closest("[aria-hidden='true']")).not.toBeNull();
   });
 
-  it("creates a manual-only mask with no confirmation, because it queues nothing", async () => {
+  it("creates an image-specific analysis mask with no confirmation", async () => {
     const user = userEvent.setup();
     vi.mocked(createAssetSegmentation).mockResolvedValue({ id: "seg-2" } as never);
     render(<SegmentationCreatePanel imageId="img-1" />);
 
-    await user.click(screen.getByRole("button", { name: "Tissue Mask" }));
+    await user.type(screen.getByLabelText("Mask name"), "Cells mask");
+    await user.click(screen.getByRole("button", { name: "Create analysis mask" }));
 
     await waitFor(() => {
       expect(createAssetSegmentation).toHaveBeenCalledWith("img-1", {
-        segmentation_type_name: "Tissue Mask",
+        segmentation_type_name: "Analysis Segmentation Mask",
+        analysis_name: "Cells mask",
       });
     });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("explains the analysis-mask scope in its hover tooltip", () => {
+    render(<SegmentationCreatePanel imageId="img-1" />);
+
+    expect(
+      screen.getByLabelText(
+        "Make a mask with specific areas to analyze in this image (ex. tissue or cell outlines)"
+      )
+    ).toHaveAttribute(
+      "title",
+      "Make a mask with specific areas to analyze in this image (ex. tissue or cell outlines)"
+    );
+  });
+
+  it("creates a reusable global custom segmentation from the dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createAssetSegmentation).mockResolvedValue({ id: "seg-3" } as never);
+    render(<SegmentationCreatePanel imageId="img-1" />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Create custom segmentation" })
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(/at least 50 ROIs/i);
+    expect(dialog).toHaveTextContent(/without CUDA enabled/i);
+    await user.type(screen.getByLabelText("Segmentation name"), "Vesicles");
+    await user.click(screen.getByLabelText("Object-based segmentation"));
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create custom segmentation" })
+    );
+
+    await waitFor(() => {
+      expect(createAssetSegmentation).toHaveBeenCalledWith("img-1", {
+        segmentation_type_name: "Vesicles",
+        measurement_mode: "global",
+      });
+    });
   });
 });

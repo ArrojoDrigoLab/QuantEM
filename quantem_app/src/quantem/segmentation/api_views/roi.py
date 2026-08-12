@@ -34,6 +34,7 @@ from quantem.assets.models import ImageROI
 from quantem.assets.roi_state import activate_roi, get_active_roi_for_asset
 from quantem.assets.utils import create_roi_image_from_image
 from quantem.core.config import ROIS_DIR
+from quantem.seg_core.db.prob_maps import delete_probability_maps_for_roi
 from quantem.segmentation.models import ImageSegmentation, RoiSegmentationStatus, SegmentObject
 from quantem.segmentation.roi_selection import select_roi_for_image
 from quantem.segmentation.serializers import (
@@ -258,6 +259,13 @@ class SegmentationRoiCompleteView(APIView):
             )
         roi_image.is_complete = True
         roi_image.save(update_fields=["is_complete", "updated_at"])
+        removed = delete_probability_maps_for_roi(segmentation, roi_image)
+        logging.getLogger(__name__).info(
+            "Reclaimed %d probability map(s) for completed active ROI %s on segmentation %s.",
+            removed,
+            roi_image.id,
+            segmentation.id,
+        )
         serializer = SegmentationRoiSerializer(
             roi_image,
             context={"segmentation": segmentation},
@@ -299,6 +307,14 @@ class SegmentationRoiSegmentationCompleteView(APIView):
         )
         status_row.set_complete(is_complete)
         status_row.save(update_fields=["is_complete", "completed_at", "updated_at"])
+        if is_complete:
+            removed = delete_probability_maps_for_roi(segmentation, roi_image)
+            logging.getLogger(__name__).info(
+                "Reclaimed %d probability map(s) for completed ROI %s on segmentation %s.",
+                removed,
+                roi_image.id,
+                segmentation.id,
+            )
         serializer = SegmentationRoiSerializer(
             roi_image,
             context={"segmentation": segmentation},

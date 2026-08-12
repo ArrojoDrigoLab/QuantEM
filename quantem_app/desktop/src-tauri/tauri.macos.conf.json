@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "../../packaging/pyinstaller/dist/quantem-server": "quantem-server"
+    }
+  }
+}

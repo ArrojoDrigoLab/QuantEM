@@ -364,9 +364,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     print(get_machine_profile().summary(), flush=True)
 
+    # Do not let the scheduler claim jobs while Django is inspecting or
+    # changing the schema.  It is explicitly started again below once the
+    # migration (and its recovery snapshot) have completed.
+    os.environ["QUANTEM_DISABLE_JOB_AUTOSTART"] = "1"
     django.setup()
     from django.core.management import call_command
     from django.core.wsgi import get_wsgi_application
+
+    from quantem.core.migration_safety import snapshot_before_pending_migrations
 
     # The first record in every session's log file: what is running, where,
     # over which data. Written after django.setup() because that is what
@@ -384,7 +390,36 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     machine.log_profile()
 
-    call_command("migrate", interactive=False, verbosity=0)
+    snapshot_dir = None
+    try:
+        pending_migrations, snapshot_dir = snapshot_before_pending_migrations()
+        if snapshot_dir is not None:
+            logging.getLogger("quantem.serve").info(
+                "Created pre-migration database snapshot at %s for %s.",
+                snapshot_dir,
+                ", ".join(pending_migrations),
+            )
+        call_command("migrate", interactive=False, verbosity=0)
+    except Exception:
+        if snapshot_dir is not None:
+            logging.getLogger("quantem.serve").exception(
+                "Database migration failed. The pre-migration snapshot remains at %s.",
+                snapshot_dir,
+            )
+        raise
+    finally:
+        os.environ.pop("QUANTEM_DISABLE_JOB_AUTOSTART", None)
+
+    # A process can die after the updater fences new jobs but before its
+    # installer restarts it.  This is the new process, so that lock is stale.
+    from quantem.jobs.apps import start_scheduler_if_needed
+    from quantem.jobs.update_maintenance import clear_stale_update_apply_lock
+
+    if clear_stale_update_apply_lock():
+        logging.getLogger("quantem.serve").warning(
+            "Cleared a stale desktop-update maintenance lock after startup."
+        )
+    start_scheduler_if_needed()
 
     # Ruling C, first-launch half: the desktop installer may have left a
     # one-shot request naming model packs to download. Turn it into ordinary

@@ -19,7 +19,12 @@ from quantem.finetune.models import (
     Adapter,
     active_adapter_for,
 )
-from quantem.finetune.tests.fixtures import annotated_segmentation, square
+from quantem.finetune.tests.fixtures import (
+    FakeCancel,
+    FakeReporter,
+    annotated_segmentation,
+    square,
+)
 from quantem.jobs.constants import JOB_TYPE_TRAIN_ORGANELLE_ADAPTER
 from quantem.jobs.models import Job
 from quantem.library.models import Experiment
@@ -116,6 +121,23 @@ class NamedRunTests(TestCase):
         assert job.payload_json["planned_rounds"] == 2
         assert job.progress_units_total == 2 * job.payload_json["steps"]
         assert job.progress_unit_label == "step"
+
+    def test_the_queued_scoped_job_is_accepted_by_the_worker(self):
+        """The named dialog has no single segmentation to put in its payload."""
+        from quantem.jobs.handlers import handle_train_organelle_adapter
+
+        response = self._start()
+        job = Job.objects.get(id=response.json()["job_id"])
+        assert "segmentation_id" not in job.payload_json
+
+        with mock.patch(
+            "quantem.finetune.adapter_job.train_organelle_adapter_job",
+            return_value={"status": "SUCCESS"},
+        ) as train:
+            result = handle_train_organelle_adapter(job.payload_json, FakeReporter(), FakeCancel())
+
+        assert result == {"status": "SUCCESS"}
+        train.assert_called_once()
 
     def test_the_default_mode_follows_the_tile_count(self):
         response = _post(

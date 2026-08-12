@@ -1,9 +1,13 @@
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import numpy as np
 from django.test import TestCase
 from PIL import Image
 
 from quantem.core.config import STORAGE_DIR
 from quantem.seg_core.db.prob_maps import (
+    MAX_ROI_COMPOSITE_MEGAPIXELS,
     get_prob_map_file_path,
     load_prob_map_from_path,
     prob_map_file_exists,
@@ -143,3 +147,33 @@ class ProbabilityMapPersistenceTests(TestCase):
             roi_id=None,
         )
         self.assertIsNotNone(loaded)
+
+    def test_large_parent_keeps_the_roi_map_without_allocating_a_full_composite(self):
+        prob_data = np.full((self.roi.height, self.roi.width), 0.5, dtype=np.float32)
+        parent_edge = int((MAX_ROI_COMPOSITE_MEGAPIXELS * 1e6) ** 0.5) + 1
+
+        with patch(
+            "quantem.seg_core.db.prob_maps.get_asset_openable",
+            return_value=SimpleNamespace(height=parent_edge, width=parent_edge),
+        ):
+            stored = save_probability_map(
+                segmentation=self.segmentation,
+                model_name="ResNet34",
+                prob_data=prob_data,
+                prefix="mito",
+                generated_flag="mito_generated",
+                roi_id=str(self.roi.id),
+            )
+
+        self.assertTrue(
+            get_prob_map_file_path(
+                self.segmentation, "ResNet34", "mito", roi_id=str(self.roi.id)
+            ).exists()
+        )
+        self.assertEqual(stored.segmentation_id, self.segmentation.id)
+        self.assertFalse(
+            ProbabilityMap.objects.filter(
+                segmentation=self.segmentation,
+                metadata__composite=True,
+            ).exists()
+        )

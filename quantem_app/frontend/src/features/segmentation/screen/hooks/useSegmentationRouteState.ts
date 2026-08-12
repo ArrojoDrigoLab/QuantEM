@@ -3,6 +3,10 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getAsset, getAssetSegmentations } from "@/shared/api/assets";
 import { useSelectionStore } from "@/shared/stores/useSelectionStore";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
+import {
+  segmentationDisplayName,
+  segmentationRouteToken,
+} from "@/shared/segmentationNames";
 import { useViewportSyncGroup } from "@/viewer/viewportSync/useViewportSyncGroup";
 import { calculateViewportBbox } from "@/utils/viewportUtils";
 import { createViewportActionResolver } from "@/utils/viewportActions";
@@ -12,7 +16,6 @@ import {
 import {
   POINT_FEEDBACK_SEGMENTATION_TYPES,
   STATUS_POLL_MS,
-  TISSUE_INTERNAL_NAME,
 } from "@/features/segmentation/screen/utils/constants";
 import {
   defaultSourceModel,
@@ -105,6 +108,8 @@ export function useSegmentationRouteState() {
     return (
       visibleSegmentations.find((seg) => {
         const candidateNames = [
+          seg.id,
+          segmentationDisplayName(seg),
           seg.segmentation_type?.long_name ?? "",
           seg.segmentation_type?.short_name ?? "",
           seg.segmentation_type?.internal_name ?? "",
@@ -124,7 +129,18 @@ export function useSegmentationRouteState() {
   const currentSegmentationId = currentSegmentation?.id ?? null;
   const segmentationInternalName =
     currentSegmentation?.segmentation_type?.internal_name ?? null;
-  const isTissueSegmentation = segmentationInternalName === TISSUE_INTERNAL_NAME;
+  // Tissue, analysis masks, and reusable custom segmentations all enter the
+  // same manual labeling workflow. Only the four released organelles have a
+  // model-backed review mode.
+  const isTissueSegmentation = Boolean(
+    segmentationInternalName &&
+      ![
+        "quantem_internal_mito",
+        "quantem_internal_er",
+        "quantem_internal_nucleus",
+        "quantem_internal_ld",
+      ].includes(segmentationInternalName)
+  );
   const isErSegmentation =
     segmentationInternalName === "quantem_internal_er" ||
     segmentationInternalName === "quantem_internal_er_deepcontact_cell" ||
@@ -177,7 +193,7 @@ export function useSegmentationRouteState() {
       const target = visibleSegmentations.find((seg) => seg.id === segmentationId);
       if (!target || !selectedAssetId) return;
       setSelectedSegmentationId(segmentationId);
-      const encodedName = encodeURIComponent(target.segmentation_type.long_name);
+      const encodedName = encodeURIComponent(segmentationRouteToken(target));
       const params = new URLSearchParams();
       // Same objects-first rule as the mount-time default: switching to a
       // segmentation whose objects all came from OmniEM must not land on the
@@ -252,10 +268,10 @@ export function useSegmentationRouteState() {
       return;
     }
 
-    const encodedName = encodeURIComponent(currentSegmentation.segmentation_type.long_name);
+    const encodedName = encodeURIComponent(segmentationRouteToken(currentSegmentation));
     const normalizedParam = normalizedSegmentationName ?? "";
     const normalizedCurrent = normalizeSegmentationName(
-      currentSegmentation.segmentation_type.long_name
+      segmentationRouteToken(currentSegmentation)
     );
     if (normalizedParam !== normalizedCurrent && segmentationTypeName !== encodedName) {
       navigate(

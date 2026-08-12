@@ -17,6 +17,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@tauri-apps/plugin-process": "^2.3.0",
+    "@tauri-apps/plugin-updater": "^2.10.0",
     "@deck.gl/core": "~9.1.15",
     "@deck.gl/extensions": "~9.1.15",
     "@deck.gl/geo-layers": "~9.1.15",

@@ -67,6 +67,12 @@ function makeRun(overrides: Partial<AnalysisRun> = {}): AnalysisRun {
 }
 
 describe("AnalysisResults distance section", () => {
+  it("does not render the point distribution panel", () => {
+    render(<AnalysisResults run={makeRun()} />);
+
+    expect(screen.queryByText("Point distribution")).not.toBeInTheDocument();
+  });
+
   it("divides the inside count by the points it measured", () => {
     render(<AnalysisResults run={makeRun()} />);
 

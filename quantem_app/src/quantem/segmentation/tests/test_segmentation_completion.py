@@ -19,12 +19,16 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import numpy as np
 from django.test import TestCase
 from shapely.geometry import Polygon
 
+from quantem.assets.utils import create_roi_image_from_image
+from quantem.seg_core.db.prob_maps import get_prob_map_file_path, save_probability_map
 from quantem.segmentation.completion import completion_preview
 from quantem.segmentation.models import (
     ImageSegmentation,
+    ProbabilityMap,
     SegmentationCompletionArchive,
     SegmentObject,
 )
@@ -183,6 +187,53 @@ class CompletionRequiresAcknowledgementTests(_CompletionTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["completion"]["discarded_count"], 0)
         self.assertFalse(response.data["completion"]["restorable"])
+
+    def test_marking_the_segmentation_done_reclaims_all_probability_maps(self):
+        full_map = save_probability_map(
+            segmentation=self.segmentation,
+            model_name="DINO",
+            prob_data=np.zeros((64, 64), dtype=np.uint8),
+            prefix="mito",
+            generated_flag="mito_generated",
+        )
+        roi = create_roi_image_from_image(
+            self.image,
+            x=0,
+            y=0,
+            width=64,
+            height=64,
+            source="MANUAL",
+        )
+        roi_map = save_probability_map(
+            segmentation=self.segmentation,
+            model_name="OmniDINO",
+            prob_data=np.zeros((64, 64), dtype=np.uint8),
+            prefix="mito",
+            generated_flag="mito_generated",
+            roi_id=str(roi.id),
+        )
+        full_path = get_prob_map_file_path(self.segmentation, "DINO", "mito")
+        roi_path = get_prob_map_file_path(
+            self.segmentation,
+            "OmniDINO",
+            "mito",
+            roi_id=str(roi.id),
+        )
+        self.assertTrue(full_path.exists())
+        self.assertTrue(roi_path.exists())
+        self.assertEqual(
+            ProbabilityMap.objects.filter(segmentation=self.segmentation).count(),
+            3,
+        )
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(ProbabilityMap.objects.filter(id=full_map.id).exists())
+        self.assertFalse(ProbabilityMap.objects.filter(id=roi_map.id).exists())
+        self.assertFalse(ProbabilityMap.objects.filter(segmentation=self.segmentation).exists())
+        self.assertFalse(full_path.exists())
+        self.assertFalse(roi_path.exists())
 
 
 class CompletionIsUndoableTests(_CompletionTestBase):

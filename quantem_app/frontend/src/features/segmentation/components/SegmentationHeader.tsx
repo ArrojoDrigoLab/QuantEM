@@ -34,6 +34,7 @@ import {
   describeDisplayedObjects,
   resolveSourceModelLabel,
 } from "@/features/segmentation/components/segmentationHeaderProvenance";
+import { segmentationDisplayName } from "@/shared/segmentationNames";
 import {
   AboutThisResult,
   HeaderRouteLinks,
@@ -61,6 +62,7 @@ import type {
   ImageSegmentation,
   SourceModelOption,
 } from "@/shared/types";
+import type { SegmentationRoi } from "@/shared/types/segmentation";
 import type { Runnability } from "@/features/models/runnable";
 import "./SegmentationHeader.css";
 
@@ -107,6 +109,11 @@ interface SegmentationHeaderProps {
   }) => void | Promise<void>;
   onApplyFullImage?: () => void;
   isApplyingFull?: boolean;
+  /** The current per-segmentation ROI, when one has been selected. */
+  activeRoi?: SegmentationRoi | null;
+  /** Queue the selected model only over the active, unfinished ROI. */
+  onApplyActiveRoi?: () => void;
+  isApplyingActiveRoi?: boolean;
   hasQueuedOrRunningOrganelleTask?: boolean;
   /**
    * Whether the selected source model can actually be loaded on this machine.
@@ -162,6 +169,9 @@ export function SegmentationHeader({
   onToggleSegmentationComplete,
   onApplyFullImage,
   isApplyingFull = false,
+  activeRoi = null,
+  onApplyActiveRoi,
+  isApplyingActiveRoi = false,
   hasQueuedOrRunningOrganelleTask = false,
   modelRunnability = UNKNOWN_RUNNABILITY,
   appliedAdapter = null,
@@ -177,7 +187,8 @@ export function SegmentationHeader({
   const clearRerun = useClearRerunConfirm({ onClearMislabeledObjects });
 
   const isOrganelle = Boolean(currentSegmentation?.config);
-  const isBusy = isApplyingFull || hasQueuedOrRunningOrganelleTask;
+  const isBusy =
+    isApplyingFull || isApplyingActiveRoi || hasQueuedOrRunningOrganelleTask;
   const modelBlocked = modelRunnability.state === "blocked";
   const showFullImageProgress =
     isApplyingFull || fullImageActive || fullImageProgress !== null;
@@ -192,6 +203,9 @@ export function SegmentationHeader({
    * promise was simply false. Disabling here is the visible half of it.
    */
   const applyFullDisabled = isBusy || modelBlocked || isComplete;
+  const showActiveRoiRun = Boolean(
+    activeRoi && activeRoi.completed_for_segmentation !== true
+  );
   const selectedSourceModel =
     activeSourceModel || sourceModelOptions[0]?.value || NONE_SOURCE_MODEL;
   const runTargetLabel = resolveSourceModelLabel(
@@ -245,7 +259,7 @@ export function SegmentationHeader({
           {visibleSegmentations.length > 0 ? (
             visibleSegmentations.map((seg) => (
               <option key={seg.id} value={seg.id}>
-                {seg.segmentation_type.long_name}
+                {segmentationDisplayName(seg)}
               </option>
             ))
           ) : (
@@ -303,7 +317,10 @@ export function SegmentationHeader({
           modelRunnability={modelRunnability}
           showFullImageProgress={showFullImageProgress}
           fullImageProgress={fullImageProgress}
+          showActiveRoiRun={showActiveRoiRun}
+          applyActiveRoiDisabled={applyFullDisabled}
           onApplyFullImage={onApplyFullImage}
+          onApplyActiveRoi={onApplyActiveRoi}
           onRequestRunConfirm={runScaleConfirm.open}
         />
         <HeaderNotices

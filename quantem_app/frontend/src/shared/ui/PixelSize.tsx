@@ -25,6 +25,8 @@ import type { AssetDetail } from "@/shared/types/images";
 export interface PixelSizeBadgeProps {
   resolved: ResolvedPixelSize;
   className?: string;
+  /** Omit source provenance where the surrounding interface needs only scale. */
+  showProvenance?: boolean;
 }
 
 /**
@@ -39,7 +41,11 @@ export interface PixelSizeBadgeProps {
  * keyboard or touch user can reach. That is the distinction a figure caption
  * turns on, and it now reads the same everywhere: "5 nm/px · from file".
  */
-export function PixelSizeBadge({ resolved, className }: PixelSizeBadgeProps) {
+export function PixelSizeBadge({
+  resolved,
+  className,
+  showProvenance = true,
+}: PixelSizeBadgeProps) {
   if (!resolved.calibrated) {
     return (
       <Badge
@@ -51,7 +57,8 @@ export function PixelSizeBadge({ resolved, className }: PixelSizeBadgeProps) {
       </Badge>
     );
   }
-  const { provenance, title, tone } = describeProvenance(resolved);
+  const { provenance: rawProvenance, title, tone } = describeProvenance(resolved);
+  const provenance = showProvenance ? rawProvenance : null;
   return (
     <Badge tone={tone} className={className} title={title}>
       {formatPixelSizeNm(resolved.valueNm)}
@@ -109,6 +116,8 @@ export interface PixelSizeEditorProps {
   /** Called with the patched asset so the caller can refresh its own copy. */
   onSaved?: (asset: AssetDetail) => void;
   className?: string;
+  /** Viewer chrome uses a scale-only badge and an icon-sized edit affordance. */
+  compact?: boolean;
 }
 
 /**
@@ -121,6 +130,7 @@ export function PixelSizeEditor({
   asset,
   onSaved,
   className,
+  compact = false,
 }: PixelSizeEditorProps) {
   const resolved = resolvePixelSize(asset);
   const [editing, setEditing] = useState(false);
@@ -161,9 +171,14 @@ export function PixelSizeEditor({
   if (!editing) {
     return (
       <div className={cx("flex flex-wrap items-center gap-2", className)}>
-        <PixelSizeBadge resolved={resolved} />
-        <Button size="sm" onClick={startEditing}>
-          {resolved.calibrated ? "Edit pixel size" : "Set pixel size"}
+        <PixelSizeBadge resolved={resolved} showProvenance={!compact} />
+        <Button
+          size={compact ? "icon" : "sm"}
+          onClick={startEditing}
+          aria-label={resolved.calibrated ? "Edit pixel size" : "Set pixel size"}
+          title={resolved.calibrated ? "Edit pixel size" : "Set pixel size"}
+        >
+          {compact ? <PencilIcon /> : resolved.calibrated ? "Edit pixel size" : "Set pixel size"}
         </Button>
       </div>
     );
@@ -173,7 +188,11 @@ export function PixelSizeEditor({
     <div className={cx("flex flex-col gap-1", className)}>
       <div className="flex flex-wrap items-center gap-2">
         <label
-          className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+          className={
+            compact
+              ? "sr-only"
+              : "text-xs font-semibold uppercase tracking-wide text-slate-500"
+          }
           htmlFor={`pixel-size-${asset.id}`}
         >
           Pixel size
@@ -205,7 +224,7 @@ export function PixelSizeEditor({
           Cancel
         </Button>
       </div>
-      <p className="m-0 text-xs text-slate-500">
+      <p className={compact ? "hidden" : "m-0 text-xs text-slate-500"}>
         {resolved.fileDeclaredNm === null
           ? "This file declared no pixel size. A value you type here is recorded as entered by hand."
           : `The file declared ${formatPixelSizeNm(
@@ -215,5 +234,23 @@ export function PixelSizeEditor({
       </p>
       {error ? <p className="m-0 text-xs text-red-700">{error}</p> : null}
     </div>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
   );
 }

@@ -585,8 +585,8 @@ def _run_segmentation(
         stored_count = len(written)
         if not stored_count and not bool(getattr(segmenter, "persist_probability_maps", True)):
             raise RuntimeError(
-                "The model finished, but its threshold result could not be saved. "
-                "No candidates were changed. Check available disk space and try again."
+                "The model finished without a local uint8 threshold map. "
+                "No candidates were changed."
             )
         if not stored_count:
             stored_count = len(result.prob_maps)

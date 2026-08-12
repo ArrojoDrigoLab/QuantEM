@@ -55,3 +55,21 @@ export function clearDoneJobs(): Promise<ClearDoneJobsResponse> {
 export function getJobQueueStatus(): Promise<JobQueueStatus> {
   return apiRequest<JobQueueStatus>("/api/jobs/queue-status/");
 }
+
+export interface UpdateApplyLockResponse {
+  ready: boolean;
+  open_jobs: number;
+  reason: "jobs_running" | "already_applying" | null;
+}
+
+export function acquireUpdateApplyLock(): Promise<UpdateApplyLockResponse> {
+  return apiRequest<UpdateApplyLockResponse>("/api/update-maintenance/acquire/", {
+    method: "POST",
+  });
+}
+
+export function releaseUpdateApplyLock(): Promise<{ released: boolean }> {
+  return apiRequest<{ released: boolean }>("/api/update-maintenance/release/", {
+    method: "POST",
+  });
+}

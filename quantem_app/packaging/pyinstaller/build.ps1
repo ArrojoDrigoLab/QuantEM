@@ -2,6 +2,7 @@
 #
 # Usage (PowerShell):
 #   powershell -ExecutionPolicy Bypass -File packaging\pyinstaller\build.ps1
+#   powershell -ExecutionPolicy Bypass -File packaging\pyinstaller\build.ps1 -VerboseBuild
 #
 # Every cache/temp path is parameterised so the build can be kept off the
 # system drive entirely, which some build machines require. Defaults resolve
@@ -9,7 +10,8 @@
 
 param(
     [string]$Python = "",
-    [string]$Scratch = ""
+    [string]$Scratch = "",
+    [switch]$VerboseBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,13 +27,37 @@ $env:PYTHONPATH = "$appRoot\src"
 New-Item -ItemType Directory -Force "$Scratch\tmp" | Out-Null
 New-Item -ItemType Directory -Force "$Scratch\pyi_build" | Out-Null
 
-& $Python -m PyInstaller `
+$logLevel = if ($VerboseBuild) { "INFO" } else { "WARN" }
+# PyInstaller initializes logging while its package is imported, before it can
+# parse the command-line flag below. Set both interfaces so even those startup
+# messages use the requested level.
+$env:PYI_LOG_LEVEL = $logLevel
+
+# PyInstaller emits one misleading warning when a regular venv was created
+# from a Conda-distributed base Python. The venv is intentionally not itself a
+# Conda environment, so it has no conda-meta directory; the warning describes
+# the expected setup and requires no action. Suppress only that exact message,
+# while preserving every other warning and error. Native stderr is captured so
+# PowerShell 5.1 does not promote warning lines to terminating ErrorRecords.
+$savedErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$pyinstallerOutput = & $Python -m PyInstaller `
     "$PSScriptRoot\quantem-server.spec" `
     --noconfirm `
+    --log-level $logLevel `
     --workpath "$Scratch\pyi_build" `
-    --distpath "$PSScriptRoot\dist"
+    --distpath "$PSScriptRoot\dist" 2>&1
+$pyinstallerExitCode = $LASTEXITCODE
+$ErrorActionPreference = $savedErrorActionPreference
 
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+$layeredVenvNotice = "Assuming this is not an Anaconda environment or an additional venv/pipenv/"
+foreach ($line in $pyinstallerOutput) {
+    $text = $line.ToString()
+    if ($text.Contains($layeredVenvNotice)) { continue }
+    Write-Host $text
+}
+
+if ($pyinstallerExitCode -ne 0) { throw "PyInstaller failed with exit code $pyinstallerExitCode" }
 
 $dist = "$PSScriptRoot\dist\quantem-server"
 $size = (Get-ChildItem -Recurse $dist | Measure-Object -Property Length -Sum).Sum

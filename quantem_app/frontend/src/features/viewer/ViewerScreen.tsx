@@ -38,6 +38,7 @@ import {
 import { useOverlayConfig } from "@/features/viewer/state/useOverlayConfig";
 import { useSegmentationDelete } from "@/features/viewer/state/useSegmentationDelete";
 import type { ImageSegmentation } from "@/shared/types/images";
+import { segmentationRouteToken } from "@/shared/segmentationNames";
 import "./ViewerScreen.css";
 
 export function ViewerScreen() {
@@ -45,7 +46,7 @@ export function ViewerScreen() {
     useSelectionStore();
   const navigate = useNavigate();
 
-  const handleBackToLibrary = useCallback(() => {
+  const handleBackToHome = useCallback(() => {
     clearSelection();
     navigate("/");
   }, [clearSelection, navigate]);
@@ -64,9 +65,7 @@ export function ViewerScreen() {
     if (!assetId) return;
     setSelectedSegmentationId(segmentation.id);
     await refetchSegmentations();
-    const encodedName = encodeURIComponent(
-      segmentation.segmentation_type.long_name
-    );
+    const encodedName = encodeURIComponent(segmentationRouteToken(segmentation));
     navigate(`/assets/${assetId}/labeling/${encodedName}`);
   };
 
@@ -76,7 +75,7 @@ export function ViewerScreen() {
     if (!selectedAssetId) return;
     const target = visibleSegmentations.find((seg) => seg.id === segmentationId);
     const encodedName = target
-      ? encodeURIComponent(target.segmentation_type.long_name)
+      ? encodeURIComponent(segmentationRouteToken(target))
       : "new";
     setSelectedSegmentationId(segmentationId);
     navigate(`/assets/${selectedAssetId}/labeling/${encodedName}`);
@@ -89,6 +88,10 @@ export function ViewerScreen() {
 
   const existingSegmentationTypes = useMemo(
     () => visibleSegmentations.map((seg) => seg.segmentation_type.long_name),
+    [visibleSegmentations]
+  );
+  const existingSegmentationTypeIds = useMemo(
+    () => visibleSegmentations.map((seg) => seg.segmentation_type.id),
     [visibleSegmentations]
   );
 
@@ -106,7 +109,12 @@ export function ViewerScreen() {
           overlayManifestRefetching={overlays.overlayManifestRefetching}
           overlayUpdating={overlays.overlayUpdating}
           overlayBuildFailureCount={overlays.overlayBuildFailureCount}
-          onBackToLibrary={handleBackToLibrary}
+          onBackToHome={handleBackToHome}
+          onBackToExperiment={() => {
+            if (!image.experiment_id) return;
+            clearSelection();
+            navigate(`/?experiment=${encodeURIComponent(image.experiment_id)}`);
+          }}
           onPixelSizeSaved={() => {
             void refetchImage();
           }}
@@ -151,8 +159,8 @@ export function ViewerScreen() {
               imageId={selectedAssetId}
               onCreated={handleSegmentationCreated}
               existingSegmentationTypes={existingSegmentationTypes}
-              title="Add segmentation"
-              description="Choose a preset or create a custom segmentation."
+              existingSegmentationTypeIds={existingSegmentationTypeIds}
+              title="Add Segmentation"
               // So the confirmation can say what a missing pixel size costs the
               // run it is about to queue. `null` here is a fact ("this image is
               // uncalibrated"), not a missing value.

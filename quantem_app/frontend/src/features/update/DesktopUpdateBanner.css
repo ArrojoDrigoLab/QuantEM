@@ -1,0 +1,71 @@
+.desktop-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid #0f4c5c;
+  background: #e0f2fe;
+  color: #082f49;
+  font-size: 0.875rem;
+}
+
+.desktop-update-banner-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.desktop-update-banner-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.desktop-update-banner button {
+  border: 1px solid #075985;
+  border-radius: 0.375rem;
+  background: #075985;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.35rem 0.7rem;
+}
+
+.desktop-update-banner button:hover {
+  background: #0c4a6e;
+}
+
+.desktop-update-notes {
+  position: relative;
+}
+
+.desktop-update-notes summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.desktop-update-notes p {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  width: min(32rem, 75vw);
+  margin: 0.5rem 0 0;
+  padding: 0.75rem;
+  border: 1px solid #7dd3fc;
+  border-radius: 0.375rem;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+  color: #0f172a;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 720px) {
+  .desktop-update-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

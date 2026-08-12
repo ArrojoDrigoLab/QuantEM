@@ -36,7 +36,10 @@ from quantem.segmentation.source_models import (
     source_models_for_organelle,
     unique_source_models,
 )
-from quantem.segmentation.type_definitions import MANUAL_ONLY_INTERNAL_NAMES
+from quantem.segmentation.type_definitions import (
+    MANUAL_ONLY_INTERNAL_NAMES,
+    find_builtin_segmentation_type,
+)
 
 #: One short line per ``run_notice`` kind, for the chip that sits beside the
 #: stage. The long form is ``message`` plus ``next_steps``; a chip cannot carry
@@ -114,6 +117,8 @@ class SegmentationTypeSerializer(serializers.ModelSerializer):
     serializer exposed from it.
     """
 
+    kind = serializers.SerializerMethodField()
+
     class Meta:
         model = SegmentationType
         fields = [
@@ -122,10 +127,15 @@ class SegmentationTypeSerializer(serializers.ModelSerializer):
             "short_name",
             "long_name",
             "default_color",
+            "measurement_mode",
+            "kind",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
+
+    def get_kind(self, obj):
+        return "builtin" if find_builtin_segmentation_type(obj.internal_name) else "custom"
 
 
 class ImageSegmentationSerializer(serializers.ModelSerializer):
@@ -155,6 +165,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             "asset",
             "segmentation_type",
             "segmentation_type_id",
+            "display_name",
             "segment_counts",
             "source_models",
             "segment_counts_by_source_model",
@@ -177,6 +188,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "asset",
+            "display_name",
             "include_level",
             "status_progress",
             "status_error",
@@ -444,6 +456,11 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
 class ImageSegmentationCreateSerializer(serializers.Serializer):
     segmentation_type_id = serializers.UUIDField(required=False)
     segmentation_type_name = serializers.CharField(max_length=100, required=False)
+    analysis_name = serializers.CharField(max_length=100, required=False, allow_blank=False)
+    measurement_mode = serializers.ChoiceField(
+        choices=SegmentationType.MEASUREMENT_MODE_CHOICES,
+        required=False,
+    )
     source_model = serializers.CharField(max_length=128, required=False, allow_blank=True)
 
     def validate(self, attrs):

@@ -84,8 +84,6 @@
  * * `import/ImportDropZone.tsx` — the empty state: drop target and picker;
  * * `import/ImportQueue.tsx` — the file rows and their per-file progress;
  * * `import/ImportDetailsFields.tsx` — the optional fields;
- * * `import/ImportRunOptions.tsx` — the four organelle boxes and their
- *   disclosure, over the choices in `import/organelles.ts`.
  *
  * Nothing moved changed: same DOM, same `data-testid`s, same words.
  */
@@ -94,7 +92,6 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useId,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -110,15 +107,11 @@ import { parsePixelSizeInput } from "@/shared/pixelSize";
 import { probeFileDeclaredPixelSize } from "@/shared/fileDeclaredPixelSize";
 import { Button, Panel } from "@/shared/ui/design";
 import { formatBytes } from "@/shared/ui/format";
-import { useModelCatalogue } from "@/features/models/useModelCatalogue";
-import { scaleMismatchesForOrganelles } from "@/features/models/scaleMismatch";
-import { UncalibratedImportWarning } from "@/features/models/components/UncalibratedScaleWarning";
 import {
   FALLBACK_UPLOAD_FORMATS,
   formatExtensionList,
   isSameFile,
   normaliseExtension,
-  plural,
   stripKnownExtension,
   type ChosenFile,
 } from "@/features/library/components/import/importValidation";
@@ -128,20 +121,31 @@ import { useImportScale } from "@/features/library/components/import/useImportSc
 import { ImportDropZone } from "@/features/library/components/import/ImportDropZone";
 import { ImportQueue } from "@/features/library/components/import/ImportQueue";
 import { ImportDetailsFields } from "@/features/library/components/import/ImportDetailsFields";
-import { ImportRunOptions } from "@/features/library/components/import/ImportRunOptions";
-import {
-  NO_ORGANELLES_TICKED,
-  type OrganelleId,
-} from "@/features/library/components/import/organelles";
 import { useExperiments } from "@/features/library/components/grouping/useExperiments";
 import {
-  NO_GROUP,
   chosenId,
   chosenName,
   isChosen,
   type GroupingChoice,
 } from "@/features/library/components/grouping/groupingChoices";
 import type { AssetDetail, UploadImageOptions } from "@/shared/types/images";
+
+function defaultExperimentName(date = new Date()): string {
+  const dateString = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+  return `New Experiment ${dateString}`;
+}
+
+function newExperimentChoice(): GroupingChoice {
+  return { kind: "new", name: defaultExperimentName() };
+}
+
+function newDatasetChoice(): GroupingChoice {
+  return { kind: "new", name: "Dataset 1" };
+}
 
 export interface ImageUploadPanelHandle {
   /**
@@ -219,19 +223,17 @@ export const ImageUploadPanel = forwardRef<
    * A list rather than a string because a drop of forty can contain three
    * different problems, and "some files were not added" is not an error
    * message.
-   */
+  */
   const [rejections, setRejections] = useState<string[]>([]);
   const [pixelSizeError, setPixelSizeError] = useState<string | null>(null);
-  const [tickedOrganelles, setTickedOrganelles] =
-    useState<OrganelleId[]>(NO_ORGANELLES_TICKED);
   /**
-   * Where this batch goes in the library. Both default to "nowhere", which is
-   * a complete and permanent answer rather than a step the user has skipped.
+   * Every new import starts organised, but the user can still choose a
+   * different experiment or dataset before it is submitted.
    */
   const [experimentChoice, setExperimentChoice] =
-    useState<GroupingChoice>(NO_GROUP);
-  const [datasetChoice, setDatasetChoice] = useState<GroupingChoice>(NO_GROUP);
-  const [runOptionsOpen, setRunOptionsOpen] = useState(false);
+    useState<GroupingChoice>(newExperimentChoice);
+  const [datasetChoice, setDatasetChoice] =
+    useState<GroupingChoice>(newDatasetChoice);
   const [dropActive, setDropActive] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -258,10 +260,8 @@ export const ImageUploadPanel = forwardRef<
    * file that is already queued and to append rather than replace.
    */
   const filesRef = useRef<ChosenFile[]>([]);
-  const fieldId = useId();
 
   const { data: systemStatus } = useApiQuery(() => getSystemStatus(), []);
-  const { catalogue } = useModelCatalogue();
   // The experiments this library already has, so the picker can offer them.
   // An empty list is the ordinary starting state and renders as "No
   // experiment" plus "New experiment…", which is all a first import needs.
@@ -443,10 +443,8 @@ export const ImageUploadPanel = forwardRef<
     setReplaceDeclaredPixelSizes(false);
     setPixelSizeError(null);
     setRejections([]);
-    setTickedOrganelles(NO_ORGANELLES_TICKED);
-    setExperimentChoice(NO_GROUP);
-    setDatasetChoice(NO_GROUP);
-    setRunOptionsOpen(false);
+    setExperimentChoice(newExperimentChoice());
+    setDatasetChoice(newDatasetChoice());
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -455,37 +453,7 @@ export const ImageUploadPanel = forwardRef<
     pixelSizeText,
     replaceDeclaredPixelSizes,
   });
-  const {
-    singleFile,
-    appliedPixelSize,
-    uncalibratedCount,
-    unknownScaleCount,
-    worstCasePixelSizeNm,
-    uncalibratedIsCertain,
-  } = scale;
-
-  const scaleMismatches = useMemo(
-    () =>
-      scaleMismatchesForOrganelles(
-        catalogue,
-        tickedOrganelles,
-        worstCasePixelSizeNm
-      ),
-    [catalogue, tickedOrganelles, worstCasePixelSizeNm]
-  );
-  const willRunUncalibrated = scaleMismatches.length > 0;
-  /** How many whole-image passes pressing the button would queue, in total. */
-  const runCount = tickedOrganelles.length * Math.max(files.length, 1);
-
-  const toggleOrganelle = (id: OrganelleId, checked: boolean) => {
-    setTickedOrganelles((current) =>
-      checked
-        ? current.includes(id)
-          ? current
-          : [...current, id]
-        : current.filter((value) => value !== id)
-    );
-  };
+  const { appliedPixelSize } = scale;
 
   const handleDragEnter = (event: React.DragEvent) => {
     if (!Array.from(event.dataTransfer?.types ?? []).includes("Files")) return;
@@ -564,10 +532,6 @@ export const ImageUploadPanel = forwardRef<
           // repeats forever.
           pixelSizeNm: applied.source === "typed" ? applied.valueNm : null,
           notes: notes.length > 0 ? notes : undefined,
-          segmentMito: tickedOrganelles.includes("mito"),
-          segmentEr: tickedOrganelles.includes("er"),
-          segmentNucleus: tickedOrganelles.includes("nucleus"),
-          segmentLd: tickedOrganelles.includes("ld"),
           // Whole-batch, like the pixel size and the notes. A typed name is
           // sent on every file in the queue and the server resolves it to the
           // same row each time, so forty images land in one experiment rather
@@ -603,10 +567,8 @@ export const ImageUploadPanel = forwardRef<
           setPixelSizeText("");
           setNotesText("");
           setReplaceDeclaredPixelSizes(false);
-          setTickedOrganelles(NO_ORGANELLES_TICKED);
-          setExperimentChoice(NO_GROUP);
-          setDatasetChoice(NO_GROUP);
-          setRunOptionsOpen(false);
+          setExperimentChoice(newExperimentChoice());
+          setDatasetChoice(newDatasetChoice());
           if (fileInputRef.current) fileInputRef.current.value = "";
         }
       },
@@ -615,7 +577,6 @@ export const ImageUploadPanel = forwardRef<
 
   const highlightDropZone = dropActive || pageDragActive;
   const acceptAttribute = acceptedExtensions.join(",");
-  const runOptionsId = `${fieldId}-run-options`;
   const totalBytes = files.reduce((sum, entry) => sum + entry.file.size, 0);
   /** Files this batch has finished with, either way. */
   const settledCount = files.filter((entry) => {
@@ -628,13 +589,7 @@ export const ImageUploadPanel = forwardRef<
     files.length > 0 &&
     files.every((entry) => imports[entry.key]?.kind === "failed");
 
-  /**
-   * The caption on the one button that starts everything.
-   *
-   * It says what pressing it will do, counted. "Uncalibrated" is only asserted
-   * when it is a fact: a button that says it over files that turn out to
-   * declare 5 nm/px is how a warning stops being believed.
-   */
+  /** The caption on the one button that starts the import queue. */
   const submitLabel = (() => {
     if (importing) {
       if (batchTotal <= 1) return "Uploading...";
@@ -643,18 +598,8 @@ export const ImageUploadPanel = forwardRef<
     if (retrying) {
       return files.length === 1 ? "Try it again" : `Try these ${files.length} again`;
     }
-    const runWord = plural(runCount, "run");
-    if (files.length === 1) {
-      if (runCount === 0) return "Import image";
-      return willRunUncalibrated && uncalibratedIsCertain
-        ? `Import and start ${runCount} uncalibrated ${runWord}`
-        : `Import and start ${runCount} segmentation ${runWord}`;
-    }
-    const subject = `${files.length} images`;
-    if (runCount === 0) return `Import ${subject}`;
-    return willRunUncalibrated && uncalibratedIsCertain
-      ? `Import ${subject} and start ${runCount} uncalibrated ${runWord}`
-      : `Import ${subject} and start ${runCount} segmentation ${runWord}`;
+    if (files.length === 1) return "Import image";
+    return `Import ${files.length} images`;
   })();
 
   return (
@@ -726,9 +671,13 @@ export const ImageUploadPanel = forwardRef<
             onRemoveFile={removeFile}
           />
 
-          {/* Everything below here is optional. The pixel size is the only
-              field whose absence changes the science, so it is the only one
-              that ever raises its voice -- and only when a file is silent. */}
+          <ImportDropZone
+            acceptedExtensions={acceptedExtensions}
+            highlightDropZone={highlightDropZone}
+            batchSummary={null}
+            variant="additional"
+          />
+
           <ImportDetailsFields
             files={files}
             scale={scale}
@@ -741,54 +690,11 @@ export const ImageUploadPanel = forwardRef<
             onNotesTextChange={setNotesText}
             replaceDeclaredPixelSizes={replaceDeclaredPixelSizes}
             onReplaceDeclaredPixelSizesChange={setReplaceDeclaredPixelSizes}
-            willRunUncalibrated={willRunUncalibrated}
             experiments={experiments}
             experimentChoice={experimentChoice}
             datasetChoice={datasetChoice}
             onExperimentChoiceChange={setExperimentChoice}
             onDatasetChoiceChange={setDatasetChoice}
-          />
-
-          {/* Closed by default. Importing images imports images. */}
-          <ImportRunOptions
-            runOptionsId={runOptionsId}
-            runOptionsOpen={runOptionsOpen}
-            onToggleRunOptions={() =>
-              setRunOptionsOpen((current) => !current)
-            }
-            runCount={runCount}
-            fileCount={files.length}
-            tickedOrganelles={tickedOrganelles}
-            onToggleOrganelle={toggleOrganelle}
-            catalogue={catalogue}
-          />
-
-          {/* Outside the disclosure on purpose. Ticking a box and then folding
-              the section away must not fold away the sentence explaining that
-              those runs will produce a different object set. */}
-          {willRunUncalibrated && files.length > 1 ? (
-            <p className="m-0 text-sm text-slate-800">
-              {uncalibratedCount > 0
-                ? `${uncalibratedCount} of these ${files.length} images ${plural(
-                    uncalibratedCount,
-                    "has",
-                    "have"
-                  )} no pixel size.`
-                : `${unknownScaleCount} of these ${files.length} images could not be read here, so ${plural(
-                    unknownScaleCount,
-                    "it",
-                    "they"
-                  )} may have no pixel size.`}
-            </p>
-          ) : null}
-          <UncalibratedImportWarning
-            mismatches={scaleMismatches}
-            certain={uncalibratedIsCertain}
-            unreadableFileName={
-              singleFile && singleFile.scale?.state === "unknown"
-                ? singleFile.file.name
-                : null
-            }
           />
 
           <div className="flex items-center gap-2">

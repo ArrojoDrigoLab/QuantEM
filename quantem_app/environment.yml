@@ -24,7 +24,7 @@ dependencies:
   - opencv
 
   # Numerics / imaging
-  - numpy>=2
+  - numpy>=1.26
   - scipy>=1.11
   - scikit-image>=0.22
   - shapely>=2.0
