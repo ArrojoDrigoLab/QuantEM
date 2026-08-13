@@ -2,6 +2,8 @@ import type { JobPriority, JobResourceClass, JobStatus } from "@/shared/types/co
 import type { RunLeg } from "@/shared/types/runs";
 
 export interface SystemStatus {
+  /** The installed QuantEM package version reported by the backend. */
+  app_version?: string;
   cuda_available: boolean;
   /**
    * Extensions this build can import, e.g. `[".tif", ".tiff", ".png"]`.

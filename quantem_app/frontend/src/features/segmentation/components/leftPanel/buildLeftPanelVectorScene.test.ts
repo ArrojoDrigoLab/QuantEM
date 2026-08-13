@@ -42,6 +42,22 @@ describe("buildLeftPanelVectorScene", () => {
             created_at: "2026-01-01T00:00:00Z",
             updated_at: "2026-01-01T00:00:00Z",
           },
+          rois: [
+            {
+              id: "roi-2",
+              segmentation: "seg-1",
+              x: 300,
+              y: 320,
+              width: 80,
+              height: 60,
+              source: "MANUAL",
+              seed: null,
+              is_active: false,
+              is_complete: false,
+              created_at: "2026-01-02T00:00:00Z",
+              updated_at: "2026-01-02T00:00:00Z",
+            },
+          ],
         },
         drawing: {
           ...makeLeftPanelProps().drawing,
@@ -80,15 +96,20 @@ describe("buildLeftPanelVectorScene", () => {
       expect.arrayContaining([
         "segment-1",
         "roi-frame",
+        "roi-frame-roi-2",
         "right-selection-bbox",
         "pending-polygon",
         "user-feedback-feedback-1",
         "extra-overlay",
       ])
     );
+    expect(scene.transient.find((overlay) => overlay.id === "roi-frame-roi-2")).toMatchObject({
+      strokeOpacity: 0.4,
+      strokeDasharray: "8 6",
+    });
   });
 
-  it("hides the active ROI overlay when requested", () => {
+  it("hides only the active ROI overlay when requested", () => {
     const scene = buildLeftPanelVectorScene(
       makeLeftPanelProps({
         roi: {
@@ -107,6 +128,22 @@ describe("buildLeftPanelVectorScene", () => {
             created_at: "2026-01-01T00:00:00Z",
             updated_at: "2026-01-01T00:00:00Z",
           },
+          rois: [
+            {
+              id: "roi-2",
+              segmentation: "seg-1",
+              x: 20,
+              y: 20,
+              width: 10,
+              height: 10,
+              source: "MANUAL",
+              seed: null,
+              is_active: false,
+              is_complete: false,
+              created_at: "2026-01-02T00:00:00Z",
+              updated_at: "2026-01-02T00:00:00Z",
+            },
+          ],
         },
         overlays: {
           hideActiveRoiOverlay: true,
@@ -115,6 +152,7 @@ describe("buildLeftPanelVectorScene", () => {
     );
 
     expect(scene.transient.map((overlay) => overlay.id)).not.toContain("roi-frame");
+    expect(scene.transient.map((overlay) => overlay.id)).toContain("roi-frame-roi-2");
   });
 
   it("renders completed ROI overlays only while the mode is active", () => {

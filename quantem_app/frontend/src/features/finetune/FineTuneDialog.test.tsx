@@ -18,7 +18,9 @@ import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
 import { server } from "@/test/msw/server";
 import type {
   FineTunePreviewResponse,
+  FineTuneApplyProgress,
   FineTuneProgress,
+  FineTuneScopeSelectionPayload,
   FineTuneScopeResponse,
 } from "@/shared/types/finetune";
 import type { SegmentationType } from "@/shared/types/images";
@@ -63,6 +65,9 @@ const SCOPE: FineTuneScopeResponse = {
             image("img-1", "liver_01.tif", 3, 0),
             image("img-2", "liver_02.tif", 2, 1),
             image("img-3", "liver_03.tif", 0, 1),
+            ...Array.from({ length: 7 }, (_, index) =>
+              image(`img-empty-${index}`, `liver_empty_${index}.tif`, 0, 0)
+            ),
           ],
         },
       ],
@@ -75,7 +80,6 @@ const SCOPE: FineTuneScopeResponse = {
       ungrouped_images: [image("img-fed", "fed_01.tif", 2, 0)],
     },
   ],
-  unassigned_images: [],
 };
 
 function preview(
@@ -83,6 +87,7 @@ function preview(
 ): FineTunePreviewResponse {
   return {
     experiment: { id: "exp-fasted", name: "Fasted cohort" },
+    base_model: "quantem:mito",
     asset_count: 10,
     annotation_count: 7,
     confirmed_areas: 5,
@@ -120,9 +125,21 @@ interface Stubs {
   previewBody?: Partial<FineTunePreviewResponse>;
   progress?: Partial<FineTuneProgress>;
   onApply?: (assetIds: string[]) => void;
+  onApplySelection?: (assetIds: string[], datasetIds: string[]) => void;
+  onStart?: () => void;
+  onPreview?: (payload: FineTuneScopeSelectionPayload) => void;
+  applyProgress?: Partial<FineTuneApplyProgress>;
 }
 
-function stubApi({ previewBody, progress, onApply }: Stubs = {}) {
+function stubApi({
+  previewBody,
+  progress,
+  onApply,
+  onApplySelection,
+  onStart,
+  onPreview,
+  applyProgress,
+}: Stubs = {}) {
   server.use(
     http.get(`${API}/api/finetune/scope/`, () => HttpResponse.json(SCOPE)),
     http.get(`${API}/api/finetune/adapters/`, () =>
@@ -138,23 +155,46 @@ function stubApi({ previewBody, progress, onApply }: Stubs = {}) {
         },
       ])
     ),
-    http.post(`${API}/api/finetune/preview/`, () =>
-      HttpResponse.json(preview(previewBody))
-    ),
-    http.post(`${API}/api/finetune/runs/`, () =>
-      HttpResponse.json({ adapter_id: "ad-new", job_id: "job-1" }, { status: 202 })
-    ),
+    http.post(`${API}/api/finetune/preview/`, async ({ request }) => {
+      onPreview?.((await request.json()) as FineTuneScopeSelectionPayload);
+      return HttpResponse.json(preview(previewBody));
+    }),
+    http.post(`${API}/api/finetune/runs/`, () => {
+      onStart?.();
+      return HttpResponse.json(
+        { adapter_id: "ad-new", job_id: "job-1" },
+        { status: 202 }
+      );
+    }),
     http.get(`${API}/api/finetune/runs/:id/progress/`, () =>
       HttpResponse.json(progressBody(progress))
     ),
-    http.get(`${API}/api/finetune/runs/:id/`, () =>
-      HttpResponse.json({ id: "ad-new", caveats: [], cv_results: {} })
+    http.get(`${API}/api/finetune/runs/:id/`, ({ params }) =>
+      HttpResponse.json(
+        params.id === "ad-old"
+          ? {
+              id: "ad-old",
+              name: "First attempt",
+              caveats: [],
+              cv_results: {},
+              experiment: { id: "exp-fasted", name: "Fasted cohort" },
+              asset_ids: ["img-1", "img-2", "img-3"],
+            }
+          : { id: "ad-new", caveats: [], cv_results: {} }
+      )
     ),
     http.post(`${API}/api/finetune/runs/:id/apply/`, async ({ request }) => {
-      const body = (await request.json()) as { asset_ids: string[] };
+      const body = (await request.json()) as {
+        asset_ids: string[];
+        dataset_ids: string[];
+      };
       onApply?.(body.asset_ids);
+      onApplySelection?.(body.asset_ids, body.dataset_ids);
       return HttpResponse.json(
         {
+          batch_id: "finetune-apply:ad-new:batch-1",
+          adapter_id: "ad-new",
+          dataset_ids: body.dataset_ids,
           queued: body.asset_ids.map((assetId) => ({
             asset_id: assetId,
             segmentation_id: `seg-${assetId}`,
@@ -163,7 +203,50 @@ function stubApi({ previewBody, progress, onApply }: Stubs = {}) {
         },
         { status: 202 }
       );
-    })
+    }),
+    http.get(`${API}/api/finetune/runs/:id/apply/`, () =>
+      HttpResponse.json({
+        batch_id: "finetune-apply:ad-new:batch-1",
+        adapter_id: "ad-new",
+        total: 2,
+        complete: 2,
+        succeeded: 1,
+        failed: 1,
+        images: [
+          {
+            asset_id: "img-1",
+            asset_name: "liver_01.tif",
+            segmentation_id: "seg-img-1",
+            job_id: "job-img-1",
+            status: "SUCCESS",
+            stage: "saving",
+            progress: 100,
+            units_done: 8,
+            units_total: 8,
+            message: "done",
+            failure: "",
+            adapter_id: "ad-new",
+            result: { adapter_id: "ad-new" },
+          },
+          {
+            asset_id: "img-2",
+            asset_name: "liver_02.tif",
+            segmentation_id: "seg-img-2",
+            job_id: "job-img-2",
+            status: "FAILED",
+            stage: "inference",
+            progress: 25,
+            units_done: 2,
+            units_total: 8,
+            message: "model could not be loaded",
+            failure: "model could not be loaded",
+            adapter_id: "ad-new",
+            result: null,
+          },
+        ],
+        ...applyProgress,
+      })
+    )
   );
 }
 
@@ -226,6 +309,21 @@ describe("FineTuneDialog", () => {
     // The tile count is present but subordinate -- it is not the headline.
     expect(count).toHaveTextContent("5 confirmed areas and 2 reviewed ROIs");
     expect(count).toHaveTextContent("cut into 12 tiles in Fasted cohort");
+  });
+
+  it("offers only matching packs and previews the selected family", async () => {
+    const user = userEvent.setup();
+    const previewModels: Array<string | undefined> = [];
+    stubApi({ onPreview: (payload) => previewModels.push(payload.base_model) });
+    openDialog();
+
+    await selectTheDataset(user);
+    const picker = screen.getByLabelText("Starting from");
+    expect(within(picker).getAllByRole("option")).toHaveLength(2);
+    expect(within(picker).queryByRole("option", { name: /reticulum/i })).toBeNull();
+
+    await user.selectOptions(picker, "omniem:mito");
+    await waitFor(() => expect(previewModels).toContain("omniem:mito"));
   });
 
   it("expands a dataset to sub-select individual images, and re-totals", async () => {
@@ -407,6 +505,66 @@ describe("FineTuneDialog", () => {
     await waitFor(() => expect(applied).toHaveBeenCalledWith(["img-1", "img-2"]));
     expect(await screen.findByTestId("finetune-applied")).toHaveTextContent(
       "Queued on 2 images"
+    );
+    const applyStatus = await screen.findByTestId("finetune-apply-progress");
+    expect(applyStatus).toHaveTextContent("2 of 2 complete; 1 failed");
+    expect(applyStatus).toHaveTextContent("model could not be loaded");
+  });
+
+  it("can apply the result to an existing Dataset in the Experiment", async () => {
+    const user = userEvent.setup();
+    const applied = vi.fn();
+    stubApi({
+      progress: { status: "SUCCESS", step: 600, percent: 100, eta_seconds: 0 },
+      onApplySelection: applied,
+    });
+    openDialog();
+    await selectTheDataset(user);
+    await user.type(screen.getByLabelText("Name"), "Fasted liver mitochondria");
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+
+    const datasets = within(await screen.findByTestId("finetune-apply-datasets"));
+    await user.click(datasets.getByRole("checkbox", { name: /Liver 24h/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Run 3 selected images + 1 Dataset" })
+    );
+
+    await waitFor(() =>
+      expect(applied).toHaveBeenCalledWith(
+        ["img-1", "img-2", "img-3"],
+        ["ds-liver"]
+      )
+    );
+  });
+
+  it("can reopen a saved fine-tune and apply it without retraining", async () => {
+    const user = userEvent.setup();
+    const started = vi.fn();
+    stubApi({
+      progress: { status: "SUCCESS", step: 600, percent: 100, eta_seconds: 0 },
+      onStart: started,
+    });
+    openDialog();
+
+    await user.selectOptions(
+      await screen.findByLabelText("Run a saved fine-tune"),
+      "ad-old"
+    );
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(await screen.findByTestId("finetune-success")).toHaveTextContent(
+      "First attempt"
+    );
+    expect(started).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("finetune-apply-images")).getAllByRole(
+          "checkbox"
+        )
+      ).toHaveLength(3)
+    );
+    expect(screen.getByTestId("finetune-apply-datasets")).toHaveTextContent(
+      "Liver 24h"
     );
   });
 

@@ -12,6 +12,7 @@ import type { IncludeLevelState } from "./api";
 const SEG_ID = "11111111-1111-4111-8111-111111111111";
 const BASE = "http://127.0.0.1:8000";
 const DIAL_URL = `${BASE}/api/segmentations/${SEG_ID}/include-level`;
+const CONFIRM_URL = `${BASE}/api/segmentations/${SEG_ID}/confirm-model-output`;
 
 function state(overrides: Partial<IncludeLevelState> = {}): IncludeLevelState {
   return {
@@ -20,7 +21,13 @@ function state(overrides: Partial<IncludeLevelState> = {}): IncludeLevelState {
     minimum: 0,
     maximum: 1,
     run_version: 1,
+    measurement_mode: "objects",
     object_count: 12,
+    candidate_count: 0,
+    confirmable_candidate_count: 0,
+    manual_roi_candidate_count: 0,
+    manual_roi_count: 0,
+    confirmed_model_count: 0,
     can_move: true,
     detail: "",
     ...overrides,
@@ -55,7 +62,7 @@ describe("IncludeLevelDial", () => {
     await screen.findByTestId("include-level-value");
 
     expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.32");
-    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "No candidates" })).toBeDisabled();
     expect(container.textContent).not.toMatch(/model does not run|objects at this/i);
   });
 
@@ -132,7 +139,7 @@ describe("IncludeLevelDial", () => {
 
     const help = await screen.findByRole("img");
     expect(help).toHaveAccessibleName(
-      "No stored result is kept for this image, so the include level cannot be moved without running the model again. Running it once saves one, and the level can be moved freely from then on. Run the model on this image from the labeling header, and the threshold can be adjusted afterwards."
+      "No stored result is kept for this image, so the include level cannot be moved without running the model again. Running it once saves one, and the level can be moved freely from then on. Use Run model below, then adjust the threshold."
     );
     expect(screen.queryByText(/No stored probability map/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run model" })).toBeEnabled();
@@ -152,9 +159,58 @@ describe("IncludeLevelDial", () => {
     );
 
     renderDial();
-    await userEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Preview" }));
 
     await waitFor(() => expect(bodies).toEqual([{ include_level: 0.41 }]));
+  });
+
+  it("renames Preview to Confirm and confirms the selected model across the image", async () => {
+    let current = state({
+      include_level: 0.35,
+      candidate_count: 4,
+      confirmable_candidate_count: 2,
+      manual_roi_candidate_count: 2,
+      manual_roi_count: 1,
+    });
+    const confirmBodies: unknown[] = [];
+    const onReextracted = vi.fn();
+    server.use(
+      http.get(DIAL_URL, () => HttpResponse.json(current)),
+      http.post(CONFIRM_URL, async ({ request }) => {
+        confirmBodies.push(await request.json());
+        current = state({
+          include_level: 0.35,
+          candidate_count: 2,
+          confirmable_candidate_count: 0,
+          manual_roi_candidate_count: 2,
+          manual_roi_count: 1,
+          confirmed_model_count: 2,
+        });
+        return HttpResponse.json({
+          segmentation_id: SEG_ID,
+          source_model: "quantem:mito",
+          confirmed_count: 2,
+          skipped_manual_roi_count: 2,
+          manual_roi_count: 1,
+          remaining_candidate_count: 2,
+        });
+      })
+    );
+
+    renderDial({ sourceModel: "quantem:mito", onReextracted });
+
+    expect(await screen.findByRole("button", { name: "Confirm" })).toBeEnabled();
+    expect(screen.getByText(/2 candidates inside manually annotated ROIs/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    await waitFor(() =>
+      expect(confirmBodies).toEqual([{ source_model: "quantem:mito" }])
+    );
+    await waitFor(() => expect(onReextracted).toHaveBeenCalled());
+    expect(
+      await screen.findByText(/Confirmed 2 model objects for analysis/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirmed" })).toBeDisabled();
   });
 
   it("downloads an organelle model before running it when none is installed", async () => {
@@ -227,5 +283,38 @@ describe("IncludeLevelDial", () => {
     await waitFor(() => expect(installCalls).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(runBodies).toEqual([{ source_model: "quantem:mito" }]));
     expect(onSourceModelChange).toHaveBeenCalledWith("quantem:mito");
+  });
+
+  it("keeps a tested ROI in the preview requests", async () => {
+    const roiId = "22222222-2222-4222-8222-222222222222";
+    const getQueries: string[] = [];
+    const applyBodies: unknown[] = [];
+    server.use(
+      http.get(DIAL_URL, ({ request }) => {
+        getQueries.push(new URL(request.url).search);
+        return HttpResponse.json(state({ include_level: 0.5 }));
+      }),
+      http.post(DIAL_URL, async ({ request }) => {
+        applyBodies.push(await request.json());
+        return HttpResponse.json({ job_id: "roi-apply", include_level: 0.3 });
+      }),
+      http.get(`${BASE}/api/jobs/roi-apply/`, () =>
+        HttpResponse.json({ id: "roi-apply", status: "PENDING" })
+      )
+    );
+
+    renderDial({ sourceModel: "quantem:mito", roiId });
+    const slider = await screen.findByRole("slider");
+    fireEvent.change(slider, { target: { value: "0.3" } });
+    await userEvent.click(screen.getByTestId("include-level-apply"));
+
+    await waitFor(() =>
+      expect(getQueries.some((query) => query.includes(`roi_id=${roiId}`))).toBe(true)
+    );
+    await waitFor(() =>
+      expect(applyBodies).toEqual([
+        { include_level: 0.3, source_model: "quantem:mito", roi_id: roiId },
+      ])
+    );
   });
 });

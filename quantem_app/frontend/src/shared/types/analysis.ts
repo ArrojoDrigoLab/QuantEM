@@ -13,6 +13,22 @@
 
 export type AnalysisRunStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
 
+export interface GlobalAreaRow {
+  segmentation_id: string | null;
+  name: string;
+  foreground_pixels: number;
+  denominator_pixels: number;
+  foreground_percent: number | null;
+}
+
+export interface GlobalAreaReport {
+  measurement_mode: "global";
+  metric: "foreground_area_percent";
+  segmentation_id: string;
+  whole_image: GlobalAreaRow;
+  analysis_masks: GlobalAreaRow[];
+}
+
 /** How a point set was obtained. `null` means the run measured no points. */
 export type AnalysisPointsSource = "centroids" | "csv" | null;
 

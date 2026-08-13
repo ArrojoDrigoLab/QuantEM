@@ -53,7 +53,6 @@ export function SegmentationScreenState({
       <header className="segmentation-header">
         <div className="header-info">
           <h2>{image?.display_name}</h2>
-          <span className="filename">{image?.original_filename}</span>
         </div>
       </header>
       <main className="segmentation-main">

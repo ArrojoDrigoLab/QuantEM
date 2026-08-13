@@ -52,8 +52,8 @@ export interface TileStatusSummary {
  * The FULL rendition's `metadata` is the only place the *file's own* declared
  * pixel size survives: `source_metadata.pixel_size_nm` for a 2D import,
  * `volume_metadata.voxel_size_nm` (z, y, x) for a volume. `Asset.pixel_size_nm`
- * is the effective value and may have been typed by hand, so comparing the two
- * is how the UI tells "read from file" from "entered by hand".
+ * is the effective value; keeping both preserves the source metadata even
+ * though read-only resolution tags intentionally show only `X nm/px`.
  */
 export interface AssetRendition {
   id: string;
@@ -151,10 +151,8 @@ export interface HomeImage extends AssetGrouping {
   pixel_size_nm_z?: number | null;
   /**
    * In-plane pixel size the source file itself declared, or null when it was
-   * silent. Emitted by `serialize_asset_entry` so a list entry can resolve
-   * "read from file" vs "entered by hand" without the renditions the detail
-   * payload carries. Absent on an older backend, which resolves to "unknown
-   * provenance" rather than a guess.
+   * silent. Emitted by `serialize_asset_entry` without the renditions the detail
+   * payload carries. Absent on older backends.
    */
   file_declared_pixel_size_nm?: number | null;
   metadata_summary: string;
@@ -352,6 +350,8 @@ export interface SourceModelOption {
 export interface SegmentationRunNotice {
   /** `"no_objects"` or `"no_new_objects"` today. Not switched on: the message is the payload. */
   kind: string;
+  /** The successful model run this finding belongs to. */
+  source_model?: string | null;
   /**
    * One short line for the chip, written by the server
    * (`RUN_NOTICE_SUMMARIES`) so the chip and the box beneath it cannot say
@@ -430,6 +430,14 @@ export interface ImageSegmentation {
    * the user never set.
    */
   include_level?: number | null;
+  final_result_provenance?: {
+    model_identifier: string;
+    quantem_version: string;
+    final_level: number | null;
+    final_level_kind: string;
+    adapter_identifier: string;
+    finalized_at: string;
+  } | null;
   is_complete?: boolean;
   /**
    * Present only when the stage would mislead on its own — a run finished here
@@ -459,6 +467,8 @@ export interface ImageSegmentationCreatePayload {
   /** Chosen once when first creating a reusable custom segmentation type. */
   measurement_mode?: "objects" | "global";
   source_model?: string;
+  /** False creates an editable segmentation without queuing model inference. */
+  run_inference?: boolean;
 }
 
 export interface UploadImageOptions {
@@ -482,6 +492,12 @@ export interface UploadImageOptions {
   segmentNucleus?: boolean;
   segmentLd?: boolean;
   /**
+   * Create the library row now but wait to queue initial processing. Used for
+   * multi-image imports so every file is safely imported before encoding any
+   * of them begins.
+   */
+  deferProcessing?: boolean;
+  /**
    * Where in the library these images go, if anywhere.
    *
    * Optional, and optional is load-bearing: an import that names none of these
@@ -495,6 +511,14 @@ export interface UploadImageOptions {
   experimentName?: string;
   datasetId?: string;
   datasetName?: string;
+}
+
+export interface UploadPipelineStart {
+  assetId: string;
+  segmentMito?: boolean;
+  segmentEr?: boolean;
+  segmentNucleus?: boolean;
+  segmentLd?: boolean;
 }
 
 export interface ProbabilityMap {

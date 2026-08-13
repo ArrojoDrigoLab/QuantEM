@@ -21,7 +21,7 @@
  * and the rendered DOM is what it was.
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelectionStore } from "@/shared/stores/useSelectionStore";
 import { useViewportSync } from "@/hooks/useViewportSync";
@@ -29,8 +29,10 @@ import { getAssetNgffUrl } from "@/shared/api/assets";
 import { ImageViewer } from "@/viewer/components/ImageViewer";
 import { OverlaySelectionSidebar } from "@/features/viewer/components/OverlaySelectionSidebar";
 import { SegmentationCreatePanel } from "@/features/viewer/components/SegmentationCreatePanel";
+import type { SegmentationLaunch } from "@/features/viewer/components/SegmentationCreatePanel";
 import { SegmentationDeleteDialog } from "@/features/viewer/components/SegmentationDeleteNotice";
 import { ViewerHeader } from "@/features/viewer/components/ViewerHeader";
+import { ExportDialog } from "@/features/export/ExportDialog";
 import {
   getStageLabel,
   useViewerAssetState,
@@ -40,6 +42,20 @@ import { useSegmentationDelete } from "@/features/viewer/state/useSegmentationDe
 import type { ImageSegmentation } from "@/shared/types/images";
 import { segmentationRouteToken } from "@/shared/segmentationNames";
 import "./ViewerScreen.css";
+
+const ANALYSIS_MASK_INTERNAL_NAME = "quantem_internal_analysis_mask";
+
+function labelingPath(assetId: string, segmentation: ImageSegmentation): string {
+  if (
+    segmentation.segmentation_type.internal_name ===
+    ANALYSIS_MASK_INTERNAL_NAME
+  ) {
+    return `/assets/${assetId}/analysis-mask/${segmentation.id}`;
+  }
+  return `/assets/${assetId}/labeling/${encodeURIComponent(
+    segmentationRouteToken(segmentation)
+  )}`;
+}
 
 export function ViewerScreen() {
   const { selectedAssetId, setSelectedSegmentationId, clearSelection } =
@@ -51,6 +67,7 @@ export function ViewerScreen() {
     navigate("/");
   }, [clearSelection, navigate]);
   const { viewport, setViewport } = useViewportSync();
+  const [exportOpen, setExportOpen] = useState(false);
 
   const {
     image,
@@ -60,13 +77,23 @@ export function ViewerScreen() {
     visibleSegmentations,
   } = useViewerAssetState(selectedAssetId);
 
-  const handleSegmentationCreated = async (segmentation: ImageSegmentation) => {
+  const handleSegmentationCreated = async (
+    segmentation: ImageSegmentation,
+    launch?: SegmentationLaunch
+  ) => {
     const assetId = segmentation.asset ?? selectedAssetId;
     if (!assetId) return;
     setSelectedSegmentationId(segmentation.id);
     await refetchSegmentations();
-    const encodedName = encodeURIComponent(segmentationRouteToken(segmentation));
-    navigate(`/assets/${assetId}/labeling/${encodedName}`);
+    const params = new URLSearchParams();
+    if (launch?.sourceModel) {
+      params.set("source_model", launch.sourceModel);
+    }
+    if (launch?.runModel) {
+      params.set("run_model", "1");
+    }
+    const query = params.toString();
+    navigate(`${labelingPath(assetId, segmentation)}${query ? `?${query}` : ""}`);
   };
 
   const overlays = useOverlayConfig({ visibleSegmentations, imageReady });
@@ -74,11 +101,12 @@ export function ViewerScreen() {
   const handleEditSegmentation = (segmentationId: string) => {
     if (!selectedAssetId) return;
     const target = visibleSegmentations.find((seg) => seg.id === segmentationId);
-    const encodedName = target
-      ? encodeURIComponent(segmentationRouteToken(target))
-      : "new";
     setSelectedSegmentationId(segmentationId);
-    navigate(`/assets/${selectedAssetId}/labeling/${encodedName}`);
+    navigate(
+      target
+        ? labelingPath(selectedAssetId, target)
+        : `/assets/${selectedAssetId}/labeling/new`
+    );
   };
 
   const deleteState = useSegmentationDelete({
@@ -94,6 +122,13 @@ export function ViewerScreen() {
     () => visibleSegmentations.map((seg) => seg.segmentation_type.id),
     [visibleSegmentations]
   );
+  const imageSizeBytes = useMemo(() => {
+    if (!image) return null;
+    const depth = image.stored_depth ?? image.depth ?? 1;
+    const channels = Math.max(1, image.channels || 1);
+    const bytesPerSample = Math.max(1, Math.ceil((image.bit_depth || 8) / 8));
+    return image.width * image.height * depth * channels * bytesPerSample;
+  }, [image]);
 
   if (!image) {
     return <div className="viewer-loading">Loading viewer...</div>;
@@ -113,8 +148,9 @@ export function ViewerScreen() {
           onBackToExperiment={() => {
             if (!image.experiment_id) return;
             clearSelection();
-            navigate(`/?experiment=${encodeURIComponent(image.experiment_id)}`);
+            navigate(`/experiments/${encodeURIComponent(image.experiment_id)}`);
           }}
+          onExport={() => setExportOpen(true)}
           onPixelSizeSaved={() => {
             void refetchImage();
           }}
@@ -137,6 +173,12 @@ export function ViewerScreen() {
           />
         </div>
       </div>
+      {exportOpen ? (
+        <ExportDialog
+          asset={{ id: image.id, displayName: image.display_name }}
+          onClose={() => setExportOpen(false)}
+        />
+      ) : null}
       <SegmentationDeleteDialog state={deleteState} />
       <OverlaySelectionSidebar
         overlays={overlays.overlayList}
@@ -161,10 +203,7 @@ export function ViewerScreen() {
               existingSegmentationTypes={existingSegmentationTypes}
               existingSegmentationTypeIds={existingSegmentationTypeIds}
               title="Add Segmentation"
-              // So the confirmation can say what a missing pixel size costs the
-              // run it is about to queue. `null` here is a fact ("this image is
-              // uncalibrated"), not a missing value.
-              pixelSizeNm={image.pixel_size_nm ?? null}
+              imageSizeBytes={imageSizeBytes}
             />
           ) : null
         }

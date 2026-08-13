@@ -43,21 +43,13 @@ export function buildLeftPanelViewerConfig({
   // Box-to-object owns the entire drag. In particular, the normal draw brush
   // must be off or it consumes pointer-up before the box tool can submit.
   const samBoxActive = workflow.samBoxActive;
-  const fitBounds = viewer.transientFitBounds
-    ? viewer.transientFitBounds
-    : roi.activeRoi
-      ? {
-          x: roi.activeRoi.x,
-          y: roi.activeRoi.y,
-          width: roi.activeRoi.width,
-          height: roi.activeRoi.height,
-        }
-      : null;
-  const fitBoundsKey = viewer.transientFitBounds
+  // Being active controls which ROI receives labeling actions; it is not a
+  // camera command. Only an explicit Open action supplies transient bounds.
+  // This keeps a freshly entered labeling view fitted to the whole image.
+  const fitBounds = viewer.transientFitBounds ?? null;
+  const fitBoundsKey = fitBounds
     ? viewer.transientFitBoundsKey ?? "transient-fit"
-    : roi.activeRoi
-      ? `${viewer.image.id}:${roi.activeRoi.id}`
-      : null;
+    : null;
 
   return {
     image: {
@@ -76,6 +68,9 @@ export function buildLeftPanelViewerConfig({
       disablePan: Boolean(disablePanForGroup || roiPlacementActive || samBoxActive),
       fitBounds,
       fitBoundsKey,
+      // Doubling both ROI dimensions makes the square occupy about half of
+      // the pane's limiting (shorter) axis, leaving useful image context.
+      fitBoundsPaddingRatio: fitBounds ? 1 : undefined,
     },
     overlays: {
       persistent: overlayScene.persistent,

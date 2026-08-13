@@ -102,6 +102,7 @@ export function useOverlayLayerControls({
     return {
       id: "label-left-idmap",
       ngffUrl,
+      revision: overlayManifest?.applied_revision,
       lut: lut.rgba,
       maxLabel: lut.maxLabel,
       lutRevision: lut.lutRevision,
@@ -112,6 +113,7 @@ export function useOverlayLayerControls({
     };
   }, [
     ngffUrl,
+    overlayManifest?.applied_revision,
     lut,
     pickMap,
     leftPanelLayerStyles.confirmedFillOpacity,
@@ -124,6 +126,7 @@ export function useOverlayLayerControls({
     return {
       id: "label-right-idmap",
       ngffUrl,
+      revision: overlayManifest?.applied_revision,
       lut: rightLut.rgba,
       maxLabel: rightLut.maxLabel,
       lutRevision: rightLut.lutRevision,
@@ -132,7 +135,14 @@ export function useOverlayLayerControls({
       showBorders: showConfirmedBorders,
       pickMap: pickMap ?? undefined,
     };
-  }, [ngffUrl, rightLut, pickMap, leftPanelLayerStyles.confirmedFillOpacity, showConfirmedBorders]);
+  }, [
+    ngffUrl,
+    overlayManifest?.applied_revision,
+    rightLut,
+    pickMap,
+    leftPanelLayerStyles.confirmedFillOpacity,
+    showConfirmedBorders,
+  ]);
 
   return {
     leftPanelLayerStyles,

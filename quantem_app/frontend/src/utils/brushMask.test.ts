@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Point } from "@/utils/geometry";
-import { brushStrokesToConnectedPolygons } from "@/utils/brushMask";
+import { pointInPolygon, type Point } from "@/utils/geometry";
+import {
+  brushStrokesToConnectedPolygonRings,
+  brushStrokesToConnectedPolygons,
+} from "@/utils/brushMask";
 
 function area(points: Point[]): number {
   if (points.length < 4) {
@@ -94,5 +97,38 @@ describe("brushStrokesToConnectedPolygons", () => {
     expect(once).toHaveLength(1);
     expect(twice).toHaveLength(1);
     expect(Math.abs(onceArea - twiceArea)).toBeLessThan(1e-6);
+  });
+
+  it("retains an enclosed brush hole instead of reducing it to the exterior", () => {
+    const ring = brushStrokesToConnectedPolygonRings([
+      { size: 8, points: [{ x: 20, y: 20 }, { x: 80, y: 20 }] },
+      { size: 8, points: [{ x: 80, y: 20 }, { x: 80, y: 80 }] },
+      { size: 8, points: [{ x: 80, y: 80 }, { x: 20, y: 80 }] },
+      { size: 8, points: [{ x: 20, y: 80 }, { x: 20, y: 20 }] },
+    ]);
+
+    expect(ring).toHaveLength(1);
+    expect(ring[0].holes).toHaveLength(1);
+    expect(area(ring[0].exterior)).toBeGreaterThan(area(ring[0].holes[0]));
+  });
+
+  it("does not fill the center of an oversized closed stroke fallback", () => {
+    const pieces = brushStrokesToConnectedPolygons([
+      {
+        size: 40,
+        points: [
+          { x: 0, y: 0 },
+          { x: 4000, y: 0 },
+          { x: 4000, y: 4000 },
+          { x: 0, y: 4000 },
+          { x: 0, y: 0 },
+        ],
+      },
+    ]);
+
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(pieces.some((polygon) => pointInPolygon({ x: 2000, y: 2000 }, polygon))).toBe(
+      false,
+    );
   });
 });

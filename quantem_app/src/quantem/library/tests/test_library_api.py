@@ -1,19 +1,16 @@
-"""The HTTP surface: experiments, datasets, assignment, and filtering.
-
-The through-line of every test here is that **nothing is required**. An
-unorganised library answers every one of these routes, the import door works
-exactly as it did before the fields existed, and "no experiment" is a bucket the
-filter can name rather than a hole it falls into.
-"""
+"""The HTTP surface: experiments, datasets, assignment, and filtering."""
 
 from __future__ import annotations
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from quantem.assets.models import Asset
+from quantem.assets.models import Asset, Rendition
+from quantem.jobs.constants import JOB_TYPE_UPLOAD_IMAGE_PIPELINE
+from quantem.jobs.models import Job
 from quantem.library.models import Dataset, Experiment
-from quantem.testing import build_test_upload_file
+from quantem.testing import test_tiff_bytes
 
 
 def _asset(name: str = "Scan") -> Asset:
@@ -67,7 +64,7 @@ class ExperimentApiTests(TestCase):
         self.assertEqual(response.data["asset_count"], 1)
 
     def test_deleting_an_experiment_keeps_every_image(self):
-        """``SET_NULL``, deliberately. Deleting a label is not a way to lose data."""
+        """Deleting a label is not a way to lose data or create an orphan."""
         experiment = Experiment.objects.create(name="Fasted cohort")
         dataset = Dataset.objects.create(experiment=experiment, name="Liver 24h")
         asset = _asset()
@@ -80,7 +77,9 @@ class ExperimentApiTests(TestCase):
         self.assertEqual(response.status_code, 204)
         asset.refresh_from_db()
         self.assertTrue(Asset.objects.filter(id=asset.id).exists())
-        self.assertIsNone(asset.experiment_id)
+        self.assertIsNotNone(asset.experiment_id)
+        self.assertTrue(asset.experiment.name.startswith(asset.display_name))
+        self.assertNotEqual(asset.experiment_id, experiment.id)
         self.assertEqual(list(asset.datasets.all()), [])
         self.assertFalse(Dataset.objects.filter(id=dataset.id).exists())
 
@@ -231,7 +230,7 @@ class AssignmentApiTests(TestCase):
         self.assertEqual(self.first.experiment.name, "Starved cohort")
         self.assertEqual([d.name for d in self.first.datasets.all()], ["Liver 6h"])
 
-    def test_clearing_puts_an_image_back_in_the_unassigned_bucket(self):
+    def test_clearing_shared_grouping_gives_the_image_its_own_experiment(self):
         self._assign(
             {
                 "asset_ids": [str(self.first.id)],
@@ -243,7 +242,9 @@ class AssignmentApiTests(TestCase):
         self._assign({"asset_ids": [str(self.first.id)], "experiment": None})
 
         self.first.refresh_from_db()
-        self.assertIsNone(self.first.experiment_id)
+        self.assertIsNotNone(self.first.experiment_id)
+        self.assertTrue(self.first.experiment.name.startswith("Scan 1"))
+        self.assertNotEqual(self.first.experiment_id, self.fasted.id)
         self.assertEqual(list(self.first.datasets.all()), [])
 
     def test_a_move_reports_the_datasets_it_cost(self):
@@ -301,6 +302,46 @@ class AssignmentApiTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_image_library_edit_updates_details_and_dataset_together(self):
+        response = self.client.patch(
+            f"/api/assets/{self.first.id}/library-edit/",
+            {
+                "display_name": "Renamed scan",
+                "pixel_size_nm": 4.5,
+                "notes": "Image-specific note",
+                "datasets": [str(self.liver.id)],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        # The dataset belongs to another experiment, and no earlier field in
+        # the dialog may leak through when the grouped edit is refused.
+        self.first.refresh_from_db()
+        self.assertEqual(self.first.display_name, "Scan 1")
+        self.assertIsNone(self.first.pixel_size_nm)
+        self.assertEqual(self.first.notes, "")
+
+        self.first.experiment = self.fasted
+        self.first.save(update_fields=["experiment", "updated_at"])
+        response = self.client.patch(
+            f"/api/assets/{self.first.id}/library-edit/",
+            {
+                "display_name": "Renamed scan",
+                "pixel_size_nm": 4.5,
+                "notes": "Image-specific note",
+                "datasets": [str(self.liver.id)],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.first.refresh_from_db()
+        self.assertEqual(self.first.display_name, "Renamed scan")
+        self.assertEqual(self.first.pixel_size_nm, 4.5)
+        self.assertEqual(self.first.notes, "Image-specific note")
+        self.assertEqual(list(self.first.datasets.values_list("id", flat=True)), [self.liver.id])
+
 
 class LibraryFilterTests(TestCase):
     """Grouping is only usable if the library can be narrowed to it."""
@@ -326,7 +367,7 @@ class LibraryFilterTests(TestCase):
 
         self.assertEqual(entries["Filed"]["experiment_name"], "Fasted cohort")
         self.assertEqual(entries["Filed"]["dataset_names"], ["Liver 24h"])
-        self.assertIsNone(entries["Loose"]["experiment_id"])
+        self.assertEqual(entries["Loose"]["experiment_name"], "Loose")
         self.assertEqual(entries["Loose"]["dataset_ids"], [])
 
     def test_filtering_to_one_experiment(self):
@@ -335,14 +376,8 @@ class LibraryFilterTests(TestCase):
     def test_filtering_to_one_dataset(self):
         self.assertEqual(self._names({"dataset": str(self.liver.id)}), ["Filed"])
 
-    def test_unassigned_is_a_bucket_the_filter_can_name(self):
-        self.assertEqual(self._names({"experiment": "none"}), ["Loose"])
-
-    def test_an_experiment_and_the_unassigned_bucket_together(self):
-        self.assertEqual(
-            self._names({"experiment": [str(self.fasted.id), "none"]}),
-            ["Filed", "Loose"],
-        )
+    def test_the_retired_unassigned_filter_matches_no_active_images(self):
+        self.assertEqual(self._names({"experiment": "none"}), [])
 
     def test_no_filter_still_returns_the_whole_library(self):
         self.assertEqual(self._names({}), ["Filed", "Loose"])
@@ -360,18 +395,26 @@ class ImportAssignmentTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def _upload(self, **extra):
-        payload = {"file": build_test_upload_file(), "display_name": "Scan 1"}
+    def _upload(self, *, seed: int = 0, **extra):
+        payload = {
+            "file": SimpleUploadedFile(
+                "quantem_fixture.tif",
+                test_tiff_bytes(seed=seed),
+                content_type="image/tiff",
+            ),
+            "display_name": "Scan 1",
+        }
         payload.update(extra)
         return self.client.post("/api/assets/upload/", payload, format="multipart")
 
-    def test_an_import_that_names_nothing_behaves_exactly_as_before(self):
+    def test_an_import_that_names_nothing_gets_a_display_name_experiment(self):
         response = self._upload()
 
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertIsNone(response.data["experiment_id"])
+        self.assertIsNotNone(response.data["experiment_id"])
+        self.assertEqual(response.data["experiment_name"], "Scan 1")
         self.assertEqual(response.data["dataset_ids"], [])
-        self.assertEqual(Experiment.objects.count(), 0)
+        self.assertEqual(Experiment.objects.count(), 1)
 
     def test_a_typed_experiment_and_dataset_are_created_and_attached(self):
         response = self._upload(experiment_name="Fasted cohort", dataset_name="Liver 24h")
@@ -381,9 +424,15 @@ class ImportAssignmentTests(TestCase):
         self.assertEqual(response.data["dataset_names"], ["Liver 24h"])
 
     def test_a_second_import_reuses_the_experiment_rather_than_doubling_it(self):
-        self._upload(experiment_name="Fasted cohort", dataset_name="Liver 24h")
-        self._upload(experiment_name="Fasted cohort", dataset_name="Liver 24h")
+        first = self._upload(experiment_name="Fasted cohort", dataset_name="Liver 24h")
+        second = self._upload(
+            seed=1,
+            experiment_name="Fasted cohort",
+            dataset_name="Liver 24h",
+        )
 
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 201, second.data)
         self.assertEqual(Experiment.objects.count(), 1)
         self.assertEqual(Dataset.objects.count(), 1)
 
@@ -407,3 +456,111 @@ class ImportAssignmentTests(TestCase):
 
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("no longer in the library", response.data["error"])
+
+
+class DeferredUploadProcessingTests(TestCase):
+    """A plate lands in the library completely before its encoders are queued."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def _upload(self, *, seed: int, deferred: bool):
+        response = self.client.post(
+            "/api/assets/upload/",
+            {
+                "file": SimpleUploadedFile(
+                    f"plate_{seed}.tif",
+                    test_tiff_bytes(seed=seed),
+                    content_type="image/tiff",
+                ),
+                "display_name": f"Plate {seed}",
+                "defer_processing": deferred,
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        return response.data
+
+    def test_deferred_images_exist_without_jobs_until_the_batch_starts(self):
+        first = self._upload(seed=31, deferred=True)
+        second = self._upload(seed=32, deferred=True)
+
+        self.assertEqual(
+            Job.objects.filter(type=JOB_TYPE_UPLOAD_IMAGE_PIPELINE).count(),
+            0,
+        )
+        self.assertEqual(first["preprocess_stage"], "ENCODING")
+        self.assertEqual(second["preprocess_stage"], "ENCODING")
+        self.assertTrue(
+            Rendition.objects.get(asset_id=first["id"], type=Rendition.TYPE_FULL).metadata[
+                "processing_deferred"
+            ]
+        )
+
+        response = self.client.post(
+            "/api/assets/upload/start-processing/",
+            {
+                "uploads": [
+                    {"asset_id": first["id"]},
+                    {"asset_id": second["id"]},
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 202, response.data)
+        jobs = Job.objects.filter(type=JOB_TYPE_UPLOAD_IMAGE_PIPELINE)
+        self.assertEqual(jobs.count(), 2)
+        self.assertEqual(
+            {job.payload_json["asset_id"] for job in jobs},
+            {first["id"], second["id"]},
+        )
+        self.assertFalse(
+            Rendition.objects.get(asset_id=first["id"], type=Rendition.TYPE_FULL).metadata[
+                "processing_deferred"
+            ]
+        )
+
+    def test_starting_the_same_batch_again_does_not_duplicate_jobs(self):
+        asset = self._upload(seed=33, deferred=True)
+        payload = {"uploads": [{"asset_id": asset["id"]}]}
+
+        first = self.client.post("/api/assets/upload/start-processing/", payload, format="json")
+        second = self.client.post("/api/assets/upload/start-processing/", payload, format="json")
+
+        self.assertEqual(first.status_code, 202, first.data)
+        self.assertEqual(second.status_code, 202, second.data)
+        self.assertEqual(first.data["job_ids"], second.data["job_ids"])
+        self.assertEqual(
+            Job.objects.filter(type=JOB_TYPE_UPLOAD_IMAGE_PIPELINE).count(),
+            1,
+        )
+
+    def test_single_uploads_still_queue_immediately(self):
+        self._upload(seed=34, deferred=False)
+
+        self.assertEqual(
+            Job.objects.filter(type=JOB_TYPE_UPLOAD_IMAGE_PIPELINE).count(),
+            1,
+        )
+
+    def test_interrupted_deferred_imports_recover_on_the_next_home_load(self):
+        asset = self._upload(seed=35, deferred=True)
+
+        response = self.client.post("/api/assets/upload/recover-processing/", {}, format="json")
+
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertEqual(len(response.data["job_ids"]), 1)
+        self.assertEqual(
+            Job.objects.get(type=JOB_TYPE_UPLOAD_IMAGE_PIPELINE).payload_json["asset_id"],
+            asset["id"],
+        )
+        self.assertFalse(
+            Rendition.objects.get(asset_id=asset["id"], type=Rendition.TYPE_FULL).metadata[
+                "processing_deferred"
+            ]
+        )
+
+        repeated = self.client.post("/api/assets/upload/recover-processing/", {}, format="json")
+        self.assertEqual(repeated.status_code, 202, repeated.data)
+        self.assertEqual(repeated.data["job_ids"], [])

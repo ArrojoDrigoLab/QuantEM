@@ -149,6 +149,13 @@ class ImageSegmentation(TimeStampedModel):
     #: chose. Set when objects are re-extracted from the stored probability map.
     include_level = models.FloatField(null=True, blank=True)
 
+    #: Immutable while this segmentation is completed. Explicitly unlocking
+    #: clears the note because the result is no longer final; the next
+    #: completion writes a new immutable description. Probability maps are
+    #: working artifacts and are reclaimed at completion, so this compact note
+    #: is the durable answer to which model produced the final pixels.
+    final_result_provenance = models.JSONField(default=dict, blank=True)
+
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -163,6 +170,71 @@ class ImageSegmentation(TimeStampedModel):
         target_name = self.asset.display_name if self.asset_id else str(self.id)
         name = self.display_name or self.segmentation_type.long_name
         return f"{target_name} - {name}"
+
+
+class GlobalMask(TimeStampedModel):
+    """The one binary foreground mask for a global-mode segmentation.
+
+    Global results deliberately have no ``SegmentObject`` representation: a
+    disconnected foreground and its holes are properties of one mask, not a
+    collection of instances. ``file_path`` is storage-root-relative so the
+    database remains portable with the rest of the QuantEM data directory.
+    """
+
+    segmentation = models.OneToOneField(
+        ImageSegmentation,
+        on_delete=models.CASCADE,
+        related_name="global_mask",
+    )
+    file_path = models.CharField(max_length=1024)
+    width = models.PositiveIntegerField()
+    height = models.PositiveIntegerField()
+    foreground_pixels = models.PositiveBigIntegerField(default=0)
+    source = models.CharField(max_length=32, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"Global mask for {self.segmentation_id}"
+
+
+class AnalysisMaskObject(TimeStampedModel):
+    """One named, independently editable object inside an analysis mask.
+
+    Analysis masks are measured globally, so their authoritative analysis
+    representation remains :class:`GlobalMask`.  This compact vector record is
+    the editing representation: one object may be a polygon, a multipolygon,
+    or a polygon with holes after any number of Include/Exclude brush strokes
+    and polygon operations.
+    """
+
+    segmentation = models.ForeignKey(
+        ImageSegmentation,
+        on_delete=models.CASCADE,
+        related_name="analysis_mask_objects",
+    )
+    name = models.CharField(max_length=100)
+    color = models.CharField(max_length=7)
+    sort_order = models.PositiveIntegerField(default=0)
+    geometry_wkb = models.BinaryField(null=True, blank=True)
+    geometry = wkb_geometry_property(
+        "geometry_wkb",
+        doc="Polygonal analysis-mask geometry in image pixels.",
+    )
+
+    class Meta:
+        ordering = ["sort_order", "created_at"]
+        indexes = [
+            models.Index(
+                fields=["segmentation", "sort_order"],
+                name="seg_analysis_obj_sort_idx",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.segmentation_id}: {self.name}"
 
 
 class SegmentObject(TimeStampedModel):

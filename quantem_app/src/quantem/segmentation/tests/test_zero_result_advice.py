@@ -27,10 +27,13 @@ as the stage it qualifies.
 from __future__ import annotations
 
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 from shapely.geometry import Polygon
 
+from quantem.jobs.constants import JOB_TYPE_RUN_SEGMENTATION_FULL
 from quantem.jobs.handlers import _segmentation_run_outcome
+from quantem.jobs.models import Job
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
 from quantem.segmentation.organelle_tasks import (
     NO_OBJECTS_MESSAGE,
@@ -181,16 +184,36 @@ class ZeroResultReachesAScreenTests(TestCase):
             features={},
         )
 
+    def _finished_empty_run(self) -> Job:
+        _message, outcome = _segmentation_run_outcome(0, segmentation=self.segmentation)
+        return Job.objects.create(
+            type=JOB_TYPE_RUN_SEGMENTATION_FULL,
+            status="SUCCESS",
+            payload_json={
+                "segmentation_id": str(self.segmentation.id),
+                "segmentation_type": "quantem_internal_mito",
+                "source_model": "quantem:mito",
+            },
+            result_json={
+                "segmentation_id": str(self.segmentation.id),
+                **outcome,
+            },
+            finished_at=timezone.now(),
+        )
+
     def test_candidates_ready_with_nothing_in_it_carries_the_explanation(self):
+        self._finished_empty_run()
         notice = self._notice()
 
         self.assertIsNotNone(notice, '"Candidates ready" was the whole story again')
         self.assertEqual(notice["kind"], "no_objects")
+        self.assertEqual(notice["source_model"], "quantem:mito")
         self.assertIn("without finding any objects", notice["message"])
         # The advice that used to reach only the job log.
         self.assertTrue(any("pixel size" in step for step in notice["next_steps"]))
 
     def test_it_is_the_same_advice_the_job_log_gets(self):
+        self._finished_empty_run()
         self.assertEqual(
             self._notice()["next_steps"],
             zero_object_notice(self.segmentation)["next_steps"],
@@ -228,7 +251,14 @@ class ZeroResultReachesAScreenTests(TestCase):
         )
         self.assertIsNone(self._notice(tissue))
 
+    def test_manual_organelle_workspace_has_no_model_advice(self):
+        """CANDIDATES_READY also means manual labeling is ready to start."""
+        notice = self._notice()
+
+        self.assertIsNone(notice)
+
     def test_it_arrives_on_the_list_endpoint_the_screens_read(self):
+        self._finished_empty_run()
         response = self.client.get(f"/api/assets/{self.image.asset.id}/segmentations/")
         self.assertEqual(response.status_code, 200, response.data)
         payload = next(row for row in response.data if row["id"] == str(self.segmentation.id))

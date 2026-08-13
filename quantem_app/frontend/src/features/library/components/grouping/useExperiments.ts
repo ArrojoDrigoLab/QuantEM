@@ -57,7 +57,7 @@ export function useExperiments(): ExperimentCatalogue {
   return { experiments, loading, reload };
 }
 
-/** The datasets of one experiment, or none when no experiment is chosen. */
+/** The datasets of one shared experiment, or none for per-image experiments. */
 export function datasetsFor(
   experiments: Experiment[],
   experimentId: string

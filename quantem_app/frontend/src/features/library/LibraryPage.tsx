@@ -5,23 +5,23 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   deleteAsset,
   deleteExperiment,
   getAsset,
   getHomeEntryPage,
+  recoverDeferredUploadedAssetPipelines,
   type AssetOrdering,
 } from "@/shared/api/assets";
 import type { Experiment } from "@/shared/types/common";
 import { getSystemStatus } from "@/shared/api/jobs";
 import { useApiMutation } from "@/shared/hooks/useApiMutation";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
-import { useSelectionStore } from "@/shared/stores/useSelectionStore";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
-import { Badge, Button, PageState, Panel } from "@/shared/ui/design";
+import { Button, PageState, Panel } from "@/shared/ui/design";
 import { FineTuneMenuButton } from "@/features/finetune/FineTuneMenuButton";
-import { ImageCard } from "@/features/library/components/ImageCard";
+import { ExperimentPreviewPanel } from "@/features/library/components/ExperimentPreviewPanel";
 import {
   isLibraryEntryUnfinished,
 } from "@/features/library/components/imageCardUtils";
@@ -30,13 +30,15 @@ import {
   type ImageUploadPanelHandle,
   type ImportBatchPosition,
 } from "@/features/library/components/ImageUploadPanel";
-import { ImportConfirmation } from "@/features/library/components/ImportConfirmation";
 import { JobQueueSidebar } from "@/features/library/components/JobQueueSidebar";
 import { WorkflowGuide } from "@/features/library/components/WorkflowGuide";
-import { hasSeenWorkflowGuide } from "@/features/library/components/workflowGuideStorage";
+import {
+  hasSeenWorkflowGuide,
+  rememberWorkflowGuideDismissed,
+} from "@/features/library/components/workflowGuideStorage";
 import { useExperiments } from "@/features/library/components/grouping/useExperiments";
-import { groupEntriesByDataset } from "@/features/library/components/grouping/groupEntries";
 import { LibrarySelectionBar } from "@/features/library/components/grouping/LibrarySelectionBar";
+import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { UNASSIGNED_FILTER } from "@/shared/types/images";
 import type { AssetDetail, HomeEntry } from "@/shared/types/images";
@@ -66,25 +68,14 @@ import type { AssetDetail, HomeEntry } from "@/shared/types/images";
  * and a defined rank; that is a backend change and it is not this package's
  * file to make. Until then the option is gone, because a control that does
  * nothing is worse than one that is absent: the user cannot see that it did
- * nothing. Nothing else is lost — every card states its own status, a failed
- * import is named in the confirmation strip, and Tasks & Queues lists the work.
+ * nothing. Every card still states its own status, and Tasks & Queues lists
+ * the work.
  *
  * A stored preference of `"status"` from before this change fails
  * `isSortField` and falls back to `created_at`, which is the default anyway.
  */
 type SortField = "display_name" | "created_at" | "updated_at";
 type SortDirection = "asc" | "desc";
-
-/**
- * Seconds between "your image is ready" and the library opening it.
- *
- * The navigation itself is what the owner asked for (ask #3). The countdown is
- * what makes it stoppable: on a 475 MP image the pyramid finishes ~100 s after
- * the import, which is long enough for the user to have started doing something
- * else on this screen, and the route change used to arrive with no warning at
- * all.
- */
-const AUTO_OPEN_COUNTDOWN_SECONDS = 5;
 
 interface StoredLibraryControls {
   search?: string;
@@ -93,31 +84,10 @@ interface StoredLibraryControls {
 }
 
 const LIBRARY_CONTROLS_STORAGE_KEY = "quantem-library-controls-v1";
-const LIBRARY_PAGE_SIZE = 60;
-/**
- * Card grid geometry, in px. Row virtualisation keys off these.
- *
- * `CARD_HEIGHT` is a hard constant because absolutely-positioned virtual rows
- * need one, and the card is `overflow: hidden`, so anything the card's content
- * adds beyond it is silently cut off. That is how the status and pixel-size
- * badges -- the row that says whether an image is calibrated, which is what the
- * rest of the app depends on -- ended up sliced off the bottom of every card
- * with a two-line name.
- *
- * `ImageCard` now guarantees it fits: the text block is `shrink-0` and the
- * thumbnail is `flex-1`, so the preview absorbs the slack and the badges cannot
- * be pushed out. The height below is chosen so the preview still gets a
- * sensible share of the card at the widest text block the card can produce
- * (two-line name, one-line filename, dimensions, one badge row = 134 px):
- * 336 - 134 - 2 (border) = 200 px of preview at 258 px wide, a touch taller
- * than the 4:3 it used to be.
- */
-const CARD_WIDTH = 260;
-const CARD_HEIGHT = 336;
-const CARD_GAP = 16;
-const GRID_OVERSCAN_ROWS = 2;
+const LIBRARY_SUMMARY_LIMIT = 1;
 const SORT_FIELDS: SortField[] = ["display_name", "created_at", "updated_at"];
 const SORT_DIRECTIONS: SortDirection[] = ["asc", "desc"];
+const NO_PINNED_ENTRIES: HomeEntry[] = [];
 
 function isSortField(value: unknown): value is SortField {
   return typeof value === "string" && SORT_FIELDS.includes(value as SortField);
@@ -214,20 +184,20 @@ function entryFromUploadedAsset(asset: AssetDetail): HomeEntry {
  * What deleting this experiment actually does, with the numbers in it.
  *
  * Composed as whole sentences rather than assembled from fragments in JSX:
- * "Its 1 image stays ... and become unassigned" is what fragment assembly
+ * "Its 1 image stays ... and move" is what fragment assembly
  * produces, and a reassurance that reads as broken English is not reassuring.
  *
- * The promise it makes is real. `Asset.experiment` is `SET_NULL`, so the images
- * survive and become unassigned; the datasets do not, because a dataset cannot
- * exist outside an experiment.
+ * The promise it makes is real. The server first gives every image its own
+ * experiment named after its display name; the datasets do not survive,
+ * because a dataset cannot exist outside its experiment.
  */
 function describeExperimentDeletion(experiment: Experiment): string {
   const images =
     experiment.asset_count === 0
       ? "It holds no images."
       : experiment.asset_count === 1
-        ? "Its 1 image stays in the library and becomes unassigned."
-        : `Its ${experiment.asset_count} images stay in the library and become unassigned.`;
+        ? "Its 1 image stays in the library and moves to its own named experiment."
+        : `Its ${experiment.asset_count} images stay in the library and each moves to its own named experiment.`;
   const datasets =
     experiment.datasets.length === 0
       ? ""
@@ -235,170 +205,6 @@ function describeExperimentDeletion(experiment: Experiment): string {
         ? " Its 1 dataset goes with it, because a dataset cannot exist outside an experiment."
         : ` Its ${experiment.datasets.length} datasets go with it, because a dataset cannot exist outside an experiment.`;
   return `${images}${datasets} No image files are deleted.`;
-}
-
-function compareText(left: string, right: string): number {
-  return left.localeCompare(right, undefined, { sensitivity: "base" });
-}
-
-function compareEntries(
-  left: HomeEntry,
-  right: HomeEntry,
-  sortField: SortField,
-  sortDirection: SortDirection
-): number {
-  let comparison = 0;
-  if (sortField === "created_at" || sortField === "updated_at") {
-    comparison = Date.parse(left[sortField]) - Date.parse(right[sortField]);
-  } else {
-    comparison = compareText(left.display_name, right.display_name);
-  }
-  if (comparison === 0) comparison = compareText(left.display_name, right.display_name);
-  return sortDirection === "asc" ? comparison : -comparison;
-}
-
-/** Fires `onLoadMore` when the sentinel scrolls near the viewport. */
-function useLoadMoreOnIntersect<T extends HTMLElement>(
-  enabled: boolean,
-  onLoadMore: () => void
-) {
-  const ref = useRef<T | null>(null);
-  const onLoadMoreRef = useRef(onLoadMore);
-
-  useEffect(() => {
-    onLoadMoreRef.current = onLoadMore;
-  }, [onLoadMore]);
-
-  useEffect(() => {
-    if (!enabled || typeof IntersectionObserver === "undefined") return undefined;
-    const node = ref.current;
-    if (!node) return undefined;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting) {
-          onLoadMoreRef.current();
-        }
-      },
-      { rootMargin: "700px 0px" }
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [enabled]);
-
-  return ref;
-}
-
-/**
- * Row-virtualised card grid: only the rows intersecting the scroll viewport
- * (plus an overscan) are mounted, so a library of thousands of images still
- * renders a bounded number of thumbnails.
- */
-function ImageGrid({
-  images,
-  onOpen,
-  onDelete,
-  deleting,
-  highlightedIds,
-  selecting = false,
-  selectedIds,
-  onToggleSelect,
-}: {
-  images: HomeEntry[];
-  onOpen: (assetId: string) => void;
-  onDelete: (image: HomeEntry) => void;
-  deleting: boolean;
-  /** The images the import confirmation is pointing at. */
-  highlightedIds: Set<string>;
-  /** The library is in selecting mode, so every card carries a tick box. */
-  selecting?: boolean;
-  selectedIds?: Set<string>;
-  onToggleSelect?: (assetId: string, selected: boolean) => void;
-}) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [gridTop, setGridTop] = useState(0);
-
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node || typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver(() => {
-      setContainerWidth(node.clientWidth);
-    });
-    observer.observe(node);
-    setContainerWidth(node.clientWidth);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const readViewport = () => {
-      setScrollTop(window.scrollY);
-      setViewportHeight(window.innerHeight);
-      const node = containerRef.current;
-      setGridTop(node ? node.getBoundingClientRect().top + window.scrollY : 0);
-    };
-    readViewport();
-    window.addEventListener("scroll", readViewport, { passive: true });
-    window.addEventListener("resize", readViewport);
-    return () => {
-      window.removeEventListener("scroll", readViewport);
-      window.removeEventListener("resize", readViewport);
-    };
-  }, []);
-
-  const columns = Math.max(
-    1,
-    Math.floor((containerWidth + CARD_GAP) / (CARD_WIDTH + CARD_GAP)) || 1
-  );
-  const rowHeight = CARD_HEIGHT + CARD_GAP;
-  const rowCount = Math.ceil(images.length / columns);
-  const firstVisibleRow = Math.max(
-    0,
-    Math.floor((scrollTop - gridTop) / rowHeight) - GRID_OVERSCAN_ROWS
-  );
-  const lastVisibleRow = Math.min(
-    rowCount,
-    Math.ceil((scrollTop - gridTop + viewportHeight) / rowHeight) +
-      GRID_OVERSCAN_ROWS
-  );
-  const visibleRows: number[] = [];
-  for (let row = firstVisibleRow; row < lastVisibleRow; row += 1) {
-    visibleRows.push(row);
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative w-full"
-      style={{ height: Math.max(0, rowCount * rowHeight - CARD_GAP) }}
-    >
-      {visibleRows.map((row) => (
-        <div
-          key={row}
-          className="absolute left-0 right-0 flex gap-4"
-          style={{ top: row * rowHeight, height: CARD_HEIGHT }}
-        >
-          {images
-            .slice(row * columns, row * columns + columns)
-            .map((image) => (
-              <div key={image.id} style={{ width: CARD_WIDTH }}>
-                <ImageCard
-                  image={image}
-                  onOpen={onOpen}
-                  onDelete={onDelete}
-                  deleting={deleting}
-                  justImported={highlightedIds.has(image.id)}
-                  selectable={selecting}
-                  selected={selectedIds?.has(image.id) ?? false}
-                  onToggleSelect={onToggleSelect}
-                />
-              </div>
-            ))}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 export function LibraryPage() {
@@ -415,7 +221,6 @@ export function LibraryPage() {
   );
   const [entries, setEntries] = useState<HomeEntry[]>([]);
   const [entryTotal, setEntryTotal] = useState(0);
-  const [hasMoreEntries, setHasMoreEntries] = useState(false);
   /**
    * `entriesLoading` is the *first* load only. It used to be every load, and
    * `entriesLoading` gates the whole grid — so the 3 s poll that runs while
@@ -428,13 +233,17 @@ export function LibraryPage() {
    */
   const [entriesLoading, setEntriesLoading] = useState(true);
   const [entriesRefetching, setEntriesRefetching] = useState(false);
-  const [entriesLoadingMore, setEntriesLoadingMore] = useState(false);
   const [entriesError, setEntriesError] = useState<Error | null>(null);
   const [deleteConfirmImage, setDeleteConfirmImage] = useState<HomeEntry | null>(null);
   const [deleteConfirmExperiment, setDeleteConfirmExperiment] =
     useState<Experiment | null>(null);
   const [isQueueSidebarOpen, setIsQueueSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(() => !hasSeenWorkflowGuide());
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
+  const [previewEntriesByExperiment, setPreviewEntriesByExperiment] = useState<
+    Record<string, HomeEntry[]>
+  >({});
   /**
    * The images imported in this session, pinned to the front of the grid in
    * the order they landed.
@@ -446,8 +255,6 @@ export function LibraryPage() {
    */
   const [justImported, setJustImported] = useState<HomeEntry[]>([]);
   /** Whether the library is still going to open the import by itself. */
-  const [autoOpenImport, setAutoOpenImport] = useState(false);
-  const [autoOpenCountdown, setAutoOpenCountdown] = useState<number | null>(null);
   /** True while a file is being dragged anywhere over this page. */
   const [pageDragActive, setPageDragActive] = useState(false);
   /**
@@ -462,14 +269,13 @@ export function LibraryPage() {
     () => searchParams.get("experiment") ?? ""
   );
   const [datasetFilter, setDatasetFilter] = useState("");
-  const [groupByDataset, setGroupByDataset] = useState(false);
   /** Selecting mode, and what is selected in it. Off until asked for. */
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const { experiments, reload: reloadExperiments } = useExperiments();
   const entriesRequestIdRef = useRef(0);
   const entriesInFlightKeyRef = useRef<string | null>(null);
-  /** Read inside `loadEntryPage` without making it depend on the entry list. */
+  /** Read inside `loadEntries` without making it depend on the entry list. */
   const entriesRef = useRef<HomeEntry[]>([]);
   /**
    * A refetch that arrived while one was already running.
@@ -480,19 +286,29 @@ export function LibraryPage() {
    * and invisible. Now it is remembered and re-run.
    */
   const refetchPendingRef = useRef(false);
-  const loadEntryPageRef = useRef<
-    ((offset: number, mode: "replace" | "append") => Promise<void>) | null
-  >(null);
+  const loadEntriesRef = useRef<(() => Promise<void>) | null>(null);
   const uploadPanelRef = useRef<ImageUploadPanelHandle | null>(null);
   const pageDragDepthRef = useRef(0);
-  const { setSelectedAssetId } = useSelectionStore();
-  const navigate = useNavigate();
 
-  const { data: systemStatus } = useApiQuery(() => getSystemStatus(), []);
+  const {
+    data: systemStatus,
+    error: systemStatusError,
+    refetch: refetchSystemStatus,
+  } = useApiQuery(() => getSystemStatus(), []);
 
   useEffect(() => {
     saveStoredLibraryControls({ search, sortField, sortDirection });
   }, [search, sortDirection, sortField]);
+
+  useEffect(() => {
+    // A browser/app close can interrupt a multi-file import after its assets
+    // exist but before the final atomic queue call. Recovery is idempotent and
+    // runs only when the home page mounts, never in the middle of a live batch.
+    void recoverDeferredUploadedAssetPipelines().catch(() => {
+      // Nothing is lost and the durable markers remain set; the next home-page
+      // load retries. The cards continue to show the queued spinner meanwhile.
+    });
+  }, []);
 
   const entryQueryParams = useMemo(
     () => ({
@@ -500,70 +316,56 @@ export function LibraryPage() {
       availability: "local" as const,
       // Never omitted. See `serverOrderingFor`.
       ordering: serverOrderingFor(sortField, sortDirection),
-      // Filtered by the server, not by the page: the page holds one window of
-      // sixty rows, and narrowing a window is not narrowing a library. This is
-      // the same defect the sort control had -- see `SortField`.
+      // Filtered by the server, not by the page. This summary request supplies
+      // the authoritative count/empty state; the panels below fetch each
+      // experiment's five visible cards.
       ...(experimentFilter ? { experiment: experimentFilter } : {}),
       ...(datasetFilter ? { dataset: datasetFilter } : {}),
     }),
     [datasetFilter, experimentFilter, search, sortDirection, sortField]
   );
 
-  const loadEntryPage = useCallback(
-    async (offset: number, mode: "replace" | "append") => {
-      const requestKey = JSON.stringify({ mode, offset, entryQueryParams });
+  const loadEntries = useCallback(
+    async () => {
+      const requestKey = JSON.stringify(entryQueryParams);
       if (entriesInFlightKeyRef.current === requestKey) return;
       entriesInFlightKeyRef.current = requestKey;
       const requestId = ++entriesRequestIdRef.current;
-      if (mode === "replace") {
-        // The grid only disappears when there is no grid: a refetch over cards
-        // that are already on screen refreshes them in place.
-        if (entriesRef.current.length === 0) {
-          setEntriesLoading(true);
-        } else {
-          setEntriesRefetching(true);
-        }
+      // The page only disappears when there is no current result: polling and
+      // post-upload refreshes leave the experiment previews in place.
+      if (entriesRef.current.length === 0) {
+        setEntriesLoading(true);
       } else {
-        setEntriesLoadingMore(true);
+        setEntriesRefetching(true);
       }
       setEntriesError(null);
       try {
         const page = await getHomeEntryPage({
           ...entryQueryParams,
-          limit: LIBRARY_PAGE_SIZE,
-          offset,
+          limit: LIBRARY_SUMMARY_LIMIT,
+          offset: 0,
         });
         if (requestId !== entriesRequestIdRef.current) return;
-        setEntries((current) =>
-          mode === "replace" ? page.results : [...current, ...page.results]
-        );
+        setEntries(page.results);
         setEntryTotal(page.total);
-        setHasMoreEntries(page.has_more);
       } catch (err) {
         if (requestId !== entriesRequestIdRef.current) return;
         setEntriesError(err instanceof Error ? err : new Error("Unknown error"));
-        if (mode === "replace") {
-          setEntries([]);
-          setEntryTotal(0);
-          setHasMoreEntries(false);
-        }
+        setEntries([]);
+        setEntryTotal(0);
       } finally {
         if (entriesInFlightKeyRef.current === requestKey) {
           entriesInFlightKeyRef.current = null;
         }
         if (requestId === entriesRequestIdRef.current) {
-          if (mode === "replace") {
-            setEntriesLoading(false);
-            setEntriesRefetching(false);
-          } else {
-            setEntriesLoadingMore(false);
-          }
+          setEntriesLoading(false);
+          setEntriesRefetching(false);
         }
         // A refetch that collided with this one. Run it now rather than
         // dropping it on the floor.
         if (refetchPendingRef.current) {
           refetchPendingRef.current = false;
-          void loadEntryPageRef.current?.(0, "replace");
+          void loadEntriesRef.current?.();
         }
       }
     },
@@ -575,47 +377,31 @@ export function LibraryPage() {
   }, [entries]);
 
   useEffect(() => {
-    loadEntryPageRef.current = loadEntryPage;
-  }, [loadEntryPage]);
+    loadEntriesRef.current = loadEntries;
+  }, [loadEntries]);
 
   useEffect(() => {
-    void loadEntryPage(0, "replace");
-  }, [loadEntryPage]);
+    void loadEntries();
+  }, [loadEntries]);
 
   const refetchEntries = useCallback(async () => {
     if (entriesInFlightKeyRef.current !== null) {
       refetchPendingRef.current = true;
       return;
     }
-    await loadEntryPage(0, "replace");
-  }, [loadEntryPage]);
-
-  const handleLoadMore = useCallback(() => {
-    if (!hasMoreEntries || entriesLoadingMore) return;
-    void loadEntryPage(entries.length, "append");
-  }, [entries.length, entriesLoadingMore, hasMoreEntries, loadEntryPage]);
-
-  const loadMoreRef = useLoadMoreOnIntersect<HTMLDivElement>(
-    !entriesLoading && !entriesLoadingMore && hasMoreEntries,
-    handleLoadMore
-  );
+    await loadEntries();
+  }, [loadEntries]);
 
   const { mutate: deleteImageMutation, loading: deleting } = useApiMutation(
     (assetId: string) => deleteAsset(assetId),
     {
       onSuccess: () => {
         setDeleteConfirmImage(null);
+        setPreviewRefreshKey((current) => current + 1);
         void refetchEntries();
+        void reloadExperiments();
       },
     }
-  );
-
-  const openImage = useCallback(
-    (assetId: string) => {
-      setSelectedAssetId(assetId);
-      navigate(`/assets/${assetId}/viewer`);
-    },
-    [navigate, setSelectedAssetId]
   );
 
   /**
@@ -662,9 +448,8 @@ export function LibraryPage() {
             )
           );
         } catch {
-          // A failed status poll is not a reason to tear the confirmation
-          // down; the next sweep tries again and the card still says what it
-          // last knew.
+          // A failed status poll leaves the last known card in place; the next
+          // sweep tries again.
         }
       }
       if (cancelled) return;
@@ -680,80 +465,21 @@ export function LibraryPage() {
   }, [anyPinnedUnfinished]);
 
   /**
-   * The announced hand-off into the viewer.
-   *
-   * This is owner ask #3 and it is kept — but the app used to perform it
-   * silently, ~100 s after the import, from an effect the user had no way to
-   * see or stop. Now the strip has said "I will open it here when it is ready"
-   * for the whole wait, and the last five seconds are counted out loud with a
-   * "Stay in the library" button beside them.
-   */
-  const soleImport = justImported.length === 1 ? justImported[0] : null;
-  const importIsReady = Boolean(soleImport?.ngff_ready);
-  useEffect(() => {
-    if (!autoOpenImport || !importIsReady) {
-      setAutoOpenCountdown(null);
-      return undefined;
-    }
-    setAutoOpenCountdown(AUTO_OPEN_COUNTDOWN_SECONDS);
-    const intervalId = window.setInterval(() => {
-      setAutoOpenCountdown((current) => (current === null ? null : current - 1));
-    }, 1000);
-    return () => clearInterval(intervalId);
-  }, [autoOpenImport, importIsReady]);
-
-  useEffect(() => {
-    if (autoOpenCountdown === null || autoOpenCountdown > 0) return;
-    const assetId = soleImport?.id;
-    setAutoOpenCountdown(null);
-    setAutoOpenImport(false);
-    if (assetId) openImage(assetId);
-  }, [autoOpenCountdown, openImage, soleImport]);
-
-  const hasUnfinishedEntries = useMemo(
-    () => entries.some(isLibraryEntryUnfinished),
-    [entries]
-  );
-
-  // Keep per-image status fresh while anything is still being prepared.
-  useEffect(() => {
-    if (!hasUnfinishedEntries) return undefined;
-    const intervalId = window.setInterval(() => {
-      void refetchEntries();
-    }, 3000);
-    return () => clearInterval(intervalId);
-  }, [hasUnfinishedEntries, refetchEntries]);
-
-  /**
    * The grid: the session's import first, then the library.
    *
-   * Pinning is not cosmetic. It is the only construction under which "your
-   * image is the first card" is true for every sort, every page and every
-   * library size — which is the guarantee the confirmation strip is making one
-   * line above it.
+   * Pinning keeps newly imported images visible immediately for every sort,
+   * page and library size while their queued/processing state changes.
    */
   const pinnedImportIds = useMemo(
     () => new Set(justImported.map((entry) => entry.id)),
     [justImported]
   );
-  const visibleImages = useMemo(() => {
-    const sorted = [...entries].sort((left, right) =>
-      compareEntries(left, right, sortField, sortDirection)
-    );
-    if (justImported.length === 0) return sorted;
-    return [
-      ...justImported,
-      ...sorted.filter((entry) => !pinnedImportIds.has(entry.id)),
-    ];
-  }, [entries, justImported, pinnedImportIds, sortDirection, sortField]);
+  const hasAnyImages = entryTotal > 0 || entries.length > 0 || justImported.length > 0;
 
   /**
-   * The grouping controls only exist once there is something to group by.
-   *
-   * An unorganised library is a legitimate steady state, not an unfinished
-   * setup, so it gets no filter it cannot use and no prompt to go and organise
-   * something. The place to make the first experiment is the import form, where
-   * the user already knows what the images are.
+   * The grouping controls only exist once there is something to group by. The
+   * first import creates its experiment automatically, so an empty library has
+   * no filter and needs no setup prompt.
    */
   const hasGroups = experiments.length > 0;
   const filtered = Boolean(experimentFilter || datasetFilter);
@@ -767,10 +493,83 @@ export function LibraryPage() {
       : experiments.flatMap((row) => row.datasets);
   }, [experimentFilter, experiments]);
 
-  const selectedEntries = useMemo(
-    () => visibleImages.filter((entry) => selectedIds.has(entry.id)),
-    [selectedIds, visibleImages]
+  const shownExperiments = useMemo(
+    () => {
+      const headers = new Map(
+        experiments.map((experiment) => [
+          experiment.id,
+          { id: experiment.id, name: experiment.name },
+        ])
+      );
+      // A new experiment can exist in the upload response one request before
+      // the catalogue refetch returns. Keep its first card immediate instead
+      // of temporarily filing it under nowhere.
+      justImported.forEach((entry) => {
+        if (entry.experiment_id && entry.experiment_name) {
+          headers.set(entry.experiment_id, {
+            id: entry.experiment_id,
+            name: entry.experiment_name,
+          });
+        }
+      });
+      const rows = [...headers.values()];
+      return experimentFilter
+        ? rows.filter((experiment) => experiment.id === experimentFilter)
+        : rows;
+    },
+    [experimentFilter, experiments, justImported]
   );
+  const activePreviewGroupIds = useMemo(
+    () => new Set(shownExperiments.map((experiment) => experiment.id)),
+    [shownExperiments]
+  );
+  useEffect(() => {
+    setPreviewEntriesByExperiment((current) => {
+      const retained = Object.fromEntries(
+        Object.entries(current).filter(([groupId]) => activePreviewGroupIds.has(groupId))
+      );
+      return Object.keys(retained).length === Object.keys(current).length
+        ? current
+        : retained;
+    });
+  }, [activePreviewGroupIds]);
+  const previewEntries = useMemo(() => {
+    const byId = new Map<string, HomeEntry>();
+    Object.values(previewEntriesByExperiment)
+      .flat()
+      .forEach((entry) => byId.set(entry.id, entry));
+    return [...byId.values()];
+  }, [previewEntriesByExperiment]);
+  const pinnedEntriesByExperiment = useMemo(() => {
+    const grouped: Record<string, HomeEntry[]> = {};
+    justImported.forEach((entry) => {
+      if (datasetFilter && !entry.dataset_ids?.includes(datasetFilter)) return;
+      const groupId = entry.experiment_id;
+      if (!groupId) return;
+      if (!activePreviewGroupIds.has(groupId)) return;
+      grouped[groupId] = [...(grouped[groupId] ?? []), entry];
+    });
+    return grouped;
+  }, [activePreviewGroupIds, datasetFilter, justImported]);
+
+  const selectedEntries = useMemo(() => {
+    const byId = new Map(previewEntries.map((entry) => [entry.id, entry]));
+    return [...selectedIds]
+      .map((id) => byId.get(id))
+      .filter((entry): entry is HomeEntry => Boolean(entry));
+  }, [previewEntries, selectedIds]);
+
+  const handlePreviewEntriesLoaded = useCallback((groupId: string, loaded: HomeEntry[]) => {
+    setPreviewEntriesByExperiment((current) => ({
+      ...current,
+      [groupId]: loaded,
+    }));
+  }, []);
+
+  const dismissWorkflowGuide = useCallback(() => {
+    rememberWorkflowGuideDismissed();
+    setShowHelp(false);
+  }, []);
 
   const toggleSelect = useCallback((assetId: string, next: boolean) => {
     setSelectedIds((current) => {
@@ -786,15 +585,9 @@ export function LibraryPage() {
     // the catalogue's counts (and possibly a brand new experiment) changed.
     void refetchEntries();
     void reloadExperiments();
+    setPreviewRefreshKey((current) => current + 1);
     setSelectedIds(new Set());
   }, [refetchEntries, reloadExperiments]);
-
-  const groups = useMemo(
-    () => (groupByDataset ? groupEntriesByDataset(visibleImages) : []),
-    [groupByDataset, visibleImages]
-  );
-
-  const handleImageClick = openImage;
 
   const openFilePicker = useCallback(() => {
     uploadPanelRef.current?.openFilePicker();
@@ -803,27 +596,19 @@ export function LibraryPage() {
   const handleUploaded = useCallback(
     (asset: AssetDetail, batch: ImportBatchPosition) => {
       const entry = entryFromUploadedAsset(asset);
-      setJustImported((current) => [
-        ...current.filter((pinned) => pinned.id !== entry.id),
-        entry,
-      ]);
-      // Owner ask #3 -- land in the workspace -- is about *the* image. There is
-      // no defensible answer to which of forty a batch should open, and
-      // navigating away while the other thirty-nine are still uploading would
-      // interrupt the very queue the user is watching. So a batch pins its
-      // cards and stays put.
-      setAutoOpenImport(batch.total === 1);
-      setAutoOpenCountdown(null);
+      setJustImported((current) => {
+        const fromThisBatch = batch.index === 1 ? [] : current;
+        return [
+          ...fromThisBatch.filter((pinned) => pinned.id !== entry.id),
+          entry,
+        ];
+      });
+      setPreviewRefreshKey((current) => current + 1);
       void refetchEntries();
+      void reloadExperiments();
     },
-    [refetchEntries]
+    [refetchEntries, reloadExperiments]
   );
-
-  const dismissImportConfirmation = useCallback(() => {
-    setJustImported([]);
-    setAutoOpenImport(false);
-    setAutoOpenCountdown(null);
-  }, []);
 
   // The whole page is a drop target, not just the panel: a user aiming at a
   // 60 px strip and missing should not have the browser navigate away from the
@@ -865,14 +650,9 @@ export function LibraryPage() {
     >
       <div className="mx-auto flex max-w-[1500px] flex-col gap-5">
         <header className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">
-              QuantEM
-            </p>
-            <h1 className="text-2xl font-semibold tracking-normal text-slate-950">
-              Library
-            </h1>
-          </div>
+          <h1 className="text-2xl font-semibold tracking-normal text-slate-950">
+            QuantEM
+          </h1>
           <div className="flex flex-wrap items-center gap-2">
             {/* No import button here, by owner ruling: the import panel sits
                 directly below this row, always visible, and takes both a click
@@ -880,74 +660,49 @@ export function LibraryPage() {
                 with the thing it points at. The empty state keeps its button --
                 there is no library to look at there, so the panel is the only
                 thing on screen and pointing at it is useful. */}
-            {systemStatus ? (
-              // Not a warning. CPU-only is a fully supported configuration --
-              // every released model runs on CPU -- and an amber badge on the
-              // first screen reads as a broken install. It is a fact about
-              // speed, so it is stated as one.
-              <Badge
-                tone={systemStatus.cuda_available ? "good" : "default"}
-                title={
-                  systemStatus.cuda_available
-                    ? "A CUDA GPU was found; segmentation runs on it."
-                    : "No CUDA GPU found. Everything works on CPU, just more slowly."
-                }
-              >
-                {systemStatus.cuda_available ? "GPU: CUDA" : "Running on CPU"}
-              </Badge>
-            ) : null}
             <Button
-              onClick={() => setShowHelp((current) => !current)}
+              onClick={() => {
+                if (showHelp) dismissWorkflowGuide();
+                else setShowHelp(true);
+              }}
               aria-expanded={showHelp}
             >
               {showHelp ? "Hide guide" : "How this works"}
             </Button>
-            {/* The only route to the models screen for a user who never opens
-                the fine-tuning wizard, which is where the catalogue used to be
-                reachable from and nowhere else. */}
-            <Link
-              className="inline-flex h-10 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-800 shadow-sm hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2"
-              to="/models"
-            >
-              Models
-            </Link>
             <FineTuneMenuButton />
             <Button onClick={() => setIsQueueSidebarOpen(true)}>Tasks & Queues</Button>
+            <Button
+              size="icon"
+              variant="secondary"
+              aria-label="Settings"
+              title="Settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <svg
+                className="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.38.27.71.62.88 1.08.16.43.21.91.12 1.37v1.1c.09.46.04.94-.12 1.37A2.7 2.7 0 0 1 19.4 15Z" />
+              </svg>
+            </Button>
           </div>
         </header>
 
-        {showHelp ? <WorkflowGuide onDismiss={() => setShowHelp(false)} /> : null}
+        {showHelp ? <WorkflowGuide onDismiss={dismissWorkflowGuide} /> : null}
 
         <ImageUploadPanel
           ref={uploadPanelRef}
           pageDragActive={pageDragActive}
+          compact={experiments.length > 0}
           onUploaded={handleUploaded}
         />
-
-        {justImported.length > 0 ? (
-          <ImportConfirmation
-            entries={justImported}
-            autoOpen={autoOpenImport}
-            countdownSeconds={autoOpenCountdown}
-            onOpenNow={() => {
-              if (!soleImport) return;
-              if (soleImport.ngff_ready) {
-                setAutoOpenCountdown(null);
-                setAutoOpenImport(false);
-                openImage(soleImport.id);
-              } else {
-                // Not openable yet — this is a promise to open it, which is
-                // exactly what the auto-open flag is.
-                setAutoOpenImport(true);
-              }
-            }}
-            onStayHere={() => {
-              setAutoOpenImport(false);
-              setAutoOpenCountdown(null);
-            }}
-            onDismiss={dismissImportConfirmation}
-          />
-        ) : null}
 
         <Panel className="flex flex-wrap items-end justify-between gap-4 p-4">
           <div className="min-w-[240px] flex-1">
@@ -1009,14 +764,11 @@ export function LibraryPage() {
                       {experiment.name} ({experiment.asset_count})
                     </option>
                   ))}
-                  {/* Not an experiment with a blank name: the images in none. */}
-                  <option value={UNASSIGNED_FILTER}>Not in an experiment</option>
                 </select>
                 <select
                   className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   value={datasetFilter}
                   aria-label="Dataset"
-                  disabled={experimentFilter === UNASSIGNED_FILTER}
                   onChange={(event) => setDatasetFilter(event.target.value)}
                 >
                   <option value="">All datasets</option>
@@ -1027,14 +779,6 @@ export function LibraryPage() {
                   ))}
                   <option value={UNASSIGNED_FILTER}>Not in a dataset</option>
                 </select>
-                <label className="flex items-center gap-2 text-sm text-slate-800">
-                  <input
-                    type="checkbox"
-                    checked={groupByDataset}
-                    onChange={(event) => setGroupByDataset(event.target.checked)}
-                  />
-                  Group by dataset
-                </label>
                 {/* The only way to undo a typed name, offered next to the
                     experiment it would remove rather than on a screen of its
                     own. Nothing here renames: that is not what was asked for,
@@ -1070,9 +814,9 @@ export function LibraryPage() {
             onApplied={handleGroupingApplied}
             onClearSelection={() => setSelectedIds(new Set())}
             onSelectAllShown={() =>
-              setSelectedIds(new Set(visibleImages.map((entry) => entry.id)))
+              setSelectedIds(new Set(previewEntries.map((entry) => entry.id)))
             }
-            shownCount={visibleImages.length}
+            shownCount={previewEntries.length}
           />
         ) : null}
         {selecting && selectedEntries.length === 0 ? (
@@ -1094,7 +838,7 @@ export function LibraryPage() {
         ) : null}
 
         {!entriesLoading && !entriesError ? (
-          visibleImages.length === 0 ? (
+          !hasAnyImages ? (
             <PageState
               title={
                 search
@@ -1123,58 +867,30 @@ export function LibraryPage() {
                 )
               }
             />
-          ) : groupByDataset ? (
-            // One grid per section. Each `ImageGrid` measures its own offset,
-            // so the row virtualisation keeps working section by section.
-            <div className="flex flex-col gap-6">
-              {groups.map((group) => (
-                <section key={group.key} className="flex flex-col gap-2">
-                  <h2 className="m-0 text-sm font-semibold text-slate-900">
-                    {group.label}
-                    {group.sublabel ? (
-                      <span className="font-normal text-slate-600">
-                        {" "}
-                        · {group.sublabel}
-                      </span>
-                    ) : null}
-                    <span className="font-normal text-slate-600">
-                      {" "}
-                      · {group.entries.length}
-                    </span>
-                  </h2>
-                  <ImageGrid
-                    images={group.entries}
-                    onOpen={handleImageClick}
-                    onDelete={setDeleteConfirmImage}
-                    deleting={deleting}
-                    highlightedIds={pinnedImportIds}
-                    selecting={selecting}
-                    selectedIds={selectedIds}
-                    onToggleSelect={toggleSelect}
-                  />
-                </section>
-              ))}
-              {/* The sections cover what has been fetched, and the footer says
-                  how much that is. Said here rather than left to be inferred
-                  from a count that stops short of the library total. */}
-              {hasMoreEntries ? (
-                <p className="m-0 text-sm text-slate-600">
-                  These sections cover the images loaded so far. Load more to
-                  fill them in.
-                </p>
-              ) : null}
-            </div>
           ) : (
-            <ImageGrid
-              images={visibleImages}
-              onOpen={handleImageClick}
-              onDelete={setDeleteConfirmImage}
-              deleting={deleting}
-              highlightedIds={pinnedImportIds}
-              selecting={selecting}
-              selectedIds={selectedIds}
-              onToggleSelect={toggleSelect}
-            />
+            <div className="flex flex-col gap-5">
+              {shownExperiments.map((experiment) => (
+                <ExperimentPreviewPanel
+                  key={experiment.id}
+                  experimentId={experiment.id}
+                  name={experiment.name}
+                  search={search}
+                  dataset={datasetFilter}
+                  ordering={serverOrderingFor(sortField, sortDirection)}
+                  refreshKey={previewRefreshKey}
+                  onDelete={setDeleteConfirmImage}
+                  deleting={deleting}
+                  highlightedIds={pinnedImportIds}
+                  selecting={selecting}
+                  selectedIds={selectedIds}
+                  pinnedEntries={
+                    pinnedEntriesByExperiment[experiment.id] ?? NO_PINNED_ENTRIES
+                  }
+                  onToggleSelect={toggleSelect}
+                  onEntriesLoaded={handlePreviewEntriesLoaded}
+                />
+              ))}
+            </div>
           )
         ) : null}
 
@@ -1184,23 +900,14 @@ export function LibraryPage() {
             <p className="text-sm text-slate-600">
               {/* `max` because the pinned import is on screen a beat before it
                   is in the server's count, and "Showing 1 of 0" is nonsense. */}
-              Showing {visibleImages.length} of{" "}
-              {Math.max(entryTotal, visibleImages.length)} images
+              {Math.max(entryTotal, justImported.length)} images
               {/* Said in one line instead of replacing the whole grid with a
                   loading state every three seconds. */}
               {entriesRefetching ? " · updating…" : ""}
             </p>
-            <Button
-              disabled={!hasMoreEntries || entriesLoadingMore}
-              onClick={handleLoadMore}
-            >
-              {entriesLoadingMore
-                ? "Loading..."
-                : hasMoreEntries
-                  ? "Load more"
-                  : "All loaded"}
+            <Button onClick={() => setPreviewRefreshKey((current) => current + 1)}>
+              Refresh previews
             </Button>
-            <div ref={loadMoreRef} className="h-px w-full" aria-hidden="true" />
           </div>
         ) : null}
 
@@ -1220,9 +927,8 @@ export function LibraryPage() {
           onCancel={() => setDeleteConfirmImage(null)}
         />
         {/* "Delete" over a group of images reads as "delete the images", and
-            here it does not: `Asset.experiment` is SET_NULL on purpose. The
-            message says so with the count in it, because a number is what
-            makes a reassurance believable. */}
+            here it does not: each image moves into its own experiment first.
+            The count makes that reassurance concrete. */}
         <ConfirmDialog
           isOpen={deleteConfirmExperiment !== null}
           title="Delete experiment"
@@ -1253,6 +959,7 @@ export function LibraryPage() {
               .finally(() => {
                 setExperimentFilter("");
                 setDatasetFilter("");
+                setPreviewRefreshKey((current) => current + 1);
                 void reloadExperiments();
                 void refetchEntries();
               });
@@ -1262,6 +969,13 @@ export function LibraryPage() {
         <JobQueueSidebar
           isOpen={isQueueSidebarOpen}
           onClose={() => setIsQueueSidebarOpen(false)}
+        />
+        <SettingsDialog
+          isOpen={settingsOpen}
+          status={systemStatus}
+          statusError={systemStatusError}
+          onClose={() => setSettingsOpen(false)}
+          onRetryStatus={() => void refetchSystemStatus()}
         />
       </div>
     </div>

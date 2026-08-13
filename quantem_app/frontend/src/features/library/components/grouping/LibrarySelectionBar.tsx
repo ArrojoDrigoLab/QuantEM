@@ -41,7 +41,8 @@ import type {
  * Computed from what the cards already carry, so the warning is on screen
  * before the request rather than in the reply to it. An image is affected when
  * it is in at least one dataset and its experiment is about to become something
- * else -- including "no experiment", which empties the datasets too.
+ * else -- including separate per-image experiments, which empty the shared
+ * dataset memberships too.
  */
 function describeOutcome(result: AssetGroupingResult): string {
   const filed =

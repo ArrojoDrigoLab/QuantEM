@@ -6,6 +6,23 @@ import type { VivLoaderData } from "@/viewer/components/internal/vivUtils";
 export interface IdMapLoaderData {
   labelsData: VivLoaderData | null;
   borderData: VivLoaderData | null;
+  /** Exact bundle URL and revision represented by the loaded sources. */
+  ngffUrl: string;
+  revision: number | null;
+}
+
+function revisionForSpec(spec: ViewerIdMapOverlaySpec): number | null {
+  if (typeof spec.revision === "number" && Number.isFinite(spec.revision)) {
+    return spec.revision;
+  }
+  try {
+    const revisionToken = new URL(spec.ngffUrl, window.location.origin).searchParams.get("rev");
+    const finalPart = revisionToken?.split("-").at(-1);
+    const revision = Number(finalPart);
+    return finalPart && Number.isFinite(revision) ? revision : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Insert a sub-path before any query string: `a.zarr?rev=1` -> `a.zarr/labels?rev=1`. */
@@ -67,7 +84,8 @@ export function useViewerIdMapLoader(spec: ViewerIdMapOverlaySpec | null | undef
  * bundles drop out of the returned record when their spec is removed.
  */
 export function useViewerIdMapLoaders(
-  specs: ViewerIdMapOverlaySpec[]
+  specs: ViewerIdMapOverlaySpec[],
+  onOverlayRevisionDisplayed?: (revision: number | null) => void
 ): Record<string, IdMapLoaderData> {
   const [dataById, setDataById] = useState<Record<string, IdMapLoaderData>>({});
 
@@ -99,7 +117,12 @@ export function useViewerIdMapLoaders(
         if (cancelled) return;
         setDataById((prev) => ({
           ...prev,
-          [spec.id]: { labelsData, borderData },
+          [spec.id]: {
+            labelsData,
+            borderData,
+            ngffUrl: spec.ngffUrl,
+            revision: revisionForSpec(spec),
+          },
         }));
       });
     }
@@ -109,6 +132,19 @@ export function useViewerIdMapLoaders(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specIdentity]);
+
+  useEffect(() => {
+    if (!onOverlayRevisionDisplayed || specs.length === 0) return;
+    const displayedRevisions = specs.map((spec) => {
+      const loaded = dataById[spec.id];
+      if (!loaded?.labelsData || loaded.ngffUrl !== spec.ngffUrl) return null;
+      return loaded.revision;
+    });
+    if (displayedRevisions.some((revision) => revision === null)) return;
+    onOverlayRevisionDisplayed(
+      Math.min(...(displayedRevisions as number[]))
+    );
+  }, [dataById, onOverlayRevisionDisplayed, specs]);
 
   return dataById;
 }

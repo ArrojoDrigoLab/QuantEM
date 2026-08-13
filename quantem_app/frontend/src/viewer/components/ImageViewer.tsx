@@ -60,9 +60,13 @@ export function ImageViewer({
 
   const { overlayLoaderDataByUrl, displayedOverlayNgffLayers } = useViewerRasterOverlayLoader({
     overlayNgffLayers,
-    onOverlayRevisionDisplayed: overlays?.onRasterRevisionDisplayed,
+    onOverlayRevisionDisplayed:
+      idMapOverlays.length === 0 ? overlays?.onRasterRevisionDisplayed : undefined,
   });
-  const idMapDataById = useViewerIdMapLoaders(idMapOverlays);
+  const idMapDataById = useViewerIdMapLoaders(
+    idMapOverlays,
+    idMapOverlays.length > 0 ? overlays?.onRasterRevisionDisplayed : undefined
+  );
   const resolvedImageWidth = image.width ?? inferredSize?.width ?? 1;
   const resolvedImageHeight = image.height ?? inferredSize?.height ?? 1;
   const viewportState = useViewerViewportState({

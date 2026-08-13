@@ -33,10 +33,13 @@ export function samLiveBoxOverlay(bbox: BBox | null): SegmentOverlay | null {
  * this the box vanishes on release and the user cannot tell whether the drag
  * was seen.
  */
-export function samPendingBoxOverlay(bbox: BBox | null): SegmentOverlay | null {
+export function samPendingBoxOverlay(
+  bbox: BBox | null,
+  requestId?: number
+): SegmentOverlay | null {
   if (!bbox) return null;
   return {
-    id: PENDING_ID,
+    id: requestId === undefined ? PENDING_ID : `${PENDING_ID}-${requestId}`,
     geometry: bboxToGeometry(bbox),
     fillColor: "transparent",
     fillOpacity: 0,

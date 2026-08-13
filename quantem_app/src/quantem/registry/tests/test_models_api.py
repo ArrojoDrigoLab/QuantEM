@@ -258,6 +258,47 @@ class ModelInstallTests(TestCase):
     def _install(self, pack_id="quantem:mito", **body):
         return self.client.post(f"/api/models/{pack_id}/install/", body, format="json")
 
+    def test_a_downloaded_pack_can_be_removed(self):
+        with patch.object(cache, "remove_pack", return_value=True) as remove:
+            response = self.client.delete("/api/models/quantem:mito/")
+
+        assert response.status_code == 204
+        remove.assert_called_once_with("quantem:mito")
+
+    def test_removing_a_pack_that_is_not_downloaded_is_a_404(self):
+        with patch.object(cache, "remove_pack", return_value=False):
+            response = self.client.delete("/api/models/quantem:mito/")
+
+        assert response.status_code == 404
+        assert response.json()["error"] == "This model is not downloaded."
+
+    def test_removal_waits_for_a_different_pack_download_to_finish(self):
+        with (
+            patch(
+                "quantem.registry.views.catalogue.active_install_job",
+                side_effect=lambda pack_id: object() if pack_id == "omniem:er" else None,
+            ),
+            patch.object(cache, "remove_pack") as remove,
+        ):
+            response = self.client.delete("/api/models/quantem:mito/")
+
+        assert response.status_code == 409
+        assert "still downloading" in response.json()["error"]
+        remove.assert_not_called()
+
+    def test_removal_waits_for_an_active_inference_task_using_the_pack(self):
+        Job.enqueue(
+            job_type="run_segmentation_full",
+            payload={"source_model": "quantem:mito"},
+            tags=["source_model:quantem:mito"],
+        )
+        with patch.object(cache, "remove_pack") as remove:
+            response = self.client.delete("/api/models/quantem:mito/")
+
+        assert response.status_code == 409
+        assert "active task" in response.json()["error"]
+        remove.assert_not_called()
+
     def test_an_unknown_pack_is_a_404_that_names_the_known_ones(self):
         response = self._install("quantem:golgi")
         assert response.status_code == 404

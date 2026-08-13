@@ -88,6 +88,7 @@ function makeProps(
     },
     roi: {
       activeRoi: null,
+      rois: [],
       completedRois: [],
       roiPoints: [],
       roiPointsSubmitted: 0,

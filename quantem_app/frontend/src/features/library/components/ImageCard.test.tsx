@@ -1,14 +1,26 @@
-import { render, screen } from "@testing-library/react";
+import {
+  render as testingRender,
+  screen,
+  type RenderOptions,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+
 import { ImageCard } from "@/features/library/components/ImageCard";
 import type { HomeEntry } from "@/shared/types/images";
+
+function render(ui: ReactElement, options: RenderOptions = {}) {
+  return testingRender(ui, { wrapper: MemoryRouter, ...options });
+}
 
 function makeEntry(overrides: Partial<HomeEntry> = {}): HomeEntry {
   return {
     id: "11111111-2222-3333-4444-555555555555",
     display_name: "Liver 01",
     original_filename: "liver01.tif",
+    notes: "A representative liver image with a deliberately longer note.",
     metadata_summary: "1024x1024",
     width: 1024,
     height: 1024,
@@ -24,132 +36,123 @@ function makeEntry(overrides: Partial<HomeEntry> = {}): HomeEntry {
 }
 
 describe("ImageCard", () => {
-  it("links through the hash route so copy-link and middle-click work", () => {
-    render(<ImageCard image={makeEntry()} onOpen={vi.fn()} />);
-
-    // HashRouter with `base: './'`: a bare "/assets/<id>/viewer" href navigates
-    // for real on middle-click and lands on a white screen.
-    const link = screen.getByRole("link", { name: "Liver 01" });
-    expect(link.getAttribute("href")).toBe(
-      "#/assets/11111111-2222-3333-4444-555555555555/viewer"
-    );
-  });
-
-  it("still opens in-app on a plain click without navigating", async () => {
+  it("opens the viewer from either the title or thumbnail", async () => {
     const user = userEvent.setup();
-    const onOpen = vi.fn();
-    render(<ImageCard image={makeEntry()} onOpen={onOpen} />);
-
-    await user.click(screen.getByRole("link", { name: "Liver 01" }));
-
-    expect(onOpen).toHaveBeenCalledWith("11111111-2222-3333-4444-555555555555");
-  });
-
-  /**
-   * The card used to render the badge in `compact` mode, which dropped the
-   * provenance suffix entirely -- so a value read from the file and one typed
-   * by a person were distinguishable only by the badge colour and a `title`
-   * tooltip, neither of which a keyboard or touch user can reach. This is the
-   * screen where images are compared side by side and it is the number every
-   * downstream measurement is built on, so it is said in words.
-   */
-  it("says on the card where the pixel size came from, not just in a colour", () => {
     render(
-      <ImageCard
-        image={makeEntry({ pixel_size_nm: 4.2, file_declared_pixel_size_nm: 4.2 })}
-        onOpen={vi.fn()}
-      />
+      <Routes>
+        <Route path="/" element={<ImageCard image={makeEntry()} />} />
+        <Route
+          path="/assets/:assetId/viewer"
+          element={<p>Viewer route rendered</p>}
+        />
+      </Routes>
     );
 
-    expect(screen.getByText("4.2 nm/px · from file")).toBeInTheDocument();
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute(
+      "href",
+      "/assets/11111111-2222-3333-4444-555555555555/viewer"
+    );
+    await user.click(screen.getByRole("link", { name: "Open Liver 01" }));
+    expect(screen.getByText("Viewer route rendered")).toBeInTheDocument();
   });
 
-  it("marks a hand-entered pixel size as such on the card", () => {
-    render(
-      <ImageCard
-        image={makeEntry({ pixel_size_nm: 4.2, file_declared_pixel_size_nm: null })}
-        onOpen={vi.fn()}
-      />
-    );
+  it("shows notes, dimensions and only the scale value", () => {
+    render(<ImageCard image={makeEntry()} />);
 
-    // Exactly what the viewer header says about the same image.
-    expect(screen.getByText("4.2 nm/px · entered by hand")).toBeInTheDocument();
-  });
-
-  /**
-   * A payload with no `file_declared_pixel_size_nm` at all cannot say where the
-   * value came from, and must not be relabelled "entered by hand" -- that
-   * asserts the file declared nothing. It says it does not know instead of
-   * going silent, because a bare number beside labelled neighbours reads as
-   * whatever they say.
-   */
-  it("admits when the payload does not record the provenance", () => {
-    render(<ImageCard image={makeEntry()} onOpen={vi.fn()} />);
-
-    expect(screen.getByText("4.2 nm/px · source not recorded")).toBeInTheDocument();
-  });
-
-  it("flags an uncalibrated image on the card, not three screens in", () => {
-    render(
-      <ImageCard image={makeEntry({ pixel_size_nm: null })} onOpen={vi.fn()} />
-    );
-
-    expect(screen.getByText("Pixel size not set")).toBeInTheDocument();
-  });
-
-  // The grid is row-virtualised against a constant card height and the card is
-  // `overflow: hidden`, so whichever block is allowed to grow decides what gets
-  // cut off. It has to be the preview: when it was the text block instead (an
-  // `aspect-[4/3]` thumbnail plus an unbounded body), a two-line display name
-  // pushed the status and pixel-size badges past the bottom edge and the card
-  // silently stopped saying whether the image was calibrated. jsdom does no
-  // layout, so this asserts the rule rather than the pixels; the pixels are
-  // checked by driving the real grid.
-  it("lets the preview absorb the slack so the badge row can never be clipped", () => {
-    const { container } = render(
-      <ImageCard
-        image={makeEntry({
-          display_name:
-            "liver CD3 ROI4 no tag whole block section 12 rescan second pass",
-        })}
-        onOpen={vi.fn()}
-      />
-    );
-
-    const card = container.querySelector("article");
-    expect(card).not.toBeNull();
-    const blocks = Array.from(card!.children).filter(
-      (child) => !child.className.includes("absolute")
-    );
-    const [preview, body] = blocks;
-
-    expect(preview.className).toContain("flex-1");
-    // Without `min-h-0` a flex item refuses to shrink below its content.
-    expect(preview.className).toContain("min-h-0");
-    expect(preview.className).not.toContain("aspect-");
-    expect(body.className).toContain("shrink-0");
-    expect(body).toContainElement(screen.getByText(/4\.2 nm\/px/));
-  });
-
-  it("keeps a long filename to one line rather than pushing the badges out", () => {
-    render(
-      <ImageCard
-        image={makeEntry({
-          original_filename:
-            "liver_CD3_ROI4_notag_wholeblock_section12_rescan_secondpass_v3.ome.tiff",
-        })}
-        onOpen={vi.fn()}
-      />
-    );
-
-    const filename = screen.getByText(
-      "liver_CD3_ROI4_notag_wholeblock_section12_rescan_secondpass_v3.ome.tiff"
-    );
-    expect(filename.className).toContain("truncate");
-    // Ellipsised on the card, so the whole string still has to be reachable.
-    expect(filename).toHaveAttribute(
+    const notes = screen.getByText(/representative liver image/i);
+    expect(notes.className).toContain("line-clamp-2");
+    expect(notes).toHaveAttribute(
       "title",
-      "liver_CD3_ROI4_notag_wholeblock_section12_rescan_secondpass_v3.ome.tiff"
+      "A representative liver image with a deliberately longer note."
     );
+    expect(screen.getByText("1024 x 1024")).toBeInTheDocument();
+    expect(screen.getByText("4.2 nm/px")).toBeInTheDocument();
+    expect(screen.queryByText(/entered by hand|from file/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("liver01.tif")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ready")).not.toBeInTheDocument();
+  });
+
+  it("shows a processing spinner or a failure tooltip instead of Ready", () => {
+    const { rerender } = render(
+      <ImageCard
+        image={makeEntry({ preprocess_stage: "ENCODING", ngff_ready: false })}
+      />
+    );
+    expect(screen.getByRole("status", { name: /Processing Liver 01/i })).toBeInTheDocument();
+
+    rerender(
+      <ImageCard
+        image={makeEntry({
+          preprocess_stage: "FAILED",
+          ngff_ready: false,
+          preprocess_error: "Encoding failed.",
+        })}
+      />
+    );
+    expect(screen.getByRole("button", { name: /Import failed/i })).toBeInTheDocument();
+    expect(screen.getByText("Encoding failed.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Delete this image and try to re-upload it.")
+    ).toBeInTheDocument();
+  });
+
+  it("does not show a perpetual spinner for queued or skipped terminal states", () => {
+    const { rerender } = render(
+      <ImageCard
+        image={makeEntry({ preprocess_stage: "NONE", ngff_ready: false })}
+      />
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    rerender(
+      <ImageCard
+        image={makeEntry({ preprocess_stage: "SKIPPED", ngff_ready: false })}
+      />
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("uses an overflow menu for edit, export, and delete on experiment pages", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const onExport = vi.fn();
+    const onDelete = vi.fn();
+    render(
+      <ImageCard
+        image={makeEntry()}
+        onEdit={onEdit}
+        onExport={onExport}
+        onDelete={onDelete}
+        useActionMenu
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: /Delete Liver/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Options for Liver/i }));
+    await user.click(screen.getByRole("menuitem", { name: "Edit" }));
+    expect(onEdit).toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /Options for Liver/i }));
+    await user.click(screen.getByRole("menuitem", { name: "Export" }));
+    expect(onExport).toHaveBeenCalled();
+  });
+
+  it("closes the overflow menu with Escape", async () => {
+    const user = userEvent.setup();
+    render(
+      <ImageCard
+        image={makeEntry()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        useActionMenu
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /Options for Liver/i }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 import zipfile
@@ -103,6 +104,70 @@ def test_intel_macos_dmg_avoids_interactive_finder_automation() -> None:
     assert "hdiutil verify" in dmg_script
     assert "for attempt in 1 2 3" in dmg_script
     assert "osascript" not in dmg_script
+
+
+def test_release_artifacts_are_short_lived_and_deleted_after_publication() -> None:
+    release_workflow = (
+        REPO_ROOT / ".github/workflows/quantem-app-desktop-release.yml"
+    ).read_text(encoding="utf-8")
+    routine_workflow = (REPO_ROOT / ".github/workflows/quantem-app.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert release_workflow.count("retention-days: 1") == 3
+    assert "retention-days: 7" not in release_workflow
+    assert "actions: write" in release_workflow
+    assert "Delete temporary workflow artifacts after publication" in release_workflow
+    assert "/actions/runs/${GITHUB_RUN_ID}/artifacts" in release_workflow
+    assert "/actions/artifacts/${artifact_id}" in release_workflow
+    assert routine_workflow.count("retention-days: 1") == 1
+    assert "name: QuantEM-macos-arm64" not in routine_workflow
+    assert "name: clean temporary artifacts" in routine_workflow
+    assert "Delete this run's temporary artifacts" in routine_workflow
+    cleanup_step = routine_workflow.split("Delete this run's temporary artifacts", 1)[1]
+    assert "working-directory: ." in cleanup_step
+
+
+def test_release_notes_put_the_three_installers_first() -> None:
+    script = REPO_ROOT / "quantem_app/desktop/scripts/build_release_notes.py"
+    spec = importlib.util.spec_from_file_location("build_release_notes", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    notes = module.build_release_notes(
+        version="0.1.1",
+        tag="v0.1.1",
+        generated_notes="**Full Changelog**: example",
+    )
+
+    assert notes.startswith("## Install QuantEM")
+    assert "QuantEM_0.1.1_x64-setup.exe" in notes
+    assert "QuantEM_0.1.1_darwin-aarch64.dmg" in notes
+    assert "QuantEM_0.1.1_darwin-x86_64.dmg" in notes
+    assert notes.index("## Install QuantEM") < notes.index("## Changes")
+    assert "### [Download" not in notes
+    assert "The remaining files" not in notes
+    assert "—" not in notes
+    assert "**Full Changelog**: example" in notes
+
+
+def test_release_workflow_does_not_publish_build_only_manifests() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/quantem-app-desktop-release.yml").read_text(
+        encoding="utf-8"
+    )
+    publish_step = workflow.split("- name: Publish only after every platform", 1)[1].split(
+        "- name: Delete temporary workflow artifacts", 1
+    )[0]
+
+    assert "build_release_notes.py" in publish_step
+    assert "--notes-file \"$RUNNER_TEMP/public-release-notes.md\"" in publish_step
+    assert "rm -f ../release-assets/*.update-manifest.json" in publish_step
+    assert "../release-assets/quantem-app-windows-payloads.json" in publish_step
+    assert 'label_asset "QuantEM_${version}_x64-setup.exe" "Windows installer"' in publish_step
+    assert "macOS installer (Apple silicon)" in publish_step
+    assert "macOS installer (Intel)" in publish_step
+    assert "—" not in publish_step
 
 
 def test_package_numpy_floor_supports_the_intel_macos_torch_build() -> None:

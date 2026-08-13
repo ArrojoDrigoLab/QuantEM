@@ -9,8 +9,9 @@ Two rungs, and the cheap one is not a consolation prize:
     machine QuantEM installs on, including a laptop with no CUDA and no torch.
 
 ``head``
-    Everything above, plus 300 steps of neck + decoder training first
-    (:mod:`quantem.finetune.adapt`). Needs torch and a model whose head can be
+    Everything above, plus neck + decoder training first
+    (:mod:`quantem.finetune.adapt`). Each round uses 20 steps per training tile,
+    clamped to 300--600 steps. Needs torch and a model whose head can be
     separated from its encoder.
 
 Both fit on the user's *training* crops and only ever *score* on the held-out
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -43,7 +45,7 @@ from quantem.finetune.adapt import (
     train_head,
 )
 from quantem.finetune.preflight import check_head_size
-from quantem.finetune.scope import TrainingFold, count_tiles, plan_folds
+from quantem.finetune.scope import TrainingFold, count_tiles, plan_folds, plan_step_counts
 from quantem.finetune.storage import (
     adapter_head_path,
     discard_staged_head,
@@ -209,7 +211,7 @@ def adapter_job(payload: dict, reporter: Any, cancel: Any) -> dict:
             result = _run(payload, reporter, cancel, adapter_id)
     except Exception as exc:
         message = str(exc)
-        if payload.get("overwrite"):
+        if payload.get("preserves_live_version"):
             message += OVERWRITE_SAFE_SUFFIX
         _update_adapter(adapter_id, status="FAILED", error=message)
         raise
@@ -275,6 +277,8 @@ def _run(payload: dict, reporter: Any, cancel: Any, adapter_id: str | None) -> d
     _update_adapter(
         adapter_id,
         status="SUCCESS",
+        base_model=base_model,
+        preserves_live_version=False,
         sweep=result["sweep"],
         calibrated_threshold=result["sweep"]["calibrated_threshold"],
         split_mode=result["split_mode"],
@@ -696,7 +700,6 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
     training_mode = str(payload.get("training_mode") or TRAINING_MODE_USE_ALL)
     cv_benchmark = bool(payload.get("cv_benchmark"))
     config = AdaptConfig(
-        steps=_as_int(payload.get("steps"), AdaptConfig.steps),
         lr=_as_float(payload.get("lr"), AdaptConfig.lr),
         seed=_as_int(payload.get("seed"), AdaptConfig.seed),
     )
@@ -718,8 +721,21 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
 
     folds, split_mode = plan_folds(usable, training_mode=training_mode, cv_benchmark=cv_benchmark)
     total_rounds = len(folds)
-    total_steps = config.steps * total_rounds
     tile_count = count_tiles(usable, base_model, config=config)
+    fixed_value = payload.get("fixed_steps")
+    if fixed_value is None and "planned_steps" not in payload:
+        # Backward compatibility for older and internal scoped payloads, whose
+        # ``steps`` field meant a fixed count for every round.
+        fixed_value = payload.get("steps")
+    fixed_steps = _as_int(fixed_value, AdaptConfig.steps) if fixed_value is not None else None
+    steps_by_round = plan_step_counts(
+        folds,
+        base_model,
+        fixed_steps=fixed_steps,
+        config=config,
+    )
+    training_tiles_by_round = [count_tiles(fold.train, base_model, config=config) for fold in folds]
+    total_steps = sum(steps_by_round)
 
     cancel.check_cancelled()
     _stage(reporter, STAGE_LOADING_MODEL, f"loading {base_model}")
@@ -738,6 +754,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
     training = None
     sweep = None
     shipped_fold = folds[-1]
+    completed_steps = 0
     for index, fold in enumerate(folds):
         cancel.check_cancelled()
         if index:
@@ -745,12 +762,13 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
             model = engine.load_model(base_model)
             engine.clear_model_cache()
 
+        round_config = replace(config, steps=steps_by_round[index])
         patches = build_patches(
             [scaled[c.name] for c in fold.train],
             tile,
             image_mean=spec.image_mean,
             image_std=spec.image_std,
-            config=config,
+            config=round_config,
         )
         if not patches:
             verdict = check_head_size(fold.train, base_model)
@@ -764,10 +782,10 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
                 "size."
             )
 
-        base_units = index * config.steps
+        base_units = completed_steps
         message = (
             f"Round {index + 1} of {total_rounds}: training on {len(patches)} "
-            f"window(s) from {len(fold.train)} area(s)"
+            f"window(s) from {len(fold.train)} area(s) for {round_config.steps} steps"
         )
         reporter.update(message=message)
         # One window per round, offset into the grand total, so the bar and the
@@ -776,13 +794,13 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
             unit_window(base_units, total_steps),
             _unit_scope(
                 reporter,
-                total=config.steps,
+                total=round_config.steps,
                 label=UNIT_STEP,
                 stage=STAGE_TRAINING,
                 detail={
                     "round": index + 1,
                     "total_rounds": total_rounds,
-                    "tiles": tile_count,
+                    "tiles": len(patches),
                 },
             ) as steps_done,
         ):
@@ -794,10 +812,12 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
                 model.module,
                 patches,
                 device=model.device,
-                config=config,
+                config=round_config,
                 on_progress=on_progress,
                 should_cancel=lambda: _cancelled(cancel),
             )
+
+        completed_steps += training.steps
 
         cancel.check_cancelled()
         _stage(
@@ -826,6 +846,8 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
             meta={
                 "base_model": base_model,
                 "steps": training.steps,
+                "steps_by_round": steps_by_round,
+                "total_steps": total_steps,
                 "tile": tile,
                 "calibrated_threshold": sweep.calibrated_threshold,
                 "split_mode": split_mode,
@@ -847,7 +869,9 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         "training_mode": training_mode,
         "cv_benchmark": cv_benchmark,
         "steps": training.steps,
+        "steps_by_round": steps_by_round,
         "total_steps": total_steps,
+        "step_policy": "fixed" if fixed_steps is not None else "20_per_tile_clamped_300_600",
         "rounds": total_rounds,
         "trainable_params": training.trainable_params,
         "train_seconds": round(training.seconds, 2),
@@ -855,6 +879,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         "asset_ids": asset_ids,
         "annotation_count": crop_set.annotation_count,
         "tile_count": tile_count,
+        "training_tiles_by_round": training_tiles_by_round,
         "train_crop_names": [c.name for c in shipped_fold.train],
         "heldout_crop_names": [c.name for c in shipped_fold.heldout],
         "sweep": sweep.as_dict(),
@@ -872,6 +897,8 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
     _update_adapter(
         adapter_id,
         status="SUCCESS",
+        base_model=base_model,
+        preserves_live_version=False,
         sweep=result["sweep"],
         calibrated_threshold=result["sweep"]["calibrated_threshold"],
         split_mode=split_mode,
@@ -880,6 +907,14 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         trainable_params=result["trainable_params"],
         train_seconds=result["train_seconds"],
         cv_results=cv_results,
+        params={
+            "steps": training.steps,
+            "steps_by_round": steps_by_round,
+            "total_steps": total_steps,
+            "step_policy": result["step_policy"],
+            "lr": config.lr,
+            "seed": config.seed,
+        },
         # Written by the run and not only by the view that started it, so the row
         # records what was actually done rather than what was asked for.
         training_mode=training_mode,

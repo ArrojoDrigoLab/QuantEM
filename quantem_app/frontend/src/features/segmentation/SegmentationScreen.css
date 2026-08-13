@@ -8,7 +8,7 @@
 
 /* The header wraps. Without `flex-wrap` the two halves were each allowed to
    shrink below their content: `.header-left` ended up 98px wide holding 327px
-   of children, so the back button, the image title and the filename all
+   of children, so the back buttons and image title all
    overflowed their own box and rendered underneath `.header-controls`. The
    <h2> collapsed to width 0 -- the name of the image you were labeling simply
    was not on screen. */
@@ -59,6 +59,11 @@
   color: #0f172a;
 }
 
+.header-back-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .header-info {
   min-width: 0;
   /* The one element allowed to give up space: its text ellipsises rather than
@@ -68,18 +73,8 @@
 }
 
 .header-info h2 {
-  margin: 0 0 0.25rem 0;
+  margin: 0;
   font-size: 1.5rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.header-info .filename {
-  display: block;
-  font-family: monospace;
-  font-size: 0.875rem;
-  color: #666;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

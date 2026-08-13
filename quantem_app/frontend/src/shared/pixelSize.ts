@@ -10,8 +10,9 @@
  * payload does carry what the *file itself* declared, on the FULL rendition's
  * metadata (`source_metadata.pixel_size_nm` for a 2D import,
  * `volume_metadata.voxel_size_nm` for a volume). Comparing the effective value
- * against that is how "read from file" is separated from "entered by hand" --
- * a distinction that belongs in a figure caption, so it belongs in the UI.
+ * against that preserves the origin for workflows that need it. Read-only
+ * resolution tags deliberately do not expose this provenance; they render only
+ * the normalized `X nm/px` value.
  */
 
 import type { AssetDetail, AssetRendition, HomeEntry } from "@/shared/types/images";
@@ -160,20 +161,6 @@ export function formatPixelSizeNm(valueNm: number | null): string {
   if (valueNm === null || !Number.isFinite(valueNm) || valueNm <= 0) return "";
   const text = valueNm.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
   return `${text} nm/px`;
-}
-
-/** Short provenance word for a badge. Never shown without the number. */
-export function pixelSizeSourceLabel(source: PixelSizeSource): string {
-  switch (source) {
-    case "file":
-      return "read from file";
-    case "manual":
-      return "entered by hand";
-    case "unknown":
-      return "source not recorded";
-    default:
-      return "not set";
-  }
 }
 
 /**

@@ -12,15 +12,6 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HeaderNotices } from "./notices";
 import type { ImageSegmentation } from "@/shared/types";
-import type { Runnability } from "@/features/models/runnable";
-
-// `Runnability` is {state, reason, label}; this fixture predated that shape and
-// still used the old boolean `runnable`, so it never type-checked after the merge.
-const RUNNABLE: Runnability = {
-  state: "runnable",
-  reason: null,
-  label: "ready to run",
-};
 
 function makeSegmentation(
   overrides: Partial<ImageSegmentation> & Record<string, unknown> = {}
@@ -57,8 +48,6 @@ function renderNotices(segmentation: ImageSegmentation | null) {
       appliedAdapter={null}
       runTargetLabel="QuantEM"
       isComplete={false}
-      modelBlocked={false}
-      modelRunnability={RUNNABLE}
     />
   );
 }
@@ -123,62 +112,15 @@ describe("a failed run whose class the server named", () => {
   });
 });
 
-describe("the domain-shift nudge", () => {
+describe("empty-run advice", () => {
   const emptyRun = {
     kind: "no_objects",
-    message: "This run found 0 objects at include level 0.50.",
+    message: "This run found no objects.",
     next_steps: ["Check the image's pixel size."],
   };
 
-  it("appears on a finished run that found nothing, with its label", () => {
+  it("does not render a separate notice box", () => {
     renderNotices(makeSegmentation({ run_notice: emptyRun }));
-
-    const notice = screen.getByTestId("domain-shift-notice");
-    expect(notice).toHaveAttribute("data-reason", "no_objects");
-    expect(notice).toHaveTextContent(
-      "This does not look like the images I was trained on."
-    );
-    // The label is not optional. Rendering the sentence without it turns a
-    // guess into a finding.
-    expect(notice).toHaveTextContent(/guess from the numbers, not a measurement/i);
-  });
-
-  it("comes after the server's ordered list, not before it", () => {
-    renderNotices(makeSegmentation({ run_notice: emptyRun }));
-
-    const printed = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="status"]')
-    ).map((element) => element.className);
-
-    expect(printed.indexOf("header-run-notice")).toBeLessThan(
-      printed.indexOf("header-domain-shift")
-    );
-  });
-
-  it("stays away from a run that produced objects", () => {
-    renderNotices(
-      makeSegmentation({
-        run_notice: {
-          kind: "no_new_objects",
-          message: "This run added nothing new.",
-          next_steps: [],
-        },
-        segment_counts: {
-          CONFIRMED: 12,
-          EXCLUDED: 0,
-          INFERRED: 0,
-          CANDIDATE: 0,
-        },
-      })
-    );
-
-    expect(screen.queryByTestId("domain-shift-notice")).not.toBeInTheDocument();
-  });
-
-  it("stays away from a run that has not finished", () => {
-    // Still inferring, so there is no `run_notice` and zero objects means "not yet".
-    renderNotices(makeSegmentation({ status_stage: "RUNNING_INFERENCE" }));
-
-    expect(screen.queryByTestId("domain-shift-notice")).not.toBeInTheDocument();
+    expect(screen.queryByText("This run found no objects.")).not.toBeInTheDocument();
   });
 });

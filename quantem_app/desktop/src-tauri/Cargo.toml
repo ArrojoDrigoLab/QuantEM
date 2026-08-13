@@ -1,6 +1,6 @@
 [package]
 name = "quantem-desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "QuantEM desktop shell: spawns the quantem-server sidecar and hosts its UI"
 authors = ["Arrojo e Drigo Lab, Vanderbilt University"]
 license = "BSD-3-Clause"

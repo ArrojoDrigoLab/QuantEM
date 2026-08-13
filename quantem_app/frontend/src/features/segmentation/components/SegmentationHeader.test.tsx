@@ -12,6 +12,7 @@ import type {
   SourceModelOption,
 } from "@/shared/types";
 import type { AppliedAdapterState } from "@/features/models/appliedAdapter";
+import type { ModelCatalogue, ModelPack } from "@/shared/types/finetune";
 
 /**
  * The completion preview the confirmation reads.
@@ -62,6 +63,47 @@ const OMNIEM_MITO: SourceModelOption = {
   count: 0,
 };
 
+const MANUAL: SourceModelOption = {
+  value: "manual",
+  label: "Manual",
+  model_family: "manual",
+  count: 1,
+};
+
+function makeModelPack(
+  family: "quantem" | "omniem",
+  installed: boolean,
+  downloadBytes: number
+): ModelPack {
+  return {
+    id: `${family}:mito`,
+    family,
+    organelle: "mito",
+    title: family === "quantem" ? "QuantEM — Mitochondria" : "OmniEM — Mitochondria",
+    installed,
+    download_bytes: downloadBytes,
+    canonical_nm: 8,
+    tile_size: 512,
+    default_threshold: 0.5,
+    decoder: "decoder",
+    neck: "neck",
+    adapt: "adapt",
+    licence: "licence",
+    notes: "",
+    runnable: installed,
+    reason: null,
+  };
+}
+
+const MODEL_CATALOGUE: ModelCatalogue = {
+  packs: [
+    makeModelPack("quantem", false, 2_500_000_000),
+    makeModelPack("omniem", true, 4_000_000_000),
+  ],
+  adapted: [],
+  device: null,
+};
+
 function makeImage(overrides: Partial<AssetDetail> = {}): AssetDetail {
   return {
     id: "img-1",
@@ -105,7 +147,7 @@ function makeSegmentation(overrides: Partial<ImageSegmentation> = {}): ImageSegm
       INFERRED: 5,
       CANDIDATE: 2,
     },
-    source_models: [QUANTEM_MITO, OMNIEM_MITO],
+    source_models: [QUANTEM_MITO, OMNIEM_MITO, MANUAL],
     config: {
       supports_instance_params: true,
       instance_params: null,
@@ -124,11 +166,11 @@ function renderHeader(overrides: Partial<React.ComponentProps<typeof Segmentatio
     <SegmentationHeader
       image={makeImage()}
       currentSegmentation={seg}
-      visibleSegmentations={seg ? [seg] : []}
       sourceModelOptions={seg?.source_models}
       activeSourceModel="quantem:mito"
+      displayedSourceModel="quantem:mito"
       onBackToHome={vi.fn()}
-      onSegmentationChange={vi.fn()}
+      onBackToViewer={vi.fn()}
       onToggleSegmentationComplete={vi.fn()}
       {...overrides}
     />
@@ -142,22 +184,14 @@ describe("SegmentationHeader", () => {
     usePreview();
   });
 
-  it("disables full run while segmentation jobs are active", () => {
-    renderHeader({ hasQueuedOrRunningOrganelleTask: true });
-
-    expect(screen.getByRole("button", { name: "Run Full Segmentation" })).toBeDisabled();
-  });
-
   it("fires action callbacks", async () => {
     const user = userEvent.setup();
     const onBackToHome = vi.fn();
     const onMarkDone = vi.fn();
-    const onRunFull = vi.fn();
 
     renderHeader({
       onBackToHome,
       onToggleSegmentationComplete: onMarkDone,
-      onApplyFullImage: onRunFull,
     });
 
     await user.click(screen.getByRole("button", { name: "← Back to Library" }));
@@ -165,57 +199,25 @@ describe("SegmentationHeader", () => {
     // through a confirmation; see the dedicated tests below.
     await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
     await user.click(await screen.findByRole("button", { name: "Mark done" }));
-    await user.click(screen.getByRole("button", { name: "Run Full Segmentation" }));
     expect(onBackToHome).toHaveBeenCalledTimes(1);
     expect(onMarkDone).toHaveBeenCalledTimes(1);
-    expect(onRunFull).toHaveBeenCalledTimes(1);
   });
 
-  it("offers an unfinished active ROI as a smaller model run", async () => {
-    const user = userEvent.setup();
-    const onRunActiveRoi = vi.fn();
-    renderHeader({
-      activeRoi: {
-        id: "roi-1",
-        segmentation: "seg-1",
-        x: 100,
-        y: 200,
-        width: 512,
-        height: 512,
-        source: "MANUAL",
-        is_active: true,
-        is_complete: false,
-        completed_for_segmentation: false,
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      },
-      onApplyActiveRoi: onRunActiveRoi,
-    });
+  it("keeps model-run actions out of the header", () => {
+    renderHeader();
 
-    await user.click(screen.getByRole("button", { name: "Run Active ROI" }));
-    expect(onRunActiveRoi).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not offer a run for an ROI already marked done", () => {
-    renderHeader({
-      activeRoi: {
-        id: "roi-1",
-        segmentation: "seg-1",
-        x: 100,
-        y: 200,
-        width: 512,
-        height: 512,
-        source: "MANUAL",
-        is_active: true,
-        is_complete: false,
-        completed_for_segmentation: true,
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      },
-      onApplyActiveRoi: vi.fn(),
-    });
-
+    expect(
+      screen.queryByRole("button", { name: "Run Full Segmentation" })
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Run Active ROI" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the organelle selector out of the header", () => {
+    renderHeader();
+
+    expect(
+      screen.queryByRole("combobox", { name: "Segmentation type" })
+    ).not.toBeInTheDocument();
   });
 
   /**
@@ -226,17 +228,6 @@ describe("SegmentationHeader", () => {
    */
   describe("locked segmentation", () => {
     const DONE = makeSegmentation({ status_stage: "COMPLETED", is_complete: true });
-
-    it("does not offer to start a run on a locked segmentation", () => {
-      renderHeader({ currentSegmentation: DONE });
-
-      const run = screen.getByRole("button", { name: "Run Full Segmentation" });
-      expect(run).toBeDisabled();
-      expect(run).toHaveAttribute(
-        "title",
-        "This segmentation is locked. Unlock it to run again."
-      );
-    });
 
     it("says it is locked, and how to unlock it", () => {
       renderHeader({ currentSegmentation: DONE });
@@ -251,12 +242,9 @@ describe("SegmentationHeader", () => {
       ).toBeEnabled();
     });
 
-    it("keeps the run button live while the segmentation is open", () => {
+    it("does not show a lock notice while the segmentation is open", () => {
       renderHeader();
 
-      expect(
-        screen.getByRole("button", { name: "Run Full Segmentation" })
-      ).toBeEnabled();
       expect(screen.queryByText(/This segmentation is locked/)).not.toBeInTheDocument();
     });
   });
@@ -319,14 +307,6 @@ describe("SegmentationHeader", () => {
       expect(chip).not.toHaveTextContent("190 confirmed of 190 from QuantEM");
       expect(chip).toHaveTextContent("Last run failed");
       expect(chip.className).toContain("error");
-    });
-
-    it("still offers to run again, which is the way out", () => {
-      renderHeader({ currentSegmentation: FAILED });
-
-      expect(
-        screen.getByRole("button", { name: "Run Full Segmentation" })
-      ).toBeEnabled();
     });
 
     it("says nothing about a failure on a segmentation that has not failed", () => {
@@ -400,65 +380,6 @@ describe("SegmentationHeader", () => {
       renderHeader();
 
       expect(screen.queryByTestId("latest-attempt-notice")).not.toBeInTheDocument();
-    });
-  });
-
-  /**
-   * Two doors into the same wrong answer, and only one was guarded.
-   *
-   * Creating a segmentation on an uncalibrated image opened a written
-   * confirmation naming the pack and the resolution it was trained at. "Run
-   * Full Segmentation" queues the identical inference pass on the same image
-   * and fired instantly, with nothing said.
-   */
-  describe("uncalibrated run", () => {
-    const MISMATCH = { packId: "quantem:nucleus", canonicalNm: 25 };
-
-    it("asks before running a canonical-scale pack without a pixel size", async () => {
-      const user = userEvent.setup();
-      const onRunFull = vi.fn();
-      renderHeader({ onApplyFullImage: onRunFull, runScaleMismatch: MISMATCH });
-
-      await user.click(screen.getByRole("button", { name: "Run Full Segmentation" }));
-      expect(onRunFull).not.toHaveBeenCalled();
-
-      // The same sentence the create dialog uses, because it is the same run.
-      expect(
-        await screen.findByText(/This image has no pixel size/)
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(/no measurement taken from them can be reported in µm²/)
-      ).toBeInTheDocument();
-      expect(screen.getByText(/25 nm\/px/)).toBeInTheDocument();
-
-      await user.click(screen.getByRole("button", { name: "Run uncalibrated" }));
-      expect(onRunFull).toHaveBeenCalledTimes(1);
-    });
-
-    it("runs nothing when the confirmation is cancelled", async () => {
-      const user = userEvent.setup();
-      const onRunFull = vi.fn();
-      renderHeader({ onApplyFullImage: onRunFull, runScaleMismatch: MISMATCH });
-
-      await user.click(screen.getByRole("button", { name: "Run Full Segmentation" }));
-      await user.click(await screen.findByRole("button", { name: "Cancel" }));
-
-      expect(onRunFull).not.toHaveBeenCalled();
-      expect(
-        screen.queryByText(/This image has no pixel size/)
-      ).not.toBeInTheDocument();
-    });
-
-    it("still starts on the first click when there is nothing to warn about", async () => {
-      // A calibrated image, or a pack that runs at native scale by design,
-      // must not acquire a click. Warning on everything trains people to
-      // click through the warning that matters.
-      const user = userEvent.setup();
-      const onRunFull = vi.fn();
-      renderHeader({ onApplyFullImage: onRunFull, runScaleMismatch: null });
-
-      await user.click(screen.getByRole("button", { name: "Run Full Segmentation" }));
-      expect(onRunFull).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -754,7 +675,7 @@ describe("SegmentationHeader", () => {
       expect(screen.getByText(/Adapted model: mito @ liver_HFD2/)).toBeInTheDocument();
       expect(
         screen.getByText(
-          /Run Full Segmentation will use your fine-tuned head at threshold 0\.45, not the published 0\.50/
+          /Run model will use your fine-tuned head at threshold 0\.45, not the published 0\.50/
         )
       ).toBeInTheDocument();
     });
@@ -762,12 +683,10 @@ describe("SegmentationHeader", () => {
     it("marks the adapted option in the model picker", () => {
       renderHeader({ appliedAdapter: APPLIED });
 
-      const picker = screen.getByLabelText("Source model");
-      const labels = Array.from(picker.querySelectorAll("option")).map(
-        (option) => option.textContent
+      expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue(
+        "quantem:mito"
       );
-      expect(labels).toContain("QuantEM (adapted)");
-      expect(labels).toContain("OmniEM");
+      expect(screen.getByRole("option", { name: "QuantEM (adapted)" })).toBeInTheDocument();
     });
 
     it("warns when the selected model means the adapter will be skipped", () => {
@@ -793,7 +712,7 @@ describe("SegmentationHeader", () => {
 
       expect(screen.queryByText(/Adapted model:/)).not.toBeInTheDocument();
       expect(screen.queryByText(/Adapter not in use/)).not.toBeInTheDocument();
-      const picker = screen.getByLabelText("Source model");
+      const picker = screen.getByRole("combobox", { name: "Model" });
       expect(picker.textContent).not.toContain("(adapted)");
     });
 
@@ -813,30 +732,20 @@ describe("SegmentationHeader", () => {
     });
   });
 
-  it("offers one way back, to the library", () => {
-    // The corpus/experiment concept is gone: there is no "Back to Experiment"
-    // and no "Back to Home" -- a second back button that went nowhere.
-    renderHeader();
+  it("offers routes back to the library, experiment, and viewer", async () => {
+    const user = userEvent.setup();
+    const onBackToExperiment = vi.fn();
+    const onBackToViewer = vi.fn();
+    renderHeader({ onBackToExperiment, onBackToViewer });
 
     expect(
       screen.getByRole("button", { name: "← Back to Library" })
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /back to experiment/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /back to home/i })).toBeNull();
-  });
-
-  it("shows inline full-image progress when active", () => {
-    renderHeader({ onApplyFullImage: vi.fn(), fullImageProgress: 42 });
-
-    expect(screen.getByText("42%")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Running..." })).toBeInTheDocument();
-  });
-
-  it("shows queued full-image spinner state without percent", () => {
-    renderHeader({ onApplyFullImage: vi.fn(), fullImageActive: true });
-
-    expect(screen.getByText("Starting")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Running..." })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to Experiment" }));
+    await user.click(screen.getByRole("button", { name: "Back to Viewer" }));
+    expect(onBackToExperiment).toHaveBeenCalledOnce();
+    expect(onBackToViewer).toHaveBeenCalledOnce();
+    expect(screen.queryByText("source.tif")).not.toBeInTheDocument();
   });
 
   it("names no model that this product does not ship", () => {
@@ -855,7 +764,7 @@ describe("SegmentationHeader", () => {
     // The confirmed count is on the chip itself, not only in the tooltip: it
     // is the number the analysis measures, and a tooltip is invisible unless
     // you happen to hover it.
-    expect(provenance).toHaveTextContent("1 confirmed of 214 from QuantEM");
+    expect(provenance).toHaveTextContent("1 confirmed · 214 from QuantEM");
     expect(provenance).toHaveAttribute(
       "title",
       expect.stringContaining("the number the analysis measures")
@@ -867,9 +776,8 @@ describe("SegmentationHeader", () => {
    *
    * Reported on a calibrated 5 nm/px image with `quantem:mito`: the run reached
    * `CANDIDATES_READY` with zero candidates and the header read "No objects from
-   * QuantEM yet — Nothing has been run with QuantEM on this image ... Run Full
-   * Segmentation to produce some, or choose another model." Pressing the button
-   * again produces the same nothing; the pixel size is what moves the answer
+   * QuantEM yet." Running again produces the same result; the pixel size is
+   * what moves the answer
    * (0 / 19 / 120 / 233 objects over the same pixels at 5 nm, unset, 10 nm,
    * 20 nm). The server had diagnosed it and put it on `run_notice`; no screen
    * read the field.
@@ -880,6 +788,7 @@ describe("SegmentationHeader", () => {
       source_models: [{ ...QUANTEM_MITO, count: 0 }, OMNIEM_MITO],
       run_notice: {
         kind: "no_objects",
+        source_model: "quantem:mito",
         message: "This run finished without finding any objects.",
         next_steps: [
           "Check the image's pixel size (5 nm/px). It decides what size the model thinks these organelles are, and a wrong value makes a working model find nothing -- check it before the threshold, because lowering the threshold on a wrongly-scaled run does not bring the objects back.",
@@ -900,29 +809,64 @@ describe("SegmentationHeader", () => {
       );
     });
 
-    it("puts the advice on the screen, not only in a tooltip", () => {
-      // A tooltip is unreachable by keyboard and invisible unless hovered, and
-      // this is an ordered list of things to check rather than a label.
+    it("puts the full advice in the tag's hover message, not a separate box", () => {
       renderHeader({ currentSegmentation: EMPTY_RUN });
 
+      const tag = screen.getByTestId("displayed-objects-provenance");
+      expect(tag).toHaveAttribute(
+        "title",
+        expect.stringContaining("This run finished without finding any objects.")
+      );
+      expect(tag).toHaveAttribute("title", expect.stringContaining("5 nm/px"));
+      expect(tag).toHaveAttribute(
+        "title",
+        expect.stringContaining("Lower the detection threshold and run again.")
+      );
       expect(
-        screen.getByText("This run finished without finding any objects.")
-      ).toBeInTheDocument();
-      expect(screen.getByText(/5 nm\/px/)).toBeInTheDocument();
-      const steps = screen.getByRole("list");
-      expect(steps.querySelectorAll("li")).toHaveLength(3);
-      // The pixel size is the input that turns a working model into one that
-      // finds nothing, so it leads -- lowering the threshold on a wrongly
-      // scaled run produces different rubbish, not the missing objects.
-      expect(steps.querySelectorAll("li")[0].textContent).toContain("pixel size");
+        screen.queryByText("This run finished without finding any objects.")
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not show the tag for manual segmentation", () => {
+      renderHeader({
+        currentSegmentation: EMPTY_RUN,
+        activeSourceModel: "manual",
+        displayedSourceModel: null,
+      });
+      expect(screen.getByTestId("displayed-objects-provenance")).not.toHaveTextContent(
+        "Ran and found no objects"
+      );
+    });
+
+    it("shows a proven empty run even though it has no object overlay", () => {
+      renderHeader({ currentSegmentation: EMPTY_RUN, displayedSourceModel: null });
+      expect(screen.getByTestId("displayed-objects-provenance")).toHaveTextContent(
+        "Ran and found no objects"
+      );
+    });
+
+    it("does not show the tag when the model run failed", () => {
+      renderHeader({
+        currentSegmentation: makeSegmentation({
+          ...EMPTY_RUN,
+          status_stage: "FAILED",
+          status_error: "The model could not finish.",
+        }),
+      });
+      expect(screen.getByTestId("displayed-objects-provenance")).not.toHaveTextContent(
+        "Ran and found no objects"
+      );
     });
 
     it("says nothing when the server sent no notice", () => {
-      renderHeader();
+      renderHeader({ displayedSourceModel: null });
 
       expect(
         screen.queryByText(/finished without finding any objects/)
       ).not.toBeInTheDocument();
+      expect(screen.getByTestId("displayed-objects-provenance")).not.toHaveTextContent(
+        "Ran and found no objects"
+      );
     });
   });
 
@@ -938,6 +882,7 @@ describe("SegmentationHeader", () => {
       segment_counts: { CONFIRMED: 12, EXCLUDED: 2, INFERRED: 0, CANDIDATE: 0 },
       run_notice: {
         kind: "no_new_objects",
+        source_model: "quantem:mito",
         summary: "Ran and added no new objects",
         message:
           "This run added no new objects. The 14 object(s) already labelled in this image are unchanged.",
@@ -957,21 +902,21 @@ describe("SegmentationHeader", () => {
       expect(provenance).not.toHaveTextContent("Ran and found no objects");
     });
 
-    it("renders the notice body under the run button", () => {
+    it("keeps the notice body in the chip tooltip", () => {
       renderHeader({ currentSegmentation: PROOFREAD_RERUN });
 
-      expect(
-        screen.getByText(/This run added no new objects\./)
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(/expected to find nothing new/)
-      ).toBeInTheDocument();
+      const chip = screen.getByTestId("displayed-objects-provenance");
+      expect(chip).toHaveAttribute(
+        "title",
+        expect.stringContaining("This run added no new objects.")
+      );
+      expect(screen.queryByText(/expected to find nothing new/)).not.toBeInTheDocument();
     });
   });
 
   /**
-   * The badge beside this chip can read "5 nm/px · entered by hand" over
-   * objects produced before that number existed — the state `run_analysis`
+   * The resolution tag can read "5 nm/px" over objects produced before that
+   * number existed — the state `run_analysis`
    * blanks every physical unit on. This screen is where the user decides the
    * work is finished, so it says so here, not first in the finished bundle.
    */
@@ -1161,8 +1106,10 @@ describe("SegmentationHeader", () => {
     // "these objects came from OmniEM".
     renderHeader({ activeSourceModel: "omniem:mito" });
 
-    expect(screen.getByText("Model to run")).toBeInTheDocument();
-    expect(screen.getByLabelText("Source model")).toHaveValue("omniem:mito");
+    expect(screen.getByText("Model")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue(
+      "omniem:mito"
+    );
     expect(screen.getByTestId("displayed-objects-provenance")).toHaveTextContent(
       "No objects from OmniEM yet"
     );
@@ -1182,30 +1129,76 @@ describe("SegmentationHeader", () => {
     );
   });
 
-  it("says manual-only when the source model is None", () => {
+  it("treats the legacy None source model as manual segmentation", () => {
     renderHeader({ activeSourceModel: "none" });
 
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("manual");
     expect(screen.getByTestId("displayed-objects-provenance")).toHaveTextContent(
-      "Objects shown: manual only (1 confirmed)"
+      "1 confirmed · 1 from Manual"
     );
   });
 
-  it("renders source-model selector with a None option", async () => {
+  it("renders manual segmentation and both released models", async () => {
     const user = userEvent.setup();
     const onSourceModelChange = vi.fn();
     renderHeader({ onSourceModelChange });
 
-    const sourceSelect = screen.getByLabelText("Source model");
-    expect(screen.getByRole("option", { name: "None" })).toBeInTheDocument();
+    const model = screen.getByRole("combobox", { name: "Model" });
+    expect(screen.getByRole("option", { name: "QuantEM" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "OmniEM" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Manual segmentation" })).toBeInTheDocument();
 
-    await user.selectOptions(sourceSelect, "omniem:mito");
+    await user.selectOptions(model, "omniem:mito");
     expect(onSourceModelChange).toHaveBeenCalledWith("omniem:mito");
 
-    await user.selectOptions(sourceSelect, "none");
-    expect(onSourceModelChange).toHaveBeenCalledWith("none");
+    await user.selectOptions(model, "manual");
+    expect(onSourceModelChange).toHaveBeenCalledWith("manual");
   });
 
-  it("shows the pixel size and where it came from", () => {
+  it("shows only the yellow download status beside a model that needs it", () => {
+    renderHeader({ modelCatalogue: MODEL_CATALOGUE });
+
+    expect(screen.getByRole("option", { name: "QuantEM" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", {
+        name:
+          "Model is not downloaded. Will automatically download (2.5GB) on first run",
+      })
+    ).toHaveAttribute(
+      "title",
+      "Model is not downloaded. Will automatically download (2.5GB) on first run"
+    );
+    expect(screen.getByRole("img")).toHaveAttribute("data-model-state", "download");
+    expect(screen.getByRole("img")).toHaveClass("header-model-availability-download");
+  });
+
+  it("shows no ready checkmark after a model is downloaded", () => {
+    renderHeader({
+      activeSourceModel: "omniem:mito",
+      modelCatalogue: MODEL_CATALOGUE,
+    });
+
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "OmniEM" })).toBeInTheDocument();
+  });
+
+  it("shows no availability tag for manual segmentation", () => {
+    renderHeader({ activeSourceModel: "manual", modelCatalogue: MODEL_CATALOGUE });
+
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Manual segmentation" })).toBeInTheDocument();
+  });
+
+  it("does not show model-run controls for manual segmentation", () => {
+    renderHeader({ activeSourceModel: "manual" });
+
+    expect(
+      screen.queryByRole("button", { name: "Run Full Segmentation" })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run Active ROI" })).not.toBeInTheDocument();
+  });
+
+  it("does not show a pixel-size tag in the labeling header", () => {
     renderHeader({
       image: makeImage({
         pixel_size_nm: 5,
@@ -1219,18 +1212,13 @@ describe("SegmentationHeader", () => {
       }),
     });
 
-    // The badge used to render `compact` here, which dropped the provenance and
-    // left it to the badge colour plus a `title` -- so this test's own name was
-    // only true of a tooltip. It is in the text now, the same words the viewer
-    // header uses about the same image.
-    expect(screen.getByText("5 nm/px · from file")).toBeInTheDocument();
-    expect(screen.getByTitle(/read from the image file/i)).toBeInTheDocument();
+    expect(screen.queryByText("5 nm/px")).not.toBeInTheDocument();
   });
 
-  it("warns on the labeling screen when the image is uncalibrated", () => {
+  it("does not show an uncalibrated pixel-size tag in the labeling header", () => {
     renderHeader({ image: makeImage({ pixel_size_nm: null }) });
 
-    expect(screen.getByText("Pixel size not set")).toBeInTheDocument();
+    expect(screen.queryByText("Pixel size not set")).not.toBeInTheDocument();
   });
 
   it("shows unlock action for completed segmentations", () => {

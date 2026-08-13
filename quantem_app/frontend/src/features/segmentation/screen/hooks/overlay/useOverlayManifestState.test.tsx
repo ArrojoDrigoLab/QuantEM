@@ -110,6 +110,21 @@ describe("useOverlayManifestState", () => {
     expect(result.current.overlayBuildError).toBeNull();
   });
 
+  it("records the revision each labeling pane has actually loaded", async () => {
+    getManifestMock.mockResolvedValue(makeManifest());
+    const { result } = renderState();
+
+    await waitFor(() => expect(result.current.overlayManifest).not.toBeNull());
+    expect(result.current.leftDisplayedOverlayRevision).toBeNull();
+    expect(result.current.rightDisplayedOverlayRevision).toBeNull();
+
+    act(() => result.current.handleLeftOverlayRevisionDisplayed(5));
+    act(() => result.current.handleRightOverlayRevisionDisplayed(4));
+
+    expect(result.current.leftDisplayedOverlayRevision).toBe(5);
+    expect(result.current.rightDisplayedOverlayRevision).toBe(4);
+  });
+
   /**
    * The request itself belongs to `OverlayBuildFailureNotice`, which both the
    * viewer and the labeling sidebar mount, and is covered where it is rendered

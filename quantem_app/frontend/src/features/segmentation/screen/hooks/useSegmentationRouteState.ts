@@ -156,6 +156,7 @@ export function useSegmentationRouteState() {
     [currentSegmentation]
   );
   const sourceModelQueryParam = searchParams.get("source_model")?.trim() || null;
+  const autoRunRequested = searchParams.get("run_model") === "1";
   const activeSourceModel = useMemo(() => {
     if (sourceModelOptions.length === 0) return null;
     // "none" is a synthetic selection (not a real backend source model). The
@@ -183,35 +184,16 @@ export function useSegmentationRouteState() {
     navigate(`/assets/${image.id}/viewer`);
   }, [image, navigate]);
 
+  const handleBackToExperiment = useMemo(() => {
+    const experimentId = image?.experiment_id;
+    if (!experimentId) return undefined;
+    return () => navigate(`/experiments/${experimentId}`);
+  }, [image?.experiment_id, navigate]);
+
   const handleBackToHome = useCallback(() => {
     clearSelection();
     navigate("/");
   }, [clearSelection, navigate]);
-
-  const handleSegmentationChange = useCallback(
-    (segmentationId: string) => {
-      const target = visibleSegmentations.find((seg) => seg.id === segmentationId);
-      if (!target || !selectedAssetId) return;
-      setSelectedSegmentationId(segmentationId);
-      const encodedName = encodeURIComponent(segmentationRouteToken(target));
-      const params = new URLSearchParams();
-      // Same objects-first rule as the mount-time default: switching to a
-      // segmentation whose objects all came from OmniEM must not land on the
-      // QuantEM view of it.
-      const defaultSource = defaultSourceModel(
-        target.source_models ?? [],
-        target.id
-      );
-      if (defaultSource) {
-        params.set("source_model", defaultSource);
-      }
-      const qs = params.toString();
-      navigate(`/assets/${selectedAssetId}/labeling/${encodedName}${qs ? `?${qs}` : ""}`, {
-        replace: true,
-      });
-    },
-    [navigate, selectedAssetId, setSelectedSegmentationId, visibleSegmentations]
-  );
 
   const handleSourceModelChange = useCallback(
     (sourceModel: string) => {
@@ -229,6 +211,12 @@ export function useSegmentationRouteState() {
     },
     [currentSegmentationId, searchParams, setSearchParams]
   );
+
+  const consumeAutoRunRequest = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("run_model");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!segmentationFromParam) return;
@@ -332,13 +320,15 @@ export function useSegmentationRouteState() {
     currentInstanceParams,
     sourceModelOptions,
     activeSourceModel,
+    autoRunRequested,
+    consumeAutoRunRequest,
     handleSourceModelChange,
     viewport,
     publishFromViewer,
     useSmoothedSegmentGeometry,
     refetchSegmentations,
     handleOpenViewer,
-    handleSegmentationChange,
+    handleBackToExperiment,
     handleBackToHome,
     preprocessReady,
     preprocessLabel,

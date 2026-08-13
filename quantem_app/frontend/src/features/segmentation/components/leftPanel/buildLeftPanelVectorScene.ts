@@ -46,7 +46,9 @@ export function buildLeftPanelVectorScene({
     viewer.layerStyles
   );
 
-  const roiOverlays = overlays.hideActiveRoiOverlay ? [] : generateRoiOverlays(roi.activeRoi);
+  const roiOverlays = generateRoiOverlays(roi.activeRoi, roi.rois).filter(
+    (overlay) => !(overlays.hideActiveRoiOverlay && overlay.id === "roi-frame")
+  );
   const transientLayers = [
     roiOverlays,
     generateRoiStrokeOverlays(roi.roiStrokes),

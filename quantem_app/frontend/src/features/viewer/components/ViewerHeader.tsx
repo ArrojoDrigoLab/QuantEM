@@ -20,6 +20,7 @@ export function ViewerHeader({
   overlayBuildFailureCount,
   onBackToHome,
   onBackToExperiment,
+  onExport,
   onPixelSizeSaved,
 }: {
   image: AssetDetail;
@@ -30,6 +31,7 @@ export function ViewerHeader({
   overlayBuildFailureCount: number;
   onBackToHome: () => void;
   onBackToExperiment: () => void;
+  onExport: () => void;
   onPixelSizeSaved: () => void;
 }) {
   return (
@@ -51,20 +53,24 @@ export function ViewerHeader({
           className="viewer-back-button"
           onClick={onBackToExperiment}
           disabled={!image.experiment_id}
-          title={
-            image.experiment_id
-              ? "Back to this experiment"
-              : "This image is not in an experiment"
-          }
+          title="Back to this experiment"
         >
           ← Experiment
         </button>
         <div className="viewer-header-image-name">
           <span className="viewer-experiment-name">
-            {image.experiment_name || "Unassigned"}
+            {image.experiment_name || "Experiment"}
           </span>
           <h2>{image.display_name}</h2>
         </div>
+        <button
+          type="button"
+          className="viewer-header-link"
+          aria-label="Export image"
+          onClick={onExport}
+        >
+          Export
+        </button>
         {/* The viewer is the first screen where the image is a single
             concrete thing, so it is where calibration belongs. Editing it
             PATCHes the asset and refetches, which is the only route by

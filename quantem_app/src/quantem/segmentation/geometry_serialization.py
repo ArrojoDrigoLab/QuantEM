@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from shapely.geometry.base import BaseGeometry
 
+from quantem.segmentation.geometry import extract_polygons
+
 GEOMETRY_DETAIL_FULL = "full"
 GEOMETRY_DETAIL_HOVER = "hover"
 _VALID_GEOMETRY_DETAILS = {
@@ -39,12 +41,11 @@ def _safe_num_points(geometry: BaseGeometry | None) -> int:
     if geometry is None:
         return 0
     try:
-        exterior = getattr(geometry, "exterior", None)
-        if exterior is None:
-            return 0
-        total = len(exterior.coords)
-        for interior in geometry.interiors:
-            total += len(interior.coords)
+        total = 0
+        for polygon in extract_polygons(geometry):
+            total += len(polygon.exterior.coords)
+            for interior in polygon.interiors:
+                total += len(interior.coords)
         return int(total)
     except Exception:
         return 0
@@ -111,3 +112,26 @@ def geometry_coords_from_polygon(
         return [[float(coord[0]), float(coord[1])] for coord in resolved_geometry.exterior.coords]
     except Exception:
         return []
+
+
+def geometry_payload(
+    geometry: BaseGeometry | None,
+    *,
+    geometry_detail: str = GEOMETRY_DETAIL_FULL,
+) -> dict | None:
+    """GeoJSON-shaped polygon coordinates retaining holes and disconnection."""
+    resolved = simplify_geometry_for_detail(geometry, geometry_detail=geometry_detail)
+    polygons = extract_polygons(resolved)
+    if not polygons:
+        return None
+
+    def coordinates(polygon) -> list[list[list[float]]]:
+        rings = [polygon.exterior, *polygon.interiors]
+        return [[[float(coord[0]), float(coord[1])] for coord in ring.coords] for ring in rings]
+
+    if len(polygons) == 1:
+        return {"type": "Polygon", "coordinates": coordinates(polygons[0])}
+    return {
+        "type": "MultiPolygon",
+        "coordinates": [coordinates(polygon) for polygon in polygons],
+    }

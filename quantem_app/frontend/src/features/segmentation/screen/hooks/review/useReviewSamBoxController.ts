@@ -20,8 +20,8 @@ interface UseReviewSamBoxControllerArgs {
   /** Tissue segmentations run a different toolbar entirely. */
   isTissueSegmentation: boolean;
   onCorrectionToolChange: (tool: CorrectionTool) => void;
-  /** Refetch the objects and overlay raster after an object is stored. */
-  onOverlayMutation: (overlay: unknown) => void;
+  /** Stage the returned polygon and refresh the authoritative overlay. */
+  onObjectCreated: (response: SamBoxResponse) => void | Promise<void>;
   showErrorToast: (message: string) => void;
   showNoticeToast?: (message: string) => void;
   registerAnnotationActivity?: () => void;
@@ -58,7 +58,7 @@ export function useReviewSamBoxController({
   leftNavigateMode,
   isTissueSegmentation,
   onCorrectionToolChange,
-  onOverlayMutation,
+  onObjectCreated,
   showErrorToast,
   showNoticeToast,
   registerAnnotationActivity,
@@ -73,14 +73,15 @@ export function useReviewSamBoxController({
 
   const handleCreated = useCallback(
     (response: SamBoxResponse) => {
-      onOverlayMutation(response.overlay);
+      const staged = onObjectCreated(response);
       if (response.created === 0 && showNoticeToast) {
         showNoticeToast(
           "Nothing was stored: the object found in that box was too thin to keep."
         );
       }
+      return staged;
     },
-    [onOverlayMutation, showNoticeToast]
+    [onObjectCreated, showNoticeToast]
   );
 
   const tool = useSamBoxTool({

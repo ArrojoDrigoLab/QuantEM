@@ -9,19 +9,51 @@
   margin-top: 4px;
 }
 
-/* Labelled selector: the caption is what separates "the model I am about to
+/* Labelled picker: the caption is what separates "the model I am about to
    run" from "the model these objects came from", which sits next to it. */
 .header-source-model {
   display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
+  position: relative;
+  align-items: center;
+}
+
+.header-source-model-select-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-model-availability {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+  pointer-events: auto;
+}
+
+/* A download is available but has not happened yet. Yellow distinguishes that
+   ordinary first-run state. Ready models need no icon. */
+.header-model-availability-download {
+  color: #ca8a04;
 }
 
 /* 4.6:1 on the #f5f5f5 header. Was #94a3b8, which is 2.35:1 -- and this caption
    is the only thing separating "the model I am about to run" from "the model
    these objects came from". */
 .header-source-model-caption {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 2px);
   font-size: 10px;
+  line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: #5b6472;
@@ -76,26 +108,7 @@
   border-color: #e07070;
 }
 
-.header-action-buttons {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-/* Why the run button is disabled, in the header rather than only in a tooltip.
-   #7c2d12 on #ffedd5 -> 7.9:1. */
-.header-model-blocked {
-  max-width: 46ch;
-  padding: 4px 9px;
-  border: 1px solid #ea8a5a;
-  border-radius: 6px;
-  background: #ffedd5;
-  color: #7c2d12;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-/* An applied adapter changes what Run Full Segmentation does. Cyan when it is
+/* An applied adapter changes what Run model does. Cyan when it is
    in force (a fact about this run), amber when it is applied but the selected
    model means it will be skipped (a surprise worth flagging). Both are 12px on
    the #f5f5f5 header and both clear AA, measured in the browser: 6.99:1 for
@@ -147,37 +160,6 @@
   line-height: 1.45;
 }
 
-/* A run that finished and produced nothing. Amber, and wider than the other
-   notices because it carries the server's ordered list of what to check --
-   the pixel size first. Same #7c2d12 on #ffedd5 -> 7.9:1 as the other warnings
-   on this header. */
-.header-run-notice {
-  max-width: 58ch;
-  padding: 6px 10px;
-  border: 1px solid #ea8a5a;
-  border-radius: 6px;
-  background: #ffedd5;
-  color: #7c2d12;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.header-run-notice-steps {
-  margin: 4px 0 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  list-style: decimal;
-}
-
-.header-model-blocked-link {
-  color: #7c2d12;
-  font-weight: 600;
-  text-decoration: underline;
-  white-space: nowrap;
-}
-
 /* Entry points to the analysis screen and the fine-tuning wizard. Plain
    anchors against the hash router, so this component still renders outside a
    <Router> in tests. */
@@ -198,54 +180,9 @@
   background: #34495e;
 }
 
-.refine-button,
-.apply-full-button {
-  padding: 4px 10px;
-  font-size: 12px;
-  border: 1px solid #4a5568;
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, opacity 0.15s;
-}
-
-.refine-button {
-  background: #2d6a4f;
-  color: #e0e0e0;
-}
-
-.refine-button:hover:not(:disabled) {
-  background: #40916c;
-}
-
-.apply-full-button {
-  background: #1a5276;
-  color: #e0e0e0;
-}
-
-.apply-full-button:hover:not(:disabled) {
-  background: #2471a3;
-}
-
-.apply-roi-button {
-  background: #2d6a4f;
-  color: #e0e0e0;
-}
-
-.apply-roi-button:hover:not(:disabled) {
-  background: #40916c;
-}
-
-.refine-button:disabled,
-.apply-full-button:disabled,
-.apply-roi-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 /* The recovery beside the objects-pixel-size warning chip. Amber, like the
    chip whose state it resolves, and visibly a destructive step rather than a
-   variant of Run Full Segmentation. */
+   variant of Run model. */
 .header-clear-rerun-button {
   padding: 4px 10px;
   font-size: 12px;
@@ -265,48 +202,4 @@
 .header-clear-rerun-button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-/* The percentage the run button reports, and the only number on this header
-   that moves while a run goes.
- *
- * It was `color: #d1fae5` with no background: a pale mint on the #f5f5f5
- * header, measured at **1.04:1**, which is not a legibility problem so much as
- * an absence -- "Running... 30%" was on screen and unreadable at arm's length.
- * A dark mint on plain #f5f5f5 would have fixed the ratio and invented a colour
- * this header does not use, so it takes the tinted-chip shape every other
- * status on this header already has (`.source-model-provenance`,
- * `.header-model-blocked`, `.header-adapter-notice`), in the cyan the header
- * reserves for a fact about *this run*: #155e75 on #ecfeff -> **6.99:1**,
- * measured, the same pair as `.header-adapter-notice`. */
-.apply-full-progress {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 9px;
-  border: 1px solid #67c3d4;
-  border-radius: 999px;
-  background: #ecfeff;
-  font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: #155e75;
-}
-
-.apply-full-spinner {
-  width: 12px;
-  height: 12px;
-  border: 2px solid rgba(21, 94, 117, 0.3);
-  border-top-color: #155e75;
-  border-radius: 50%;
-  animation: apply-full-spin 0.8s linear infinite;
-}
-
-@keyframes apply-full-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
 }

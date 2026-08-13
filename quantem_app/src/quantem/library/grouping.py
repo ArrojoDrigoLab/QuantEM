@@ -39,7 +39,12 @@ from typing import Any
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from quantem.library.models import Dataset, Experiment, validate_asset_grouping
+from quantem.library.models import (
+    Dataset,
+    Experiment,
+    create_image_experiment,
+    validate_asset_grouping,
+)
 
 __all__ = [
     "UNSET",
@@ -91,8 +96,8 @@ def resolve_experiment(
     cohort" twice does not produce two experiments that look identical in a
     dropdown.
 
-    Returns ``None`` when neither was given, which is the ordinary
-    "unorganised" case and never an error.
+    Returns ``None`` when neither was given. Import and assignment services
+    interpret that as "create an experiment from each image name".
     """
     if experiment_id:
         try:
@@ -185,7 +190,14 @@ def apply_grouping(
             before_datasets = {dataset.id for dataset in asset.datasets.all()}
 
             if not isinstance(experiment, _Unset):
-                asset.experiment = experiment
+                # ``None`` means "give each image its own experiment", not an
+                # unassigned state. A bulk selection deliberately receives
+                # one experiment per image, each named from that image.
+                asset.experiment = (
+                    experiment
+                    if experiment is not None
+                    else create_image_experiment(asset.display_name)
+                )
                 asset.save(update_fields=["experiment", "updated_at"])
 
             # Whatever the experiment now is, memberships that contradict it

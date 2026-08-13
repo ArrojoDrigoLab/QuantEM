@@ -1,20 +1,12 @@
-/**
- * What happens after a fine-tune finishes: the result, and the offer.
- *
- * The offer is the point. Owner R13: a success message, then **the option** to
- * run the new model on some or all of the images it was scoped to — never
- * automatic. So nothing on this panel queues anything until the button is
- * pressed, the images start out picked but the pick is editable, and the button
- * says how many images it is about to run on.
- *
- * The scores, when cross-validation ran, are shown per image as well as
- * averaged. A mean over four annotations hides the image that scored 0.2, and
- * that image is the one worth looking at.
- */
+/** The completed fine-tune, its optional application targets, and live status. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getFineTuneApplyProgress } from "@/shared/api/finetune";
 import { Badge, Button, Panel } from "@/shared/ui/design";
+import type { ScopeDatasetNode } from "@/features/finetune/scopeTree";
 import type {
+  FineTuneApplyImageProgress,
+  FineTuneApplyProgress,
   FineTuneApplyResponse,
   FineTuneCvResults,
   FineTunePreviewImage,
@@ -22,7 +14,7 @@ import type {
 } from "@/shared/types/finetune";
 
 function score(value: number | null | undefined): string {
-  return value === null || value === undefined ? "—" : value.toFixed(3);
+  return value === null || value === undefined ? "-" : value.toFixed(3);
 }
 
 function cvResultsOf(run: FineTuneRunDetail | null): FineTuneCvResults | null {
@@ -31,10 +23,20 @@ function cvResultsOf(run: FineTuneRunDetail | null): FineTuneCvResults | null {
   return results as FineTuneCvResults;
 }
 
+function applyStatusTone(
+  status: FineTuneApplyImageProgress["status"]
+): "default" | "good" | "warning" | "info" {
+  if (status === "SUCCESS") return "good";
+  if (status === "FAILED" || status === "CANCELLED") return "warning";
+  if (status === "RUNNING") return "info";
+  return "default";
+}
+
 export function FineTuneSuccess({
   name,
   run,
   scopedImages,
+  availableDatasets,
   applying,
   applyError,
   applyResult,
@@ -44,17 +46,34 @@ export function FineTuneSuccess({
   name: string;
   run: FineTuneRunDetail | null;
   scopedImages: FineTunePreviewImage[];
+  availableDatasets: ScopeDatasetNode[];
   applying: boolean;
   applyError: string | null;
   applyResult: FineTuneApplyResponse | null;
-  onApply: (assetIds: string[]) => void;
+  onApply: (assetIds: string[], datasetIds: string[]) => void;
   onClose: () => void;
 }) {
   const [picked, setPicked] = useState<Set<string>>(
     () => new Set(scopedImages.map((image) => image.asset_id))
   );
+  const [pickedDatasets, setPickedDatasets] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [applyProgress, setApplyProgress] = useState<FineTuneApplyProgress | null>(
+    null
+  );
+  const [progressError, setProgressError] = useState<string | null>(null);
   const cv = cvResultsOf(run);
   const caveats = run?.caveats ?? [];
+
+  useEffect(() => {
+    if (scopedImages.length === 0) return;
+    setPicked((current) =>
+      current.size === 0
+        ? new Set(scopedImages.map((image) => image.asset_id))
+        : current
+    );
+  }, [scopedImages]);
 
   const toggle = (assetId: string, on: boolean) => {
     setPicked((current) => {
@@ -65,14 +84,102 @@ export function FineTuneSuccess({
     });
   };
 
+  const toggleDataset = (datasetId: string, on: boolean) => {
+    setPickedDatasets((current) => {
+      const next = new Set(current);
+      if (on) next.add(datasetId);
+      else next.delete(datasetId);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!applyResult?.batch_id || !applyResult.adapter_id) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const poll = async () => {
+      try {
+        const next = await getFineTuneApplyProgress(
+          applyResult.adapter_id,
+          applyResult.batch_id
+        );
+        if (cancelled) return;
+        setApplyProgress(next);
+        setProgressError(null);
+        if (next.complete < next.total) timer = setTimeout(poll, 1000);
+      } catch {
+        if (cancelled) return;
+        setProgressError("Could not refresh per-image progress.");
+        timer = setTimeout(poll, 2000);
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [applyResult]);
+
   if (applyResult) {
     return (
       <div className="flex flex-col gap-3" data-testid="finetune-applied">
         <p className="m-0 text-sm text-slate-800">
           Queued on {applyResult.queued.length}{" "}
           {applyResult.queued.length === 1 ? "image" : "images"}. Progress is in
-          Tasks &amp; Queues, and each image shows it too.
+          Tasks &amp; Queues and is reported here per image.
         </p>
+        {applyProgress ? (
+          <Panel className="p-3" data-testid="finetune-apply-progress">
+            <p className="m-0 text-xs font-semibold text-slate-800">
+              {applyProgress.complete} of {applyProgress.total} complete
+              {applyProgress.failed > 0
+                ? `; ${applyProgress.failed} failed`
+                : ""}
+            </p>
+            <ul className="m-0 mt-2 max-h-56 list-none overflow-y-auto p-0">
+              {applyProgress.images.map((image) => (
+                <li
+                  key={image.job_id}
+                  className="border-t border-slate-100 py-2 first:border-t-0"
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate text-slate-700" title={image.asset_name}>
+                      {image.asset_name || image.asset_id}
+                    </span>
+                    <Badge tone={applyStatusTone(image.status)}>
+                      {image.status.toLowerCase()}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded bg-slate-100">
+                    <div
+                      className="h-full bg-cyan-600"
+                      style={{ width: `${Math.max(0, Math.min(100, image.progress))}%` }}
+                      aria-label={`${image.asset_name || image.asset_id} progress`}
+                    />
+                  </div>
+                  <p className="m-0 mt-1 text-xs text-slate-500">
+                    {image.units_done !== null && image.units_total !== null
+                      ? `${image.units_done} of ${image.units_total} tiles`
+                      : `${Math.round(image.progress)}%`}
+                    {image.stage ? ` - ${image.stage}` : ""}
+                  </p>
+                  {image.failure ? (
+                    <p className="m-0 mt-1 text-xs text-red-700" role="alert">
+                      {image.failure}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        ) : (
+          <p className="m-0 text-xs text-slate-500">Loading per-image progress...</p>
+        )}
+        {progressError ? (
+          <p className="m-0 text-xs text-red-700" role="alert">
+            {progressError}
+          </p>
+        ) : null}
         <div className="flex justify-end">
           <Button variant="primary" onClick={onClose}>
             Done
@@ -111,7 +218,7 @@ export function FineTuneSuccess({
                     {row.name}
                   </span>
                   <span className="shrink-0 tabular-nums">
-                    Dice {score(row.dice)} · IoU {score(row.iou)} · {row.n_tiles}{" "}
+                    Dice {score(row.dice)} / IoU {score(row.iou)} / {row.n_tiles}{" "}
                     {row.n_tiles === 1 ? "tile" : "tiles"}
                   </span>
                 </li>
@@ -174,6 +281,63 @@ export function FineTuneSuccess({
         </ul>
       </div>
 
+      {availableDatasets.length > 0 ? (
+        <div>
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="m-0 text-sm font-semibold text-slate-900">
+              Or run it across a Dataset
+            </p>
+            <button
+              type="button"
+              className="text-xs text-cyan-700 underline hover:text-cyan-900 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              onClick={() =>
+                setPickedDatasets((current) =>
+                  current.size === availableDatasets.length
+                    ? new Set()
+                    : new Set(availableDatasets.map((dataset) => dataset.id))
+                )
+              }
+            >
+              {pickedDatasets.size === availableDatasets.length
+                ? "Clear datasets"
+                : "Select all datasets"}
+            </button>
+          </div>
+          <p className="m-0 mt-1 text-xs text-slate-600">
+            Datasets are the existing groups in this Experiment. Every active
+            image in a selected Dataset is queued, including images that were
+            not part of training.
+          </p>
+          <ul
+            className="m-0 mt-2 max-h-32 list-none overflow-y-auto rounded-md border border-slate-200 p-2"
+            data-testid="finetune-apply-datasets"
+          >
+            {availableDatasets.map((dataset) => (
+              <li key={dataset.id} className="py-0.5">
+                <label className="flex items-center justify-between gap-2 text-xs text-slate-700">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5"
+                      checked={pickedDatasets.has(dataset.id)}
+                      onChange={(event) =>
+                        toggleDataset(dataset.id, event.target.checked)
+                      }
+                    />
+                    <span className="truncate" title={dataset.name}>
+                      {dataset.name}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-slate-500">
+                    {dataset.imageCount} images
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {applyError ? (
         <p className="m-0 text-sm text-red-700" role="alert">
           {applyError}
@@ -184,12 +348,16 @@ export function FineTuneSuccess({
         <Button onClick={onClose}>Not now</Button>
         <Button
           variant="primary"
-          disabled={picked.size === 0 || applying}
-          onClick={() => onApply([...picked])}
+          disabled={(picked.size === 0 && pickedDatasets.size === 0) || applying}
+          onClick={() => onApply([...picked], [...pickedDatasets])}
         >
           {applying
-            ? "Queueing…"
-            : `Run on ${picked.size} ${picked.size === 1 ? "image" : "images"}`}
+            ? "Queueing..."
+            : pickedDatasets.size > 0
+              ? `Run ${picked.size} selected images + ${pickedDatasets.size} ${
+                  pickedDatasets.size === 1 ? "Dataset" : "Datasets"
+                }`
+              : `Run on ${picked.size} ${picked.size === 1 ? "image" : "images"}`}
         </Button>
       </div>
     </div>

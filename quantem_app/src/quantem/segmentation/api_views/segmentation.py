@@ -26,6 +26,7 @@ from quantem.segmentation.completion import (
     locked_payload,
     restore_last_archive,
 )
+from quantem.segmentation.final_result import persist_final_result_provenance
 from quantem.segmentation.models import (
     ImageSegmentation,
     ProbabilityMap,
@@ -116,6 +117,7 @@ def _create_segmentation_for_asset(request, *, asset):
         )
 
     validated_data = create_serializer.validated_data
+    run_inference = bool(validated_data.get("run_inference", True))
     segmentation_type = None
     source_model = normalize_source_model(validated_data.get("source_model"))
     measurement_mode = validated_data.get("measurement_mode")
@@ -175,7 +177,8 @@ def _create_segmentation_for_asset(request, *, asset):
     # and reusable custom segmentations open directly into equivalent manual
     # labeling workflows and never queue a model run.
     manual_only_workflow = segmentation_type.internal_name not in ORGANELLE_INTERNAL_NAMES
-    if not manual_only_workflow:
+    queue_inference = not manual_only_workflow and run_inference
+    if queue_inference:
         source_model = source_model or default_source_model_for_organelle(
             segmentation_type.internal_name
         )
@@ -201,7 +204,7 @@ def _create_segmentation_for_asset(request, *, asset):
     if update_fields:
         image_segmentation.save(update_fields=[*update_fields, "updated_at"])
 
-    if manual_only_workflow:
+    if not queue_inference:
         updates: list[str] = []
         if created and image_segmentation.status_stage != "CANDIDATES_READY":
             image_segmentation.status_stage = "CANDIDATES_READY"
@@ -211,7 +214,7 @@ def _create_segmentation_for_asset(request, *, asset):
             updates.append("status_progress")
         if updates:
             image_segmentation.save(update_fields=updates)
-    else:
+    if not manual_only_workflow:
         existing_roi = get_active_roi_for_asset(asset)
         if existing_roi:
             existing_roi.segmentations.add(image_segmentation)
@@ -219,14 +222,14 @@ def _create_segmentation_for_asset(request, *, asset):
         SegmentationConfig.objects.get_or_create(segmentation=image_segmentation)
 
     segmenter_internal_name = None
-    if not manual_only_workflow:
+    if queue_inference:
         segmenter_internal_name = resolve_segmenter_internal_name(
             segmentation_type_internal_name=segmentation_type.internal_name,
             source_model=source_model,
         )
     segmenter = (
         None
-        if manual_only_workflow
+        if not queue_inference
         else get_segmenter_or_none(segmenter_internal_name or segmentation_type.internal_name)
     )
     if segmenter is not None:
@@ -307,11 +310,16 @@ def _remove_segmentation_files(segmentation_id: str) -> None:
     logged and swallowed for the same reason -- the deletion the user asked for
     has already happened.
     """
-    from quantem.core.config import PROB_MAPS_DIR, TMP_DIR  # noqa: PLC0415
+    from quantem.core.config import (  # noqa: PLC0415
+        GLOBAL_MASKS_DIR,
+        PROB_MAPS_DIR,
+        TMP_DIR,
+    )
     from quantem.segmentation.overlay_ngff.paths import get_overlay_root  # noqa: PLC0415
 
     for path in (
         get_overlay_root(segmentation_id),
+        GLOBAL_MASKS_DIR / segmentation_id,
         PROB_MAPS_DIR / segmentation_id,
         TMP_DIR / "prob_maps" / segmentation_id,
     ):
@@ -539,10 +547,38 @@ class SegmentationCompleteView(APIView):
         return Response(completion_preview(segmentation), status=status.HTTP_200_OK)
 
     def post(self, request, seg_id):
+        from quantem.jobs.constants import (  # noqa: PLC0415
+            ACTIVE_SEGMENTATION_JOB_TYPES,
+            JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
+        )
+        from quantem.segmentation.api_views.shared import (  # noqa: PLC0415
+            active_segmentation_job,
+        )
+
         segmentation = get_object_or_404(
             ImageSegmentation.objects.select_related("asset", "segmentation_type"),
             id=seg_id,
         )
+        finalization_job_types = frozenset(
+            {*ACTIVE_SEGMENTATION_JOB_TYPES, JOB_TYPE_TRAIN_ORGANELLE_ADAPTER}
+        )
+        active_job = active_segmentation_job(
+            segmentation,
+            job_types=finalization_job_types,
+        )
+        if active_job is not None:
+            return Response(
+                {
+                    "detail": (
+                        "A task is still using this segmentation. Wait for it to finish, "
+                        "or stop it in Tasks & Queues, before marking the result final."
+                    ),
+                    "job_id": str(active_job.id),
+                    "job_type": active_job.type,
+                    "job_status": active_job.status,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         payload = request.data if isinstance(request.data, dict) else {}
 
         # ``POST`` marks done; it has no "and also undo it" mode. A body saying
@@ -629,6 +665,7 @@ class SegmentationCompleteView(APIView):
         with transaction.atomic():
             if discard:
                 outcome = archive_and_discard(segmentation)
+            persist_final_result_provenance(segmentation)
             segmentation.status_stage = "COMPLETED"
             segmentation.save(update_fields=["status_stage"])
             register_overlay_mutation_all_bundles(
@@ -660,9 +697,19 @@ class SegmentationCompleteView(APIView):
             id=seg_id,
         )
         restored = restore_last_archive(segmentation)
+        update_fields = []
         if segmentation.status_stage == "COMPLETED":
             segmentation.status_stage = "CANDIDATES_READY"
-            segmentation.save(update_fields=["status_stage"])
+            update_fields.append("status_stage")
+        # This is the one explicit lifecycle boundary at which the immutable
+        # note stops describing reality: after Unlock, the user can re-run,
+        # re-threshold, or edit the result. Keeping the old note would attach
+        # the previous model/threshold to a future final result.
+        if segmentation.final_result_provenance:
+            segmentation.final_result_provenance = {}
+            update_fields.append("final_result_provenance")
+        if update_fields:
+            segmentation.save(update_fields=update_fields)
         if restored["restored_count"]:
             register_overlay_mutation_all_bundles(
                 segmentation,

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDrawing } from "@/hooks/useDrawing";
 import { useCompletedRoiWorkflow } from "@/features/segmentation/screen/hooks/useCompletedRoiWorkflow";
 import { useErRoiWorkflow } from "@/features/segmentation/screen/hooks/useErRoiWorkflow";
@@ -25,8 +25,9 @@ import { generateCompletedRoiDraftOverlays } from "@/features/segmentation/overl
 import type { Point } from "@/utils/geometry";
 import type { SegmentObject } from "@/shared/types";
 import type { Runnability } from "@/features/models/runnable";
+import { packIdForSourceModel } from "@/features/models/runnable";
 import type { AppliedAdapterState } from "@/features/models/appliedAdapter";
-import type { ScaleMismatch } from "@/features/models/scaleMismatch";
+import type { ModelCatalogue } from "@/shared/types/finetune";
 import type { ReviewSamBoxController } from "@/features/segmentation/screen/hooks/review/useReviewSamBoxController";
 
 interface UseSegmentationScreenViewModelsArgs {
@@ -48,14 +49,9 @@ interface UseSegmentationScreenViewModelsArgs {
   tissue: ReturnType<typeof useTissueLabeling>;
   /** Whether the selected source model can be loaded here. */
   modelRunnability: Runnability;
+  modelCatalogue: ModelCatalogue | null;
   /** The adapter applied to this segmentation, and whether it is in force. */
   appliedAdapter: AppliedAdapterState | null;
-  /**
-   * Set when the run button would run a pack at native scale because the image
-   * has no pixel size. Gates the run behind the same confirmation the
-   * create-segmentation dialog uses.
-   */
-  runScaleMismatch: ScaleMismatch | null;
   /**
    * Delete every reviewed object and queue a fresh run — the recovery for a
    * pixel size typed in after the objects were made. The header renders the
@@ -93,8 +89,8 @@ export function useSegmentationScreenViewModels({
   removeArea,
   tissue,
   modelRunnability,
+  modelCatalogue,
   appliedAdapter,
-  runScaleMismatch,
   onClearMislabeledObjects,
   leftSegments,
   tooManyLeft,
@@ -105,6 +101,17 @@ export function useSegmentationScreenViewModels({
   handleLeftViewportChange,
   handleRightViewportChange,
 }: UseSegmentationScreenViewModelsArgs) {
+  const [roiFocusRequest, setRoiFocusRequest] = useState<{
+    roiId: string;
+    revision: number;
+  } | null>(null);
+
+  // A focus request belongs only to the labeling screen and segmentation in
+  // which Open was clicked. Entering another view must start at the full image.
+  useEffect(() => {
+    setRoiFocusRequest(null);
+  }, [route.currentSegmentationId, route.selectedAssetId]);
+
   return useMemo(() => {
     if (!route.image) {
       return {
@@ -123,6 +130,11 @@ export function useSegmentationScreenViewModels({
     const reviewGroup = review.group;
     const reviewPointActions = review.pointActions;
     const reviewDerived = review.derived;
+    const focusedRoi = roiFocusRequest
+      ? (processing.segmentationRois ?? []).find(
+          (roi) => roi.id === roiFocusRequest.roiId
+        ) ?? null
+      : null;
 
     const disableCorrectionBrush = removeArea.rightPanelRemoveMode === "area";
     const leftPanelWorkflowState = buildLeftPanelWorkflowState({
@@ -140,7 +152,6 @@ export function useSegmentationScreenViewModels({
     const headerProps = buildSegmentationHeaderProps({
       image: route.image,
       currentSegmentation: route.currentSegmentation,
-      visibleSegmentations: route.visibleSegmentations,
       sourceModelOptions: route.sourceModelOptions,
       activeSourceModel: route.activeSourceModel,
       // What the raster on screen was actually built from, straight off the
@@ -154,21 +165,16 @@ export function useSegmentationScreenViewModels({
       ]
         .sort()
         .join(":"),
-      fullImageActive: processing.fullImageActive,
-      fullImageProgress: processing.fullImageProgress,
       onBackToHome: route.handleBackToHome,
-      onSegmentationChange: route.handleSegmentationChange,
+      onBackToExperiment: route.handleBackToExperiment,
+      onBackToViewer: route.handleOpenViewer,
       onSourceModelChange: route.handleSourceModelChange,
       onToggleSegmentationComplete: processing.handleToggleSegmentationComplete,
-      onApplyFullImage: processing.handleApplyFullImage,
       isApplyingFull: processing.isApplyingFull,
-      activeRoi: processing.activeRoi,
-      onApplyActiveRoi: processing.handleRerunRoi,
       isApplyingActiveRoi: processing.isRerunningRoi,
       hasQueuedOrRunningOrganelleTask: processing.hasQueuedOrRunningOrganelleTask,
-      modelRunnability,
+      modelCatalogue,
       appliedAdapter,
-      runScaleMismatch,
       onClearMislabeledObjects,
     });
 
@@ -185,8 +191,17 @@ export function useSegmentationScreenViewModels({
           idMapOverlay:
             reviewMode.workflowMode === "review" ? overlayLayers.leftIdMapOverlay : null,
           onOverlayRevisionDisplayed: overlayManifest.handleLeftOverlayRevisionDisplayed,
-          transientFitBounds: null,
-          transientFitBoundsKey: null,
+          transientFitBounds: focusedRoi
+            ? {
+                x: focusedRoi.x,
+                y: focusedRoi.y,
+                width: focusedRoi.width,
+                height: focusedRoi.height,
+              }
+            : null,
+          transientFitBoundsKey: focusedRoi
+            ? `${route.image.id}:${route.currentSegmentationId}:${focusedRoi.id}:${roiFocusRequest?.revision}`
+            : null,
         },
         workflow: leftPanelWorkflowState,
         segments: {
@@ -208,9 +223,7 @@ export function useSegmentationScreenViewModels({
         },
         roi: buildSegmentationRoiViewModel(
           processing.activeRoi,
-          (processing.segmentationRois ?? []).filter((roi) =>
-            Boolean(roi.completed_for_segmentation)
-          )
+          processing.segmentationRois ?? []
         ),
         drawing: {
           pendingPolygon: drawing.pendingPolygon,
@@ -267,7 +280,7 @@ export function useSegmentationScreenViewModels({
               ? generateCompletedRoiDraftOverlays(
                   tissue.activePolygonTool.polygons,
                   tissue.activePolygonTool.liveSectionPoints,
-                  tissue.tool === "exclude" ? "exclude" : "include"
+                  tissue.operation
                 ).map((overlay) => ({ ...overlay, id: `tissue-polygon-${overlay.id}` }))
               : []),
           ],
@@ -293,6 +306,7 @@ export function useSegmentationScreenViewModels({
       confirmedSegments: overlayOptimistic.optimisticConfirmed,
       tooManyRight: false,
       activeRoi: processing.activeRoi,
+      rois: processing.segmentationRois ?? [],
       removeMode: removeArea.rightPanelRemoveMode,
       onRemoveModeChange: removeArea.setRightPanelRemoveMode,
       onRemoveObjectPointClick: reviewPointActions.handleResetConfirmedToCandidate,
@@ -322,11 +336,35 @@ export function useSegmentationScreenViewModels({
       },
     };
 
+    const selectedPackId = packIdForSourceModel(route.activeSourceModel);
+    const testDisabled =
+      !selectedPackId ||
+      modelRunnability.state === "blocked" ||
+      route.currentSegmentation?.status_stage === "COMPLETED" ||
+      route.currentSegmentation?.is_complete === true ||
+      processing.isApplyingFull ||
+      processing.isRerunningRoi ||
+      processing.hasQueuedOrRunningOrganelleTask;
+    const testDisabledReason = !selectedPackId
+      ? "Select QuantEM or OmniEM before testing an ROI."
+      : modelRunnability.state === "blocked"
+        ? modelRunnability.reason ?? "The selected model cannot run here."
+        : route.currentSegmentation?.status_stage === "COMPLETED" ||
+            route.currentSegmentation?.is_complete === true
+          ? "This segmentation is locked. Unlock it before testing an ROI."
+          : processing.isApplyingFull ||
+              processing.isRerunningRoi ||
+              processing.hasQueuedOrRunningOrganelleTask
+            ? "Processing in progress"
+            : undefined;
+
     const sidebarProps = buildSegmentationSidebarProps({
       tissue: {
         enabled: route.isTissueSegmentation,
         tool: tissue.tool,
         onToolChange: tissue.setTool,
+        operation: tissue.operation,
+        onOperationChange: tissue.setOperation,
         brushSize: tissue.brushSize,
         onBrushSizeChange: tissue.setBrushSize,
         canConfirmBrush: tissue.canConfirmBrush,
@@ -351,6 +389,7 @@ export function useSegmentationScreenViewModels({
         correctionTool: reviewMode.correctionMode.correctionTool,
         hoverActionMode: hover.hoverActionMode,
         drawBrushSize: drawing.brushSize,
+        draftOperation: drawing.draftOperation,
         hasDrawStrokes: drawing.brushStrokes.length > 0,
         supportsPointFeedback: route.supportsPointFeedback,
         isErSegmentation: route.isErSegmentation,
@@ -363,6 +402,7 @@ export function useSegmentationScreenViewModels({
         // the first box-drag pans instead of selecting.
         onHoverActionModeChange: reviewMode.handleHoverActionModeChange,
         onDrawBrushSizeChange: drawing.setBrushSize,
+        onDraftOperationChange: drawing.setDraftOperation,
         onClearDrawing: drawing.clearDrawing,
         onConfirmShape: () => {
           void reviewDraw.handleAcceptPolygon();
@@ -423,6 +463,9 @@ export function useSegmentationScreenViewModels({
               markingRoiId: erRoi.markingRoiId,
               deletingRoiId: erRoi.deletingRoiId,
               activatingRoiId: erRoi.activatingRoiId,
+              testingRoiId: processing.rerunningRoiId,
+              testDisabled,
+              testDisabledReason,
               onStartPlacement: erRoi.startPlacement,
               onMoveRoi: erRoi.moveRoi,
               onCancelPlacement: erRoi.cancelPlacement,
@@ -436,7 +479,25 @@ export function useSegmentationScreenViewModels({
                 void erRoi.deleteRoi(roiId);
               },
               onActivateRoi: (roiId: string) => {
-                void erRoi.activateRoi(roiId);
+                void (async () => {
+                  if (processing.activeRoi?.id !== roiId) {
+                    const activated = await erRoi.activateRoi(roiId);
+                    if (!activated) return;
+                  }
+                  setRoiFocusRequest((previous) => ({
+                    roiId,
+                    revision: (previous?.revision ?? 0) + 1,
+                  }));
+                })();
+              },
+              onTestRoi: (roiId: string) => {
+                void (async () => {
+                  if (processing.activeRoi?.id !== roiId) {
+                    const activated = await erRoi.activateRoi(roiId);
+                    if (!activated) return;
+                  }
+                  await processing.handleRerunRoi(roiId);
+                })();
               },
             },
           }
@@ -459,10 +520,11 @@ export function useSegmentationScreenViewModels({
     samBox,
     leftSegments,
     modelRunnability,
+    modelCatalogue,
     appliedAdapter,
-    runScaleMismatch,
     overlay,
     processing,
+    roiFocusRequest,
     refetchUncertainSegments,
     removeArea,
     tissue,

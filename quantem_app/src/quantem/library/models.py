@@ -2,12 +2,9 @@
 
 ``Experiment`` is the outer grouping -- one preparation, one cohort, one
 sitting at the microscope. ``Dataset`` is a named subset of one experiment.
-An image points at one experiment and belongs to any number of that
-experiment's datasets.
-
-Both are optional. ``Asset.experiment`` is nullable and ``Asset.datasets`` may
-be empty; that is the state every existing library is already in, and nothing
-downstream may treat it as an error.
+Every active image points at one experiment and belongs to any number of that
+experiment's datasets. An import without an explicit experiment receives its
+own experiment named after the image.
 
 The one rule worth enforcing in code is that an image's datasets cannot
 disagree with its experiment -- see :func:`validate_asset_grouping`. Without it
@@ -18,11 +15,16 @@ would silently train on an image from another.
 
 from __future__ import annotations
 
-from django.db import models
+from django.db import IntegrityError, models, transaction
 
 from quantem.assets.models import TimeStampedModel
 
-__all__ = ["Experiment", "Dataset", "validate_asset_grouping"]
+__all__ = [
+    "Experiment",
+    "Dataset",
+    "create_image_experiment",
+    "validate_asset_grouping",
+]
 
 
 class Experiment(TimeStampedModel):
@@ -60,6 +62,26 @@ class Dataset(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.experiment.name} / {self.name}"
+
+
+def create_image_experiment(display_name: str) -> Experiment:
+    """Create the unique experiment owned by one otherwise-unfiled image.
+
+    Experiment names are globally unique. The image name is used exactly when
+    available; duplicate names receive `` (2)``, `` (3)``, and so on. Each
+    create attempt has its own savepoint so concurrent imports that choose the
+    same candidate can retry cleanly after the uniqueness constraint wins.
+    """
+    base = str(display_name or "").strip() or "Untitled image"
+    for number in range(1, 100_000):
+        suffix = "" if number == 1 else f" ({number})"
+        candidate = f"{base[: max(1, 255 - len(suffix))]}{suffix}"
+        try:
+            with transaction.atomic():
+                return Experiment.objects.create(name=candidate)
+        except IntegrityError:
+            continue
+    raise RuntimeError("Could not allocate a unique experiment name for this image.")
 
 
 def validate_asset_grouping(asset) -> None:

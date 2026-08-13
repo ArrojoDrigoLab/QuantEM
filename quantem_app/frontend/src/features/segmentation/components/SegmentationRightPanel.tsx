@@ -34,6 +34,7 @@ interface SegmentationRightPanelProps {
   confirmedSegments: SegmentObject[];
   tooManyRight: boolean;
   activeRoi: SegmentationRoi | null;
+  rois: SegmentationRoi[];
   removeMode: RightPanelRemoveMode;
   onRemoveModeChange: (mode: RightPanelRemoveMode) => void;
   onRemoveObjectPointClick: (point: Point) => void;
@@ -59,6 +60,7 @@ export function SegmentationRightPanel({
   confirmedSegments,
   tooManyRight,
   activeRoi,
+  rois,
   removeMode,
   onRemoveModeChange,
   onRemoveObjectPointClick,
@@ -75,7 +77,7 @@ export function SegmentationRightPanel({
 }: SegmentationRightPanelProps) {
   const rightPersistentOverlays = useMemo<SegmentOverlay[]>(
     () => {
-      const overlays: SegmentOverlay[] = [...generateRoiOverlays(activeRoi)];
+      const overlays: SegmentOverlay[] = [...generateRoiOverlays(activeRoi, rois)];
       overlays.unshift(
         ...generateRightPanelOverlays(
           confirmedSegments,
@@ -91,6 +93,7 @@ export function SegmentationRightPanel({
     },
     [
       activeRoi,
+      rois,
       confirmedSegments,
       segmentationTypeInternalName,
       useSmoothedGeometry,

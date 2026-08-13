@@ -14,7 +14,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 defaults:
   run:
@@ -97,8 +97,10 @@ jobs:
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File packaging/pyinstaller/build.ps1 -Python $python -Scratch $scratch
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
           $sidecar = Resolve-Path packaging/pyinstaller/dist/quantem-server/quantem-server.exe
-          & $sidecar --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "Frozen server does not start" }
+          $env:QUANTEM_FROZEN_SELFTEST = "1"
+          & $sidecar
+          if ($LASTEXITCODE -ne 0) { throw "Frozen model runtime self-test failed" }
+          Remove-Item Env:QUANTEM_FROZEN_SELFTEST
           $reportedCuda = [string](& python -c "import torch; print(torch.version.cuda or '')")
           if ('${{ matrix.variant }}' -eq 'cpu' -and $reportedCuda) { throw "CPU payload contains CUDA torch $reportedCuda" }
           if ('${{ matrix.variant }}' -eq 'cuda' -and $reportedCuda -ne '12.6') { throw "Expected CUDA 12.6 torch, got '$reportedCuda'" }
@@ -140,7 +142,7 @@ jobs:
           name: quantem-release-windows-payload-${{ matrix.variant }}
           path: ${{ runner.temp }}/payload-assets
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   macos:
     name: ${{ matrix.name }}
@@ -245,7 +247,7 @@ jobs:
           update="$(find "$bundle" -name '*.app.tar.gz' -type f | head -n 1)"
           test -n "$dmg" && test -n "$app" && test -n "$update" && test -f "$update.sig"
           codesign --verify --strict --verbose=2 "$app"
-          "$app/Contents/Resources/quantem-server/quantem-server" --help > /dev/null
+          QUANTEM_FROZEN_SELFTEST=1 "$app/Contents/Resources/quantem-server/quantem-server"
           out="$RUNNER_TEMP/release-assets"
           mkdir -p "$out"
           dmg_name="QuantEM_${QUANTEM_VERSION}_${{ matrix.platform }}.dmg"
@@ -260,7 +262,7 @@ jobs:
           name: quantem-release-${{ matrix.platform }}
           path: ${{ runner.temp }}/release-assets
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   windows-installer:
     name: Windows single CPU/CUDA installer
@@ -392,12 +394,15 @@ jobs:
           name: quantem-release-windows-x86_64
           path: ${{ runner.temp }}/release-assets
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
   publish:
     needs: [windows-payload, windows-installer, macos]
     runs-on: ubuntu-latest
     environment: quantem-desktop-release
+    permissions:
+      actions: write
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -421,7 +426,28 @@ jobs:
           gh release create "$RELEASE_TAG" --draft --generate-notes
           gh release view "$RELEASE_TAG" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
           python desktop/scripts/build_update_metadata.py --version "$version" --tag "$RELEASE_TAG" --assets-dir ../release-assets --notes-file "$RUNNER_TEMP/release-notes.md" --output ../release-assets/quantem-app-latest.json
+          python desktop/scripts/build_release_notes.py --version "$version" --tag "$RELEASE_TAG" --generated-notes "$RUNNER_TEMP/release-notes.md" --output "$RUNNER_TEMP/public-release-notes.md"
           python -m json.tool ../release-assets/quantem-app-latest.json > /dev/null
+          rm -f ../release-assets/*.update-manifest.json ../release-assets/quantem-app-windows-payloads.json
           find ../release-assets -type f -size 0 -print -quit | (! read)
           gh release upload "$RELEASE_TAG" ../release-assets/* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false
+          label_asset() {
+            filename="$1"
+            label="$2"
+            asset_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq ".assets[] | select(.name == \"${filename}\") | .id")"
+            test -n "$asset_id"
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" -f "label=${label}" > /dev/null
+          }
+          label_asset "QuantEM_${version}_x64-setup.exe" "Windows installer"
+          label_asset "QuantEM_${version}_darwin-aarch64.dmg" "macOS installer (Apple silicon)"
+          label_asset "QuantEM_${version}_darwin-x86_64.dmg" "macOS installer (Intel)"
+          gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/public-release-notes.md" --draft=false
+      - name: Delete temporary workflow artifacts after publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" --jq '.artifacts[].id' |
+            while read -r artifact_id; do
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+            done

@@ -255,6 +255,17 @@ def build_label_lut_binary(
     default per-state visibility) -- used to serve a confirmed-only LUT to the
     right (review) panel without a second on-disk artifact.
     """
+    if state.segmentation.segmentation_type.measurement_mode == "global":
+        color = str(state.segmentation.segmentation_type.default_color or "33CC66").lstrip("#")
+        try:
+            red, green, blue = _hex_to_rgb(color)
+        except (ValueError, IndexError):
+            red, green, blue = _hex_to_rgb(COLOR_CONFIRMED)
+        visible = STATE_CONFIRMED not in hidden_states
+        buffer = np.zeros((2, 4), dtype=np.uint8)
+        buffer[1] = (red, green, blue, 255 if visible else 0)
+        return buffer.tobytes(), 1
+
     rows, objects = _resolve_live_objects(state)
     suppressed = candidate_ids_inside_completed_rois(state)
     max_label = max((row.label for row in rows), default=0)
@@ -274,6 +285,17 @@ def build_label_lut_binary(
 
 def build_label_lut_json(state: SegmentationOverlayState) -> dict[str, Any]:
     """Return the label -> object map for picking and client-side toggles."""
+    if state.segmentation.segmentation_type.measurement_mode == "global":
+        color = str(state.segmentation.segmentation_type.default_color or "#33CC66")
+        return {
+            "lut_revision": int(state.lut_revision),
+            "bundle_version": int(state.bundle_version),
+            "max_label": 1,
+            "overlay_kind": "binary_mask",
+            "pickable": False,
+            "color": color,
+            "objects": [],
+        }
     rows, objects = _resolve_live_objects(state)
     suppressed = candidate_ids_inside_completed_rois(state)
     entries: list[dict[str, Any]] = []

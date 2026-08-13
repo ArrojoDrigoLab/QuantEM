@@ -7,7 +7,8 @@
  * the old one. Enforcing that here rather than at each call site is what stops
  * the two disagreeing on one screen and not on another.
  *
- * Nothing here is required anywhere it is used.
+ * Selecting no shared experiment means one experiment per image, named from
+ * the image. It never creates an unassigned active image.
  */
 
 import { useCallback } from "react";
@@ -80,8 +81,8 @@ export function GroupingFields({
     [keepLabels, onDatasetChange, onExperimentChange]
   );
 
-  // "No experiment" is the one choice that leaves no room for a dataset at
-  // all: an image outside every experiment is outside every dataset too.
+  // Separate per-image experiments leave no single scope in which a shared
+  // dataset can be selected.
   const canChooseDataset = experiment.kind !== "none";
 
   return (
@@ -96,7 +97,9 @@ export function GroupingFields({
         value={experiment}
         onChange={handleExperimentChange}
         disabled={disabled}
-        noneLabel="No experiment"
+        noneLabel={
+          keepLabels ? "Move to separate experiments" : "Use image name"
+        }
         newLabel="New experiment…"
         newPlaceholder="e.g. Fasted cohort"
         keepLabel={keepLabels ? "Leave as they are" : undefined}
@@ -115,7 +118,7 @@ export function GroupingFields({
         help={
           canChooseDataset
             ? undefined
-            : "A dataset sits inside an experiment. Choose one first."
+            : "Choose one shared experiment before selecting a dataset."
         }
       />
     </div>

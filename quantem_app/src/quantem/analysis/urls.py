@@ -10,12 +10,18 @@ from django.urls import path
 from quantem.segmentation.api_views.analysis import (
     AnalysisRunDetailView,
     AnalysisRunExportView,
+    GlobalAreaAnalysisView,
     SegmentationAnalysisView,
 )
 
 from .views import AnalysisGroupRollupView
 
 urlpatterns = [
+    path(
+        "segmentations/<uuid:seg_id>/analysis/global-area/",
+        GlobalAreaAnalysisView.as_view(),
+        name="segmentation-global-area-analysis",
+    ),
     path(
         "segmentations/<uuid:seg_id>/analysis/",
         SegmentationAnalysisView.as_view(),

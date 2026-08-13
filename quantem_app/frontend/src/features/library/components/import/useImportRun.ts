@@ -16,14 +16,21 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { uploadAsset } from "@/shared/api/assets";
+import {
+  startUploadedAssetPipelines,
+  uploadAsset,
+} from "@/shared/api/assets";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import type {
   BatchSummary,
   ChosenFile,
   FileImportState,
 } from "@/features/library/components/import/importValidation";
-import type { AssetDetail, UploadImageOptions } from "@/shared/types/images";
+import type {
+  AssetDetail,
+  UploadImageOptions,
+  UploadPipelineStart,
+} from "@/shared/types/images";
 
 /** Where one finished import sat in the batch that produced it. */
 export interface ImportBatchPosition {
@@ -44,6 +51,13 @@ export function useImportRun({
   const [batchTotal, setBatchTotal] = useState(0);
   const [importing, setImporting] = useState(false);
   const mountedRef = useRef(true);
+  const deferredRetryRef = useRef<{
+    pipelines: UploadPipelineStart[];
+    attempted: number;
+    imported: number;
+    failedKeys: Set<string>;
+    onSettled: (failedKeys: Set<string>) => void;
+  } | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -75,6 +89,7 @@ export function useImportRun({
       const failedKeys = new Set<string>();
       let imported = 0;
       let position = 0;
+      const deferredPipelines: UploadPipelineStart[] = [];
 
       for (const entry of queue) {
         position += 1;
@@ -83,7 +98,10 @@ export function useImportRun({
           ...current,
           [entry.key]: { kind: "uploading" },
         }));
-        const options = buildOptions(entry, queue.length);
+        const options = {
+          ...buildOptions(entry, queue.length),
+          deferProcessing: queue.length > 1,
+        };
         try {
           const asset = await uploadAsset(entry.file, options);
           if (!mountedRef.current) return;
@@ -92,6 +110,15 @@ export function useImportRun({
             ...current,
             [entry.key]: { kind: "imported" },
           }));
+          if (options.deferProcessing) {
+            deferredPipelines.push({
+              assetId: asset.id,
+              segmentMito: options.segmentMito,
+              segmentEr: options.segmentEr,
+              segmentNucleus: options.segmentNucleus,
+              segmentLd: options.segmentLd,
+            });
+          }
           onUploaded?.(asset, { index: position, total: queue.length });
         } catch (err) {
           if (!mountedRef.current) return;
@@ -110,6 +137,40 @@ export function useImportRun({
       }
 
       if (!mountedRef.current) return;
+      // This call happens after the upload loop, including after any failures.
+      // The server commits every job row together, so no encoder can claim an
+      // early image while a later file is still importing or being queued.
+      if (deferredPipelines.length > 0) {
+        try {
+          await startUploadedAssetPipelines(deferredPipelines);
+        } catch (err) {
+          // The imports themselves succeeded and must not be offered as upload
+          // retries (that would create duplicates). Keep their cards in the
+          // queued state and put an actionable batch-level failure in the
+          // summary surface. The endpoint is idempotent, so the recovery
+          // button can safely resubmit after a lost response.
+          if (!mountedRef.current) return;
+          setImporting(false);
+          setBatchSummary({
+            attempted: queue.length,
+            imported,
+            failed: failedKeys.size,
+            processingError: extractApiErrorMessage(
+              err,
+              "The images were imported, but processing could not be started."
+            ),
+          });
+          deferredRetryRef.current = {
+            pipelines: deferredPipelines,
+            attempted: queue.length,
+            imported,
+            failedKeys,
+            onSettled,
+          };
+          return;
+        }
+      }
+      deferredRetryRef.current = null;
       setImporting(false);
       setBatchSummary({
         attempted: queue.length,
@@ -121,6 +182,36 @@ export function useImportRun({
     [onUploaded]
   );
 
+  const retryDeferredProcessing = useCallback(async () => {
+    const pending = deferredRetryRef.current;
+    if (!pending) return;
+    setImporting(true);
+    try {
+      await startUploadedAssetPipelines(pending.pipelines);
+      if (!mountedRef.current) return;
+      deferredRetryRef.current = null;
+      setBatchSummary({
+        attempted: pending.attempted,
+        imported: pending.imported,
+        failed: pending.failedKeys.size,
+      });
+      pending.onSettled(pending.failedKeys);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setBatchSummary({
+        attempted: pending.attempted,
+        imported: pending.imported,
+        failed: pending.failedKeys.size,
+        processingError: extractApiErrorMessage(
+          err,
+          "The images were imported, but processing still could not be started."
+        ),
+      });
+    } finally {
+      if (mountedRef.current) setImporting(false);
+    }
+  }, []);
+
   return {
     imports,
     setImports,
@@ -129,6 +220,7 @@ export function useImportRun({
     batchTotal,
     importing,
     runImport,
+    retryDeferredProcessing,
     /**
      * Whether the panel is still mounted. Shared with the header-probe
      * callback, which must not `setState` after an unmount either.

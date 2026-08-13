@@ -1,13 +1,11 @@
 /**
- * The two rules `notices.css` added have to be readable.
+ * The failure-action rule `notices.css` adds has to be readable.
  *
  * The labeling header has already lost a number to a 1.04:1 contrast ratio
  * once (`.apply-full-progress`, invisible through two waves of progress work),
  * and the fix that time was to assert the *ratio* rather than the hex so the
  * rule can be restyled freely and can never go back. Same treatment here: the
- * nudge and the failure action are new surfaces on the same header, and the
- * nudge in particular is three lines of small text a user is meant to read
- * carefully before deciding to switch model families.
+ * failure action is a small link inside the failed-run notice.
  */
 
 import { describe, expect, it } from "vitest";
@@ -48,23 +46,6 @@ function declaration(body: string, property: string): string {
 const FAILED_NOTICE_BACKGROUND = "#fee2e2";
 
 describe("the surfaces notices.css added", () => {
-  it("keeps the domain-shift nudge legible on its own background", () => {
-    const body = ruleBody(".header-domain-shift");
-    const background = declaration(body, "background");
-
-    for (const selector of [
-      ".header-domain-shift",
-      ".header-domain-shift-label",
-      ".header-domain-shift-message",
-      ".header-domain-shift-evidence",
-    ]) {
-      const colour = declaration(ruleBody(selector), "color");
-      expect(contrastRatio(colour, background), selector).toBeGreaterThanOrEqual(
-        4.5
-      );
-    }
-  });
-
   it("keeps the failure action legible on the red notice it sits in", () => {
     // Not on the header's own grey: this link is inside `.header-failed-notice`,
     // and checking it against the wrong background is how a link ends up

@@ -5,19 +5,21 @@ entries, which is how every other app in this tree is written -- no router, no
 viewset, no new dependency. Error bodies are ``{"detail": "..."}`` in the
 application's own voice.
 
-Nothing here is required of the user. An unorganised library never calls any of
-it, and every list answers with an empty list rather than with a prompt to go
-and organise something.
+Nothing here requires advance setup. A one-image import creates its own
+experiment automatically, and every list answers with an empty list before the
+first import.
 """
 
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from quantem.assets.asset_mutations import update_asset
 from quantem.assets.models import Asset
 from quantem.library.grouping import (
     UNSET,
@@ -25,7 +27,7 @@ from quantem.library.grouping import (
     resolve_dataset,
     resolve_experiment,
 )
-from quantem.library.models import Dataset, Experiment
+from quantem.library.models import Dataset, Experiment, create_image_experiment
 from quantem.library.serializers import (
     DatasetWriteSerializer,
     ExperimentWriteSerializer,
@@ -116,11 +118,10 @@ class ExperimentListCreateView(APIView):
 class ExperimentDetailView(APIView):
     """Read, rename or delete one experiment.
 
-    Deleting one **keeps every image**. ``Asset.experiment`` is ``SET_NULL`` on
-    purpose: an experiment is a label over the library, and deleting a label
-    must never be a way to lose data. The images become unassigned, which is a
-    perfectly ordinary state for an image to be in, and the datasets inside the
-    experiment go with it because a dataset cannot exist without one.
+    Deleting one **keeps every image**. Each active image moves into a new
+    experiment named after its display name before the old experiment and its
+    datasets are removed. Tombstoned rows are detached without creating
+    visible empty experiments.
     """
 
     def _get(self, experiment_id) -> Experiment | None:
@@ -156,7 +157,20 @@ class ExperimentDetailView(APIView):
         experiment = self._get(experiment_id)
         if experiment is None:
             return _detail(EXPERIMENT_GONE, status.HTTP_404_NOT_FOUND)
-        experiment.delete()
+        with transaction.atomic():
+            assets = list(
+                Asset.objects.select_for_update()
+                .filter(experiment_id=experiment.id)
+                .prefetch_related("datasets")
+            )
+            for asset in assets:
+                asset.datasets.clear()
+                if asset.lifecycle_status == Asset.LIFECYCLE_ACTIVE:
+                    replacement = create_image_experiment(asset.display_name)
+                    Asset.objects.filter(id=asset.id).update(experiment=replacement)
+                else:
+                    Asset.objects.filter(id=asset.id).update(experiment=None)
+            experiment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -238,7 +252,7 @@ class AssetGroupingView(APIView):
     The three fields are independent and each is optional:
 
     * omit ``experiment`` entirely and the images keep the one they have;
-    * send it as ``null`` and they become unassigned;
+    * send it as ``null`` and each image gets its own named experiment;
     * send ``experiment_name`` instead of an id to create one on the way past,
       which is what "type a new name" in the picker does.
 
@@ -349,3 +363,55 @@ class AssetGroupingView(APIView):
         if typed is not None and typed not in resolved:
             resolved.append(typed)
         return experiment, resolved
+
+
+class AssetLibraryEditView(APIView):
+    """Atomically edit one image's details and dataset membership."""
+
+    def patch(self, request, asset_id):
+        payload = request.data or {}
+        try:
+            with transaction.atomic():
+                asset = (
+                    Asset.objects.select_for_update()
+                    .filter(id=asset_id, lifecycle_status=Asset.LIFECYCLE_ACTIVE)
+                    .first()
+                )
+                if asset is None:
+                    return _detail(
+                        "That image is no longer in the library.",
+                        status.HTTP_404_NOT_FOUND,
+                    )
+                dataset_ids = payload.get("datasets", UNSET)
+                datasets = UNSET
+                if dataset_ids is not UNSET:
+                    if not isinstance(dataset_ids, (list, tuple)):
+                        raise DjangoValidationError("Datasets must be a list.")
+                    datasets = []
+                    for dataset_id in dataset_ids:
+                        dataset = resolve_dataset(
+                            experiment=asset.experiment,
+                            dataset_id=dataset_id,
+                        )
+                        if dataset is not None:
+                            datasets.append(dataset)
+
+                detail_payload = {
+                    key: payload[key]
+                    for key in ("display_name", "pixel_size_nm", "notes")
+                    if key in payload
+                }
+                update_asset(asset, detail_payload, inside_transaction=True)
+                apply_grouping(
+                    [asset],
+                    experiment=UNSET,
+                    datasets=datasets,
+                    datasets_mode="replace",
+                )
+        except (DjangoValidationError, ValueError) as exc:
+            return _detail(_first_error(exc), status.HTTP_400_BAD_REQUEST)
+
+        asset.refresh_from_db()
+        from quantem.assets.serializers import serialize_asset_detail
+
+        return Response(serialize_asset_detail(asset))

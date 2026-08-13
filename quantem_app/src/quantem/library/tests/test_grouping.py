@@ -33,9 +33,11 @@ class ValidateAssetGroupingTests(TestCase):
         self.fed = Experiment.objects.create(name="Fed cohort")
         self.liver = Dataset.objects.create(experiment=self.fasted, name="Liver 24h")
 
-    def test_an_unorganised_image_is_valid(self):
-        """The state every library that exists today is in."""
-        validate_asset_grouping(_asset())
+    def test_a_directly_created_image_gets_its_own_experiment(self):
+        asset = _asset()
+
+        validate_asset_grouping(asset)
+        self.assertEqual(asset.experiment.name, "Scan")
 
     def test_an_image_in_its_own_experiments_dataset_is_valid(self):
         asset = _asset()
@@ -56,6 +58,7 @@ class ValidateAssetGroupingTests(TestCase):
 
     def test_a_dataset_with_no_experiment_at_all_is_refused(self):
         asset = _asset()
+        asset.experiment = None
         asset.datasets.add(self.liver)
 
         with self.assertRaises(ValidationError):
@@ -95,12 +98,13 @@ class MovingBetweenExperimentsTests(TestCase):
         self.asset.refresh_from_db()
         self.assertEqual([dataset.name for dataset in self.asset.datasets.all()], ["Kidney 24h"])
 
-    def test_clearing_the_experiment_clears_the_datasets_with_it(self):
-        """An image with no experiment cannot be in any dataset."""
+    def test_separating_the_image_creates_a_named_experiment_and_clears_datasets(self):
         outcome = apply_grouping([self.asset], experiment=None)
 
         self.asset.refresh_from_db()
-        self.assertIsNone(self.asset.experiment_id)
+        self.assertIsNotNone(self.asset.experiment_id)
+        self.assertTrue(self.asset.experiment.name.startswith("Scan"))
+        self.assertNotEqual(self.asset.experiment_id, self.fasted.id)
         self.assertEqual(list(self.asset.datasets.all()), [])
         self.assertEqual(outcome.dataset_links_dropped, 1)
 
@@ -124,12 +128,13 @@ class MovingBetweenExperimentsTests(TestCase):
     def test_a_failed_bulk_assignment_lands_nothing_at_all(self):
         """Half a bulk write is worse than none: nothing says which half."""
         other = _asset("Scan 2")
+        original_experiment_id = other.experiment_id
 
         with self.assertRaises(ValidationError):
             apply_grouping([other, self.asset], datasets=[self.kidney])
 
         other.refresh_from_db()
-        self.assertIsNone(other.experiment_id)
+        self.assertEqual(other.experiment_id, original_experiment_id)
         self.assertEqual(list(other.datasets.all()), [])
 
     def test_add_mode_keeps_what_is_already_there(self):

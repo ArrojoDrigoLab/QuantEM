@@ -20,6 +20,9 @@ The overlay NGFF *serving* routes are not here: they sit under
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from quantem.segmentation.api_views.analysis_masks import (
+    urlpatterns as analysis_mask_urls,
+)
 from quantem.segmentation.api_views.preview import urlpatterns as preview_urls
 from quantem.segmentation.api_views.propose import urlpatterns as propose_urls
 from quantem.segmentation.api_views.quality import urlpatterns as quality_urls
@@ -217,6 +220,7 @@ urlpatterns = [
         name="organelle-apply-full-image",
     ),
     # One module per feature that is adding routes; see the module docstring.
+    *analysis_mask_urls,
     *quality_urls,
     *rethreshold_urls,
     *propose_urls,

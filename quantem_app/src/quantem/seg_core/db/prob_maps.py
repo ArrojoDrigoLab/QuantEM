@@ -20,10 +20,49 @@ from quantem.assets.models import ImageROI
 from quantem.core.config import PROB_MAPS_DIR, STORAGE_DIR, TMP_DIR
 from quantem.core.local_storage import StorageError, storage_path
 from quantem.inference.resample import quantize_probability
+from quantem.jobs.constants import (
+    JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
+    JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
+)
+from quantem.jobs.models import Job
 from quantem.segmentation.models import ImageSegmentation, ProbabilityMap
 from quantem.segmentation.prob_maps.io import resolve_probability_map_path
+from quantem.segmentation.prob_maps.preview import (
+    probability_preview_path,
+    save_probability_preview,
+)
 
 logger = logging.getLogger(__name__)
+
+_ACTIVE_MAP_READER_STATUSES = ("PENDING", "RETRY", "RUNNING")
+_MAP_READER_JOB_TYPES = (
+    JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
+    JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
+)
+
+
+def probability_map_reader_active(segmentation: ImageSegmentation) -> bool:
+    """Whether queued/running work can still be reading this result map."""
+    jobs = Job.objects.filter(
+        type__in=_MAP_READER_JOB_TYPES,
+        status__in=_ACTIVE_MAP_READER_STATUSES,
+    ).values_list("payload_json", flat=True)
+    segmentation_id = str(segmentation.id)
+    asset_id = str(segmentation.asset_id or "")
+    for payload in jobs.iterator():
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("segmentation_id") or "") == segmentation_id:
+            return True
+        asset_ids = payload.get("asset_ids")
+        if (
+            asset_id
+            and isinstance(asset_ids, list)
+            and asset_id in {str(value) for value in asset_ids}
+        ):
+            return True
+    return False
+
 
 #: ROI maps are canonical on their own. The composited full-image raster is a
 #: convenience for small images only; allocating a gigapixel canvas after an
@@ -102,7 +141,9 @@ def _unlink_unshared_probability_map_file(prob_map: ProbabilityMap) -> None:
     if ProbabilityMap.objects.filter(file_path=prob_map.file_path).exists():
         return
     try:
-        storage_path(prob_map.file_path).unlink(missing_ok=True)
+        source_path = storage_path(prob_map.file_path)
+        source_path.unlink(missing_ok=True)
+        probability_preview_path(source_path).unlink(missing_ok=True)
     except (OSError, StorageError):
         logger.warning(
             "Could not remove probability-map file %s after reclaiming its record.",
@@ -137,6 +178,13 @@ def delete_probability_maps_for_roi(
     remove just one ROI's pixels without allocating another full-image canvas,
     and it is never a canonical inference cache.
     """
+    if probability_map_reader_active(segmentation):
+        logger.info(
+            "Deferred ROI probability-map cleanup for segmentation %s while a "
+            "threshold reader is active.",
+            segmentation.id,
+        )
+        return 0
     roi_dir = TMP_DIR / "prob_maps" / str(segmentation.id) / str(roi.id)
     roi_prefix = str(roi_dir.relative_to(STORAGE_DIR)).replace("\\", "/")
     maps = list(ProbabilityMap.objects.filter(segmentation=segmentation))
@@ -176,6 +224,13 @@ def delete_probability_maps_for_segmentation(segmentation: ImageSegmentation) ->
     objects, stored masks, overlays, and analysis outputs are deliberately not
     part of this cleanup.
     """
+    if probability_map_reader_active(segmentation):
+        logger.info(
+            "Deferred probability-map cleanup for segmentation %s while a "
+            "threshold reader is active.",
+            segmentation.id,
+        )
+        return 0
     records = list(ProbabilityMap.objects.filter(segmentation=segmentation))
     if records:
         ProbabilityMap.objects.filter(id__in=[record.id for record in records]).delete()
@@ -283,6 +338,16 @@ def save_probability_map(
     prob_uint8 = prob_array if prob_array.dtype == np.uint8 else quantize_probability(prob_array)
     img = Image.fromarray(prob_uint8, mode="L")
     img.save(file_path)
+    try:
+        save_probability_preview(file_path, prob_uint8)
+    except (OSError, ValueError):
+        # The authoritative full-resolution map is already safe. A preview can
+        # be retried lazily without turning successful inference into failure.
+        logger.warning(
+            "Could not write the browser probability preview for %s.",
+            file_path,
+            exc_info=True,
+        )
 
     relative_path = str(file_path.relative_to(STORAGE_DIR)).replace("\\", "/")
     metadata: dict[str, object] = {

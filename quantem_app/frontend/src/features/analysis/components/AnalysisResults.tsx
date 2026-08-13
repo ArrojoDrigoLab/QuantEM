@@ -9,6 +9,7 @@
  */
 
 import { Badge, Panel } from "@/shared/ui/design";
+import { PixelSizeTag } from "@/shared/ui/PixelSize";
 import { formatNumber, formatTimestamp } from "@/shared/ui/format";
 import { getAnalysisExportUrl } from "@/shared/api/analysis";
 import type { AnalysisRun } from "@/shared/types/analysis";
@@ -128,11 +129,7 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {run.group ? <Badge tone="info">group: {run.group}</Badge> : null}
-            {calibrated ? (
-              <Badge tone="good">{formatNumber(run.pixel_size_nm, 2)} nm/px</Badge>
-            ) : (
-              <Badge tone="warning">uncalibrated</Badge>
-            )}
+            <PixelSizeTag valueNm={calibrated ? run.pixel_size_nm : null} />
           </div>
         </div>
 

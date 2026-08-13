@@ -33,7 +33,10 @@ export function useSegmentationOverlayState({
     segmentationInternalName,
     useSmoothedSegmentGeometry,
     leftPanelLayerStyles: layers.leftPanelLayerStyles,
-    settledOverlayRevision: manifest.overlayManifest?.applied_revision ?? null,
+    // Do not retire a bridging vector merely because the new bundle exists on
+    // disk. Keep it until the always-mounted left viewer has loaded that exact
+    // revision, otherwise a large bundle produces a visible blank interval.
+    settledOverlayRevision: manifest.leftDisplayedOverlayRevision,
   });
   const refresh = useOverlayRefreshScheduler({
     currentSegmentationId,

@@ -161,6 +161,12 @@ def build_overlay_manifest(
         "lut_url": lut_url,
         "arrays": list(OVERLAY_ARRAY_KEYS),
         "label_dtype": "uint32",
+        "overlay_kind": (
+            "binary_mask"
+            if segmentation.segmentation_type.measurement_mode == "global"
+            else "object_ids"
+        ),
+        "pickable": segmentation.segmentation_type.measurement_mode != "global",
         "source_model": state.candidate_source_model or None,
         "bundle_version": state.bundle_version,
         "applied_revision": state.applied_revision,

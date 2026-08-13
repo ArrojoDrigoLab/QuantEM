@@ -12,11 +12,14 @@ and so need their own mount. See :mod:`quantem.assets.ngff_urls`.
 
 from django.urls import path
 
+from quantem.assets.export_views import AssetRasterExportView
 from quantem.assets.views import (
     AssetDetailView,
     AssetListView,
     AssetNgffThumbnailView,
     AssetProcessedPngView,
+    AssetUploadPipelineBatchStartView,
+    AssetUploadPipelineRecoveryView,
     AssetUploadView,
     SystemHandshakeView,
     SystemStatusView,
@@ -27,6 +30,16 @@ from quantem.segmentation.views import AssetSegmentationListCreateView
 urlpatterns = [
     # Specific API endpoints that need to be matched before router
     path("assets/upload/", AssetUploadView.as_view(), name="asset-upload"),
+    path(
+        "assets/upload/start-processing/",
+        AssetUploadPipelineBatchStartView.as_view(),
+        name="asset-upload-start-processing",
+    ),
+    path(
+        "assets/upload/recover-processing/",
+        AssetUploadPipelineRecoveryView.as_view(),
+        name="asset-upload-recover-processing",
+    ),
     path("assets/", AssetListView.as_view(), name="asset-list"),
     path(
         "assets/<uuid:asset_id>/",
@@ -47,6 +60,11 @@ urlpatterns = [
         "assets/<uuid:asset_id>/segmentations/",
         AssetSegmentationListCreateView.as_view(),
         name="asset-segmentations",
+    ),
+    path(
+        "assets/<uuid:asset_id>/export-png/",
+        AssetRasterExportView.as_view(),
+        name="asset-raster-export",
     ),
     path("system/status/", SystemStatusView.as_view(), name="system-status"),
     path("system/handshake/", SystemHandshakeView.as_view(), name="system-handshake"),

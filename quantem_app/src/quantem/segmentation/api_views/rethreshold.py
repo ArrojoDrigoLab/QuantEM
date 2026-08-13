@@ -2,9 +2,9 @@
 
 The threshold is the foreground cutoff (:mod:`quantem.segmentation.run_identity`).
 Moving it does **not** run the model or change candidate objects: the browser
-recolors the probability map that the run already stored. Pressing Apply is the
-separate commit step; it re-thresholds that stored map, replaces only the
-unconfirmed candidates, and leaves confirmed/manual annotations intact. The
+recolors the probability map that the run already stored. Pressing Preview is
+the separate materialization step; it re-thresholds that stored map, replaces
+only the unconfirmed candidates, and leaves confirmed/manual annotations intact. The
 backend of that commit is
 :func:`~quantem.seg_core.db.inference.replay_stored_probability_map`; the worker
 is :mod:`quantem.jobs.handlers.rethreshold`.
@@ -37,12 +37,16 @@ from __future__ import annotations
 import logging
 from urllib.parse import urlencode
 
+from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.urls import path, reverse
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shapely.geometry import box
+from shapely.ops import unary_union
+from shapely.prepared import prep
 
 from quantem.assets.models import ImageROI
 from quantem.core.error_codes import ERROR_CODE_FIELD, ErrorCode
@@ -54,12 +58,28 @@ from quantem.jobs.models import Job
 from quantem.seg_core.db.prob_maps import get_prob_map_file_path
 from quantem.seg_core.registry import get_segmenter_or_none
 from quantem.segmentation.models import (
+    CompletedROI,
     ImageSegmentation,
+    RoiSegmentationStatus,
     SegmentationResultVersion,
     SegmentObject,
 )
+from quantem.segmentation.overlay_ngff.dirty import full_image_dirty_bbox
+from quantem.segmentation.overlay_ngff.mutations import (
+    register_overlay_mutation_all_bundles,
+)
 from quantem.segmentation.prob_maps.persistence import stored_map_readiness
+from quantem.segmentation.prob_maps.preview import (
+    ensure_probability_preview,
+    probability_map_size,
+)
+from quantem.segmentation.segment_status import status_for_segment_lifecycle
+from quantem.segmentation.services.confirm_batch.feature_refresh import (
+    _enqueue_segment_feature_refresh,
+)
 from quantem.segmentation.source_models import (
+    default_source_model_for_organelle,
+    get_source_model_definition,
     normalize_source_model,
     resolve_segmenter_internal_name,
 )
@@ -123,6 +143,121 @@ class IncludeLevelSerializer(serializers.Serializer):
     roi_id = serializers.UUIDField(required=False, allow_null=True)
 
 
+class ConfirmModelOutputSerializer(serializers.Serializer):
+    """The model whose current candidates should become analysis-ready."""
+
+    source_model = serializers.CharField(required=True, allow_blank=False)
+
+
+def _effective_source_model(
+    segmentation: ImageSegmentation,
+    source_model: str | None,
+) -> str:
+    normalized = normalize_source_model(source_model)
+    if normalized:
+        return normalized
+    return default_source_model_for_organelle(segmentation.segmentation_type.internal_name)
+
+
+def _manual_review_geometries(segmentation: ImageSegmentation) -> list:
+    """Areas whose dense manual labels must win over a whole-image accept.
+
+    QuantEM has two representations for a manually finished area. The freeform
+    ``CompletedROI`` is used by the Confirmed area tool; the rectangular
+    ``RoiSegmentationStatus`` is used by the per-organelle ROI workflow. A
+    candidate touching either is deliberately left as a candidate. Confirming
+    it automatically would turn the model back into ground truth inside the
+    exact area the user marked as exhaustively reviewed.
+    """
+
+    geometries = [
+        completed.geometry
+        for completed in CompletedROI.objects.filter(segmentation=segmentation).only("geometry_wkb")
+    ]
+    reviewed_windows = (
+        RoiSegmentationStatus.objects.filter(
+            segmentation=segmentation,
+            is_complete=True,
+        )
+        .select_related("image_roi")
+        .only(
+            "image_roi__x",
+            "image_roi__y",
+            "image_roi__width",
+            "image_roi__height",
+        )
+    )
+    for reviewed in reviewed_windows:
+        roi = reviewed.image_roi
+        geometries.append(
+            box(
+                float(roi.x),
+                float(roi.y),
+                float(roi.x + roi.width),
+                float(roi.y + roi.height),
+            )
+        )
+    return geometries
+
+
+def _partition_model_candidates(
+    segmentation: ImageSegmentation,
+    source_model: str,
+) -> tuple[list[SegmentObject], list[SegmentObject], int]:
+    """Return confirmable candidates, candidates on manual ground, and ROI count."""
+
+    candidates = list(
+        SegmentObject.objects.filter(
+            segmentation=segmentation,
+            source_model=source_model,
+            label_state="CANDIDATE",
+            superseded_at__isnull=True,
+        ).only(
+            "id",
+            "geometry_wkb",
+            "label_state",
+            "refined",
+            "status",
+        )
+    )
+    manual_geometries = _manual_review_geometries(segmentation)
+    if not manual_geometries:
+        return candidates, [], 0
+
+    reviewed_area = prep(unary_union(manual_geometries))
+    confirmable: list[SegmentObject] = []
+    protected: list[SegmentObject] = []
+    for candidate in candidates:
+        if reviewed_area.intersects(candidate.geometry):
+            protected.append(candidate)
+        else:
+            confirmable.append(candidate)
+    return confirmable, protected, len(manual_geometries)
+
+
+def _model_output_counts(
+    segmentation: ImageSegmentation,
+    source_model: str,
+) -> dict[str, int]:
+    confirmable, protected, manual_roi_count = _partition_model_candidates(
+        segmentation,
+        source_model,
+    )
+    confirmed = SegmentObject.objects.filter(
+        segmentation=segmentation,
+        source_model=source_model,
+        label_state="CONFIRMED",
+        superseded_at__isnull=True,
+    ).count()
+    return {
+        "candidate_count": len(confirmable) + len(protected),
+        "confirmable_candidate_count": len(confirmable),
+        "manual_roi_candidate_count": len(protected),
+        "manual_roi_count": manual_roi_count,
+        "confirmed_model_count": int(confirmed),
+    }
+
+
 def _refusal(detail: str, *, code: ErrorCode | None = None) -> Response:
     """A 409 the client can both read and act on.
 
@@ -152,7 +287,12 @@ def _resolve_segmenter(segmentation: ImageSegmentation, source_model: str):
     return segmenter, model_names[0]
 
 
-def _dial_state(segmentation: ImageSegmentation, source_model: str) -> dict:
+def _dial_state(
+    segmentation: ImageSegmentation,
+    source_model: str,
+    *,
+    roi: ImageROI | None = None,
+) -> dict:
     """Everything the control needs to render itself, including why it cannot move.
 
     One payload for both verbs, so the sentence a greyed-out dial shows and the
@@ -162,12 +302,14 @@ def _dial_state(segmentation: ImageSegmentation, source_model: str) -> dict:
     """
     segmenter, resolved = _resolve_segmenter(segmentation, source_model)
     run_version = SegmentationResultVersion.current_version_for(segmentation)
+    effective_source_model = _effective_source_model(segmentation, source_model)
     state: dict[str, object] = {
         "include_level": segmentation.include_level,
         "default_include_level": None,
         "minimum": INCLUDE_LEVEL_MIN,
         "maximum": INCLUDE_LEVEL_MAX,
         "run_version": run_version,
+        "measurement_mode": segmentation.segmentation_type.measurement_mode,
         "object_count": SegmentObject.objects.filter(
             segmentation=segmentation,
             superseded_at__isnull=True,
@@ -177,6 +319,7 @@ def _dial_state(segmentation: ImageSegmentation, source_model: str) -> dict:
         "can_move": False,
         "detail": "",
     }
+    state.update(_model_output_counts(segmentation, effective_source_model))
 
     if segmenter is None:
         state["detail"] = resolved
@@ -188,6 +331,7 @@ def _dial_state(segmentation: ImageSegmentation, source_model: str) -> dict:
         segmentation=segmentation,
         segmenter=segmenter,
         model_name=resolved,
+        roi=roi,
     )
     if not readiness.ready:
         state["detail"] = readiness.detail
@@ -195,7 +339,31 @@ def _dial_state(segmentation: ImageSegmentation, source_model: str) -> dict:
         return state
 
     state["can_move"] = True
-    query = urlencode({"source_model": source_model}) if source_model else ""
+    query_params: dict[str, str] = {}
+    if source_model:
+        query_params["source_model"] = source_model
+    if roi is not None:
+        query_params["roi_id"] = str(roi.id)
+        state["preview_bounds"] = [
+            int(roi.x),
+            int(roi.y),
+            int(roi.width),
+            int(roi.height),
+        ]
+    else:
+        full_map_path = get_prob_map_file_path(
+            segmentation,
+            resolved,
+            str(getattr(segmenter, "prob_map_prefix", "") or ""),
+        )
+        width, height = probability_map_size(full_map_path)
+        state["preview_bounds"] = [
+            0,
+            0,
+            width,
+            height,
+        ]
+    query = urlencode(query_params)
     preview_url = reverse("segmentation-include-level-map", args=[segmentation.id])
     state["preview_url"] = f"{preview_url}{'?' + query if query else ''}"
     return state
@@ -210,6 +378,12 @@ class SegmentationIncludeLevelMapView(APIView):
             id=seg_id,
         )
         source_model = normalize_source_model(request.query_params.get("source_model"))
+        roi_id = request.query_params.get("roi_id")
+        roi = None
+        if roi_id:
+            roi = ImageROI.objects.filter(asset=segmentation.asset, id=roi_id).first()
+            if roi is None:
+                return _refusal("That region is no longer on this image.")
         segmenter, resolved = _resolve_segmenter(segmentation, source_model)
         if segmenter is None:
             return _refusal(resolved)
@@ -218,6 +392,7 @@ class SegmentationIncludeLevelMapView(APIView):
             segmentation=segmentation,
             segmenter=segmenter,
             model_name=resolved,
+            roi=roi,
         )
         if not readiness.ready:
             return _refusal(readiness.detail, code=ErrorCode.PROBABILITY_MAP_MISSING)
@@ -226,9 +401,10 @@ class SegmentationIncludeLevelMapView(APIView):
             segmentation,
             resolved,
             str(getattr(segmenter, "prob_map_prefix", "") or ""),
-            None,
+            str(roi.id) if roi is not None else None,
         )
-        response = FileResponse(file_path.open("rb"), content_type="image/png")
+        preview_path = ensure_probability_preview(file_path)
+        response = FileResponse(preview_path.open("rb"), content_type="image/png")
         response["Cache-Control"] = "no-store"
         return response
 
@@ -239,7 +415,7 @@ class SegmentationIncludeLevelView(APIView):
     ``GET`` is free: two filesystem stats and two indexed queries, no map
     decoded. It is meant to be called whenever the panel opens.
 
-    ``POST`` queues one re-extract. It is the explicit Apply action, never a
+    ``POST`` queues one re-extract. It is the explicit Preview action, never a
     slider event: one request replaces the prior candidate set once.
     """
 
@@ -249,7 +425,16 @@ class SegmentationIncludeLevelView(APIView):
             id=seg_id,
         )
         source_model = normalize_source_model(request.query_params.get("source_model"))
-        return Response(_dial_state(segmentation, source_model), status=status.HTTP_200_OK)
+        roi_id = request.query_params.get("roi_id")
+        roi = None
+        if roi_id:
+            roi = ImageROI.objects.filter(asset=segmentation.asset, id=roi_id).first()
+            if roi is None:
+                return _refusal("That region is no longer on this image.")
+        return Response(
+            _dial_state(segmentation, source_model, roi=roi),
+            status=status.HTTP_200_OK,
+        )
 
     def post(self, request, seg_id):
         segmentation = get_object_or_404(
@@ -273,7 +458,7 @@ class SegmentationIncludeLevelView(APIView):
 
         roi = None
         if roi_id is not None:
-            roi = ImageROI.objects.filter(id=roi_id).first()
+            roi = ImageROI.objects.filter(asset=segmentation.asset, id=roi_id).first()
             if roi is None:
                 return _refusal("That region is no longer on this image.")
 
@@ -336,6 +521,108 @@ class SegmentationIncludeLevelView(APIView):
         )
 
 
+class SegmentationConfirmModelOutputView(APIView):
+    """Confirm this model's whole-image candidates outside manually reviewed ROIs.
+
+    This is intentionally server-side. A large image's left panel may hold only
+    the objects in or near the viewport, so turning the currently rendered IDs
+    into a frontend batch would silently confirm part of an image while the
+    button says it confirmed the whole result.
+    """
+
+    def post(self, request, seg_id):
+        segmentation = get_object_or_404(
+            ImageSegmentation.objects.select_related("asset", "segmentation_type"),
+            id=seg_id,
+        )
+        locked = completion_lock_response(segmentation)
+        if locked is not None:
+            return locked
+
+        serializer = ConfirmModelOutputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        source_model = _effective_source_model(
+            segmentation,
+            serializer.validated_data["source_model"],
+        )
+        definition = get_source_model_definition(source_model)
+        if (
+            definition is None
+            or definition.organelle_internal_name != segmentation.segmentation_type.internal_name
+        ):
+            return Response(
+                {"detail": "Choose a model that belongs to this segmentation."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if segmentation.segmentation_type.measurement_mode != "objects":
+            return Response(
+                {
+                    "detail": (
+                        "This segmentation is a single foreground mask, not a set "
+                        "of candidate objects. Its preview is already ready for analysis."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        reconcile_segmentation_status(segmentation)
+        blocking_job = active_segmentation_job(
+            segmentation,
+            job_types=_ORGANELLE_ACTION_JOB_TYPES,
+        )
+        if blocking_job is not None:
+            return Response(
+                blocking_job_response_payload(blocking_job),
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        with transaction.atomic():
+            confirmable, protected, manual_roi_count = _partition_model_candidates(
+                segmentation,
+                source_model,
+            )
+            for candidate in confirmable:
+                candidate.label_state = "CONFIRMED"
+                candidate.refined = "UNREFINED"
+                candidate.status = status_for_segment_lifecycle(
+                    label_state=candidate.label_state,
+                    refined=candidate.refined,
+                )
+            if confirmable:
+                SegmentObject.objects.bulk_update(
+                    confirmable,
+                    ["label_state", "refined", "status"],
+                    batch_size=500,
+                )
+                overlay = register_overlay_mutation_all_bundles(
+                    segmentation,
+                    dirty_bbox=full_image_dirty_bbox(segmentation),
+                    allow_sync_partial=False,
+                )
+            else:
+                overlay = None
+
+        if confirmable:
+            _enqueue_segment_feature_refresh(
+                segmentation_id=str(segmentation.id),
+                segment_ids=[],
+                recompute_features=True,
+            )
+
+        return Response(
+            {
+                "segmentation_id": str(segmentation.id),
+                "source_model": source_model,
+                "confirmed_count": len(confirmable),
+                "skipped_manual_roi_count": len(protected),
+                "manual_roi_count": manual_roi_count,
+                "remaining_candidate_count": len(protected),
+                "overlay": overlay,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 urlpatterns = [
     path(
         "segmentations/<uuid:seg_id>/include-level/map",
@@ -346,5 +633,10 @@ urlpatterns = [
         "segmentations/<uuid:seg_id>/include-level",
         SegmentationIncludeLevelView.as_view(),
         name="segmentation-include-level",
+    ),
+    path(
+        "segmentations/<uuid:seg_id>/confirm-model-output",
+        SegmentationConfirmModelOutputView.as_view(),
+        name="segmentation-confirm-model-output",
     ),
 ]

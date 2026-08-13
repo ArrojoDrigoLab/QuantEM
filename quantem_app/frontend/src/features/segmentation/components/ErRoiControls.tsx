@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import "./ErRoiControls.css";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
@@ -15,6 +15,9 @@ export interface ErRoiSection {
   markingRoiId: string | null;
   deletingRoiId: string | null;
   activatingRoiId: string | null;
+  testingRoiId: string | null;
+  testDisabled?: boolean;
+  testDisabledReason?: string;
   onStartPlacement: () => void;
   onMoveRoi: (roiId: string) => void;
   onCancelPlacement: () => void;
@@ -22,6 +25,7 @@ export interface ErRoiSection {
   onMarkRoiDone: (roiId: string, done: boolean) => void;
   onDeleteRoi: (roiId: string) => void;
   onActivateRoi: (roiId: string) => void;
+  onTestRoi: (roiId: string) => void;
 }
 
 function roiLabel(roi: SegmentationRoi): string {
@@ -38,6 +42,9 @@ export function ErRoiControls({
   markingRoiId,
   deletingRoiId,
   activatingRoiId,
+  testingRoiId,
+  testDisabled = false,
+  testDisabledReason,
   onStartPlacement,
   onMoveRoi,
   onCancelPlacement,
@@ -45,8 +52,17 @@ export function ErRoiControls({
   onMarkRoiDone,
   onDeleteRoi,
   onActivateRoi,
+  onTestRoi,
 }: ErRoiSection) {
   const [pendingDeleteRoi, setPendingDeleteRoi] = useState<SegmentationRoi | null>(null);
+  const orderedRois = useMemo(
+    () =>
+      [...rois].sort(
+        (left, right) =>
+          left.created_at.localeCompare(right.created_at) || left.id.localeCompare(right.id)
+      ),
+    [rois]
+  );
   const moving = relocatingRoiId !== null;
   const primaryLabel = pendingRoiActive
     ? confirming
@@ -58,7 +74,7 @@ export function ErRoiControls({
         : "Create ROI"
     : placementActive
       ? "Cancel placement"
-      : "New 512×512 ROI";
+      : "Add New ROI";
   const onPrimaryClick = pendingRoiActive
     ? onConfirmRoi
     : placementActive
@@ -69,7 +85,7 @@ export function ErRoiControls({
     <div className="er-roi-controls">
       <div className="er-roi-heading">
         <h4>ROI</h4>
-        {rois.length > 0 && <span>{rois.length}</span>}
+        {orderedRois.length > 0 && <span>{orderedRois.length}</span>}
       </div>
       <button
         type="button"
@@ -81,12 +97,12 @@ export function ErRoiControls({
       </button>
       {placementActive && !pendingRoiActive && (
         <p className="er-roi-hint">
-          {moving ? "Click the new center of this ROI." : "Click to place a 512×512 ROI."}
+          {moving ? "Click the new center of this ROI." : "Click to place the new ROI."}
         </p>
       )}
-      {rois.length > 0 && (
+      {orderedRois.length > 0 && (
         <ul className="er-roi-list" aria-label="ROIs">
-          {rois.map((roi, index) => {
+          {orderedRois.map((roi, index) => {
             const done = Boolean(roi.completed_for_segmentation);
             const isActive = roi.id === activeRoiId;
             const label = `ROI ${index + 1}: ${roiLabel(roi)}`;
@@ -100,18 +116,39 @@ export function ErRoiControls({
                   <button
                     type="button"
                     className="er-roi-action-button"
-                    disabled={isActive || activatingRoiId === roi.id}
+                    disabled={activatingRoiId === roi.id}
                     onClick={() => onActivateRoi(roi.id)}
                   >
                     {activatingRoiId === roi.id ? "Opening..." : "Open"}
                   </button>
+                  {!done && (
+                    <button
+                      type="button"
+                      className="er-roi-action-button"
+                      disabled={placementActive || confirming}
+                      onClick={() => onMoveRoi(roi.id)}
+                    >
+                      Move
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="er-roi-action-button"
-                    disabled={placementActive || confirming}
-                    onClick={() => onMoveRoi(roi.id)}
+                    className="er-roi-action-button er-roi-test-button"
+                    disabled={
+                      done ||
+                      testDisabled ||
+                      testingRoiId !== null ||
+                      placementActive ||
+                      confirming
+                    }
+                    title={
+                      done
+                        ? "This ROI is marked done. Reopen it before testing the model."
+                        : testDisabledReason ?? "Run the selected model on this ROI"
+                    }
+                    onClick={() => onTestRoi(roi.id)}
                   >
-                    Move
+                    {testingRoiId === roi.id ? "Testing..." : "Test"}
                   </button>
                   <label className="er-roi-done-toggle" title={ROI_REVIEWED_TOOLTIP}>
                     <input

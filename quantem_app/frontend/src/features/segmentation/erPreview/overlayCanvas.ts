@@ -1,3 +1,5 @@
+import { resolveApiUrl } from "@/shared/api/core/http";
+
 export interface ProbabilityOverlay {
   probData: Uint8ClampedArray; // RGBA from the decoded grayscale prob PNG; R holds prob*255
   width: number;
@@ -17,7 +19,14 @@ export async function decodeProbImage(
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve();
     img.onerror = () => reject(new Error("Failed to decode probability image"));
-    img.src = dataUrl;
+    // Saved-map endpoints are returned as backend-relative paths. In development
+    // the UI and API use separate ports, so letting the browser resolve `/api/...`
+    // against the page origin loads Vite's HTML fallback instead of the PNG.
+    // Opt into CORS before loading from the API so the decoded image can be read
+    // back from a canvas without the browser marking it as origin-tainted.
+    // Transient ER previews are data URLs and must remain untouched.
+    if (dataUrl.startsWith("/")) img.crossOrigin = "anonymous";
+    img.src = dataUrl.startsWith("/") ? resolveApiUrl(dataUrl) : dataUrl;
   });
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth;

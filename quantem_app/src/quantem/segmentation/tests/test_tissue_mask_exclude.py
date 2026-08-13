@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
-from shapely.geometry import Point
 
+from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
 from quantem.segmentation.type_service import get_or_create_tissue_type
 from quantem.testing import create_image_from_test_tiff
@@ -46,11 +46,8 @@ class TissueMaskExcludeTests(TestCase):
             format="json",
         )
         self.assertEqual(add.status_code, 200, add.data)
-        confirmed = list(
-            SegmentObject.objects.filter(segmentation=self.segmentation, label_state="CONFIRMED")
-        )
-        self.assertEqual(len(confirmed), 1, "add should create one confirmed region")
-        self.assertEqual(confirmed[0].source_model or "manual", "manual")
+        self.assertFalse(SegmentObject.objects.filter(segmentation=self.segmentation).exists())
+        self.assertTrue(load_global_mask(self.segmentation)[20, 20])
 
         # 2) Exclude an inner polygon like the tissue exclude tool does.
         exclude = self.client.post(
@@ -71,12 +68,13 @@ class TissueMaskExcludeTests(TestCase):
             format="json",
         )
         self.assertEqual(exclude.status_code, 200, exclude.data)
-        # The mask object should be updated (a hole cut), not left untouched.
+        # The one binary mask should be updated (a hole cut), not represented
+        # as connected components.
         self.assertEqual(int(exclude.data["updated"]), 1, exclude.data)
         self.assertIsNotNone(exclude.data.get("overlay"), "an overlay refresh must be returned")
 
         # 3) The resulting geometry must actually contain a hole.
-        seg = SegmentObject.objects.get(segmentation=self.segmentation, label_state="CONFIRMED")
-        self.assertGreater(len(seg.geometry.interiors), 0, "the cut must leave an interior hole")
-        self.assertTrue(seg.geometry.contains(Point(15, 15)))
-        self.assertFalse(seg.geometry.contains(Point(50, 50)))
+        mask = load_global_mask(self.segmentation)
+        self.assertTrue(mask[15, 15])
+        self.assertFalse(mask[50, 50])
+        self.assertFalse(SegmentObject.objects.filter(segmentation=self.segmentation).exists())

@@ -69,8 +69,8 @@ def _pixel_size_sort_key(value: object) -> tuple[int, float, str]:
     return (1, 0.0, repr(value))
 
 
-def _last_run_added_nothing(segmentation: ImageSegmentation) -> bool:
-    """True when the most recent finished run over this segmentation made none.
+def _last_finished_run_result(segmentation: ImageSegmentation) -> dict | None:
+    """The most recent successful model-run result, if one exists.
 
     The only record of it. ``status_stage`` is ``CANDIDATES_READY`` either way,
     the segmentation stores no per-run object count, and the objects that are
@@ -85,28 +85,45 @@ def _last_run_added_nothing(segmentation: ImageSegmentation) -> bool:
     does produce something clears the notice on the next read without anything
     having to remember to.
     """
-    result = (
+    row = (
         Job.objects.filter(
             type__in=ACTIVE_SEGMENTATION_JOB_TYPES,
             status="SUCCESS",
             payload_json__segmentation_id=str(segmentation.id),
         )
         .order_by("-finished_at", "-created_at")
-        .values_list("result_json", flat=True)
+        .values("result_json", "payload_json")
         .first()
     )
-    if not isinstance(result, dict):
-        # No run of this segmentation has ever finished here -- a CLI run, a
-        # pruned queue, objects imported some other way. Nothing to report.
-        return False
-    return result.get("found_objects") is False
+    if not isinstance(row, dict) or not isinstance(row.get("result_json"), dict):
+        return None
+
+    result = dict(row["result_json"])
+    payload = row.get("payload_json")
+    source_model = result.get("source_model")
+    if not source_model and isinstance(payload, dict):
+        source_model = payload.get("source_model")
+    if source_model:
+        result["source_model"] = str(source_model)
+    return result
 
 
-def _notice(segmentation: ImageSegmentation, *, kind: str) -> dict:
+def _notice(
+    segmentation: ImageSegmentation,
+    *,
+    kind: str,
+    source_model: object = None,
+) -> dict:
     """``zero_object_notice`` plus the two things a chip needs to render it."""
     notice = dict(zero_object_notice(segmentation))
     notice["kind"] = kind
     notice["summary"] = RUN_NOTICE_SUMMARIES[kind]
+    if source_model:
+        # The labeling header must not put this finding over Manual, another
+        # selected model, or another model's overlay. The successful job is
+        # the authority for which model the finding belongs to; an empty result
+        # may legitimately have no object overlay at all.
+        notice["source_model"] = str(source_model)
     return notice
 
 
@@ -173,6 +190,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             "is_complete",
             "run_notice",
             "objects_pixel_size",
+            "final_result_provenance",
             # The dial position the objects on screen were found at, or ``null``
             # when nobody has moved it. Read-only here: it is written by the
             # re-extract that acts on it, never by a PATCH, because a level with
@@ -190,6 +208,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             "asset",
             "display_name",
             "include_level",
+            "final_result_provenance",
             "status_progress",
             "status_error",
             "created_at",
@@ -299,7 +318,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
     def get_objects_pixel_size(self, obj):
         """What the image's pixel size was **when these objects were made**.
 
-        The labeling header says ``5 nm/px · entered by hand`` and an ordinary
+        The labeling header shows a current ``5 nm/px`` tag and an ordinary
         objects chip over a set produced before that number existed. Nothing on
         the screen where a user decides the work is finished said so, and
         neither did the Analysis screen before a run was spent: it surfaced in
@@ -400,8 +419,8 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         :func:`~quantem.segmentation.organelle_tasks._zero_object_advice`'s
         proofread branch unreachable by construction -- that branch needs
         ``labelled > 0``, and one labelled object was enough to return ``None``
-        above it. So a user with 12 confirmed objects clicked Run Full
-        Segmentation, got SUCCESS in four seconds with nothing new, and read
+        above it. So a user with 12 confirmed objects ran the model, got
+        SUCCESS in four seconds with nothing new, and read
         "Candidates ready" while the sentences that explained it sat in
         ``job.result_json.next_steps``, which nothing renders. They polled for
         two and a half minutes to be sure. That is this application's own
@@ -436,6 +455,14 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         if obj.segmentation_type.internal_name in MANUAL_ONLY_INTERNAL_NAMES:
             return None
 
+        # Manual organelle workspaces deliberately use CANDIDATES_READY too.
+        # The stage says the screen is editable, not that a model ran. Advice
+        # about scale, thresholds, or model choice requires a successful model
+        # job whose own result explicitly says it found nothing.
+        last_run = _last_finished_run_result(obj)
+        if last_run is None or last_run.get("found_objects") is not False:
+            return None
+
         counts = SegmentObject.objects.filter(segmentation=obj).aggregate(
             total=Count("id"),
             # Deliberately the tuple `_zero_object_advice` branches on,
@@ -445,12 +472,18 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             labelled=Count("id", filter=Q(label_state__in=_SUPPRESSING_LABEL_STATES)),
         )
         if counts["labelled"]:
-            if not _last_run_added_nothing(obj):
-                return None
-            return _notice(obj, kind="no_new_objects")
+            return _notice(
+                obj,
+                kind="no_new_objects",
+                source_model=last_run.get("source_model"),
+            )
         if counts["total"]:
             return None
-        return _notice(obj, kind="no_objects")
+        return _notice(
+            obj,
+            kind="no_objects",
+            source_model=last_run.get("source_model"),
+        )
 
 
 class ImageSegmentationCreateSerializer(serializers.Serializer):
@@ -462,6 +495,7 @@ class ImageSegmentationCreateSerializer(serializers.Serializer):
         required=False,
     )
     source_model = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    run_inference = serializers.BooleanField(required=False, default=True)
 
     def validate(self, attrs):
         if not attrs.get("segmentation_type_id") and not attrs.get("segmentation_type_name"):

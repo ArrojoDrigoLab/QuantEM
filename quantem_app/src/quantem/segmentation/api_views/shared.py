@@ -32,7 +32,7 @@ def get_or_create_roi_image(image) -> ImageROI:
         return existing
 
     roi_min_size = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "512"))
-    roi_size = int(os.environ.get("ROI_SIZE", "512"))
+    roi_size = int(os.environ.get("ROI_SIZE", "1024"))
     if image.width >= roi_min_size and image.height >= roi_min_size:
         roi_result = select_roi_for_image(image, roi_size=roi_size)
         return create_roi_image_from_image(
@@ -89,7 +89,43 @@ def active_segmentation_job(
         jobs.filter(status="RUNNING").order_by("created_at").first()
         or jobs.order_by("created_at").first()
     )
-    return held or _multi_organelle_job_holding(segmentation, job_types=job_types)
+    return (
+        held
+        or _multi_organelle_job_holding(segmentation, job_types=job_types)
+        or _asset_list_job_holding(segmentation, job_types=job_types)
+    )
+
+
+def _asset_list_job_holding(
+    segmentation: ImageSegmentation,
+    *,
+    job_types: frozenset[str] | None = None,
+) -> Job | None:
+    """A scoped job that names this segmentation's image in ``asset_ids``.
+
+    Named fine-tuning jobs do not have one segmentation id: their probability
+    map inputs can span several images. They still hold each input result while
+    running, so deletion or finalization must see them just like a single-image
+    threshold job.
+    """
+    asset_id = getattr(segmentation, "asset_id", None)
+    if not asset_id:
+        return None
+    candidates = Job.objects.filter(status__in=_ACTIVE_JOB_STATUSES)
+    if job_types is not None:
+        candidates = candidates.filter(type__in=job_types)
+    wanted = str(asset_id)
+    holding = [
+        job
+        for job in candidates.order_by("created_at")
+        if isinstance(job.payload_json, dict)
+        and isinstance(job.payload_json.get("asset_ids"), list)
+        and wanted in {str(value) for value in job.payload_json["asset_ids"]}
+    ]
+    if not holding:
+        return None
+    running = [job for job in holding if job.status == "RUNNING"]
+    return (running or holding)[0]
 
 
 def _multi_organelle_job_holding(

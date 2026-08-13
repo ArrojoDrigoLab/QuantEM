@@ -21,17 +21,17 @@ export const DIAL_TITLE = "Threshold";
 
 /** Available on hover without taking space from the control. */
 export const DIAL_TOOLTIP =
-  "Adjust the saved model result before creating candidates. Lower values include " +
-  "weaker evidence; higher values keep only stronger evidence.";
+  "Adjust the saved model result before previewing candidate outlines. Lower values " +
+  "include weaker evidence; higher values keep only stronger evidence. Confirm makes " +
+  "the previewed objects available to analysis outside manually annotated ROIs.";
 
 export const DIAL_BLOCKED_TOOLTIP =
   "No stored result is kept for this image, so the include level cannot be moved " +
   "without running the model again. Running it once saves one, and the level can " +
-  "be moved freely from then on. Run the model on this image from the labeling " +
-  "header, and the threshold can be adjusted afterwards.";
+  "be moved freely from then on. Use Run model below, then adjust the threshold.";
 
-/** While the re-extract is queued or running. */
-export const DIAL_WORKING = "Applying threshold…";
+/** While the candidate preview is queued or being materialized. */
+export const DIAL_WORKING = "Previewing…";
 
 /** Appended to the server's specific reason when the control is unavailable. */
 export const DIAL_FAILED_FALLBACK =

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { useDrawing } from "@/hooks/useDrawing";
-import { removeSegmentationArea } from "@/shared/api/segmentations/annotations";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { mutationNoticeMessage } from "@/features/segmentation/screen/utils/mutationNotices";
 import { usePolygonTraceWorkflow } from "@/features/segmentation/screen/hooks/usePolygonTraceWorkflow";
@@ -8,11 +7,13 @@ import type { Point } from "@/utils/geometry";
 import type { ImageSegmentation } from "@/shared/types/images";
 import type { ConfirmBatchResponse } from "@/shared/types/segmentation";
 
-/** The three tools of the minimal tissue-mask labeling view. */
-export type TissueTool = "brush" | "polygon" | "exclude";
+/** The two shapes available in the minimal tissue-mask labeling view. */
+export type TissueTool = "brush" | "polygon";
 
 interface SubmitConfirmedGeometriesOptions {
-  geometries: Array<Array<[number, number]>>;
+  geometries?: Array<Array<[number, number]>>;
+  geometryRings?: Array<Array<Array<[number, number]>>>;
+  operations?: Array<"include" | "exclude">;
   samScores?: Array<number | null | undefined>;
   mergeOverlaps?: boolean;
   manualCreation?: boolean;
@@ -33,20 +34,6 @@ interface UseTissueLabelingArgs {
   submitConfirmedGeometriesOptimistically: (
     options: SubmitConfirmedGeometriesOptions
   ) => Promise<ConfirmBatchResponse | null>;
-  /**
-   * Force an immediate (non-deferred) overlay + segment refetch. The exclude
-   * tool has no optimistic preview, so it must refresh the id-map overlay right
-   * away or the cut looks like it did nothing.
-   */
-  refreshSegmentViews: (options?: { deferOverlayRefresh?: boolean }) => Promise<void>;
-  /**
-   * Re-enable overlay-manifest polling. Cutting a hole rebuilds the overlay
-   * pyramid asynchronously; annotation activity disables polling, so without
-   * turning it back on the finished rebuild is never picked up and the hole
-   * never appears.
-   */
-  setOverlayManifestPollingEnabled: (enabled: boolean) => void;
-  clearHoverInteraction: () => void;
 }
 
 /**
@@ -55,12 +42,11 @@ interface UseTissueLabelingArgs {
  * A tissue mask is a single hand-drawn foreground region (used to cut out white
  * space -- vessels, resin, padding). There is no model, no review phase
  * and no confirmed-area (training-mask) concept: the brush and polygon tools
- * paint directly into one merged CONFIRMED region, and the exclude-polygon tool
- * carves areas back out of it.
+ * patch one binary mask. The independent Include / Exclude toggle decides
+ * whether either shape adds to or subtracts from that mask.
  *
  * - "brush": paint strokes, then confirm -> merged into the mask.
- * - "polygon": click-to-trace a ring (R to close) -> merged into the mask.
- * - "exclude": click-to-trace a ring (R to close) -> subtracted from the mask.
+ * - "polygon": click-to-trace a ring (R to close) -> patches the mask.
  */
 export function useTissueLabeling({
   currentSegmentation,
@@ -72,9 +58,6 @@ export function useTissueLabeling({
   showNoticeToast,
   drawing,
   submitConfirmedGeometriesOptimistically,
-  refreshSegmentViews,
-  setOverlayManifestPollingEnabled,
-  clearHoverInteraction,
 }: UseTissueLabelingArgs) {
   const [tool, setTool] = useState<TissueTool>("brush");
 
@@ -82,6 +65,7 @@ export function useTissueLabeling({
   // segmentation changes or the view is left.
   useEffect(() => {
     setTool("brush");
+    drawing.setDraftOperation("include");
     drawing.clearDrawing();
     // Intentionally keyed on the segmentation id only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,7 +80,7 @@ export function useTissueLabeling({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool]);
 
-  const addPolygon = usePolygonTraceWorkflow({
+  const polygon = usePolygonTraceWorkflow({
     active: enabled && tool === "polygon",
     idPrefix: "tissue-add-polygon",
     isPointInsideImageBounds,
@@ -108,56 +92,19 @@ export function useTissueLabeling({
       async (ring: Array<[number, number]>) => {
         const response = await submitConfirmedGeometriesOptimistically({
           geometries: [ring],
+          operations: [drawing.draftOperation],
           mergeOverlaps: true,
           manualCreation: true,
         });
         const notice = mutationNoticeMessage(response, {
           nothingStoredMessage:
-            "Nothing was added to the tissue mask: that ring encloses no area more than a pixel across.",
+            drawing.draftOperation === "include"
+              ? "Nothing was added to the mask: that ring encloses no area more than a pixel across."
+              : "Nothing was excluded from the mask.",
         });
         if (notice) showNoticeToast(notice);
       },
-      [showNoticeToast, submitConfirmedGeometriesOptimistically]
-    ),
-  });
-
-  const excludePolygon = usePolygonTraceWorkflow({
-    active: enabled && tool === "exclude",
-    idPrefix: "tissue-exclude-polygon",
-    isPointInsideImageBounds,
-    registerAnnotationActivity,
-    showErrorToast,
-    resetKey: currentSegmentationId,
-    commitErrorMessage: "Failed to exclude the area from the tissue mask.",
-    onCommit: useCallback(
-      async (ring: Array<[number, number]>) => {
-        if (!currentSegmentation) return;
-        const response = await removeSegmentationArea(currentSegmentation.id, {
-          areas: [{ geometry_coords: ring }],
-        });
-        // Cutting a hole edits the confirmed geometry directly and rebuilds the
-        // overlay pyramid asynchronously. With no optimistic preview, re-enable
-        // polling (annotation activity turned it off) and refetch now so the
-        // finished rebuild is picked up and the hole appears.
-        setOverlayManifestPollingEnabled(true);
-        await refreshSegmentViews();
-        clearHoverInteraction();
-        // A ring drawn off the mask cuts nothing, and with no optimistic
-        // preview the screen after that is identical to the screen after a
-        // successful cut. Same for a cut whose objects could not be re-measured.
-        const notice = mutationNoticeMessage(response, {
-          nothingStoredMessage:
-            "Nothing was excluded: that ring does not overlap the tissue mask.",
-        });
-        if (notice) showNoticeToast(notice);
-      },
-      [
-        clearHoverInteraction,
-        currentSegmentation,
-        refreshSegmentViews,
-        setOverlayManifestPollingEnabled,
-        showNoticeToast,
-      ]
+      [drawing.draftOperation, showNoticeToast, submitConfirmedGeometriesOptimistically]
     ),
   });
 
@@ -167,22 +114,25 @@ export function useTissueLabeling({
 
   const handleConfirmBrush = useCallback(async () => {
     if (!currentSegmentation || confirmingBrush) return;
-    const brushPolygons = drawing.getBrushPolygons();
+    const brushPolygons = drawing.getBrushPolygonRings();
     // Posted as drawn. See `SEGMENT_SMOOTHING_TOLERANCE` in `@/config`: the
     // ring a brush produces is the exact pixel boundary of what was painted,
     // and simplifying it at 1.0 px moved that boundary by up to +7.7% of area.
-    const geometries = brushPolygons
+    const geometryRings = brushPolygons
       .map((polygon) =>
-        polygon.map((point) => [point.x, point.y] as [number, number])
+        [polygon.exterior, ...polygon.holes].map((ring) =>
+          ring.map((point) => [point.x, point.y] as [number, number])
+        )
       )
-      .filter((coords) => coords.length >= 3);
-    if (geometries.length === 0) return;
+      .filter((rings) => (rings[0]?.length ?? 0) >= 3);
+    if (geometryRings.length === 0) return;
 
     registerAnnotationActivity();
     setConfirmingBrush(true);
     try {
       const response = await submitConfirmedGeometriesOptimistically({
-        geometries,
+        geometryRings,
+        operations: brushPolygons.map((polygon) => polygon.operation),
         mergeOverlaps: true,
         manualCreation: true,
       });
@@ -213,15 +163,15 @@ export function useTissueLabeling({
     drawing.clearDrawing();
   }, [drawing]);
 
-  const activePolygonTool =
-    tool === "polygon" ? addPolygon : tool === "exclude" ? excludePolygon : null;
+  const activePolygonTool = tool === "polygon" ? polygon : null;
 
   return {
     enabled,
     tool,
     setTool,
-    addPolygon,
-    excludePolygon,
+    operation: drawing.draftOperation,
+    setOperation: drawing.setDraftOperation,
+    polygon,
     /** The trace whose click/close handlers should receive image events, if any. */
     activePolygonTool,
     brushSize: drawing.brushSize,

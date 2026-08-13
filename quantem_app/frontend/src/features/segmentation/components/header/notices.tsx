@@ -7,8 +7,8 @@
  * owns the wording owns one file rather than a slice of a component everyone
  * else is also editing.
  *
- * Two things were added after the split, both about a failure the header could
- * not previously explain:
+ * Failure-class copy was added after the split for errors the header could not
+ * previously explain:
  *
  *  - **`FailureCopyNotice`.** When the server names the *class* of failure
  *    (`error_code`, catalogued in `quantem/core/error_codes.py`), the header
@@ -16,9 +16,6 @@
  *    server's sentence. A red sentence with no way forward is what made users
  *    conclude the fault was theirs; the code is what lets the app offer a
  *    button instead.
- *  - **`DomainShiftNotice`.** A finished run that found nothing gets the
- *    labelled heuristic from `shared/copy/domainShift`, which is the only
- *    surface that says the likeliest cause out loud.
  *
  * Everything else is unchanged and unreworded, and `HeaderNotices` still
  * renders as a fragment, so it adds no element of its own.
@@ -28,17 +25,12 @@ import {
   formatThreshold,
   type AppliedAdapterState,
 } from "@/features/models/appliedAdapter";
-import type { Runnability } from "@/features/models/runnable";
-import type { ImageSegmentation, SegmentationRunNotice } from "@/shared/types";
+import type { ImageSegmentation } from "@/shared/types";
 import {
   failureCopy,
   readFailureCode,
   type FailureCopy,
 } from "@/shared/copy/failures";
-import {
-  assessDomainShift,
-  type DomainShiftNudge,
-} from "@/shared/copy/domainShift";
 import "./notices.css";
 
 /** Every object on the segmentation, whatever its label state. */
@@ -134,37 +126,6 @@ export function LatestAttemptNotice({ message }: { message: string }) {
 }
 
 /**
- * The server's finding about a run whose stage does not tell the whole story.
- *
- * This is the one thing on the screen that distinguishes "not run yet" from
- * "ran and found nothing", and the two want opposite actions. It is rendered as
- * text rather than as a tooltip for the reason the locked and blocked notices
- * beside it are: a tooltip is unreachable by keyboard, invisible unless you
- * happen to hover the right ten pixels, and this is a numbered list of things
- * to check, not a label.
- *
- * The words are the server's, verbatim. The pixel size leads because the server
- * ranked it first and it is the input that turns a working model into one that
- * finds nothing -- lowering the threshold on a wrongly-scaled run produces
- * different rubbish, not the missing objects. Rewriting any of it here would
- * put a second, drifting copy of that advice in the application.
- */
-export function RunNotice({ notice }: { notice: SegmentationRunNotice }) {
-  return (
-    <div className="header-run-notice" role="status">
-      <strong>{notice.message}</strong>
-      {notice.next_steps.length > 0 && (
-        <ol className="header-run-notice-steps">
-          {notice.next_steps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-}
-
-/**
  * That an adapted model is in play, on the screen where the run is started.
  *
  * Two states, and the second is the one worth the pixels: an adapter applied to
@@ -198,7 +159,7 @@ export function AppliedAdapterNotice({
 
   return (
     <span className="header-adapter-notice" role="status">
-      <strong>Adapted model: {name}.</strong> Run Full Segmentation will use{" "}
+      <strong>Adapted model: {name}.</strong> Run model will use{" "}
       {trainedHead ? "your fine-tuned head" : "your calibration"}
       {calibrated ? ` at threshold ${calibrated}` : ""}
       {published && calibrated && published !== calibrated
@@ -227,55 +188,6 @@ export function LockedNotice() {
 }
 
 /**
- * Why the run button will not do anything, before it is pressed.
- *
- * The one place the app can say, before the click, why a run will not happen. A
- * tooltip alone is not enough: it is unreachable by keyboard and the disabled
- * button otherwise looks like a bug.
- */
-export function ModelBlockedNotice({
-  runTargetLabel,
-  reason,
-}: {
-  runTargetLabel: string;
-  reason: string | null;
-}) {
-  return (
-    <span className="header-model-blocked" role="status">
-      <strong>{runTargetLabel} cannot run here.</strong> {reason}{" "}
-      <a className="header-model-blocked-link" href="#/models">
-        Models
-      </a>
-    </span>
-  );
-}
-
-/**
- * The likeliest cause of an empty screen, named, with the label it must carry.
- *
- * The nudge is three arithmetic checks (`shared/copy/domainShift`), not an
- * out-of-distribution detector, and the label says so *above* the sentence
- * rather than below it: a reader who takes the message as a measurement and
- * switches model families on the strength of it has been misled by us. The
- * evidence line is the third element and is not decoration either — it is what
- * lets a sceptical user check the claim against their own screen.
- */
-export function DomainShiftNotice({ nudge }: { nudge: DomainShiftNudge }) {
-  return (
-    <div
-      className="header-domain-shift"
-      role="status"
-      data-testid="domain-shift-notice"
-      data-reason={nudge.reason}
-    >
-      <span className="header-domain-shift-label">{nudge.label}</span>
-      <p className="header-domain-shift-message">{nudge.message}</p>
-      <p className="header-domain-shift-evidence">{nudge.evidence}</p>
-    </div>
-  );
-}
-
-/**
  * The notice stack, in the order the header has always printed it.
  *
  * A fragment, so it adds no element of its own: what reaches the DOM is the
@@ -288,36 +200,18 @@ export function HeaderNotices({
   appliedAdapter,
   runTargetLabel,
   isComplete,
-  modelBlocked,
-  modelRunnability,
 }: {
   currentSegmentation: ImageSegmentation | null;
   isOrganelle: boolean;
   appliedAdapter: AppliedAdapterState | null;
   runTargetLabel: string;
   isComplete: boolean;
-  modelBlocked: boolean;
-  modelRunnability: Runnability;
 }) {
   // Read defensively rather than off a declared field: an `error_code` reaches
   // this screen on several differently-shaped payloads, and a code this build
   // has no copy for is the same as no code at all -- the server's sentence
   // still renders on its own, which is what happened before codes existed.
   const failure = failureCopy(readFailureCode(currentSegmentation));
-  // Only the zero-object arm can fire here: per-object confidences are not on
-  // the segmentation payload, and `assessDomainShift` stays silent without
-  // them rather than guessing. The other two arms belong to whichever surface
-  // holds the confidence distribution.
-  const domainShift = currentSegmentation
-    ? assessDomainShift({
-        objectCount: countAllObjects(currentSegmentation),
-        runFinished: Boolean(
-          isOrganelle &&
-            currentSegmentation.status_stage === "CANDIDATES_READY" &&
-            currentSegmentation.run_notice
-        ),
-      })
-    : null;
   return (
     <>
       {currentSegmentation?.status_stage === "FAILED" ? (
@@ -336,19 +230,6 @@ export function HeaderNotices({
         // about the newest attempt -- see `LatestAttemptNotice`.
         <LatestAttemptNotice message={currentSegmentation.status_error.trim()} />
       ) : null}
-      {isOrganelle && currentSegmentation?.run_notice && (
-        // Directly under the button it is about. Running again is the obvious
-        // response to an empty screen and it is the wrong one: the run
-        // already finished, and the server's own finding says to check the
-        // pixel size before the threshold.
-        <RunNotice notice={currentSegmentation.run_notice} />
-      )}
-      {domainShift && (
-        // Under the server's ordered list, not above it: "check the pixel
-        // size" is a fact about this run and this nudge is a guess about the
-        // data, so the certain thing is read first.
-        <DomainShiftNotice nudge={domainShift} />
-      )}
       {isOrganelle && appliedAdapter && (
         <AppliedAdapterNotice
           state={appliedAdapter}
@@ -356,12 +237,6 @@ export function HeaderNotices({
         />
       )}
       {isComplete && <LockedNotice />}
-      {isOrganelle && !isComplete && modelBlocked && (
-        <ModelBlockedNotice
-          runTargetLabel={runTargetLabel}
-          reason={modelRunnability.reason}
-        />
-      )}
     </>
   );
 }

@@ -119,14 +119,12 @@ def file_declared_pixel_size_nm(asset) -> float | None:
     hand, so on its own it cannot say where the number came from. The file's own
     claim survives on the FULL rendition's metadata
     (``source_metadata.pixel_size_nm`` for a 2D import,
-    ``volume_metadata.voxel_size_nm`` as (z, y, x) for a volume); comparing the
-    two is how the UI separates "read from file" from "entered by hand".
+    ``volume_metadata.voxel_size_nm`` as (z, y, x) for a volume). Keeping both
+    values preserves that source metadata without adding it to resolution tags.
 
     The detail payload could always do that because it embeds ``renditions``.
-    The list payload cannot -- and without this field every calibrated image in
-    the library resolved to "entered by hand", which is a provenance claim about
-    a number that ends up in a figure caption. Hence one scalar here rather than
-    the whole rendition list.
+    The list payload cannot, so it receives one scalar here rather than the
+    whole rendition list.
 
     Reads the prefetched renditions when the caller supplied them
     (``AssetListView`` does, via ``prefetch_related("renditions")``), so this
@@ -243,15 +241,15 @@ def _asset_datasets(asset) -> list:
 
 
 def serialize_asset_grouping(asset) -> dict[str, Any]:
-    """Where this image sits in the library, if anywhere.
+    """Where this image sits in the library.
 
     Emitted on the **list** entry and not only on the detail payload, because
     the library groups and filters on it and a per-card round trip for sixty
     cards is not a grouping, it is a stampede.
 
-    Every field is nullable or empty and that is the ordinary case: an
-    unorganised library returns ``null`` and ``[]`` here for every image, and
-    nothing downstream may read that as an error or as an incomplete setup.
+    Experiment fields remain nullable in the wire type for tombstoned legacy
+    rows and rolling upgrades. Every active image produced by the current
+    schema has both an experiment id and name; datasets may be empty.
     """
     datasets = _asset_datasets(asset)
     return {
@@ -281,8 +279,7 @@ def serialize_asset_entry(asset) -> dict[str, Any]:
         "stored_depth": (openable.stored_depth if openable is not None else asset.logical_depth),
         "pixel_size_nm": asset.pixel_size_nm,
         "pixel_size_nm_z": asset.pixel_size_nm_z,
-        # What the file declared, so the library card can tell "read from file"
-        # from "entered by hand" without the whole rendition list.
+        # What the file declared, without embedding the whole rendition list.
         "file_declared_pixel_size_nm": file_declared_pixel_size_nm(asset),
         # The reader's conflict note when the file declared its scale twice and
         # the two declarations disagreed (ImageJ unit vs ResolutionUnit tag vs

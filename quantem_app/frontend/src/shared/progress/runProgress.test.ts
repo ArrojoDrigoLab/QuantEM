@@ -273,8 +273,8 @@ describe("the model-download line", () => {
     const row = downloadRow(downloadJob)!;
     expect(row.kind).toBe("download");
     expect(row.glyph).toBe("↓");
-    expect(row.name).toBe("QuantEM — Nucleus");
-    expect(row.detail).toBe("downloading the model — 118 of 365 MB");
+    expect(row.name).toBe("Download model…");
+    expect(row.detail).toBe("QuantEM — Nucleus — 118 of 365 MB");
     // No percentage text at all: the plan's separation is bytes, not percent.
     expect(row.showPercentText).toBe(false);
     expect(row.detail).not.toContain("%");
@@ -282,7 +282,8 @@ describe("the model-download line", () => {
 
   it("falls back to the job's own label for a pack this build cannot name", () => {
     const row = downloadRow({ ...downloadJob, model_pack: { id: "x:y", title: "" } })!;
-    expect(row.name).toBe("Download model pack");
+    expect(row.name).toBe("Download model…");
+    expect(row.detail).toContain("Download model pack");
   });
 
   it("reports what has arrived when the size is not known", () => {

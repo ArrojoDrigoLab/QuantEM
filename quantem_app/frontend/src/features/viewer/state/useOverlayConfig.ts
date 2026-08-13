@@ -201,6 +201,7 @@ export function useOverlayConfig({
           // bundle_version, in-place partial geometry edits bump applied_revision
           // (state-only recolours bump neither, so they keep the cached raster).
           ngffUrl: `${manifest.ngff_url}?rev=${manifest.bundle_version}-${manifest.applied_revision}`,
+          revision: manifest.applied_revision,
           lut: rgba,
           maxLabel,
           lutRevision: manifest.lut_revision,

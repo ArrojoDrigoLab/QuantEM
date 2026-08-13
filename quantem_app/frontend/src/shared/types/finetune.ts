@@ -362,13 +362,11 @@ export interface FineTuneScopeExperiment {
 /**
  * `GET /api/finetune/scope/` — the whole tree in one call.
  *
- * `unassigned_images` is a sibling of `experiments`, not an experiment with a
- * null id: images in no experiment are their own group, and the
- * same-experiment rule treats that group as one.
+ * Every active image appears under an experiment; ``ungrouped_images`` means
+ * only that it has no dataset inside that experiment.
  */
 export interface FineTuneScopeResponse {
   experiments: FineTuneScopeExperiment[];
-  unassigned_images: FineTuneScopeImage[];
 }
 
 /** What a selection is on the wire: datasets expand, then union with assets. */
@@ -376,6 +374,8 @@ export interface FineTuneScopeSelectionPayload {
   segmentation_type: string;
   asset_ids: string[];
   dataset_ids: string[];
+  /** The pack whose tile size, install state, and training mode are previewed. */
+  base_model?: string;
 }
 
 export interface FineTunePreviewImage {
@@ -405,6 +405,8 @@ export type FineTuneMode = "use_all" | "holdout_1";
  */
 export interface FineTunePreviewResponse {
   experiment: FineTuneExperimentRef | null;
+  /** The exact pack used for install checks, tile counts, and the mode default. */
+  base_model: string;
   asset_count: number;
   annotation_count: number;
   confirmed_areas: number;
@@ -488,6 +490,8 @@ export type FineTuneRunDetail = Adapter & {
   training_mode?: FineTuneMode;
   cv_benchmark?: boolean;
   experiment?: FineTuneExperimentRef | null;
+  asset_ids?: string[];
+  dataset_ids?: string[];
 };
 
 /**
@@ -514,7 +518,34 @@ export interface FineTuneApplyQueued {
 
 /** `POST /api/finetune/runs/<id>/apply/` — never automatic; the user clicks. */
 export interface FineTuneApplyResponse {
+  batch_id: string;
+  adapter_id: string;
+  dataset_ids: string[];
   queued: FineTuneApplyQueued[];
+}
+
+export interface FineTuneApplyImageProgress extends FineTuneApplyQueued {
+  asset_name: string;
+  status: FineTuneRunStatus | "CANCELLED" | "RETRY";
+  stage: string;
+  progress: number;
+  units_done: number | null;
+  units_total: number | null;
+  message: string;
+  failure: string;
+  adapter_id: string;
+  result: Record<string, unknown> | null;
+}
+
+/** Per-image state for one opt-in Dataset/image application batch. */
+export interface FineTuneApplyProgress {
+  batch_id: string | null;
+  adapter_id: string;
+  total: number;
+  complete: number;
+  succeeded: number;
+  failed: number;
+  images: FineTuneApplyImageProgress[];
 }
 
 /** The experiment's name, whichever of the two shapes §4.7 turns out to send. */

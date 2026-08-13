@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from quantem.segmentation.features.measure import measure_segments
+from quantem.segmentation.global_masks import patch_global_mask
+from quantem.segmentation.services.confirm_batch.geometry import safe_difference, safe_union
+from quantem.segmentation.services.confirm_batch.overlap import OverlapResolutionError
 
 from .shared import (
     _MERGE_ELIGIBLE_STATES,
@@ -194,6 +197,8 @@ class SegmentationConfirmBatchView(APIView):
         merge_overlaps = _bool_flag("merge_overlaps")
 
         incoming: list[dict[str, object]] = []
+        include_geometries: list[BaseGeometry] = []
+        exclude_geometries: list[BaseGeometry] = []
         # One entry per outline whose storage will not match the gesture: it
         # enclosed more than one area, or some of what it enclosed is too thin
         # to store, or both.
@@ -205,13 +210,34 @@ class SegmentationConfirmBatchView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            pieces = parse_outline_pieces(raw_segment.get("geometry_coords"))
+            operation = str(raw_segment.get("operation") or "include").strip().lower()
+            if operation not in {"include", "exclude"}:
+                return Response(
+                    {"error": f"segments[{index}].operation must be include or exclude"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            raw_rings = raw_segment.get("geometry_rings")
+            if raw_rings is not None:
+                if not isinstance(raw_rings, list) or not raw_rings:
+                    pieces = []
+                else:
+                    exterior_pieces = parse_outline_pieces(raw_rings[0])
+                    geometry = outline_geometry(exterior_pieces) if exterior_pieces else None
+                    for raw_hole in raw_rings[1:]:
+                        hole_pieces = parse_outline_pieces(raw_hole)
+                        hole = outline_geometry(hole_pieces) if hole_pieces else None
+                        if geometry is not None and hole is not None:
+                            geometry = safe_difference(geometry, hole)
+                    pieces = _extract_polygons(geometry)
+            else:
+                pieces = parse_outline_pieces(raw_segment.get("geometry_coords"))
             if not pieces:
                 return Response(
                     {
                         "error": (
-                            f"segments[{index}].geometry_coords must be a valid polygon "
-                            "with at least 3 points"
+                            f"segments[{index}] must contain valid geometry_coords or "
+                            "geometry_rings with at least 3 points per ring"
                         )
                     },
                     status=status.HTTP_400_BAD_REQUEST,
@@ -237,21 +263,97 @@ class SegmentationConfirmBatchView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            incoming.append({"geometry": outline_geometry(pieces), "sam_score": sam_score})
+            geometry = outline_geometry(pieces)
+            if geometry is not None:
+                target = include_geometries if operation == "include" else exclude_geometries
+                target.append(geometry)
+            incoming.append({"geometry": geometry, "sam_score": sam_score, "operation": operation})
 
-        def _bool_flag(name: str, default: bool = False) -> bool:
-            raw_value = request.data.get(name, default)
-            if isinstance(raw_value, str):
-                return raw_value.strip().lower() not in {"", "0", "false", "no", "off"}
-            return bool(raw_value)
+        effective_geometry = None
+        for geometry in include_geometries:
+            effective_geometry = safe_union(effective_geometry, geometry)
+        excluded_geometry = None
+        for geometry in exclude_geometries:
+            excluded_geometry = safe_union(excluded_geometry, geometry)
+        if effective_geometry is not None and excluded_geometry is not None:
+            effective_geometry = safe_difference(effective_geometry, excluded_geometry)
 
-        result = confirm_segment_geometries(
-            segmentation=segmentation,
-            incoming=incoming,
-            merge_overlaps=merge_overlaps,
-            manual_creation=_bool_flag("manual_creation"),
-            enqueue_feature_refresh=_bool_flag("enqueue_feature_refresh", True),
+        if segmentation.segmentation_type.measurement_mode == "global":
+            if effective_geometry is None or effective_geometry.is_empty:
+                return Response(
+                    {
+                        "created": 0,
+                        "updated": 0,
+                        "deleted": 0,
+                        "confirmed_ids": [],
+                        "overlay": None,
+                        "measurement": MeasurementOutcome().as_payload(),
+                        "outlines": separated_outlines_payload(
+                            outline_outcomes, merged=merge_overlaps
+                        ),
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            record = patch_global_mask(
+                segmentation,
+                include=[effective_geometry],
+                source="manual",
+            )
+            _invalidate_tiles_for_segmentation(str(segmentation.id))
+            overlay = register_overlay_mutation_all_bundles(
+                segmentation,
+                dirty_bbox=full_image_dirty_bbox(segmentation),
+                force_full_rebuild=True,
+            )
+            return Response(
+                {
+                    "created": 0,
+                    "updated": 1,
+                    "deleted": 0,
+                    "confirmed_ids": [],
+                    "foreground_pixels": int(record.foreground_pixels),
+                    "overlay": overlay,
+                    "measurement": MeasurementOutcome().as_payload(),
+                    "outlines": separated_outlines_payload(outline_outcomes, merged=merge_overlaps),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        incoming = (
+            [{"geometry": effective_geometry, "sam_score": None}]
+            if effective_geometry is not None and not effective_geometry.is_empty
+            else []
         )
+
+        if not incoming:
+            return Response(
+                {
+                    "created": 0,
+                    "updated": 0,
+                    "deleted": 0,
+                    "confirmed_ids": [],
+                    "overlay": None,
+                    "measurement": MeasurementOutcome().as_payload(),
+                    "outlines": separated_outlines_payload(outline_outcomes, merged=merge_overlaps),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        try:
+            result = confirm_segment_geometries(
+                segmentation=segmentation,
+                incoming=incoming,
+                merge_overlaps=merge_overlaps,
+                manual_creation=_bool_flag("manual_creation"),
+                enqueue_feature_refresh=_bool_flag("enqueue_feature_refresh", True),
+            )
+        except OverlapResolutionError as exc:
+            logger.info(
+                "Rejected an ambiguous manual overlap for segmentation %s: %s",
+                segmentation.id,
+                exc,
+            )
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         overlay = None
         if result.get("created", 0) or result.get("updated", 0) or result.get("deleted", 0):
             _invalidate_tiles_for_segmentation(str(segmentation.id))
@@ -270,9 +372,10 @@ class SegmentationConfirmBatchView(APIView):
 
 
 class SegmentationRemoveAreaView(APIView):
-    """Subtract one or more area polygons from confirmed segments.
+    """Subtract one or more area polygons from a confirmed result.
 
-    The area to erase is the union of everything drawn, including every lobe of
+    Global results patch their single binary mask. Object results subtract from
+    confirmed rows. The area to erase is the union of everything drawn, including every lobe of
     an outline that crossed itself. Keeping only the largest lobe -- what
     ``_parse_geometry_polygon`` used to do here -- meant an erase stroke rubbed
     out half of what it had been drawn round and still answered 200: measured, a
@@ -339,6 +442,29 @@ class SegmentationRemoveAreaView(APIView):
                 )
             if remove_geometry.is_empty:
                 return Response(empty_response, status=status.HTTP_200_OK)
+
+        if segmentation.segmentation_type.measurement_mode == "global":
+            mask_record = patch_global_mask(
+                segmentation,
+                exclude=[remove_geometry],
+                source="manual-remove",
+            )
+            _invalidate_tiles_for_segmentation(str(segmentation.id))
+            overlay = register_overlay_mutation_all_bundles(
+                segmentation,
+                dirty_bbox=full_image_dirty_bbox(segmentation),
+                force_full_rebuild=True,
+            )
+            return Response(
+                {
+                    **empty_response,
+                    "updated": 1,
+                    "overlay": overlay,
+                    "foreground_pixels": int(mask_record.foreground_pixels),
+                    "measurement": MeasurementOutcome().as_payload(),
+                },
+                status=status.HTTP_200_OK,
+            )
 
         candidate_segments = list(
             SegmentObject.objects.filter(

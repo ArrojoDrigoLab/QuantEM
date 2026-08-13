@@ -56,7 +56,9 @@ interface UseSegmentationReviewWorkflowArgs {
   exitNavigateMode: () => void;
   drawing: ReturnType<typeof useDrawing>;
   submitConfirmedGeometriesOptimistically: (options: {
-    geometries: Array<Array<[number, number]>>;
+    geometries?: Array<Array<[number, number]>>;
+    geometryRings?: Array<Array<Array<[number, number]>>>;
+    operations?: Array<"include" | "exclude">;
     samScores?: Array<number | null | undefined>;
     mergeOverlaps?: boolean;
     manualCreation?: boolean;

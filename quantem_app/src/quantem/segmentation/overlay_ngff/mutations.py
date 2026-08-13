@@ -15,6 +15,7 @@ from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from typing import Any
 
+import numpy as np
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
@@ -25,6 +26,7 @@ from quantem.jobs.constants import (
 )
 from quantem.jobs.models import Job
 from quantem.jobs.pool import django_pool_initializer
+from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.models import ImageSegmentation, SegmentationOverlayState
 from quantem.segmentation.services.spatial_lookup import (
     bbox_intersects_filter,
@@ -834,22 +836,50 @@ def rebuild_overlay_full(
 
     arrays = _create_empty_label_store(segmentation, stage_root)
     width, height = segmentation_dimensions(segmentation)
+    is_global = segmentation.segmentation_type.measurement_mode == "global"
     queryset = labels_lut.bundle_queryset(segmentation, normalized_source_model)
-    objects = list(queryset.only(*_object_only_fields()))
-    # Compact 1..N renumber on every full rebuild keeps max label ~ live count.
-    assignments = [(idx + 1, obj.id) for idx, obj in enumerate(objects)]
-    label_map = {obj.id: idx + 1 for idx, obj in enumerate(objects)}
+    objects = [] if is_global else list(queryset.only(*_object_only_fields()))
+    # Global overlays use label 1 only and intentionally have no label->object
+    # assignment. Object overlays retain their compact 1..N identity map.
+    assignments = [] if is_global else [(idx + 1, obj.id) for idx, obj in enumerate(objects)]
+    label_map = {} if is_global else {obj.id: idx + 1 for idx, obj in enumerate(objects)}
     content_bboxes: list[tuple[int, int, int, int]] = []
     try:
-        draw_ops = _build_draw_ops(objects, label_map=label_map)
-        # Level-0 pixels only ever land inside a draw op's bbox, so these bound
-        # the region the pyramid has to visit. See _pyramid_level_blocks.
-        content_bboxes = [op["bbox"] for op in draw_ops]
-        payloads = _macro_tile_payloads(draw_ops, width=width, height=height)
-        # Level 0 alone is gated on the object count: that is the stage whose
-        # cost scales with draw ops. The pyramid decides for itself, from the
-        # number of blocks it will actually visit.
-        _rasterize_level0(arrays, payloads, use_pool=len(objects) >= RASTER_POOL_MIN_OBJECTS)
+        if is_global:
+            mask = load_global_mask(segmentation)
+            labels = mask.astype(np.uint32, copy=False)
+            border = render_module._compute_border(labels, width=OVERLAY_BORDER_WIDTH)
+            _retry_on_windows_lock(
+                lambda: arrays[LABELS_ARRAY_KEY][0].__setitem__((slice(None), slice(None)), labels)
+            )
+            _retry_on_windows_lock(
+                lambda: arrays[BORDER_ARRAY_KEY][0].__setitem__((slice(None), slice(None)), border)
+            )
+            occupied_rows = np.flatnonzero(mask.any(axis=1))
+            occupied_cols = np.flatnonzero(mask.any(axis=0))
+            if occupied_rows.size and occupied_cols.size:
+                content_bboxes = [
+                    (
+                        int(occupied_cols[0]),
+                        int(occupied_rows[0]),
+                        int(occupied_cols[-1]) + 1,
+                        int(occupied_rows[-1]) + 1,
+                    )
+                ]
+        else:
+            draw_ops = _build_draw_ops(objects, label_map=label_map)
+            # Level-0 pixels only ever land inside a draw op's bbox, so these bound
+            # the region the pyramid has to visit. See _pyramid_level_blocks.
+            content_bboxes = [op["bbox"] for op in draw_ops]
+            payloads = _macro_tile_payloads(draw_ops, width=width, height=height)
+            # Level 0 alone is gated on the object count: that is the stage whose
+            # cost scales with draw ops. The pyramid decides for itself, from the
+            # number of blocks it will actually visit.
+            _rasterize_level0(
+                arrays,
+                payloads,
+                use_pool=len(objects) >= RASTER_POOL_MIN_OBJECTS,
+            )
     finally:
         # Close level-0 handles before the pyramid: it re-opens the staged store
         # by path, so the parent must not hold the arrays open.
@@ -1261,7 +1291,11 @@ def run_overlay_rebuild_job(
         last_error="",
     )
     try:
-        if mode == "full" or state.pending_full_rebuild:
+        if (
+            mode == "full"
+            or state.pending_full_rebuild
+            or segmentation.segmentation_type.measurement_mode == "global"
+        ):
             return rebuild_overlay_full(
                 segmentation,
                 source_model=normalized_source_model,

@@ -14,6 +14,7 @@ from django.urls import path
 
 from quantem.library.views import (
     AssetGroupingView,
+    AssetLibraryEditView,
     DatasetDetailView,
     DatasetListCreateView,
     ExperimentDetailView,
@@ -21,6 +22,11 @@ from quantem.library.views import (
 )
 
 urlpatterns = [
+    path(
+        "assets/<uuid:asset_id>/library-edit/",
+        AssetLibraryEditView.as_view(),
+        name="asset-library-edit",
+    ),
     path(
         "experiments/",
         ExperimentListCreateView.as_view(),

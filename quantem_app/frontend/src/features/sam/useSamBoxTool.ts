@@ -29,6 +29,12 @@ const DRAG_THRESHOLD_PX = 8;
 /** How often to re-read the download's progress while it runs. */
 const MODEL_POLL_MS = 1000;
 
+interface PendingBox {
+  /** Local identity; SAM requests may finish in any order. */
+  id: number;
+  bbox: BBox;
+}
+
 interface UseSamBoxToolArgs {
   segmentationId: string | null;
   /** False when another tool owns the pointer, or the view is read-only. */
@@ -43,9 +49,11 @@ export interface SamBoxTool {
   /** The tool is selected; the pointer belongs to it. */
   isActive: boolean;
   setActive: (active: boolean) => void;
-  /** A request is in flight. */
+  /** One or more requests are in flight. */
   isSubmitting: boolean;
-  /** Live rubber band plus any in-flight box, ready for the transient layer. */
+  /** Number of independently tracked requests still being processed or staged. */
+  pendingCount: number;
+  /** Live rubber band plus all in-flight boxes, ready for the transient layer. */
   overlays: SegmentOverlay[];
   handleImagePress: (imagePoint: Point, screenPoint: Point) => void;
   handleImageDrag: (imagePoint: Point, screenPoint: Point) => void;
@@ -68,14 +76,14 @@ export function useSamBoxTool({
 }: UseSamBoxToolArgs): SamBoxTool {
   const [isActive, setIsActive] = useState(false);
   const [liveBox, setLiveBox] = useState<BBox | null>(null);
-  const [pendingBox, setPendingBox] = useState<BBox | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingBoxes, setPendingBoxes] = useState<PendingBox[]>([]);
   const [model, setModel] = useState<SamModelStatus | null>(null);
   const [lastTiming, setLastTiming] = useState<SamBoxResponse["timing"] | null>(
     null
   );
 
   const dragStartRef = useRef<{ image: Point; screen: Point } | null>(null);
+  const nextRequestIdRef = useRef(1);
   // The tool can be switched off, or the screen unmounted, while a request is
   // in flight; a late resolve must not write to a dead component.
   const mountedRef = useRef(true);
@@ -188,8 +196,9 @@ export function useSamBoxTool({
 
       // Shown immediately: the request is short but not free, and the user has
       // to see that the drag registered.
-      setPendingBox(bbox);
-      setIsSubmitting(true);
+      const requestId = nextRequestIdRef.current;
+      nextRequestIdRef.current += 1;
+      setPendingBoxes((current) => [...current, { id: requestId, bbox }]);
       registerActivity?.();
 
       void (async () => {
@@ -208,8 +217,9 @@ export function useSamBoxTool({
           void refreshModel();
         } finally {
           if (mountedRef.current) {
-            setIsSubmitting(false);
-            setPendingBox(null);
+            setPendingBoxes((current) =>
+              current.filter((pending) => pending.id !== requestId)
+            );
           }
         }
       })();
@@ -244,13 +254,16 @@ export function useSamBoxTool({
   const overlays: SegmentOverlay[] = [];
   const live = samLiveBoxOverlay(liveBox);
   if (live) overlays.push(live);
-  const pending = samPendingBoxOverlay(pendingBox);
-  if (pending) overlays.push(pending);
+  for (const pendingBox of pendingBoxes) {
+    const pending = samPendingBoxOverlay(pendingBox.bbox, pendingBox.id);
+    if (pending) overlays.push(pending);
+  }
 
   return {
     isActive: isActive && available,
     setActive,
-    isSubmitting,
+    isSubmitting: pendingBoxes.length > 0,
+    pendingCount: pendingBoxes.length,
     overlays,
     handleImagePress,
     handleImageDrag,

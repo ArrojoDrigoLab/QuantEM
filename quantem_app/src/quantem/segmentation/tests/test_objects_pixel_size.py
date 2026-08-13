@@ -13,7 +13,7 @@ the objects' own run stamps and served on the payload both screens already poll.
 **A run that completed and did nothing.** ``get_run_notice`` returned ``None``
 the moment any ``SegmentObject`` existed, and the proofread branch of
 ``_zero_object_advice`` needs ``labelled > 0`` -- so that branch was unreachable
-by construction. A user with 12 confirmed objects clicked Run Full Segmentation,
+by construction. A user with 12 confirmed objects ran the model,
 got SUCCESS in four seconds with nothing new, read "Candidates ready", and
 polled for two and a half minutes to be sure. The sentences that explained it,
 including the only route that fixes it, were in ``job.result_json.next_steps``,
@@ -159,6 +159,7 @@ class _SegmentationTestCase(TestCase):
             payload_json={
                 "segmentation_id": str(self.segmentation.id),
                 "segmentation_type": "mitochondria",
+                "source_model": "quantem:mito",
             },
             result_json={
                 "segmentation_id": str(self.segmentation.id),
@@ -506,9 +507,11 @@ class RunNoticeReachesAProofreadImageTests(_SegmentationTestCase):
 
     def test_the_empty_run_notice_is_unchanged(self):
         """The branch that already worked keeps its wording and its chip line."""
+        self._finished_run(segment_count=0)
         notice = self._notice()
 
         self.assertEqual(notice["kind"], "no_objects")
+        self.assertEqual(notice["source_model"], "quantem:mito")
         self.assertEqual(notice["summary"], "Ran and found no objects")
         self.assertIn("without finding any objects", notice["message"])
 

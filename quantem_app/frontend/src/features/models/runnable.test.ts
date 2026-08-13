@@ -53,11 +53,12 @@ describe("packRunnability", () => {
     expect(result.label).toBe("cannot run here");
   });
 
-  it("labels a not-installed pack differently, because the fix differs", () => {
+  it("treats a not-installed pack as downloadable, not blocked", () => {
     const result = packRunnability(
       pack({ installed: false, runnable: false, reason: "Not installed yet." })
     );
-    expect(result.label).toBe("not installed");
+    expect(result.state).toBe("downloadable");
+    expect(result.label).toBe("downloads on first run");
   });
 
   it("says 'unknown' when the backend omits the field, never 'blocked'", () => {
@@ -102,11 +103,11 @@ describe("packIdForSourceModel", () => {
 });
 
 describe("noPackIsRunnable", () => {
-  it("is true on a clean install where nothing is installed", () => {
+  it("is false on a clean install because packs download on first run", () => {
     const packs = ["quantem:mito", "omniem:mito"].map((id) =>
       pack({ id, installed: false, runnable: false, reason: "Not installed yet." })
     );
-    expect(noPackIsRunnable(catalogue(packs))).toBe(true);
+    expect(noPackIsRunnable(catalogue(packs))).toBe(false);
   });
 
   it("is false when at least one pack runs", () => {

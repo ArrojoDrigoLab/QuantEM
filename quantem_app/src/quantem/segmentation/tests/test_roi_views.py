@@ -23,7 +23,7 @@ class SegmentationRoiViewTests(TestCase):
             segmentation_type=get_or_create_mitochondria_type(),
         )
 
-    def test_roi_list_returns_active_first_with_flags(self):
+    def test_roi_list_keeps_creation_order_when_active_roi_changes(self):
         roi_old = create_roi_image_from_image(
             self.image,
             x=0,
@@ -43,16 +43,16 @@ class SegmentationRoiViewTests(TestCase):
             source="MANUAL",
         )
         roi_new.segmentations.add(self.segmentation)
-        activate_roi(roi_old)
+        activate_roi(roi_new)
 
         response = self.client.get(f"/api/segmentations/{self.segmentation.id}/roi/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data[0]["id"], str(roi_old.id))
-        self.assertEqual(response.data[0]["is_active"], True)
+        self.assertEqual(response.data[0]["is_active"], False)
         self.assertEqual(response.data[0]["is_complete"], True)
         self.assertEqual(response.data[1]["id"], str(roi_new.id))
-        self.assertEqual(response.data[1]["is_active"], False)
+        self.assertEqual(response.data[1]["is_active"], True)
 
     def test_roi_create_manual_activates_new_roi(self):
         existing = create_roi_image_from_image(

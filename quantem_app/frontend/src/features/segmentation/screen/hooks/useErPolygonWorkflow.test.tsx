@@ -15,6 +15,7 @@ function makeArgs(
     registerAnnotationActivity: vi.fn(),
     showErrorToast: vi.fn(),
     showNoticeToast: vi.fn(),
+    draftOperation: "include",
     submitConfirmedGeometriesOptimistically: vi.fn(async () => ({
       created: 1,
       updated: 0,

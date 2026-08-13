@@ -5,11 +5,12 @@ import { packIdForSourceModel } from "@/features/models/runnable";
 import { decodeProbImage } from "@/features/segmentation/erPreview/overlayCanvas";
 import { getModelCatalogue, installModelPack } from "@/shared/api/finetune";
 import { runFullSegmentation } from "@/shared/api/segmentations/overlays";
+import { rerunSegmentationRoi } from "@/shared/api/segmentations/rois";
 import { useJobProgress } from "@/shared/hooks/useJobProgress";
 import type { ModelCatalogue, ModelPack, OrganelleKey } from "@/shared/types/finetune";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 
-import { getIncludeLevel, setIncludeLevel } from "./api";
+import { confirmModelOutput, getIncludeLevel, setIncludeLevel } from "./api";
 import type { IncludeLevelState } from "./api";
 import {
   DIAL_BLOCKED_TOOLTIP,
@@ -71,10 +72,12 @@ export interface IncludeLevelDialProps {
   sourceModel?: string | null;
   segmentationInternalName?: string | null;
   statusStage?: string | null;
+  /** Scope the model preview and Preview action to the ROI most recently tested. */
+  roiId?: string | null;
   onSourceModelChange?: (sourceModel: string) => void;
   onRunQueued?: () => void;
   onRunFinished?: () => void;
-  /** Refresh objects and overlays after a successful Apply. */
+  /** Refresh objects and overlays after a successful Preview or Confirm. */
   onReextracted?: () => void;
 }
 
@@ -83,6 +86,7 @@ export function IncludeLevelDial({
   sourceModel = null,
   segmentationInternalName = null,
   statusStage = null,
+  roiId = null,
   onSourceModelChange,
   onRunQueued,
   onRunFinished,
@@ -95,14 +99,17 @@ export function IncludeLevelDial({
   const [modelAction, setModelAction] = useState<ModelAction | null>(null);
   const [startingModel, setStartingModel] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmationMessage, setConfirmationMessage] = useState<string | null>(null);
   const setPreviewOverlay = useThresholdPreviewStore((preview) => preview.setOverlay);
   const setPreviewThreshold = useThresholdPreviewStore((preview) => preview.setThreshold);
   const clearPreview = useThresholdPreviewStore((preview) => preview.clear);
 
   const load = useCallback(async () => {
     try {
-      const next = await getIncludeLevel(segmentationId, sourceModel);
+      const next = await getIncludeLevel(segmentationId, sourceModel, roiId);
       setState(next);
       setLoadError(null);
       return next;
@@ -110,12 +117,14 @@ export function IncludeLevelDial({
       setLoadError(extractApiErrorMessage(error, "The threshold could not be read."));
       return null;
     }
-  }, [segmentationId, sourceModel]);
+  }, [roiId, segmentationId, sourceModel]);
 
   useEffect(() => {
     setDraft(null);
     setApplyJobId(null);
     setSubmitError(null);
+    setPreviewError(null);
+    setConfirmationMessage(null);
     clearPreview();
     void load();
   }, [clearPreview, load]);
@@ -153,6 +162,7 @@ export function IncludeLevelDial({
     void decodeProbImage(previewUrl)
       .then((decoded) => {
         if (cancelled) return;
+        setPreviewError(null);
         setPreviewOverlay({
           probData: decoded.data,
           width: decoded.width,
@@ -163,7 +173,7 @@ export function IncludeLevelDial({
         });
       })
       .catch(() => {
-        if (!cancelled) setSubmitError("The threshold preview could not be displayed.");
+        if (!cancelled) setPreviewError("The threshold preview could not be displayed.");
       });
     return () => {
       cancelled = true;
@@ -195,11 +205,13 @@ export function IncludeLevelDial({
   const startRun = useCallback(
     async (packId: string) => {
       onSourceModelChange?.(packId);
-      const queued = await runFullSegmentation(segmentationId, packId);
+      const queued = roiId
+        ? await rerunSegmentationRoi(segmentationId, roiId, packId)
+        : await runFullSegmentation(segmentationId, packId);
       setModelAction({ kind: "run", jobId: queued.job_id, packId });
       onRunQueued?.();
     },
-    [onRunQueued, onSourceModelChange, segmentationId]
+    [onRunQueued, onSourceModelChange, roiId, segmentationId]
   );
 
   const { job: modelJob } = useJobProgress(modelAction?.jobId ?? null);
@@ -269,24 +281,61 @@ export function IncludeLevelDial({
     }
   }, [modelAction, segmentationInternalName, sourceModel, startRun, startingModel]);
 
-  const working = submitting || applyJobId !== null;
+  const working = submitting || confirming || applyJobId !== null;
   const settled = state?.include_level ?? state?.default_include_level ?? null;
   const moved = draft !== null && levelsDiffer(draft, settled);
-  const needsApply = state?.include_level === null || moved;
+  const needsPreview = state?.include_level === null || moved;
 
-  const apply = useCallback(async () => {
+  const preview = useCallback(async () => {
     if (working) return;
     setSubmitting(true);
     setSubmitError(null);
+    setConfirmationMessage(null);
     try {
-      const queued = await setIncludeLevel(segmentationId, position, sourceModel);
+      const queued = await setIncludeLevel(
+        segmentationId,
+        position,
+        sourceModel,
+        roiId
+      );
       setApplyJobId(queued.job_id);
     } catch (error) {
       setSubmitError(extractApiErrorMessage(error, DIAL_FAILED_FALLBACK));
     } finally {
       setSubmitting(false);
     }
-  }, [position, segmentationId, sourceModel, working]);
+  }, [position, roiId, segmentationId, sourceModel, working]);
+
+  const confirm = useCallback(async () => {
+    if (working || !sourceModel || roiId) return;
+    setConfirming(true);
+    setSubmitError(null);
+    try {
+      const result = await confirmModelOutput(segmentationId, sourceModel);
+      const confirmed = result.confirmed_count;
+      const skipped = result.skipped_manual_roi_count;
+      setConfirmationMessage(
+        confirmed > 0
+          ? `Confirmed ${confirmed} model object${confirmed === 1 ? "" : "s"} for analysis.${
+              skipped > 0
+                ? ` ${skipped} candidate${skipped === 1 ? "" : "s"} inside manually annotated ROIs remained unchanged.`
+                : ""
+            }`
+          : skipped > 0
+            ? `No candidates outside manually annotated ROIs needed confirmation. ${skipped} remained unchanged.`
+            : "No model candidates needed confirmation."
+      );
+      const next = await load();
+      if (next) setDraft(null);
+      onReextracted?.();
+    } catch (error) {
+      setSubmitError(
+        extractApiErrorMessage(error, "The model output could not be confirmed.")
+      );
+    } finally {
+      setConfirming(false);
+    }
+  }, [load, onReextracted, roiId, segmentationId, sourceModel, working]);
 
   if (loadError) {
     return (
@@ -307,6 +356,22 @@ export function IncludeLevelDial({
 
   const blocked = !state.can_move;
   const modelWorking = startingModel || modelAction !== null;
+  const objectMode = state.measurement_mode !== "global";
+  const candidateCount = state.candidate_count ?? 0;
+  const confirmableCandidateCount = state.confirmable_candidate_count ?? candidateCount;
+  const canConfirmWholeImage =
+    objectMode && !roiId && !needsPreview && confirmableCandidateCount > 0;
+  const actionLabel = needsPreview
+    ? "Preview"
+    : canConfirmWholeImage
+      ? "Confirm"
+      : roiId
+        ? "Previewed"
+        : !objectMode
+          ? "Ready"
+          : state.confirmed_model_count > 0
+            ? "Confirmed"
+            : "No candidates";
   const blockedTooltip = state.error_code === "probability_map_missing"
     ? DIAL_BLOCKED_TOOLTIP
     : state.detail || DIAL_BLOCKED_TOOLTIP;
@@ -343,6 +408,7 @@ export function IncludeLevelDial({
           const value = Number(event.target.value);
           setDraft(value);
           setPreviewThreshold(value);
+          setConfirmationMessage(null);
         }}
       />
 
@@ -365,14 +431,29 @@ export function IncludeLevelDial({
           type="button"
           className="include-level-apply"
           data-testid="include-level-apply"
-          disabled={working || !needsApply}
-          onClick={() => void apply()}
+          disabled={working || (!needsPreview && !canConfirmWholeImage)}
+          onClick={() => void (needsPreview ? preview() : confirm())}
         >
-          {working ? DIAL_WORKING : "Apply"}
+          {confirming
+            ? "Confirming…"
+            : submitting || applyJobId !== null
+              ? DIAL_WORKING
+              : actionLabel}
         </button>
       )}
 
       {submitError ? <p className="include-level-problem" role="alert">{submitError}</p> : null}
+      {previewError ? <p className="include-level-problem" role="alert">{previewError}</p> : null}
+      {!needsPreview && !roiId && state.manual_roi_candidate_count > 0 ? (
+        <p className="include-level-note">
+          {`${state.manual_roi_candidate_count} candidate${
+            state.manual_roi_candidate_count === 1 ? "" : "s"
+          } inside manually annotated ROIs will remain unchanged.`}
+        </p>
+      ) : null}
+      {confirmationMessage ? (
+        <p className="include-level-note" role="status">{confirmationMessage}</p>
+      ) : null}
     </div>
   );
 }

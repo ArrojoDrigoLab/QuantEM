@@ -71,6 +71,8 @@ export interface LeftPanelSegmentState {
 
 export interface LeftPanelRoiState {
   activeRoi: SegmentationRoi | null;
+  /** Every rectangular ROI on the image, active or inactive. */
+  rois: SegmentationRoi[];
   /** Every rectangular ROI marked done for this segmentation. */
   completedRois: SegmentationRoi[];
   roiPoints: Array<{ x: number; y: number; label: number; size: number }>;

@@ -1,7 +1,7 @@
 import hashlib
 import uuid
 
-from django.db import models
+from django.db import models, transaction
 
 
 class TimeStampedModel(models.Model):
@@ -104,13 +104,13 @@ class Asset(TimeStampedModel):
         blank=True,
     )
 
-    # Where this image sits in the library. Both optional: an unorganised
-    # library is the normal starting state, not a problem. Deleting an
-    # experiment orphans its images rather than destroying them, which is why
-    # this is SET_NULL and not CASCADE.
+    # Where this image sits in the library. The column remains nullable only so
+    # tombstoned legacy rows need not manufacture visible library groups; the
+    # database constraint below requires every ACTIVE image to have one.
+    # PROTECT makes every deletion choose where the images go first.
     experiment = models.ForeignKey(
         "library.Experiment",
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         related_name="assets",
         null=True,
         blank=True,
@@ -123,9 +123,34 @@ class Asset(TimeStampedModel):
 
     class Meta:
         ordering = ["display_name", "created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(lifecycle_status="DELETED") | models.Q(experiment__isnull=False)
+                ),
+                name="active_asset_requires_experiment",
+            )
+        ]
 
     def __str__(self):
         return self.display_name
+
+    def save(self, *args, **kwargs):
+        """Keep direct model callers inside the active-image experiment invariant."""
+        if self.lifecycle_status == self.LIFECYCLE_ACTIVE and self.experiment_id is None:
+            # Local import avoids the assets <-> library model import cycle.
+            from quantem.library.models import create_image_experiment
+
+            # The fallback is for direct model callers. Keep the generated
+            # experiment and the asset write in one transaction so a later
+            # database error cannot leave an empty experiment behind.
+            with transaction.atomic():
+                self.experiment = create_image_experiment(self.display_name)
+                update_fields = kwargs.get("update_fields")
+                if update_fields is not None:
+                    kwargs["update_fields"] = {*update_fields, "experiment"}
+                return super().save(*args, **kwargs)
+        return super().save(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------

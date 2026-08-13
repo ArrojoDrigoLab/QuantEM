@@ -1,9 +1,9 @@
 /**
- * "About this result": where the objects on screen came from, and at what scale.
+ * "About this result": where the objects on screen came from.
  *
- * Moved out of `SegmentationHeader.tsx` unchanged. These are the chips a reader
- * checks before believing a number -- what produced the displayed objects, what
- * pixel size the image records, whether the objects predate it -- plus the one
+ * These are the chips a reader checks before believing a number -- what
+ * produced the displayed objects and whether the objects predate the current
+ * calibration -- plus the one
  * recovery those chips point at, the two route links that leave for the screens
  * where the numbers are used, and the Fine-Tune trigger for this organelle.
  *
@@ -15,21 +15,17 @@
  * into one component would reorder the DOM.
  */
 
-import { PixelSizeBadge } from "@/shared/ui/PixelSize";
 import { FineTuneOrganelleButton } from "@/features/finetune/FineTuneOrganelleButton";
 import type { DisplayedObjectsDescription } from "@/features/segmentation/components/segmentationHeaderProvenance";
 import type { ObjectsPixelSizeWarning } from "@/shared/objectsPixelSize";
-import type { ResolvedPixelSize } from "@/shared/pixelSize";
 import type { AssetDetail, ImageSegmentation } from "@/shared/types";
 
 /**
- * The provenance chips, the pixel-size badge, and the way out of the state the
- * warning chip describes.
+ * The provenance chips and the way out of the state the warning chip describes.
  */
 export function AboutThisResult({
   isOrganelle,
   displayedObjects,
-  pixelSize,
   objectsPixelSize,
   currentSegmentation,
   isBusy,
@@ -38,7 +34,6 @@ export function AboutThisResult({
 }: {
   isOrganelle: boolean;
   displayedObjects: DisplayedObjectsDescription;
-  pixelSize: ResolvedPixelSize;
   objectsPixelSize: ObjectsPixelSizeWarning | null;
   currentSegmentation: ImageSegmentation | null;
   isBusy: boolean;
@@ -49,6 +44,15 @@ export function AboutThisResult({
    */
   onOpenClearRerun?: () => void;
 }) {
+  const finalNote = currentSegmentation?.final_result_provenance;
+  const finalLevel =
+    finalNote?.final_level === null || finalNote?.final_level === undefined
+      ? finalNote?.final_level_kind ?? "unknown"
+      : `${finalNote.final_level_kind.replaceAll("_", " ")} ${finalNote.final_level.toFixed(3)}`;
+  const finalAdapter = finalNote?.adapter_identifier ?? "unknown";
+  const finalDetail = finalNote
+    ? `Final result: ${finalNote.model_identifier}; QuantEM ${finalNote.quantem_version}; ${finalLevel}; adapter ${finalAdapter}. Finalized ${finalNote.finalized_at}.`
+    : "";
   return (
     <>
       {isOrganelle && (
@@ -60,7 +64,18 @@ export function AboutThisResult({
           {displayedObjects.summary}
         </span>
       )}
-      <PixelSizeBadge resolved={pixelSize} />
+      {isComplete && finalNote && (
+        <span
+          className="source-model-provenance"
+          data-testid="final-result-provenance"
+          title={finalDetail}
+        >
+          Final: {finalNote.model_identifier} · {finalLevel}
+          {finalAdapter !== "unknown" && finalAdapter !== "manual"
+            ? ` · adapter ${finalAdapter}`
+            : ""}
+        </span>
+      )}
       {objectsPixelSize && (
         // Beside the badge it qualifies, because the two read as one claim:
         // the badge says what the image records, this says the objects were

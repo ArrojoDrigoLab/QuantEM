@@ -313,6 +313,46 @@ def test_offline_error_names_the_repo_and_the_bundle_route(repo, monkeypatch):
     assert "Traceback" not in message
 
 
+def test_a_closed_hub_client_is_recreated_and_the_download_retried(repo):
+    repo.add_pack("quantem:mito")
+    attempts = 0
+
+    def stale_then_fresh(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("Cannot send a request, as the client has been closed.")
+        return repo.hf_hub_download(*args, **kwargs)
+
+    with (
+        patch("huggingface_hub.hf_hub_download", stale_then_fresh),
+        patch("huggingface_hub.utils.close_session") as close_session,
+    ):
+        card = hf.fetch_sidecar("quantem:mito")
+
+    assert card.model_id == "quantem/mito"
+    assert attempts == 2
+    close_session.assert_called_once_with()
+
+
+def test_a_persistently_closed_hub_client_uses_the_offline_route(repo):
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("Cannot send a request, as the client has been closed.")
+
+    with (
+        patch("huggingface_hub.hf_hub_download", refuse),
+        patch("huggingface_hub.utils.close_session"),
+    ):
+        with pytest.raises(InstallError) as excinfo:
+            install_pack_from_hf("quantem:mito", export=False)
+
+    message = str(excinfo.value)
+    assert hf.HF_REPO_URL in message
+    assert "Install from a local folder" in message
+    assert "Downloading quantem-mito.json" not in message
+    assert "client has been closed" not in message
+
+
 def test_cancel_mid_install_leaves_no_staging_and_no_pack(repo):
     repo.add_pack("quantem:mito")
 

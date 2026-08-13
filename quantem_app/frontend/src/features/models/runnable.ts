@@ -8,9 +8,11 @@
  * picked QuantEM — Mitochondria, and the run died several seconds in with a
  * message the job queue then replaced.
  *
- * The three states are deliberately distinct:
+ * The four states are deliberately distinct:
  *
  *  - **runnable** — `engine.load_model` would succeed.
+ *  - **downloadable** — its files are missing, and the first run will install
+ *    and verify them before loading the model.
  *  - **blocked** — it would fail, and `reason` says why. Never offer this as a
  *    selectable option.
  *  - **unknown** — the catalogue did not answer, or answered without the field
@@ -23,7 +25,11 @@
 
 import type { ModelCatalogue, ModelPack } from "@/shared/types/finetune";
 
-export type RunnabilityState = "runnable" | "blocked" | "unknown";
+export type RunnabilityState =
+  | "runnable"
+  | "downloadable"
+  | "blocked"
+  | "unknown";
 
 export interface Runnability {
   state: RunnabilityState;
@@ -41,16 +47,25 @@ const UNKNOWN: Runnability = {
 
 /** Runnability of one pack, from the catalogue entry (null = not in catalogue). */
 export function packRunnability(pack: ModelPack | null | undefined): Runnability {
-  if (!pack || typeof pack.runnable !== "boolean") return UNKNOWN;
+  if (!pack) return UNKNOWN;
+  // A clean install reports `runnable: false` because there are no weights to
+  // load yet. That is preparation work, not an incompatibility: every picker
+  // keeps the pack selectable and the run path downloads it before inference.
+  if (!pack.installed) {
+    return {
+      state: "downloadable",
+      reason: null,
+      label: "downloads on first run",
+    };
+  }
+  if (typeof pack.runnable !== "boolean") return UNKNOWN;
   if (pack.runnable) {
     return { state: "runnable", reason: null, label: "ready to run" };
   }
   return {
     state: "blocked",
     reason: pack.reason ?? null,
-    // "Not installed yet." is the overwhelmingly common blocker on a fresh
-    // machine and deserves its own word, because the fix is different.
-    label: pack.installed ? "cannot run here" : "not installed",
+    label: "cannot run here",
   };
 }
 
@@ -82,7 +97,7 @@ export function packIdForSourceModel(
 /** Every released pack that cannot run, for a one-line summary. */
 export function blockedPacks(catalogue: ModelCatalogue | null): ModelPack[] {
   return (catalogue?.packs ?? []).filter(
-    (pack) => pack.runnable === false
+    (pack) => packRunnability(pack).state === "blocked"
   );
 }
 
@@ -90,7 +105,7 @@ export function blockedPacks(catalogue: ModelCatalogue | null): ModelPack[] {
 export function noPackIsRunnable(catalogue: ModelCatalogue | null): boolean {
   const packs = catalogue?.packs ?? [];
   if (packs.length === 0) return false;
-  return packs.every((pack) => pack.runnable === false);
+  return packs.every((pack) => packRunnability(pack).state === "blocked");
 }
 
 /**

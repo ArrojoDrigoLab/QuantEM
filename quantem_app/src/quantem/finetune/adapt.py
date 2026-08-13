@@ -2,12 +2,14 @@
 
 A direct port of ``gk_gold_seg/scripts/finetune_cv/train_qem_k2_deploy.py``, the
 152-line script behind the manuscript's guided fine-tuning result (base held-out
-Dice 0.817 -> 0.870 in 17.8 s on a GPU, from two annotated crops). Every number
-in the recipe is the reference's:
+Dice 0.817 -> 0.870 in 17.8 s on a GPU, from two annotated crops). The optimizer,
+loss, tiling, and augmentation follow the reference; the app scales the number
+of steps with the amount of training data:
 
 * freeze everything, then ``requires_grad_(True)`` on ``model.neck`` and
   ``model.decoder`` — 5.775 M trainable parameters for the QuantEM ViT-B
-* AdamW, lr 1e-4, weight decay 1e-4, batch of one patch, 300 steps
+* AdamW, lr 1e-4, weight decay 1e-4, batch of one patch
+* 20 steps per training tile, clamped to 300--600 steps per round
 * tile ``t = round_up(tile_size, patch)`` — 512 for patch-16, 518 for patch-14
 * windows on a ``t // 2`` stride, kept only when at least 20 % of the window is
   inside a completed ROI; the target is :data:`IGNORE` wherever it is not
@@ -54,6 +56,14 @@ HEAD_MODULES: tuple[str, ...] = ("neck", "decoder")
 
 #: On-disk format tag written into every saved head.
 HEAD_FORMAT = "quantem-adapted-head/1"
+
+#: Tile-scaled training schedule. Fifteen or fewer tiles use the published
+#: 300-step recipe; each tile after that adds 20 steps until 30 tiles reaches
+#: the 600-step ceiling. These live beside :class:`AdaptConfig` because the API
+#: planner and the worker must use one policy.
+MIN_ADAPT_STEPS = 300
+STEPS_PER_TRAINING_TILE = 20
+MAX_ADAPT_STEPS = 600
 
 
 class HeadAdaptationUnavailable(RuntimeError):
@@ -112,6 +122,12 @@ class AdaptConfig:
             "seed": self.seed,
             "min_valid_fraction": self.min_valid_fraction,
         }
+
+
+def steps_for_training_tiles(tile_count: int) -> int:
+    """Optimizer steps for one round containing ``tile_count`` training tiles."""
+    scaled = max(0, int(tile_count)) * STEPS_PER_TRAINING_TILE
+    return min(MAX_ADAPT_STEPS, max(MIN_ADAPT_STEPS, scaled))
 
 
 @dataclass(frozen=True)

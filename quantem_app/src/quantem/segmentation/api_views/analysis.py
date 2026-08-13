@@ -21,6 +21,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from quantem.analysis.global_area import global_area_report
 from quantem.analysis.models import AnalysisRun
 from quantem.analysis.serializers import (
     AnalysisRunCreateSerializer,
@@ -100,6 +101,25 @@ class SegmentationAnalysisView(APIView):
             {"job_id": str(job.id), "analysis_run_id": str(run.id)},
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class GlobalAreaAnalysisView(APIView):
+    """Report the only valid global-mode measurement: foreground area percent."""
+
+    def post(self, request, seg_id):
+        segmentation = _segmentation_or_404(seg_id)
+        data = request.data if isinstance(request.data, dict) else {}
+        mask_ids = data.get("analysis_mask_ids", [])
+        if not isinstance(mask_ids, list):
+            return Response(
+                {"error": "analysis_mask_ids must be a list."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            report = global_area_report(segmentation, analysis_mask_ids=mask_ids)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(report, status=status.HTTP_200_OK)
 
 
 class AnalysisRunDetailView(APIView):

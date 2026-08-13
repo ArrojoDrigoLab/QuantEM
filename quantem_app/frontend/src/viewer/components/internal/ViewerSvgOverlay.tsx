@@ -19,6 +19,7 @@ function normalizeOverlayStyle(overlay: SegmentOverlay, highlighted: boolean) {
       strokeColor: "#00ffff",
       strokeOpacity: 0.15,
       strokeWidth: overlay.strokeWidth ?? 2,
+      strokeDasharray: overlay.strokeDasharray,
     };
   }
   return {
@@ -27,6 +28,7 @@ function normalizeOverlayStyle(overlay: SegmentOverlay, highlighted: boolean) {
     strokeColor: overlay.strokeColor,
     strokeOpacity: overlay.strokeOpacity,
     strokeWidth: overlay.strokeWidth ?? 2,
+    strokeDasharray: overlay.strokeDasharray,
   };
 }
 
@@ -55,6 +57,7 @@ const OverlaySvgLayer = memo(function OverlaySvgLayer(config: {
               stroke={style.strokeColor}
               strokeOpacity={style.strokeOpacity}
               strokeWidth={style.strokeWidth}
+              strokeDasharray={style.strokeDasharray}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
@@ -84,6 +87,7 @@ const OverlaySvgLayer = memo(function OverlaySvgLayer(config: {
               stroke={style.strokeColor}
               strokeOpacity={style.strokeOpacity}
               strokeWidth={style.strokeWidth}
+              strokeDasharray={style.strokeDasharray}
               vectorEffect="non-scaling-stroke"
             />
           );
@@ -97,6 +101,7 @@ const OverlaySvgLayer = memo(function OverlaySvgLayer(config: {
             stroke={style.strokeColor}
             strokeOpacity={style.strokeOpacity}
             strokeWidth={style.strokeWidth}
+            strokeDasharray={style.strokeDasharray}
             vectorEffect="non-scaling-stroke"
           />
         );

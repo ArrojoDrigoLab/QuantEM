@@ -2,7 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageUploadPanel } from "@/features/library/components/ImageUploadPanel";
-import { uploadAsset } from "@/shared/api/assets";
+import {
+  startUploadedAssetPipelines,
+  uploadAsset,
+} from "@/shared/api/assets";
 import { getSystemStatus } from "@/shared/api/jobs";
 import type { AssetDetail } from "@/shared/types/images";
 import type { SystemStatus } from "@/shared/types/jobs";
@@ -11,7 +14,11 @@ vi.mock("@/shared/api/assets", async () => {
   const actual = await vi.importActual<typeof import("@/shared/api/assets")>(
     "@/shared/api/assets"
   );
-  return { ...actual, uploadAsset: vi.fn() };
+  return {
+    ...actual,
+    uploadAsset: vi.fn(),
+    startUploadedAssetPipelines: vi.fn(),
+  };
 });
 
 vi.mock("@/shared/api/jobs", async () => {
@@ -67,6 +74,7 @@ describe("ImageUploadPanel", () => {
     vi.clearAllMocks();
     vi.mocked(getSystemStatus).mockResolvedValue(systemStatus());
     vi.mocked(uploadAsset).mockResolvedValue(makeAsset());
+    vi.mocked(startUploadedAssetPipelines).mockResolvedValue({ job_ids: [] });
   });
 
   it("uses the formats reported by the server", async () => {
@@ -129,8 +137,35 @@ describe("ImageUploadPanel", () => {
       expect(options).toMatchObject({
         experimentName: expect.stringMatching(/^New Experiment \d{4}-\d{2}-\d{2}$/),
         datasetName: "Dataset 1",
+        deferProcessing: true,
       });
     }
+    await waitFor(() =>
+      expect(startUploadedAssetPipelines).toHaveBeenCalledTimes(1)
+    );
+    expect(vi.mocked(uploadAsset).mock.invocationCallOrder[1]).toBeLessThan(
+      vi.mocked(startUploadedAssetPipelines).mock.invocationCallOrder[0]
+    );
+  });
+
+  it("can retry the idempotent processing start without re-uploading images", async () => {
+    const user = userEvent.setup();
+    vi.mocked(startUploadedAssetPipelines)
+      .mockRejectedValueOnce(new Error("Worker queue unavailable"))
+      .mockResolvedValueOnce({ job_ids: ["job-1", "job-2"] });
+    render(<ImageUploadPanel />);
+
+    await user.upload(await openPanelWithServerFormats(), [
+      pngFile("first.png"),
+      pngFile("second.png"),
+    ]);
+    submitUploadForm();
+
+    await user.click(await screen.findByRole("button", { name: "Start processing" }));
+    await waitFor(() =>
+      expect(startUploadedAssetPipelines).toHaveBeenCalledTimes(2)
+    );
+    expect(uploadAsset).toHaveBeenCalledTimes(2);
   });
 
   it("puts the metadata explanation under pixel size and exposes its tooltip", async () => {
@@ -174,6 +209,8 @@ describe("ImageUploadPanel", () => {
     ]);
     await user.type(screen.getByLabelText("Pixel size, nm per pixel"), "4.2");
     await user.type(screen.getByLabelText("Notes (optional)"), "day 14");
+    expect(screen.getAllByText("4.2 nm/px")).toHaveLength(2);
+    expect(screen.queryByText(/you typed it|from the file/i)).not.toBeInTheDocument();
     submitUploadForm();
 
     await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(2));

@@ -43,7 +43,7 @@ from quantem.testing import create_small_test_image
 
 BEFORE = ("segmentation", "0002_segmentationcompletionarchive")
 AFTER = ("segmentation", "0003_v2_push")
-LATEST = ("segmentation", "0006_segmentationtype_measurement_mode")
+LATEST = ("segmentation", "0008_analysis_mask_objects")
 
 
 def _migrate_to(target) -> None:

@@ -34,6 +34,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,11 +86,7 @@ INSTALL_COMMAND_MODULE = "python -m quantem.registry.install bundle ./quantem-mo
 #: App copy. One or two sentences, safe to embed in a longer message, and safe
 #: to print: no em dash, because ``quantem models list`` puts a pack's ``reason``
 #: on a Windows console whose encoding is not ours to choose.
-INSTALL_HINT = (
-    "Install it on the Models screen. QuantEM downloads it and checks every file "
-    "before anything runs. With no internet, unzip a QuantEM model release onto "
-    'this machine and use "Install from a local folder" on the same screen.'
-)
+INSTALL_HINT = "Download it on the Models screen. QuantEM checks every file before anything runs."
 
 #: Terminal copy: several lines, for CLI help and for an error a terminal user
 #: has just hit. Never returned by the API. See :data:`TERMINAL_ONLY_COPY`.
@@ -254,6 +251,55 @@ def installed_packs() -> list[str]:
             if record and record.get("pack_id"):
                 found.append(str(record["pack_id"]))
     return sorted(found)
+
+
+def _record_digests(record: dict | None) -> set[str]:
+    """Content-addressed blobs named by one install record."""
+    if not record:
+        return set()
+    digests: set[str] = set()
+    for value in record.values():
+        if not isinstance(value, dict):
+            continue
+        digest = value.get("sha256")
+        if isinstance(digest, str) and len(digest) == 64:
+            digests.add(digest.lower())
+    return digests
+
+
+def remove_pack(pack_id: str) -> bool:
+    """Remove one installed pack and any blobs no remaining pack references.
+
+    The exact pack directory is resolved and checked as a direct child of the
+    model-cache packs directory before recursive deletion. Shared encoders stay
+    in place until the last organelle pack that names them is removed.
+    """
+    record = read_record(pack_id)
+    root = pack_dir(pack_id)
+    if record is None or not root.is_dir():
+        return False
+
+    expected_parent = packs_root().resolve()
+    resolved_root = root.resolve()
+    if resolved_root.parent != expected_parent:
+        raise RuntimeError("Refusing to remove a model outside the model cache.")
+
+    removed_digests = _record_digests(record)
+    shutil.rmtree(resolved_root)
+
+    referenced: set[str] = set()
+    for remaining_pack_id in installed_packs():
+        referenced.update(_record_digests(read_record(remaining_pack_id)))
+    for digest in removed_digests - referenced:
+        path = blob_path(digest)
+        try:
+            path.unlink(missing_ok=True)
+            path.parent.rmdir()
+        except OSError:
+            # A live installer or another process may still have the blob. The
+            # pack is removed either way; a later cache cleanup can reclaim it.
+            logger.info("Could not remove unused model blob %s", digest)
+    return True
 
 
 def resolve_pack(pack_id: str) -> ResolvedPack:

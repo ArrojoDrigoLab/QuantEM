@@ -114,8 +114,8 @@ class Adapter(TimeStampedModel):
         null=True,
         blank=True,
     )
-    #: The experiment every image in the scope belongs to. Null when the scope
-    #: is unassigned images, which is its own bucket and not an error.
+    #: The experiment every image in the scope belongs to. Null only on legacy
+    #: adapter rows written before experiment-scoped fine-tunes existed.
     experiment = models.ForeignKey(
         "library.Experiment",
         on_delete=models.SET_NULL,
@@ -132,6 +132,18 @@ class Adapter(TimeStampedModel):
     scope_datasets = models.ManyToManyField(
         "library.Dataset", blank=True, related_name="adapters_scoped"
     )
+    #: Images this fitted model was explicitly put to work on. This is kept
+    #: separate from ``scope_assets``: the latter is the immutable training
+    #: claim, while this relation may grow whenever the user runs the result on
+    #: another image or dataset in the experiment.
+    applied_assets = models.ManyToManyField(
+        "assets.Asset", blank=True, related_name="adapters_applied"
+    )
+    #: True while a replacement is being trained for an adapter that was
+    #: already applied. The old threshold/head and targets remain routable until
+    #: the staged replacement succeeds; a failed replacement must not silently
+    #: put those images back on the released model.
+    preserves_live_version = models.BooleanField(default=False)
     base_model = models.CharField(max_length=64)  # e.g. "quantem:mito"
     #: Identifies a fine-tune for overwrite. Unique per organelle among named
     #: rows -- the same name for mitochondria and for ER is two different
@@ -267,7 +279,7 @@ class Adapter(TimeStampedModel):
         return notes
 
 
-def active_adapter_for(segmentation) -> Adapter | None:
+def active_adapter_for(segmentation, adapter_id: str | None = None) -> Adapter | None:
     """The adapter currently applied to a segmentation, if any.
 
     Two ways an adapter can be applied to this segmentation, and the more
@@ -275,18 +287,34 @@ def active_adapter_for(segmentation) -> Adapter | None:
 
     * it was fitted **from** this segmentation, the original single-image path,
       matched on the ``segmentation`` foreign key;
-    * it is a named fine-tune for this organelle whose scope includes this
-      image, and the user chose to run it here. A scoped fine-tune covers many
-      images and cannot point its one foreign key at all of them, so the match
-      is on ``(organelle, image)``.
+    * it is a named fine-tune for this organelle that the user explicitly ran
+      on this image. A named fine-tune can cover many targets and cannot point
+      its one foreign key at all of them, so the match is on
+      ``(organelle, applied image)``.
 
-    Both are filtered to ``SUCCESS`` with ``applied_at`` set, so an adapter that
-    is merely finished is never used until the user says to use it.
+    Both require ``applied_at``. Ordinarily only ``SUCCESS`` rows route, but an
+    overwrite of an already-applied row keeps routing its prior, still-valid
+    head while the replacement is pending. The worker clears that explicit
+    preservation flag only after promoting the replacement successfully.
     """
+    if adapter_id:
+        return (
+            Adapter.objects.filter(
+                models.Q(status=STATUS_SUCCESS) | models.Q(preserves_live_version=True),
+                id=adapter_id,
+                segmentation_type_id=getattr(segmentation, "segmentation_type_id", None),
+                applied_assets__id=getattr(segmentation, "asset_id", None),
+                applied_at__isnull=False,
+            )
+            .order_by("-applied_at")
+            .first()
+        )
+
     direct = (
         Adapter.objects.filter(
+            models.Q(status=STATUS_SUCCESS) | models.Q(preserves_live_version=True),
             segmentation=segmentation,
-            status=STATUS_SUCCESS,
+            segmentation_type__isnull=True,
             applied_at__isnull=False,
         )
         .order_by("-applied_at")
@@ -298,10 +326,15 @@ def active_adapter_for(segmentation) -> Adapter | None:
     if asset_id is not None and type_id is not None:
         scoped = (
             Adapter.objects.filter(
+                models.Q(status=STATUS_SUCCESS) | models.Q(preserves_live_version=True),
                 segmentation_type_id=type_id,
-                scope_assets__id=asset_id,
-                status=STATUS_SUCCESS,
                 applied_at__isnull=False,
+            )
+            # ``scope_assets`` is retained as a read fallback for adapters
+            # applied before ``applied_assets`` was introduced in v0.1.2.
+            .filter(
+                models.Q(applied_assets__id=asset_id)
+                | models.Q(applied_assets__isnull=True, scope_assets__id=asset_id)
             )
             .order_by("-applied_at")
             .first()

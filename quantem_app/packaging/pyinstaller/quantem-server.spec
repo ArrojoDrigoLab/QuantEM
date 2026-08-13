@@ -59,6 +59,13 @@ hiddenimports = ["quantem_server_settings", "waitress"]
 # This is the small Python support package, not torch's test suite or pytest.
 hiddenimports += collect_submodules("torch.testing._internal")
 
+# PyTorch imports SymPy lazily from its symbolic-shape machinery when an eager
+# model graph first executes.  ``--help`` and server-start smoke tests never
+# exercise that path, but OmniEM inference does.  Keep the root import explicit
+# so both the Windows and macOS sidecars include it even if the PyInstaller
+# torch hook changes its reachability analysis.
+hiddenimports += ["sympy"]
+
 # Packages whose submodules are imported dynamically (Django app/command/
 # migration discovery, DRF renderers named in settings strings, codec
 # registries). collect_all = submodules + data files + binaries.
@@ -112,12 +119,6 @@ a = Analysis(
         "pytest",
         "mypy",
         "ruff",
-        # A ratchet, not a saving: nothing here reaches sympy today, so this
-        # removes nothing from the current build. torch imports it from
-        # ``torch.fx.experimental.symbolic_shapes`` and friends, and a torch
-        # upgrade that puts one of those on an eagerly-imported path would
-        # re-admit ~70 MB with no diff in this repository to explain it.
-        "sympy",
         # imagecodecs is reached only through tifffile -- this application
         # never imports it (assets/tests/test_ngff_decode_chokepoint.py bans
         # the direct import), and tifffile's compression table names neither of

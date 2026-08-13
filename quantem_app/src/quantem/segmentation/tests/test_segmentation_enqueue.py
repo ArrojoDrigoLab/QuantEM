@@ -63,6 +63,23 @@ class SegmentationCreateEnqueueTests(TestCase):
         queued = Job.objects.get(type=JOB_TYPE_RUN_SEGMENTATION_ROI)
         self.assertEqual(queued.payload_json.get("roi_id"), str(roi.id))
 
+    def test_manual_organelle_creation_is_ready_without_enqueuing_inference(self):
+        response = self.client.post(
+            self._segmentations_url(),
+            {
+                "segmentation_type_name": "Mitochondria",
+                "run_inference": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["status_stage"], "CANDIDATES_READY")
+        self.assertEqual(response.data["status_progress"], 100.0)
+        # The config remains available for a later model run from labeling.
+        self.assertIsNotNone(response.data["config"])
+        self.assertFalse(Job.objects.filter(type=JOB_TYPE_RUN_SEGMENTATION_ROI).exists())
+
     def test_create_tissue_segmentation_is_manual_only_and_ready_immediately(self):
         tissue_type = get_or_create_tissue_type()
 

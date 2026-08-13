@@ -12,6 +12,7 @@ from quantem.finetune.adapt import (
     AdaptConfig,
     augment,
     build_patches,
+    steps_for_training_tiles,
     tile_for,
 )
 from quantem.inference.engine import normalize_tile
@@ -51,6 +52,22 @@ class TestTileSize:
     def test_a_tile_is_rounded_up_to_whole_patches(self):
         assert tile_for(500, 16) == 512
         assert tile_for(512, 14) == 518
+
+
+class TestAdaptiveStepCount:
+    def test_fifteen_or_fewer_tiles_use_the_300_step_floor(self):
+        assert steps_for_training_tiles(0) == 300
+        assert steps_for_training_tiles(1) == 300
+        assert steps_for_training_tiles(15) == 300
+
+    def test_steps_rise_by_twenty_per_tile_after_the_floor(self):
+        assert steps_for_training_tiles(16) == 320
+        assert steps_for_training_tiles(23) == 460
+        assert steps_for_training_tiles(29) == 580
+
+    def test_thirty_or_more_tiles_use_the_600_step_ceiling(self):
+        assert steps_for_training_tiles(30) == 600
+        assert steps_for_training_tiles(300) == 600
 
 
 class TestBuildPatches:

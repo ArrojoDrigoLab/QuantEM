@@ -44,6 +44,9 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
+from skimage.morphology import closing, disk
+
 from quantem.assets.models import ImageROI
 from quantem.jobs.constants import JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL
 from quantem.jobs.registry import job_handler
@@ -51,8 +54,13 @@ from quantem.jobs.reporter import CancelToken, JobReporter
 from quantem.seg_core.db.extraction import extract_and_save_segments, resolve_min_area
 from quantem.seg_core.db.inference import replay_stored_probability_map
 from quantem.seg_core.registry import get_segmenter_or_none
+from quantem.segmentation.global_masks import load_global_mask, save_global_mask
 from quantem.segmentation.models import ImageSegmentation
 from quantem.segmentation.organelle_tasks import zero_object_outcome
+from quantem.segmentation.overlay_ngff import (
+    full_image_dirty_bbox,
+    register_overlay_mutation_all_bundles,
+)
 from quantem.segmentation.run_identity import (
     RUN_SCOPE_FULL,
     RUN_SCOPE_PATCH,
@@ -133,7 +141,7 @@ def handle_reextract_at_include_level(
     roi = None
     roi_id = str(payload.get("roi_id") or "").strip()
     if roi_id:
-        roi = ImageROI.objects.filter(id=roi_id).first()
+        roi = ImageROI.objects.filter(asset=segmentation.asset, id=roi_id).first()
         if roi is None:
             raise ValueError("The region this task was queued for is no longer here.")
 
@@ -172,6 +180,56 @@ def handle_reextract_at_include_level(
     )
 
     cancel.check_cancelled()
+    if segmentation.segmentation_type.measurement_mode == "global":
+        reporter.update(progress=40.0, message="building the binary foreground mask")
+        foreground = getattr(segmenter, "_foreground_mask", None)
+        mask = (
+            np.asarray(foreground(result.prob), dtype=bool)
+            if callable(foreground)
+            else np.asarray(result.prob, dtype=np.float32) >= include_level
+        )
+        close_radius = int(getattr(getattr(segmenter, "_organelle", None), "close_radius", 0) or 0)
+        if close_radius > 0 and mask.any():
+            # Global results retain real luminal/background holes. Closing is
+            # the published consolidation step; binary_fill_holes is the
+            # object-only step and must never run here.
+            mask = closing(mask, disk(close_radius))
+
+        if roi is not None:
+            full_mask = load_global_mask(segmentation)
+            y0, x0 = int(roi.y), int(roi.x)
+            y1, x1 = y0 + mask.shape[0], x0 + mask.shape[1]
+            full_mask[y0:y1, x0:x1] = mask
+            mask = full_mask
+
+        metadata = {
+            "include_level": include_level,
+            "close_radius": close_radius,
+            "hole_fill": False,
+            "source_model": source_model or getattr(segmenter, "source_model", ""),
+            **stored_metadata,
+        }
+        save_global_mask(segmentation, mask, source="model", metadata=metadata)
+        segmentation.include_level = include_level
+        segmentation.save(update_fields=["include_level", "updated_at"])
+        register_overlay_mutation_all_bundles(
+            segmentation,
+            dirty_bbox=full_image_dirty_bbox(segmentation),
+            force_full_rebuild=True,
+        )
+        foreground_pixels = int(np.count_nonzero(mask))
+        reporter.update(progress=100.0, message="completed: binary foreground mask ready")
+        return {
+            "segmentation_id": str(segmentation.id),
+            "segmentation_type": segmentation.segmentation_type.internal_name,
+            "include_level": include_level,
+            "roi_id": str(roi.id) if roi is not None else None,
+            "source_model": source_model or None,
+            "foreground_pixels": foreground_pixels,
+            "found_foreground": foreground_pixels > 0,
+            "segment_count": None,
+        }
+
     reporter.update(progress=40.0, message="finding the objects at the new level")
 
     area_floor = resolve_min_area(segmenter, None)

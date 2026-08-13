@@ -12,7 +12,13 @@ import {
   unlockSegmentation,
 } from "@/shared/api/segmentations/annotations";
 import { getJobQueueStatus } from "@/shared/api/jobs";
+import { rerunSegmentationRoi } from "@/shared/api/segmentations/rois";
+import { ensureModelInstalled } from "@/features/models/ensureModelInstalled";
 import type { JobQueueItem, JobQueueStatus } from "@/shared/types/jobs";
+
+vi.mock("@/features/models/ensureModelInstalled", () => ({
+  ensureModelInstalled: vi.fn(),
+}));
 
 function RouterWrapper({ children }: PropsWithChildren) {
   return <MemoryRouter>{children}</MemoryRouter>;
@@ -21,6 +27,9 @@ function RouterWrapper({ children }: PropsWithChildren) {
 describe("useSegmentationProcessingState", () => {
   beforeEach(() => {
     setupSegmentationScreenTest();
+    vi.mocked(ensureModelInstalled).mockImplementation(
+      async (packId) => ({ id: packId }) as Awaited<ReturnType<typeof ensureModelInstalled>>
+    );
   });
 
   it("refreshes segment views after marking a segmentation complete", async () => {
@@ -161,6 +170,38 @@ describe("useSegmentationProcessingState", () => {
     expect(unlockSegmentation).toHaveBeenCalledWith("seg-1");
     expect(refreshSegmentViews).toHaveBeenCalledWith({ deferOverlayRefresh: true });
     expect(refetchSegmentations).not.toHaveBeenCalled();
+  });
+
+  it("tests the requested ROI and keeps its preview selected", async () => {
+    const { result } = renderHook(
+      () =>
+        useSegmentationProcessingState({
+          currentSegmentation: makeSegmentation(),
+          activeSourceModel: "quantem:mito",
+          supportsPointFeedback: false,
+          supportsInstanceParams: false,
+          currentInstanceParams: null,
+          refetchSegmentations: vi.fn(async () => {}),
+          refreshSegmentViews: vi.fn(async () => {}),
+        }),
+      { wrapper: RouterWrapper }
+    );
+
+    await waitFor(() => expect(result.current.segmentationRois).toHaveLength(2));
+    await act(async () => {
+      await result.current.handleRerunRoi("roi-existing");
+    });
+
+    expect(ensureModelInstalled).toHaveBeenCalledWith(
+      "quantem:mito",
+      expect.any(Object)
+    );
+    expect(rerunSegmentationRoi).toHaveBeenCalledWith(
+      "seg-1",
+      "roi-existing",
+      "quantem:mito"
+    );
+    expect(result.current.previewRoiId).toBe("roi-existing");
   });
 });
 

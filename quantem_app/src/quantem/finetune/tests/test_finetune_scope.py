@@ -8,6 +8,7 @@ rather than against a mock.
 
 from __future__ import annotations
 
+import numpy as np
 from django.test import TestCase
 
 from quantem.finetune.models import (
@@ -15,8 +16,10 @@ from quantem.finetune.models import (
     TRAINING_MODE_USE_ALL,
 )
 from quantem.finetune.scope import (
+    TrainingFold,
     default_training_mode,
     plan_folds,
+    plan_step_counts,
     planned_round_count,
     planned_training_units,
     resolve_scope,
@@ -27,6 +30,7 @@ from quantem.segmentation.models import CompletedROI, SegmentationType
 from quantem.segmentation.services.adapt import (
     SOURCE_CONFIRMED_AREA,
     SOURCE_DONE_ROI,
+    AnnotatedCrop,
     collect_crops_for_scope,
 )
 from quantem.segmentation.services.adapt.extract_crops import count_annotations
@@ -99,7 +103,7 @@ class OwnersCountTests(TestCase):
         assert dataset["image_count"] == 10
         assert dataset["annotated_image_count"] == 3
         assert dataset["annotation_count"] == 7
-        assert body["unassigned_images"] == []
+        assert set(body) == {"experiments"}
 
     def test_a_dataset_resolves_to_its_images(self):
         scope = resolve_scope(dataset_ids=[str(self.dataset.id)])
@@ -126,15 +130,15 @@ class SameExperimentTests(TestCase):
         assert not scope.eligible
         assert "more than one experiment" in scope.blockers[0]
 
-    def test_mixing_an_experiment_with_an_unassigned_image_is_refused(self):
+    def test_mixing_two_individual_image_experiments_is_refused(self):
         scope = resolve_scope(asset_ids=[str(self.a.asset_id), str(self.c.asset_id)])
         assert not scope.eligible
 
-    def test_unassigned_images_together_are_one_group(self):
+    def test_two_automatic_image_experiments_are_not_silently_pooled(self):
         other = annotated_segmentation("loose_02.tif")
         scope = resolve_scope(asset_ids=[str(self.c.asset_id), str(other.asset_id)])
-        assert scope.eligible
-        assert scope.experiment_id is None
+        assert not scope.eligible
+        assert "more than one experiment" in scope.blockers[0]
 
     def test_starting_a_run_across_experiments_is_a_400(self):
         response = self.client.post(
@@ -289,7 +293,7 @@ class FoldPlanTests(TestCase):
 
 
 class ProgressDenominatorTests(TestCase):
-    """``steps x rounds``, for each of the three ways a run can be set up."""
+    """The sum of each round's steps, for every way a run can be set up."""
 
     def setUp(self):
         self.one = annotated_segmentation("den_a.tif", with_roi=False)
@@ -340,6 +344,16 @@ class ProgressDenominatorTests(TestCase):
         assert planned_round_count(payload) == 2
         assert planned_training_units(payload) == 600
 
+    def test_variable_step_rounds_are_summed_not_multiplied(self):
+        payload = self._payload(
+            training_mode=TRAINING_MODE_HOLDOUT_1,
+            cv_benchmark=True,
+            planned_rounds=3,
+            planned_steps=[300, 420, 600],
+        )
+        assert planned_round_count(payload) == 3
+        assert planned_training_units(payload) == 1320
+
     def test_the_queue_asks_for_steps_and_gets_steps(self):
         from quantem.jobs.constants import JOB_TYPE_TRAIN_ORGANELLE_ADAPTER
         from quantem.jobs.tile_plan import planned_units_for
@@ -386,6 +400,37 @@ class ProgressDenominatorTests(TestCase):
             {"segmentation_id": str(self.one.id)},
         )
         assert batch_id == ""
+
+
+class FoldStepPlanTests(TestCase):
+    @staticmethod
+    def _crop(size: int) -> AnnotatedCrop:
+        labels = np.zeros((size, size), dtype=np.uint8)
+        return AnnotatedCrop(
+            id="crop",
+            name="crop",
+            image_key="image",
+            segmentation_id="segmentation",
+            x=0,
+            y=0,
+            width=size,
+            height=size,
+            n_objects=1,
+            gt=labels,
+            valid=np.ones_like(labels),
+        )
+
+    def test_each_fold_scales_from_its_own_training_tiles(self):
+        # 1280 px gives four half-stride starts per axis: 16 training tiles.
+        fold = TrainingFold(0, [self._crop(1280)], [], None)
+        assert plan_step_counts([fold], "quantem:mito") == [320]
+
+    def test_a_fixed_internal_override_still_applies_to_every_fold(self):
+        folds = [
+            TrainingFold(0, [self._crop(512)], [], None),
+            TrainingFold(1, [self._crop(1280)], [], None),
+        ]
+        assert plan_step_counts(folds, "quantem:mito", fixed_steps=2) == [2, 2]
 
 
 class DefaultModeTests(TestCase):

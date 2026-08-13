@@ -103,7 +103,9 @@ describe("OverlaySelectionSidebar", () => {
     const user = userEvent.setup();
     const handlers = renderSidebar(makeSegmentation("CANDIDATES_READY"));
 
-    expect(screen.getByRole("heading", { name: "Existing Segmentations" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Existing Segmentations" }).closest("section")
+    ).toHaveClass("overlay-existing-section");
     expect(screen.getByText("Mito")).toBeInTheDocument();
     expect(screen.queryByText("Color")).not.toBeInTheDocument();
     expect(screen.queryByText("Opacity")).not.toBeInTheDocument();
@@ -117,7 +119,17 @@ describe("OverlaySelectionSidebar", () => {
     );
     expect(handlers.onEditSegmentation).toHaveBeenCalledWith("seg-1");
 
-    await user.click(screen.getByRole("button", { name: "Expand Mitochondria" }));
+    const accordionButton = screen.getByRole("button", {
+      name: "Expand Mitochondria",
+    });
+    expect(accordionButton.querySelector("path")).toHaveAttribute(
+      "d",
+      "m6 9 6 6 6-6"
+    );
+    await user.click(accordionButton);
+    expect(
+      screen.getByRole("button", { name: "Collapse Mitochondria" }).querySelector("path")
+    ).toHaveAttribute("d", "m6 15 6-6 6 6");
     expect(screen.getByText("Color")).toBeInTheDocument();
     expect(screen.getByText("Opacity")).toBeInTheDocument();
     expect(screen.getByText("511 objects")).toBeInTheDocument();
@@ -126,6 +138,40 @@ describe("OverlaySelectionSidebar", () => {
     expect(handlers.onEditSegmentation).toHaveBeenLastCalledWith("seg-1");
     await user.click(screen.getByRole("button", { name: "Delete" }));
     expect(handlers.onDeleteSegmentation).toHaveBeenCalledWith("seg-1");
+  });
+
+  it("labels analysis masks outside the built-in organelles", () => {
+    const analysis = makeSegmentation("COMPLETED", {
+      display_name: "Whole-cell measurement region",
+      segmentation_type: {
+        ...makeSegmentation("COMPLETED").segmentation_type,
+        internal_name: "quantem_internal_analysis_mask",
+        short_name: "Analysis mask",
+        long_name: "Analysis Segmentation Mask",
+        kind: "builtin",
+      },
+    });
+    renderSidebar(analysis);
+
+    expect(screen.getByText("Whole-cell measurement region (Analysis)")).toBeInTheDocument();
+  });
+
+  it("labels reusable masks outside the built-in organelles as custom", () => {
+    renderSidebar(
+      makeSegmentation("COMPLETED", {
+        segmentation_type: {
+          ...makeSegmentation("COMPLETED").segmentation_type,
+          internal_name: "vesicles",
+          short_name: "Very long custom vesicle segmentation",
+          long_name: "Very long custom vesicle segmentation",
+          kind: "custom",
+        },
+      })
+    );
+
+    expect(
+      screen.getByText("Very long custom vesicle segmentation (Custom)")
+    ).toBeInTheDocument();
   });
 
   it("keeps a failed segmentation visible and available for manual labeling", async () => {

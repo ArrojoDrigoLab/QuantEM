@@ -6,7 +6,10 @@ import {
   isCellConfirmedStatus,
   normalizeCellStatus,
 } from "@/utils/cellStatus";
-import { selectSegmentGeometryCoords } from "@/utils/segmentGeometry";
+import {
+  selectSegmentGeometryCoords,
+  selectSegmentHoleCoords,
+} from "@/utils/segmentGeometry";
 
 const INSTANCE_COLOR_INTERNAL_NAMES = new Set([
   "quantem_internal_mito",
@@ -106,6 +109,12 @@ function segmentGeometry(segment: SegmentObject, useSmoothedGeometry: boolean): 
   }));
 }
 
+function segmentHoles(segment: SegmentObject): Point[][] {
+  return selectSegmentHoleCoords(segment).map((ring) =>
+    ring.map(([x, y]) => ({ x, y }))
+  );
+}
+
 export function generateLeftPanelOverlays(
   segments: SegmentObject[],
   tooMany: boolean,
@@ -148,6 +157,7 @@ export function generateLeftPanelOverlays(
     return {
       id: segment.id,
       geometry: segmentGeometry(segment, useSmoothedGeometry),
+      holes: segmentHoles(segment),
       fillColor,
       fillOpacity,
       strokeColor: bboxHighlighted ? "#00ffff" : strokeColor,
@@ -188,6 +198,7 @@ export function generateRightPanelOverlays(
     return {
       id: segment.id,
       geometry: segmentGeometry(segment, useSmoothedGeometry),
+      holes: segmentHoles(segment),
       fillColor,
       fillOpacity: isConfirmed ? CONFIRMED_FILL_OPACITY : isExcluded ? 0.05 : 0,
       strokeColor: isSelected ? "#00ffff" : strokeColor,

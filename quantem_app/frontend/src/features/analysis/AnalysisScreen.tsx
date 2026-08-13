@@ -11,7 +11,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { getAsset, getAssetSegmentations } from "@/shared/api/assets";
 import { segmentationDisplayName } from "@/shared/segmentationNames";
-import { getAnalysisRun, getAnalysisRuns, startAnalysisRun } from "@/shared/api/analysis";
+import {
+  getAnalysisRun,
+  getAnalysisRuns,
+  getGlobalAreaReport,
+  startAnalysisRun,
+} from "@/shared/api/analysis";
 import { cancelJob, deleteJob } from "@/shared/api/jobs";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import { useJobProgress } from "@/shared/hooks/useJobProgress";
@@ -19,7 +24,7 @@ import { Badge, Button, PageState, Panel } from "@/shared/ui/design";
 import { cx } from "@/shared/ui/cx";
 import { PixelSizeEditor } from "@/shared/ui/PixelSize";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
-import type { AnalysisRun } from "@/shared/types/analysis";
+import type { AnalysisRun, GlobalAreaReport } from "@/shared/types/analysis";
 import {
   buildAnalysisPayload,
   defaultFormState,
@@ -46,6 +51,10 @@ export function AnalysisScreen() {
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [globalMaskIds, setGlobalMaskIds] = useState<string[]>([]);
+  const [globalReport, setGlobalReport] = useState<GlobalAreaReport | null>(null);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+  const [measuringGlobal, setMeasuringGlobal] = useState(false);
 
   const { data: asset, refetch: refetchAsset } = useApiQuery(
     () => (assetId ? getAsset(assetId) : Promise.resolve(null)),
@@ -122,6 +131,38 @@ export function AnalysisScreen() {
     () => segmentations?.find((seg) => seg.id === segmentationId) ?? null,
     [segmentations, segmentationId]
   );
+  const isGlobal = selectedSegmentation?.segmentation_type.measurement_mode === "global";
+  const availableAnalysisMasks = useMemo(
+    () =>
+      (segmentations ?? []).filter(
+        (segmentation) =>
+          segmentation.id !== segmentationId &&
+          segmentation.segmentation_type.internal_name ===
+            "quantem_internal_analysis_mask"
+      ),
+    [segmentationId, segmentations]
+  );
+
+  useEffect(() => {
+    setGlobalMaskIds([]);
+    setGlobalReport(null);
+    setGlobalError(null);
+  }, [segmentationId]);
+
+  const handleGlobalMeasure = useCallback(async () => {
+    if (!segmentationId) return;
+    setMeasuringGlobal(true);
+    setGlobalError(null);
+    try {
+      setGlobalReport(await getGlobalAreaReport(segmentationId, globalMaskIds));
+    } catch (error) {
+      setGlobalError(
+        extractApiErrorMessage(error, "The foreground-area report could not be measured.")
+      );
+    } finally {
+      setMeasuringGlobal(false);
+    }
+  }, [globalMaskIds, segmentationId]);
 
   const handleSelectSegmentation = useCallback(
     (nextId: string) => {
@@ -311,7 +352,50 @@ export function AnalysisScreen() {
 
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(320px,380px)_1fr]">
           <div className="flex flex-col gap-5">
-            {form && segmentations ? (
+            {isGlobal ? (
+              <Panel className="p-4">
+                <h2 className="m-0 text-base font-semibold text-slate-950">
+                  Foreground area
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Global masks report area only: foreground pixels divided by
+                  the whole image or by each selected analysis mask.
+                </p>
+                {availableAnalysisMasks.length > 0 ? (
+                  <fieldset className="mt-3 space-y-2">
+                    <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Analysis-mask denominators
+                    </legend>
+                    {availableAnalysisMasks.map((mask) => (
+                      <label key={mask.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={globalMaskIds.includes(mask.id)}
+                          onChange={(event) =>
+                            setGlobalMaskIds((current) =>
+                              event.target.checked
+                                ? [...current, mask.id]
+                                : current.filter((id) => id !== mask.id)
+                            )
+                          }
+                        />
+                        {segmentationDisplayName(mask)}
+                      </label>
+                    ))}
+                  </fieldset>
+                ) : null}
+                <Button
+                  className="mt-4"
+                  onClick={() => void handleGlobalMeasure()}
+                  disabled={measuringGlobal}
+                >
+                  {measuringGlobal ? "Measuring…" : "Measure foreground area"}
+                </Button>
+                {globalError ? (
+                  <p className="mt-3 text-sm text-red-800" role="alert">{globalError}</p>
+                ) : null}
+              </Panel>
+            ) : form && segmentations ? (
               <AnalysisConfigForm
                 segmentations={segmentations}
                 selectedSegmentation={selectedSegmentation}
@@ -325,7 +409,7 @@ export function AnalysisScreen() {
               />
             ) : null}
 
-            <RunHistory
+            {!isGlobal ? <RunHistory
               runs={historyRows}
               selectedRunId={activeRunId}
               onSelect={(runId) => {
@@ -335,16 +419,37 @@ export function AnalysisScreen() {
               }}
               loading={runsLoading}
               error={runsError}
-            />
+            /> : null}
           </div>
 
           <div className="flex flex-col gap-5">
+            {isGlobal && globalReport ? (
+              <Panel className="p-4">
+                <h2 className="m-0 text-base font-semibold text-slate-950">
+                  Foreground area report
+                </h2>
+                {[globalReport.whole_image, ...globalReport.analysis_masks].map((row) => (
+                  <div key={row.segmentation_id ?? "whole"} className="mt-3 border-t border-slate-200 pt-3">
+                    <strong className="text-sm text-slate-900">{row.name}</strong>
+                    <p className="m-0 mt-1 text-sm text-slate-700">
+                      {row.foreground_percent === null
+                        ? "Undefined (the denominator has no pixels)"
+                        : `${row.foreground_percent.toFixed(3)}%`}
+                    </p>
+                    <p className="m-0 mt-1 text-xs text-slate-500">
+                      {row.foreground_pixels.toLocaleString()} foreground pixels /{" "}
+                      {row.denominator_pixels.toLocaleString()} denominator pixels
+                    </p>
+                  </div>
+                ))}
+              </Panel>
+            ) : null}
             {/* Exactly one panel describes the run's state, and it is the only
                 place the failure is printed. There used to be two -- a job
                 panel here and a status panel inside AnalysisResults -- which
                 is how the same Windows exit code appeared twice above a
                 sentence claiming the run was still pending. */}
-            {runState.status && runState.status !== "SUCCESS" ? (
+            {!isGlobal && runState.status && runState.status !== "SUCCESS" ? (
               <Panel
                 className={cx(
                   "p-4",
@@ -469,11 +574,11 @@ export function AnalysisScreen() {
               </Panel>
             ) : null}
 
-            {runState.status === "SUCCESS" && run ? (
+            {!isGlobal && runState.status === "SUCCESS" && run ? (
               <AnalysisResults run={run} />
             ) : null}
 
-            {runState.status === null ? (
+            {!isGlobal && runState.status === null ? (
               <Panel className="p-6 text-center">
                 <p className="m-0 text-sm text-slate-600">
                   Configure a run on the left, or pick one from the history to

@@ -7,7 +7,10 @@ export function findOverlayIdAtPoint(
   overlays: SegmentOverlay[]
 ): string | null {
   for (const overlay of overlays) {
-    if (pointInPolygon(point, overlay.geometry)) {
+    if (
+      pointInPolygon(point, overlay.geometry) &&
+      !(overlay.holes ?? []).some((hole) => pointInPolygon(point, hole))
+    ) {
       return overlay.id;
     }
   }

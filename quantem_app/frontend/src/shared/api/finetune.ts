@@ -8,6 +8,7 @@ import type {
   AdaptStartPayload,
   AdaptStartResponse,
   FineTuneAdapterSummary,
+  FineTuneApplyProgress,
   FineTuneApplyResponse,
   FineTunePreviewResponse,
   FineTuneProgress,
@@ -59,6 +60,13 @@ export function installModelPack(
       body: JSON.stringify(sourcePath ? { source_path: sourcePath } : {}),
     }
   );
+}
+
+/** Remove one downloaded model pack from this machine. */
+export function removeModelPack(packId: string): Promise<void> {
+  return apiRequest<void>(`/api/models/${encodeURIComponent(packId)}/`, {
+    method: "DELETE",
+  });
 }
 
 /**
@@ -200,21 +208,33 @@ export function getFineTuneRun(adapterId: string): Promise<FineTuneRunDetail> {
 }
 
 /**
- * Run the finished model on some of the images it was scoped to.
+ * Run the finished model on selected images or Datasets in its Experiment.
  *
  * Never called on success. The dialog offers it; nothing is queued until the
  * user picks images and clicks (owner R13).
  */
 export function applyFineTuneRun(
   adapterId: string,
-  assetIds: string[]
+  assetIds: string[],
+  datasetIds: string[] = []
 ): Promise<FineTuneApplyResponse> {
   return apiRequest<FineTuneApplyResponse>(
     `/api/finetune/runs/${encodeURIComponent(adapterId)}/apply/`,
     {
       method: "POST",
-      body: JSON.stringify({ asset_ids: assetIds }),
+      body: JSON.stringify({ asset_ids: assetIds, dataset_ids: datasetIds }),
     }
+  );
+}
+
+/** Per-image progress for one opt-in Dataset/image application batch. */
+export function getFineTuneApplyProgress(
+  adapterId: string,
+  batchId: string
+): Promise<FineTuneApplyProgress> {
+  const query = new URLSearchParams({ batch_id: batchId });
+  return apiRequest<FineTuneApplyProgress>(
+    `/api/finetune/runs/${encodeURIComponent(adapterId)}/apply/?${query}`
   );
 }
 

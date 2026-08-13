@@ -9,8 +9,8 @@ function seg(info: SegmentationObjectsPixelSize | null | undefined) {
 describe("describeObjectsPixelSize", () => {
   /**
    * The reported gap: import uncalibrated, run inference, type 5 nm/px in,
-   * proofread — the labeling header reads "5 nm/px · entered by hand" over
-   * objects that were produced with no pixel size at all, and the analysis
+   * proofread — the labeling header reads "5 nm/px" over objects that were
+   * produced with no pixel size at all, and the analysis
    * blanks every physical unit. Nothing said so before the run was spent.
    */
   it("warns when the objects predate the calibration", () => {

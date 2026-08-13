@@ -8,6 +8,7 @@
 
 import { Badge, Panel } from "@/shared/ui/design";
 import { formatInteger, formatNumber, formatPercent } from "@/shared/ui/format";
+import { PixelSizeTag } from "@/shared/ui/PixelSize";
 import type { AnalysisComposition } from "@/shared/types/analysis";
 
 export interface CompositionPanelProps {
@@ -34,11 +35,7 @@ export function CompositionPanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-sm font-semibold text-slate-900">Composition</h3>
         <div className="flex flex-wrap items-center gap-2">
-          {calibrated ? (
-            <Badge tone="good">{formatNumber(pixelSizeNm, 2)} nm/px</Badge>
-          ) : (
-            <Badge tone="warning">Pixel size unset — pixels only</Badge>
-          )}
+          <PixelSizeTag valueNm={calibrated ? pixelSizeNm : null} />
           {wholeImageDenominator ? (
             <Badge tone="warning">Whole image as denominator</Badge>
           ) : (

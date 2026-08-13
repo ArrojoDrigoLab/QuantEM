@@ -22,6 +22,8 @@ export interface SegmentOverlay {
   strokeColor: string;
   strokeOpacity: number;
   strokeWidth?: number;
+  /** SVG dash pattern, for example "8 6". Omitted for a solid outline. */
+  strokeDasharray?: string;
   shape?: "polygon" | "polyline";
 }
 
@@ -52,6 +54,8 @@ export interface ViewerIdMapOverlaySpec {
   id: string;
   /** Bundle root zarr URL (already carries the `?rev=<bundle_version>` cache key). */
   ngffUrl: string;
+  /** Geometry revision represented by this bundle. */
+  revision?: number;
   /** Flat RGBA8 palette indexed by dense label (length = (maxLabel + 1) * 4). */
   lut: Uint8Array;
   maxLabel: number;

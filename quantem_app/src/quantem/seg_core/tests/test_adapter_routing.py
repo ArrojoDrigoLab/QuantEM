@@ -86,6 +86,48 @@ class ApplyActiveAdapterTests(TestCase):
         # the published default.
         assert any("0.31" in line for line in self.details)
 
+    def test_an_explicit_dataset_apply_adapter_routes_to_an_unscoped_target_image(self):
+        adapter = _adapter(
+            self.segmentation,
+            segmentation_type=self.segmentation.segmentation_type,
+        )
+        other_image = create_small_test_image("dataset target")
+        target = create_mitochondria_segmentation(other_image)
+        adapter.applied_assets.add(target.asset)
+        target_segmenter = _RecordingSegmenter()
+        applied = apply_active_adapter(
+            target_segmenter,
+            target,
+            adapter_id=str(adapter.id),
+        )
+        assert applied == str(adapter.id)
+        assert target_segmenter.applied["adapter_id"] == str(adapter.id)
+
+    def test_an_explicit_adapter_cannot_escape_its_apply_targets(self):
+        adapter = _adapter(
+            self.segmentation,
+            segmentation_type=self.segmentation.segmentation_type,
+        )
+        other_image = create_small_test_image("not a dataset target")
+        target = create_mitochondria_segmentation(other_image)
+
+        with pytest.raises(ValueError, match="did not run the released model"):
+            apply_active_adapter(
+                _RecordingSegmenter(),
+                target,
+                adapter_id=str(adapter.id),
+            )
+
+    def test_an_explicit_missing_adapter_fails_instead_of_running_the_base_model(self):
+        from uuid import uuid4
+
+        with pytest.raises(ValueError, match="did not run the released model"):
+            apply_active_adapter(
+                self.segmenter,
+                self.segmentation,
+                adapter_id=str(uuid4()),
+            )
+
     def test_an_unapplied_adapter_is_not_used(self):
         _adapter(self.segmentation, applied_at=None)
         assert self._apply() is None

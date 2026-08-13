@@ -15,6 +15,7 @@ import type {
   ImageSegmentationCreatePayload,
   SegmentationType,
   UploadImageOptions,
+  UploadPipelineStart,
 } from "@/shared/types/images";
 import { resolveApiUrl } from "@/shared/api/core/http";
 
@@ -168,10 +169,10 @@ export function updateExperiment(
 /**
  * Delete an experiment. **The images survive.**
  *
- * `Asset.experiment` is `SET_NULL`: the images become unassigned, which is an
- * ordinary state, and the experiment's datasets go with it because a dataset
- * cannot exist outside one. Any confirmation copy in front of this must say so
- * -- "delete" over a group of images reads as "delete the images".
+ * Every active image is first moved to its own display-name experiment; the
+ * old experiment's datasets then go with it. Any confirmation copy in front
+ * of this must say so -- "delete" over a group of images reads as "delete the
+ * images".
  */
 export function deleteExperiment(experimentId: string): Promise<void> {
   return apiRequest<void>(`/api/experiments/${experimentId}/`, {
@@ -238,6 +239,24 @@ export function getAssetPreviewPngUrl(assetId: string, cacheKey?: string | null)
   const base = resolveApiUrl(`/api/assets/${assetId}/preview-png`);
   if (!cacheKey) return base;
   return `${base}?v=${encodeURIComponent(cacheKey)}`;
+}
+
+export type AssetRasterExportSelection =
+  | { source: "original" }
+  | { source: "segmentation"; segmentationId: string };
+
+/** URL of one user-selected 8-bit image or segmentation PNG download. */
+export function getAssetRasterExportUrl(
+  assetId: string,
+  selection: AssetRasterExportSelection
+): string {
+  const query = new URLSearchParams({ source: selection.source });
+  if (selection.source === "segmentation") {
+    query.set("segmentation_id", selection.segmentationId);
+  }
+  return resolveApiUrl(
+    `/api/assets/${encodeURIComponent(assetId)}/export-png/?${query.toString()}`
+  );
 }
 
 export function getAssetNgffThumbnailUrl(assetId: string, cacheKey?: string | null): string {
@@ -345,6 +364,9 @@ export function uploadAsset(
   if (options.segmentLd !== undefined) {
     formData.append("segment_ld", options.segmentLd ? "true" : "false");
   }
+  if (options.deferProcessing) {
+    formData.append("defer_processing", "true");
+  }
   // Optional grouping. Only sent when the user actually chose or typed
   // something: an import that names nothing must produce exactly the request
   // this function produced before these fields existed.
@@ -359,6 +381,33 @@ export function uploadAsset(
     formData.append("dataset_name", options.datasetName);
   }
   return apiRequestFormData<AssetDetail>("/api/assets/upload/", formData);
+}
+
+export function startUploadedAssetPipelines(
+  uploads: UploadPipelineStart[]
+): Promise<{ job_ids: string[] }> {
+  return apiRequest<{ job_ids: string[] }>("/api/assets/upload/start-processing/", {
+    method: "POST",
+    body: JSON.stringify({
+      uploads: uploads.map((upload) => ({
+        asset_id: upload.assetId,
+        segment_mito: upload.segmentMito ?? false,
+        segment_er: upload.segmentEr ?? false,
+        segment_nucleus: upload.segmentNucleus ?? false,
+        segment_ld: upload.segmentLd ?? false,
+      })),
+    }),
+  });
+}
+
+/** Resume deferred imports if the app closed before their batch could start. */
+export function recoverDeferredUploadedAssetPipelines(): Promise<{
+  job_ids: string[];
+}> {
+  return apiRequest<{ job_ids: string[] }>(
+    "/api/assets/upload/recover-processing/",
+    { method: "POST", body: "{}" }
+  );
 }
 
 /**
@@ -385,6 +434,22 @@ export function updateAsset(
   updates: Partial<Pick<AssetDetail, "display_name" | "notes" | "pixel_size_nm">>
 ): Promise<AssetDetail> {
   return apiRequest<AssetDetail>(`/api/assets/${assetId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Atomically edit the fields exposed by the experiment-page image dialog. */
+export function updateAssetLibraryDetails(
+  assetId: string,
+  updates: {
+    display_name: string;
+    notes: string;
+    pixel_size_nm: number | null;
+    datasets: string[];
+  }
+): Promise<AssetDetail> {
+  return apiRequest<AssetDetail>(`/api/assets/${assetId}/library-edit/`, {
     method: "PATCH",
     body: JSON.stringify(updates),
   });

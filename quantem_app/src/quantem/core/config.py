@@ -85,6 +85,7 @@ UPLOADS_DIR = TMP_DIR / "uploads"  # Temporary upload storage
 IMAGES_DIR = DATA_DIR / "images"  # Final PNG storage
 ROIS_DIR = TMP_DIR / "rois"  # Temporary ROI PNG storage
 PROB_MAPS_DIR = DATA_DIR / "prob_maps"
+GLOBAL_MASKS_DIR = DATA_DIR / "global_masks"
 
 
 def ensure_directories():
@@ -107,6 +108,7 @@ def ensure_directories():
         IMAGES_DIR,
         ROIS_DIR,
         PROB_MAPS_DIR,
+        GLOBAL_MASKS_DIR,
     ]
 
     created_dirs = []

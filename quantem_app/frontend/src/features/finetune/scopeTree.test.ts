@@ -9,7 +9,6 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  UNASSIGNED_GROUP_KEY,
   buildScopeTree,
   emptySelection,
   filterScopeTree,
@@ -51,6 +50,9 @@ const SCOPE: FineTuneScopeResponse = {
             image("img-1", "liver_01.tif", 3, 0),
             image("img-2", "liver_02.tif", 2, 1),
             image("img-3", "liver_03.tif", 0, 1),
+            ...Array.from({ length: 7 }, (_, index) =>
+              image(`img-empty-${index}`, `liver_empty_${index}.tif`, 0, 0)
+            ),
           ],
         },
       ],
@@ -63,22 +65,9 @@ const SCOPE: FineTuneScopeResponse = {
       ungrouped_images: [image("img-fed", "fed_01.tif", 2, 0)],
     },
   ],
-  unassigned_images: [image("img-orphan", "scratch.tif", 4, 0)],
 };
 
 describe("features/finetune/scopeTree", () => {
-  it("puts the unassigned images in their own group, not in an experiment", () => {
-    const tree = buildScopeTree(SCOPE);
-    expect(tree.map((group) => group.key)).toEqual([
-      "exp-fasted",
-      "exp-fed",
-      UNASSIGNED_GROUP_KEY,
-    ]);
-    expect(tree[2].kind).toBe("unassigned");
-    expect(tree[2].datasets).toHaveLength(0);
-    expect(tree[2].images.map((i) => i.id)).toEqual(["img-orphan"]);
-  });
-
   it("shows 7 for the owner's ten-image dataset", () => {
     const tree = buildScopeTree(SCOPE);
     const dataset = tree[0].datasets[0];
@@ -138,7 +127,7 @@ describe("features/finetune/scopeTree", () => {
 
     const byDataset = filterScopeTree(tree, "liver 24");
     expect(byDataset).toHaveLength(1);
-    expect(byDataset[0].datasets[0].images).toHaveLength(3);
+    expect(byDataset[0].datasets[0].images).toHaveLength(10);
 
     const byImage = filterScopeTree(tree, "liver_02");
     expect(byImage[0].datasets[0].images.map((i) => i.id)).toEqual(["img-2"]);
@@ -162,5 +151,44 @@ describe("features/finetune/scopeTree", () => {
       true
     );
     expect(selectionKey("t", forwards)).toBe(selectionKey("t", backwards));
+  });
+
+  it("counts an image in two selected datasets only once", () => {
+    const shared = image("shared", "shared.tif", 3, 0);
+    const groups = buildScopeTree({
+      experiments: [
+        {
+          id: "experiment",
+          name: "Experiment",
+          datasets: [
+            {
+              id: "a",
+              name: "A",
+              image_count: 1,
+              annotated_image_count: 1,
+              annotation_count: 3,
+              images: [shared],
+            },
+            {
+              id: "b",
+              name: "B",
+              image_count: 1,
+              annotated_image_count: 1,
+              annotation_count: 3,
+              images: [shared],
+            },
+          ],
+          ungrouped_images: [],
+        },
+      ],
+    });
+
+    expect(groups[0]).toMatchObject({ annotationCount: 3, imageCount: 1 });
+    expect(
+      selectionTotals(groups, {
+        datasetIds: new Set(["a", "b"]),
+        assetIds: new Set(),
+      })
+    ).toEqual({ annotationCount: 3, imageCount: 1 });
   });
 });

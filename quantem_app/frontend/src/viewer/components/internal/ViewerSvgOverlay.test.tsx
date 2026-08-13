@@ -38,4 +38,35 @@ describe("ViewerSvgOverlay", () => {
     const polyline = container.querySelector("polyline");
     expect(polyline).toHaveAttribute("vector-effect", "non-scaling-stroke");
   });
+
+  it("renders dashed overlay outlines", () => {
+    const { container } = render(
+      <ViewerSvgOverlay
+        metrics={null}
+        persistentOverlays={[
+          {
+            id: "dashed-box",
+            geometry: [
+              { x: 0, y: 0 },
+              { x: 1, y: 0 },
+              { x: 1, y: 1 },
+              { x: 0, y: 1 },
+            ],
+            fillColor: "transparent",
+            fillOpacity: 0,
+            strokeColor: "#ffd166",
+            strokeOpacity: 0.4,
+            strokeWidth: 3,
+            strokeDasharray: "8 6",
+          },
+        ]}
+        transientOverlays={[]}
+      />
+    );
+
+    expect(container.querySelector("polygon")).toHaveAttribute(
+      "stroke-dasharray",
+      "8 6"
+    );
+  });
 });

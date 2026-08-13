@@ -20,7 +20,8 @@ export function generateRoiFrameOverlay(
         height: number;
       }
     | null,
-  id: string = "roi-frame"
+  id: string = "roi-frame",
+  style: { strokeOpacity?: number; strokeDasharray?: string } = {}
 ): SegmentOverlay | null {
   if (!bounds) return null;
   return {
@@ -29,21 +30,41 @@ export function generateRoiFrameOverlay(
     fillColor: "transparent",
     fillOpacity: 0,
     strokeColor: "#ffd166",
-    strokeOpacity: 0.9,
+    strokeOpacity: style.strokeOpacity ?? 0.9,
     strokeWidth: 3,
+    strokeDasharray: style.strokeDasharray,
   };
 }
 
-export function generateRoiOverlays(activeRoi: SegmentationRoi | null): SegmentOverlay[] {
-  const overlay = activeRoi
-    ? generateRoiFrameOverlay({
-        x: activeRoi.x,
-        y: activeRoi.y,
-        width: activeRoi.width,
-        height: activeRoi.height,
-      })
-    : null;
-  return overlay ? [overlay] : [];
+export function generateRoiOverlays(
+  activeRoi: SegmentationRoi | null,
+  rois: SegmentationRoi[] = activeRoi ? [activeRoi] : []
+): SegmentOverlay[] {
+  const roiById = new Map(rois.map((roi) => [roi.id, roi]));
+  if (activeRoi) roiById.set(activeRoi.id, activeRoi);
+
+  const activeRoiId = activeRoi?.id ?? null;
+  const orderedRois = Array.from(roiById.values()).sort((left, right) => {
+    const leftActive = left.id === activeRoiId;
+    const rightActive = right.id === activeRoiId;
+    if (leftActive !== rightActive) return leftActive ? 1 : -1;
+    return left.id.localeCompare(right.id);
+  });
+
+  return orderedRois.flatMap((roi) => {
+    const isActive = roi.id === activeRoiId;
+    const overlay = generateRoiFrameOverlay(
+      {
+        x: roi.x,
+        y: roi.y,
+        width: roi.width,
+        height: roi.height,
+      },
+      isActive ? "roi-frame" : `roi-frame-${roi.id}`,
+      isActive ? {} : { strokeOpacity: 0.4, strokeDasharray: "8 6" }
+    );
+    return overlay ? [overlay] : [];
+  });
 }
 
 export function generateRoiStrokeOverlays(roiStrokes: RoiStroke[]): SegmentOverlay[] {

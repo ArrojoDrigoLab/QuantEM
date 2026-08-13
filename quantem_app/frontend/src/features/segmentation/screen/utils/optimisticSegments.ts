@@ -44,3 +44,22 @@ export function buildSyntheticSegmentsFromGeometries(
     })
   );
 }
+
+export function buildSyntheticSegmentsFromGeometryRings(
+  segmentationId: string,
+  geometries: Array<Array<Array<[number, number]>>>,
+  labelState: LabelState,
+  ids: readonly string[] = []
+): SegmentObject[] {
+  return geometries.map((rings, index) => ({
+    ...toSyntheticSegmentObject(segmentationId, {
+      id:
+        ids[index] ??
+        makeOptimisticOverlayId(`optimistic-${labelState.toLowerCase()}`),
+      label_state: labelState,
+      confidence_score: null,
+      geometry_coords: rings[0] ?? [],
+    }),
+    geometry: { type: "Polygon" as const, coordinates: rings },
+  }));
+}

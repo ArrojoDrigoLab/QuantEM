@@ -27,17 +27,6 @@ import type {
   FineTuneScopeSelectionPayload,
 } from "@/shared/types/finetune";
 
-/**
- * The group holding images that belong to no experiment.
- *
- * A sibling of the experiments rather than an experiment with an empty id,
- * because that is what it is on the wire and because the same-experiment rule
- * treats it as one group of its own: an unassigned image cannot be trained
- * alongside an experiment-bound one.
- */
-export const UNASSIGNED_GROUP_KEY = "unassigned";
-export const UNASSIGNED_GROUP_NAME = "Not in an experiment";
-
 export interface ScopeImageNode {
   id: string;
   name: string;
@@ -52,8 +41,8 @@ export interface ScopeDatasetNode {
   imageCount: number;
   annotatedImageCount: number;
   /**
-   * The server's own total for the dataset. Used whole rather than re-derived
-   * from `images`, which the contract does not promise is exhaustive.
+   * The server's own total for the dataset. Its `images` list is exhaustive;
+   * the total remains useful for rendering without redoing that sum.
    */
   annotationCount: number;
   images: ScopeImageNode[];
@@ -61,7 +50,7 @@ export interface ScopeDatasetNode {
 
 export interface ScopeGroupNode {
   key: string;
-  kind: "experiment" | "unassigned";
+  kind: "experiment";
   name: string;
   datasets: ScopeDatasetNode[];
   /** In the group, in no dataset. */
@@ -100,7 +89,7 @@ function datasetNode(dataset: FineTuneScopeDataset): ScopeDatasetNode {
   };
 }
 
-/** One flat list of groups: the experiments, then the unassigned images. */
+/** One flat list of experiment groups. */
 export function buildScopeTree(
   response: FineTuneScopeResponse | null
 ): ScopeGroupNode[] {
@@ -118,32 +107,30 @@ export function buildScopeTree(
       imageCount: imageCountOf(datasets, images),
     };
   });
-  const unassigned = (response.unassigned_images ?? []).map(imageNode);
-  if (unassigned.length > 0) {
-    groups.push({
-      key: UNASSIGNED_GROUP_KEY,
-      kind: "unassigned",
-      name: UNASSIGNED_GROUP_NAME,
-      datasets: [],
-      images: unassigned,
-      annotationCount: totalOf([], unassigned),
-      imageCount: unassigned.length,
-    });
-  }
   return groups;
 }
 
 function totalOf(datasets: ScopeDatasetNode[], images: ScopeImageNode[]): number {
-  return (
-    datasets.reduce((sum, dataset) => sum + dataset.annotationCount, 0) +
-    images.reduce((sum, image) => sum + image.annotationCount, 0)
+  return uniqueImages(datasets, images).reduce(
+    (sum, image) => sum + image.annotationCount,
+    0
   );
 }
 
 function imageCountOf(datasets: ScopeDatasetNode[], images: ScopeImageNode[]): number {
-  return (
-    datasets.reduce((sum, dataset) => sum + dataset.imageCount, 0) + images.length
-  );
+  return uniqueImages(datasets, images).length;
+}
+
+function uniqueImages(
+  datasets: ScopeDatasetNode[],
+  images: ScopeImageNode[]
+): ScopeImageNode[] {
+  const byId = new Map<string, ScopeImageNode>();
+  for (const image of images) byId.set(image.id, image);
+  for (const dataset of datasets) {
+    for (const image of dataset.images) byId.set(image.id, image);
+  }
+  return [...byId.values()];
 }
 
 function matches(text: string, needle: string): boolean {
@@ -278,28 +265,30 @@ export function selectionTotals(
   groups: ScopeGroupNode[],
   selection: ScopeSelection
 ): ScopeTotals {
-  let annotationCount = 0;
-  let imageCount = 0;
+  const selected = new Map<string, ScopeImageNode>();
   for (const group of groups) {
     for (const dataset of group.datasets) {
       if (selection.datasetIds.has(dataset.id)) {
-        annotationCount += dataset.annotationCount;
-        imageCount += dataset.imageCount;
+        for (const image of dataset.images) selected.set(image.id, image);
         continue;
       }
       for (const image of dataset.images) {
         if (!selection.assetIds.has(image.id)) continue;
-        annotationCount += image.annotationCount;
-        imageCount += 1;
+        selected.set(image.id, image);
       }
     }
     for (const image of group.images) {
       if (!selection.assetIds.has(image.id)) continue;
-      annotationCount += image.annotationCount;
-      imageCount += 1;
+      selected.set(image.id, image);
     }
   }
-  return { annotationCount, imageCount };
+  return {
+    annotationCount: [...selected.values()].reduce(
+      (sum, image) => sum + image.annotationCount,
+      0
+    ),
+    imageCount: selected.size,
+  };
 }
 
 /** The selection as the two id lists §4.2 and §4.3 take, in a stable order. */

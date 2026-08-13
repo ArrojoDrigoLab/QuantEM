@@ -64,7 +64,9 @@ export function SamBoxToolControls({
         <div className="sam-box-tool-detail">
           {tool.isSubmitting && (
             <span className="sam-box-tool-hint" role="status">
-              Segmenting the box.
+              {tool.pendingCount === 1
+                ? "Segmenting the box."
+                : `Segmenting ${tool.pendingCount} boxes.`}
             </span>
           )}
 

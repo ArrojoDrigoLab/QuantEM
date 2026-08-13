@@ -23,7 +23,7 @@
  *    state, with a visible hover state while a file is over it.
  * 3. **Success is not a reset.** The panel does not clear itself and vanish;
  *    it hands each created asset to `onUploaded`, and the Library turns those
- *    into a confirmation banner and highlighted cards. The panel only clears
+ *    into highlighted cards. The panel only clears
  *    the files that landed, so the next import can start.
  *
  * ## A plate, not a picture
@@ -106,6 +106,7 @@ import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import { parsePixelSizeInput } from "@/shared/pixelSize";
 import { probeFileDeclaredPixelSize } from "@/shared/fileDeclaredPixelSize";
 import { Button, Panel } from "@/shared/ui/design";
+import { cx } from "@/shared/ui/cx";
 import { formatBytes } from "@/shared/ui/format";
 import {
   FALLBACK_UPLOAD_FORMATS,
@@ -186,12 +187,17 @@ interface ImageUploadPanelProps {
    * up before the pointer reaches it.
    */
   pageDragActive?: boolean;
+  /** Use the short drop target once the home page already has experiments. */
+  compact?: boolean;
 }
 
 export const ImageUploadPanel = forwardRef<
   ImageUploadPanelHandle,
   ImageUploadPanelProps
->(function ImageUploadPanel({ onUploaded, pageDragActive = false }, ref) {
+>(function ImageUploadPanel(
+  { onUploaded, pageDragActive = false, compact = false },
+  ref
+) {
   const {
     imports,
     setImports,
@@ -200,6 +206,7 @@ export const ImageUploadPanel = forwardRef<
     batchTotal,
     importing,
     runImport,
+    retryDeferredProcessing,
     mountedRef,
   } = useImportRun({ onUploaded });
   const [files, setFiles] = useState<ChosenFile[]>([]);
@@ -547,9 +554,8 @@ export const ImageUploadPanel = forwardRef<
         // put, with their reason, so the button can retry exactly those. A
         // completely clean batch also clears the optional fields, which is what
         // makes the panel ready for the next plate -- but it does not
-        // *collapse*, and it is not the confirmation. The confirmation is the
-        // strip and the highlighted cards the Library draws from the assets
-        // handed up above. A cleared form that looks exactly like a reset is
+        // *collapse*. The highlighted cards the Library draws from the assets
+        // handed up above provide the durable status. A cleared form that looks exactly like a reset is
         // what the owner read as a failure.
         setFiles((current) =>
           current.filter((entry) => failedKeys.has(entry.key))
@@ -604,7 +610,7 @@ export const ImageUploadPanel = forwardRef<
 
   return (
     <Panel
-      className="p-4"
+      className={cx("p-4", compact && files.length === 0 && "py-3")}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -650,6 +656,7 @@ export const ImageUploadPanel = forwardRef<
           acceptedExtensions={acceptedExtensions}
           highlightDropZone={highlightDropZone}
           batchSummary={batchSummary}
+          compact={compact}
         />
       ) : (
         <form
@@ -669,6 +676,7 @@ export const ImageUploadPanel = forwardRef<
             onChooseDifferentFile={() => openFilePicker(true)}
             onClearChosenFiles={clearChosenFiles}
             onRemoveFile={removeFile}
+            onRetryProcessing={() => void retryDeferredProcessing()}
           />
 
           <ImportDropZone

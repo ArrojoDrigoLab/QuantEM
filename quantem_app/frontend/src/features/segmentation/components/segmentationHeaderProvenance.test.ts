@@ -164,7 +164,7 @@ describe("describeDisplayedObjects", () => {
    * The reported failure: a calibrated 5 nm/px image, `quantem:mito`, run to
    * completion, zero candidates, `CANDIDATES_READY`. The chip said "No objects
    * from QuantEM yet" and the tooltip said "Nothing has been run with QuantEM
-   * on this image ... Run Full Segmentation to produce some, or choose another
+   * on this image ... Run model to produce some, or choose another
    * model" -- so the reading was *press the button*, when the button had been
    * pressed and would produce the same nothing, and the lever it named was the
    * wrong one. The backend had already diagnosed it; nothing rendered
@@ -173,6 +173,7 @@ describe("describeDisplayedObjects", () => {
   describe("a run that finished and found nothing", () => {
     const NOTHING_FOUND = {
       kind: "no_objects",
+      source_model: "quantem:mito",
       message: "This run finished without finding any objects.",
       next_steps: [
         "Check the image's pixel size (5 nm/px). It decides what size the model thinks these organelles are, and a wrong value makes a working model find nothing -- check it before the threshold, because lowering the threshold on a wrongly-scaled run does not bring the objects back.",
@@ -201,6 +202,7 @@ describe("describeDisplayedObjects", () => {
           { ...OPTIONS[2], count: 0 },
         ],
         activeSourceModel: "quantem:mito",
+        displayedSourceModel: "quantem:mito",
       });
     }
 
@@ -226,7 +228,7 @@ describe("describeDisplayedObjects", () => {
       expect(described.tone).toBe("warning");
     });
 
-    it("still reports an overlay left over from another model", () => {
+    it("does not put the empty-result tag over another model's overlay", () => {
       const described = describeDisplayedObjects({
         segmentation: makeSegmentation({
           segment_counts: { CONFIRMED: 0, EXCLUDED: 0, INFERRED: 0, CANDIDATE: 0 },
@@ -237,8 +239,22 @@ describe("describeDisplayedObjects", () => {
         displayedSourceModel: "omniem:mito",
       });
 
-      expect(described.summary).toBe("Ran and found no objects");
+      expect(described.summary).not.toBe("Ran and found no objects");
       expect(described.detail).toContain("overlay still shows output from OmniEM");
+    });
+
+    it("uses the successful run as evidence when an empty result has no overlay", () => {
+      const described = describeDisplayedObjects({
+        segmentation: makeSegmentation({
+          segment_counts: { CONFIRMED: 0, EXCLUDED: 0, INFERRED: 0, CANDIDATE: 0 },
+          run_notice: NOTHING_FOUND,
+        }),
+        sourceModelOptions: [{ ...OPTIONS[0], count: 0 }, OPTIONS[1], OPTIONS[2]],
+        activeSourceModel: "quantem:mito",
+        displayedSourceModel: null,
+      });
+
+      expect(described.summary).toBe("Ran and found no objects");
     });
 
     it("wins over the unknown-count branch, which would have hidden it", () => {
@@ -254,6 +270,7 @@ describe("describeDisplayedObjects", () => {
           { value: "quantem:mito", label: "QuantEM", model_family: "quantem" },
         ],
         activeSourceModel: "quantem:mito",
+        displayedSourceModel: "quantem:mito",
       });
 
       expect(described.summary).toBe("Ran and found no objects");
@@ -287,6 +304,7 @@ describe("describeDisplayedObjects", () => {
   describe("a re-run over a proofread segmentation that added nothing", () => {
     const NOTHING_ADDED = {
       kind: "no_new_objects",
+      source_model: "quantem:mito",
       summary: "Ran and added no new objects",
       message:
         "This run added no new objects. The 12 object(s) already labelled in this image are unchanged.",
@@ -301,6 +319,7 @@ describe("describeDisplayedObjects", () => {
         segmentation: makeSegmentation({ run_notice: NOTHING_ADDED }),
         sourceModelOptions: OPTIONS,
         activeSourceModel: "quantem:mito",
+        displayedSourceModel: "quantem:mito",
       });
 
       expect(described.summary).toBe("Ran and added no new objects");
@@ -419,9 +438,9 @@ describe("describeDisplayedObjects", () => {
     });
   });
 
-  it("refuses to imply a model produced objects it has not run on", () => {
-    // Selecting a model is a request, not evidence. The old header rendered a
-    // model name unconditionally, which is the provenance error this replaces.
+  it("does not treat selecting a model as evidence of a displayed result", () => {
+    // Selecting a model is a request, not evidence. It may have run previously,
+    // so the tooltip also must not claim that it definitely never ran.
     const described = describeDisplayedObjects({
       segmentation: makeSegmentation(),
       sourceModelOptions: OPTIONS,
@@ -430,7 +449,9 @@ describe("describeDisplayedObjects", () => {
 
     expect(described.summary).toBe("No objects from OmniEM yet");
     expect(described.tone).toBe("warning");
-    expect(described.detail).toContain("Nothing has been run with OmniEM");
+    expect(described.detail).toContain(
+      "No successful empty result from OmniEM is displayed"
+    );
   });
 
   it("says manual-only for the None selection", () => {

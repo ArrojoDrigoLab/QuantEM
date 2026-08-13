@@ -40,6 +40,38 @@ describe("buildLeftPanelViewerConfig", () => {
       height: 40,
     });
     expect(viewerProps.viewport?.fitBoundsKey).toBe("focus-1");
+    expect(viewerProps.viewport?.fitBoundsPaddingRatio).toBe(1);
+  });
+
+  it("does not fit an active ROI until Open is requested", () => {
+    const props = makeLeftPanelProps({
+      roi: {
+        ...makeLeftPanelProps().roi,
+        activeRoi: {
+          id: "roi-1",
+          segmentation: "seg-1",
+          x: 100,
+          y: 200,
+          width: 512,
+          height: 512,
+          source: "MANUAL",
+          is_active: true,
+          is_complete: false,
+          completed_for_segmentation: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      },
+    });
+
+    const viewerProps = buildLeftPanelViewerConfig({
+      ...props,
+      overlayScene: { persistent: [], transient: [] },
+    });
+
+    expect(viewerProps.viewport?.fitBounds).toBeNull();
+    expect(viewerProps.viewport?.fitBoundsKey).toBeNull();
+    expect(viewerProps.viewport?.fitBoundsPaddingRatio).toBeUndefined();
   });
 
   it("uses group mode and target cursor state in highlighting", () => {

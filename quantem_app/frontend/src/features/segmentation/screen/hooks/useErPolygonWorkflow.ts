@@ -18,7 +18,8 @@ import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { mutationNoticeMessage } from "@/features/segmentation/screen/utils/mutationNotices";
 
 interface SubmitConfirmedGeometriesOptions {
-  geometries: Array<Array<[number, number]>>;
+  geometries?: Array<Array<[number, number]>>;
+  operations?: Array<"include" | "exclude">;
   samScores?: Array<number | null | undefined>;
   mergeOverlaps?: boolean;
   manualCreation?: boolean;
@@ -35,6 +36,7 @@ interface UseErPolygonWorkflowArgs {
   submitConfirmedGeometriesOptimistically: (
     options: SubmitConfirmedGeometriesOptions
   ) => Promise<ConfirmBatchResponse | null>;
+  draftOperation: "include" | "exclude";
 }
 
 /**
@@ -57,6 +59,7 @@ export function useErPolygonWorkflow({
   showErrorToast,
   showNoticeToast,
   submitConfirmedGeometriesOptimistically,
+  draftOperation,
 }: UseErPolygonWorkflowArgs) {
   const idCounterRef = useRef(0);
   const [polygons, setPolygons] = useState<DraftPolygon[]>([]);
@@ -241,6 +244,7 @@ export function useErPolygonWorkflow({
       // the same commit Draw's "Confirm Drawn Area" uses.
       const response = await submitConfirmedGeometriesOptimistically({
         geometries: [confirmPolygons[0]],
+        operations: [draftOperation],
         mergeOverlaps: true,
         manualCreation: true,
       });
@@ -263,6 +267,7 @@ export function useErPolygonWorkflow({
     active,
     clearDraft,
     currentSegmentation,
+    draftOperation,
     nextId,
     registerAnnotationActivity,
     showErrorToast,

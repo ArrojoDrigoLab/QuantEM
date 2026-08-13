@@ -15,6 +15,24 @@ const PROCESSING_STAGES: StatusStage[] = [
   "EXTRACTING_CANDIDATES",
 ];
 
+const ORGANELLE_INTERNAL_NAMES = new Set([
+  "quantem_internal_mito",
+  "quantem_internal_er",
+  "quantem_internal_nucleus",
+  "quantem_internal_ld",
+]);
+
+function segmentationListName(
+  segmentation: ImageSegmentation,
+  name: string
+): string {
+  if (ORGANELLE_INTERNAL_NAMES.has(segmentation.segmentation_type.internal_name)) {
+    return name;
+  }
+  const suffix = segmentation.segmentation_type.kind === "custom" ? "Custom" : "Analysis";
+  return `${name} (${suffix})`;
+}
+
 function isProcessing(stage: StatusStage): boolean {
   return PROCESSING_STAGES.includes(stage);
 }
@@ -116,7 +134,10 @@ export function OverlaySelectionSidebar({
             </span>
           </div>
         ) : null}
-        <section aria-labelledby="existing-segmentations-heading">
+        <section
+          className="overlay-existing-section"
+          aria-labelledby="existing-segmentations-heading"
+        >
           <h4 id="existing-segmentations-heading">Existing Segmentations</h4>
           {overlays.length === 0 ? (
             <div className="overlay-empty">No segmentations available.</div>
@@ -127,8 +148,14 @@ export function OverlaySelectionSidebar({
                 const stage = segmentation.status_stage;
                 const canDraw = segmentationHasResults(stage);
                 const expanded = expandedSegmentationId === segmentation.id;
-                const fullName = segmentationDisplayName(segmentation);
-                const shortName = segmentationShortName(segmentation);
+                const fullName = segmentationListName(
+                  segmentation,
+                  segmentationDisplayName(segmentation)
+                );
+                const shortName = segmentationListName(
+                  segmentation,
+                  segmentationShortName(segmentation)
+                );
                 const finished = isCompleted(stage);
 
                 return (
@@ -151,29 +178,31 @@ export function OverlaySelectionSidebar({
                         />
                         <span className="overlay-name">{shortName}</span>
                       </label>
-                      <button
-                        type="button"
-                        className="overlay-open-button"
-                        onClick={() => onEditSegmentation?.(segmentation.id)}
-                        disabled={!onEditSegmentation}
-                        title="Edit Labels"
-                        aria-label={`Edit Labels for ${fullName}`}
-                      >
-                        <OpenIcon />
-                      </button>
-                      <button
-                        type="button"
-                        className="overlay-accordion-button"
-                        onClick={() =>
-                          setExpandedSegmentationId((current) =>
-                            current === segmentation.id ? null : segmentation.id
-                          )
-                        }
-                        aria-expanded={expanded}
-                        aria-label={`${expanded ? "Collapse" : "Expand"} ${fullName}`}
-                      >
-                        <ChevronIcon expanded={expanded} />
-                      </button>
+                      <div className="overlay-header-actions">
+                        <button
+                          type="button"
+                          className="overlay-open-button"
+                          onClick={() => onEditSegmentation?.(segmentation.id)}
+                          disabled={!onEditSegmentation}
+                          title="Edit Labels"
+                          aria-label={`Edit Labels for ${fullName}`}
+                        >
+                          <OpenIcon />
+                        </button>
+                        <button
+                          type="button"
+                          className="overlay-accordion-button"
+                          onClick={() =>
+                            setExpandedSegmentationId((current) =>
+                              current === segmentation.id ? null : segmentation.id
+                            )
+                          }
+                          aria-expanded={expanded}
+                          aria-label={`${expanded ? "Collapse" : "Expand"} ${fullName}`}
+                        >
+                          <ChevronIcon expanded={expanded} />
+                        </button>
+                      </div>
                     </div>
                     {expanded ? (
                       <div className="overlay-accordion-content">
@@ -315,7 +344,7 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
       strokeWidth="2"
       viewBox="0 0 24 24"
     >
-      <path d={expanded ? "m6 15 6-6 6 6" : "m9 18 6-6-6-6"} />
+      <path d={expanded ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} />
     </svg>
   );
 }

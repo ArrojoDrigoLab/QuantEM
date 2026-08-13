@@ -5,7 +5,21 @@ import type {
   AnalysisRunCreatePayload,
   AnalysisRunCreateResponse,
   AnalysisRunSummary,
+  GlobalAreaReport,
 } from "@/shared/types/analysis";
+
+export function getGlobalAreaReport(
+  segmentationId: string,
+  analysisMaskIds: string[]
+): Promise<GlobalAreaReport> {
+  return apiRequest<GlobalAreaReport>(
+    `/api/segmentations/${segmentationId}/analysis/global-area/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ analysis_mask_ids: analysisMaskIds }),
+    }
+  );
+}
 
 /**
  * Queue an analysis of one segmentation. Returns immediately with the job to

@@ -352,8 +352,9 @@ export function aggregateRow(
 export function downloadRow(job: JobQueueItem): ProgressRow | null {
   const download = job.download;
   if (!download) return null;
-  const name = job.model_pack?.title || job.task_label;
-  const detail = `downloading the model — ${formatBytes(download)}`;
+  const modelName = job.model_pack?.title || job.task_label;
+  const name = "Download model…";
+  const detail = `${modelName} — ${formatBytes(download)}`;
   return {
     key: `download:${job.id}`,
     kind: "download",

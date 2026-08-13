@@ -1,5 +1,7 @@
 /** Wire types for box-prompted object adding. Mirrors `quantem.sam.views`. */
 
+import type { SegmentationOverlayMutationState } from "@/shared/types/segmentation";
+
 export interface SamCandidate {
   geometry_coords: Array<[number, number]>;
   score: number;
@@ -19,7 +21,7 @@ export interface SamBoxResponse {
   updated: number;
   deleted: number;
   confirmed_ids: string[];
-  overlay?: unknown;
+  overlay: SegmentationOverlayMutationState;
   measurement?: unknown;
   /** The mask that was stored. */
   object: SamCandidate;

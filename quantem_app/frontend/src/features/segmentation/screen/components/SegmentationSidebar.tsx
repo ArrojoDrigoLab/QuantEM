@@ -34,6 +34,7 @@ interface ReviewSection {
   correctionTool: CorrectionTool;
   hoverActionMode: HoverActionMode;
   drawBrushSize: number;
+  draftOperation: "include" | "exclude";
   hasDrawStrokes: boolean;
   supportsPointFeedback: boolean;
   isErSegmentation: boolean;
@@ -46,6 +47,7 @@ interface ReviewSection {
   onCorrectionToolChange: (tool: CorrectionTool) => void;
   onHoverActionModeChange: (mode: HoverActionMode) => void;
   onDrawBrushSizeChange: (size: number) => void;
+  onDraftOperationChange: (operation: "include" | "exclude") => void;
   onClearDrawing: () => void;
   onConfirmShape: () => void;
   /** ER polygon tool: close the draft and commit it as a filled ER object. */
@@ -97,7 +99,7 @@ interface ViewSection {
 type IncludeLevelSection = ComponentProps<typeof IncludeLevelDial>;
 
 export interface SegmentationSidebarProps {
-  /** Manual tissue-mask toolbar (brush + polygon + exclude-polygon). */
+  /** Manual tissue-mask toolbar (brush/polygon with Include/Exclude). */
   tissue: TissueSection;
   review: ReviewSection;
   layers: LayersSection;
@@ -127,6 +129,7 @@ export function SegmentationSidebar({
     correctionTool,
     hoverActionMode,
     drawBrushSize,
+    draftOperation,
     hasDrawStrokes,
     supportsPointFeedback,
     isErSegmentation,
@@ -137,6 +140,7 @@ export function SegmentationSidebar({
     onCorrectionToolChange,
     onHoverActionModeChange,
     onDrawBrushSizeChange,
+    onDraftOperationChange,
     onClearDrawing,
     onConfirmShape,
     onClosePolygon,
@@ -185,11 +189,13 @@ export function SegmentationSidebar({
               correctionTool={correctionTool}
               hoverActionMode={hoverActionMode}
               drawBrushSize={drawBrushSize}
+              draftOperation={draftOperation}
               hasDrawStrokes={hasDrawStrokes}
               onReviewPhaseChange={onReviewPhaseChange}
               onCorrectionToolChange={onCorrectionToolChange}
               onHoverActionModeChange={onHoverActionModeChange}
               onDrawBrushSizeChange={onDrawBrushSizeChange}
+              onDraftOperationChange={onDraftOperationChange}
               onClearDrawing={onClearDrawing}
               onConfirmShape={onConfirmShape}
               polygonHasDraft={polygonHasDraft}

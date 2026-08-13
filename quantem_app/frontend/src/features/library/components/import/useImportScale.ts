@@ -5,9 +5,9 @@
  * import form can silently ruin every number downstream, and this is it: packs
  * resample before they look for anything, so the scale decides which objects
  * exist, not just the units they are reported in. Everything the form says
- * about calibration — the census above the box, the per-row "importing at …",
+ * about calibration — the census above the box, the per-row resolution tag,
  * the warning under the run options and the wording of the submit button — is
- * derived here, once, so those four sentences cannot disagree.
+ * derived here, once, so those four surfaces cannot disagree.
  */
 
 import { useCallback, useMemo } from "react";

@@ -290,6 +290,21 @@ describe("ViewerScreen", () => {
     expect(screen.getByText(/Encoding image \(40%\)/i)).toBeInTheDocument();
   });
 
+  it("opens the image Export dialog beside the viewer title", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <ViewerScreen />
+      </MemoryRouter>
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Export image" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Export Image 1" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Original EM image/i })).toBeChecked();
+  });
+
   it("shows the experiment above the image name and returns to that experiment", async () => {
     const user = userEvent.setup();
     vi.mocked(getAsset).mockResolvedValue(
@@ -314,7 +329,7 @@ describe("ViewerScreen", () => {
     expect(screen.getByRole("button", { name: "Edit pixel size" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Experiment/ }));
-    expect(navigateMock).toHaveBeenCalledWith("/?experiment=exp-1");
+    expect(navigateMock).toHaveBeenCalledWith("/experiments/exp-1");
   });
 
   it("navigates to labeling route when edit segmentation is clicked", async () => {
@@ -357,17 +372,22 @@ describe("ViewerScreen", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "Mitochondria" }));
-    // Creating an organelle segmentation queues a whole-image inference run, so
-    // it now asks first. The navigation still has to happen once confirmed.
-    await user.click(await screen.findByRole("button", { name: /Create and run/ }));
+    await user.click(await screen.findByRole("radio", { name: "Manual segmentation" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Start manual segmentation" })
+    );
 
     await waitFor(() => {
       expect(createAssetSegmentation).toHaveBeenCalledWith("img-1", {
         segmentation_type_name: "Mitochondria",
+        run_inference: false,
+        source_model: undefined,
       });
     });
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith("/assets/img-1/labeling/Mitochondria");
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/assets/img-1/labeling/Mitochondria?source_model=manual"
+      );
     });
 
     expect(useSelectionStore.getState().selectedSegmentationId).toBe("seg-new");

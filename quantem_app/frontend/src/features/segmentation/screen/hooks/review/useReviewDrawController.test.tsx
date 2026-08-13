@@ -49,14 +49,15 @@ describe("useReviewDrawController", () => {
     });
 
     expect(submitConfirmedGeometriesOptimistically).toHaveBeenCalledWith({
-      geometries: [
-        [
+      geometryRings: [
+        [[
           [10, 10],
           [20, 10],
           [10, 20],
           [10, 10],
-        ],
+        ]],
       ],
+      operations: ["include"],
       mergeOverlaps: false,
       manualCreation: true,
     });
@@ -154,7 +155,11 @@ describe("useReviewDrawController", () => {
         pendingPolygon: drawn,
       } as unknown as typeof drawingState;
       const submit: Mock<
-        (options: { geometries: Array<Array<[number, number]>> }) => Promise<null>
+        (options: {
+          geometries?: Array<Array<[number, number]>>;
+          geometryRings?: Array<Array<Array<[number, number]>>>;
+          operations?: Array<"include" | "exclude">;
+        }) => Promise<null>
       > = vi.fn(async () => null);
 
       const { result } = renderHook(() =>
@@ -175,7 +180,7 @@ describe("useReviewDrawController", () => {
         await result.current.handleAcceptPolygon();
       });
 
-      const posted = submit.mock.calls[0][0].geometries[0] as Array<
+      const posted = submit.mock.calls[0][0].geometryRings?.[0]?.[0] as Array<
         [number, number]
       >;
       // Vertex for vertex, not "close enough": any dropped vertex is area the

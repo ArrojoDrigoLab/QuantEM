@@ -7,9 +7,9 @@
  * it is needed is the whole reason there is no such screen.
  *
  * The choice is a discriminated union rather than a pair of loosely coupled
- * strings, because "no experiment", "this experiment" and "an experiment I am
- * about to name" are three different intents and a blank string cannot tell the
- * first from the third.
+ * strings, because "separate per-image experiments", "this experiment" and
+ * "an experiment I am about to name" are three different intents and a blank
+ * string cannot tell the first from the third.
  */
 
 import { useId } from "react";

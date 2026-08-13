@@ -41,18 +41,11 @@ function PolygonIcon() {
   );
 }
 
-function ExcludePolygonIcon() {
-  return (
-    <svg {...ICON_PROPS}>
-      <polygon points="12 3 21 9.5 17.5 20 6.5 20 3 9.5" />
-      <path d="M8.5 12h7" />
-    </svg>
-  );
-}
-
 export interface TissueWorkflowControlsProps {
   tool: TissueTool;
   onToolChange: (tool: TissueTool) => void;
+  operation: "include" | "exclude";
+  onOperationChange: (operation: "include" | "exclude") => void;
   brushSize: number;
   onBrushSizeChange: (size: number) => void;
   canConfirmBrush: boolean;
@@ -70,6 +63,8 @@ export interface TissueWorkflowControlsProps {
 export function TissueWorkflowControls({
   tool,
   onToolChange,
+  operation,
+  onOperationChange,
   brushSize,
   onBrushSizeChange,
   canConfirmBrush,
@@ -82,9 +77,26 @@ export function TissueWorkflowControls({
   onClosePolygon,
   onClearPolygon,
 }: TissueWorkflowControlsProps) {
-  const isExclude = tool === "exclude";
   return (
     <div className="mode-toolbar">
+      <div className="mode-toolbar-group" aria-label="Drawing operation">
+        <button
+          type="button"
+          className={operation === "include" ? "active" : ""}
+          aria-pressed={operation === "include"}
+          onClick={() => onOperationChange("include")}
+        >
+          Include
+        </button>
+        <button
+          type="button"
+          className={operation === "exclude" ? "active" : ""}
+          aria-pressed={operation === "exclude"}
+          onClick={() => onOperationChange("exclude")}
+        >
+          Exclude
+        </button>
+      </div>
       <div className="mode-toolbar-group mode-tool-icons">
         <button
           type="button"
@@ -105,16 +117,6 @@ export function TissueWorkflowControls({
           title="Polygon: click to place vertices, press R (or connect the ends) to fill"
         >
           <PolygonIcon />
-        </button>
-        <button
-          type="button"
-          className={`icon-tool-button ${tool === "exclude" ? "active" : ""}`}
-          onClick={() => onToolChange("exclude")}
-          aria-pressed={tool === "exclude"}
-          aria-label="Exclude polygon"
-          title="Exclude polygon: click to place vertices, press R to carve the area out of the mask"
-        >
-          <ExcludePolygonIcon />
         </button>
       </div>
 
@@ -146,18 +148,18 @@ export function TissueWorkflowControls({
         </>
       )}
 
-      {(tool === "polygon" || tool === "exclude") && (
+      {tool === "polygon" && (
         <div className="mode-toolbar-group">
           {polygonHasDraft ? (
             <>
               <button disabled={!polygonCanClose} onClick={onClosePolygon}>
-                {isExclude ? "Close & exclude (R)" : "Close polygon (R)"}
+                {operation === "exclude" ? "Close & exclude (R)" : "Close polygon (R)"}
               </button>
               <button onClick={onClearPolygon}>Clear</button>
             </>
           ) : (
             <span className="mode-toolbar-hint">
-              {isExclude
+              {operation === "exclude"
                 ? "Click to place vertices; press R to carve out the area."
                 : "Click to place vertices; press R to fill."}
             </span>

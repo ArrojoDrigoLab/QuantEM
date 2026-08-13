@@ -747,6 +747,7 @@ class RealInferenceToManifestTests(TestCase):
 
     def setUp(self) -> None:
         from quantem.inference import engine
+        from quantem.inference.device import select_device
         from quantem.inference.specs import MODEL_SPECS
         from quantem.testing import create_mitochondria_segmentation
 
@@ -762,10 +763,14 @@ class RealInferenceToManifestTests(TestCase):
             return prob
 
         engine.clear_model_cache()
+        self.inference_device = select_device()
         engine.cache_model(
             engine.LoadedModel(
                 spec=MODEL_SPECS["quantem:mito"],
-                device="cpu",
+                # Cache under the device the real segmenter will request. A
+                # hard-coded CPU key made this explicitly weight-free test
+                # miss its stand-in on CUDA machines and try to load a pack.
+                device=self.inference_device,
                 module=None,
                 forward=forward,
                 encoder_tier="stand-in",
@@ -888,7 +893,7 @@ class RealInferenceToManifestTests(TestCase):
         got = self._manifest()
         device = got["manifest"]["models"]["compartments"][0]["run"]["inference_device"]
 
-        assert device["value"] == "cpu"
+        assert device["value"] == self.inference_device
         assert device["recorded_from"] == "the objects"
         assert device["n_objects"] >= 1
         assert "unavailable" not in device

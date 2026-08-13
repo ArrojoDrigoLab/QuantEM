@@ -1,6 +1,9 @@
 import { useCallback } from "react";
 import { confirmSegmentsBatch } from "@/shared/api/segmentations/annotations";
-import { buildSyntheticSegmentsFromGeometries } from "@/features/segmentation/screen/utils/optimisticSegments";
+import {
+  buildSyntheticSegmentsFromGeometries,
+  buildSyntheticSegmentsFromGeometryRings,
+} from "@/features/segmentation/screen/utils/optimisticSegments";
 import type {
   SegmentationOverlayMutationState,
   SegmentObject,
@@ -35,36 +38,59 @@ export function useConfirmedGeometrySubmission({
 }: UseConfirmedGeometrySubmissionArgs) {
   const submitConfirmedGeometriesOptimistically = useCallback(
     async ({
-      geometries,
+      geometries = [],
+      geometryRings,
+      operations,
       samScores,
       mergeOverlaps = false,
       manualCreation = true,
     }: {
-      geometries: Array<Array<[number, number]>>;
+      geometries?: Array<Array<[number, number]>>;
+      geometryRings?: Array<Array<Array<[number, number]>>>;
+      operations?: Array<"include" | "exclude">;
       samScores?: Array<number | null | undefined>;
       mergeOverlaps?: boolean;
       manualCreation?: boolean;
     }) => {
-      if (!currentSegmentation || geometries.length === 0) {
+      const outlineCount = geometryRings?.length ?? geometries.length;
+      if (!currentSegmentation || outlineCount === 0) {
         return null;
       }
 
       const requestSegmentationId = currentSegmentation.id;
       registerAnnotationActivity();
-      const optimisticCreatedSegments = buildSyntheticSegmentsFromGeometries(
-        requestSegmentationId,
-        geometries,
-        "CONFIRMED"
-      );
+      const hasDraftExclusion = operations?.includes("exclude") ?? false;
+      const optimisticGeometries = (geometryRings
+        ? geometryRings.map((rings) => rings[0] ?? [])
+        : geometries
+      ).filter((_, index) => (operations?.[index] ?? "include") === "include");
+      const optimisticCreatedSegments =
+        currentSegmentation.segmentation_type.measurement_mode === "global" ||
+        hasDraftExclusion
+          ? []
+          : geometryRings
+            ? buildSyntheticSegmentsFromGeometryRings(
+                requestSegmentationId,
+                geometryRings,
+                "CONFIRMED"
+              )
+            : buildSyntheticSegmentsFromGeometries(
+                requestSegmentationId,
+                optimisticGeometries,
+                "CONFIRMED"
+              );
       const optimisticIds = optimisticCreatedSegments.map((segment) => segment.id);
       stageOptimisticSegments(optimisticCreatedSegments);
 
       try {
         const response = await confirmSegmentsBatch(requestSegmentationId, {
-          segments: geometries.map((geometryCoords, index) => {
+          segments: Array.from({ length: outlineCount }, (_, index) => {
             const samScore = samScores?.[index];
             return {
-              geometry_coords: geometryCoords,
+              ...(geometryRings
+                ? { geometry_rings: geometryRings[index] }
+                : { geometry_coords: geometries[index] }),
+              operation: operations?.[index] ?? "include",
               ...(typeof samScore === "number" ? { sam_score: samScore } : {}),
             };
           }),

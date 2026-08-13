@@ -9,13 +9,17 @@ import os
 import shutil
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
+
+from django.db import transaction
 
 from quantem.core.config import IMAGES_DIR
 from quantem.core.local_storage import normalize_stored_path_value
 from quantem.segmentation.roi_selection import select_roi_for_image
 
 from .asset_openable import get_asset_openable
+from .border_trim import should_trim_initial_import, trim_black_or_white_border
 from .canonical_decode import decode_canonical_plane
 from .models import Asset, ImageROI, Rendition
 from .ngff import PyramidBuildRefused, build_and_publish
@@ -31,7 +35,7 @@ from .utils import create_roi_image_from_image, save_plane_as_canonical_png
 
 logger = logging.getLogger(__name__)
 
-ROI_SIZE_DEFAULT = int(os.environ.get("ROI_SIZE", "512"))
+ROI_SIZE_DEFAULT = int(os.environ.get("ROI_SIZE", "1024"))
 ROI_MIN_IMAGE_SIZE = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "512"))
 
 
@@ -178,6 +182,24 @@ def prepare_asset_renditions(asset_id: str) -> None:
         # every container, and refuses complex/negative-signed data by name
         # instead of clipping it silently.
         canonical = decode_canonical_plane(source_path, declared=metadata)
+        trim_on_this_pass = should_trim_initial_import(
+            source_is_canonical_png=source_is_canonical_png,
+            rendition_metadata=openable.rendition.metadata,
+        )
+        trimmed_plane, border_trim = (
+            trim_black_or_white_border(canonical.array)
+            if trim_on_this_pass
+            else (canonical.array, None)
+        )
+        if border_trim is not None:
+            canonical = replace(canonical, array=trimmed_plane)
+            # AssetOpenable reads these model objects dynamically. Update the
+            # in-memory geometry before building so the pyramid validates the
+            # cropped plane; persist the same dimensions only after success.
+            openable.rendition.stored_width = canonical.width
+            openable.rendition.stored_height = canonical.height
+            asset.logical_width = canonical.width
+            asset.logical_height = canonical.height
         plane = canonical.array
         logger.info(
             "Asset %s: decoded %s in %.2fs (shape=%s, %s)",
@@ -190,7 +212,7 @@ def prepare_asset_renditions(asset_id: str) -> None:
         set_stage(asset, "ENCODING", progress=5.0, error="")
 
         png_writer = None
-        if not source_is_canonical_png:
+        if not source_is_canonical_png or border_trim is not None:
             png_writer = _BackgroundCall(
                 lambda: _write_canonical_png(plane, target_png_path),
                 name=f"canonical-png-{asset_id}",
@@ -241,23 +263,49 @@ def prepare_asset_renditions(asset_id: str) -> None:
         if png_writer is not None:
             png_writer.join()
 
-        if png_writer is not None and source_path != target_png_path and source_path.exists():
-            source_path.unlink()
-
         relative_path = normalize_stored_path_value(target_png_path, relative_to=IMAGES_DIR.parent)
-        asset.channels = 1
-        asset.bit_depth = 8
-        asset.save(update_fields=["channels", "bit_depth", "updated_at"])
-        Rendition.objects.filter(id=openable.rendition.id).update(
-            storage_root="DATA_DIR",
-            stored_path=relative_path,
-            path_exists=target_png_path.exists(),
-            is_directory=False,
-            stored_width=openable.width,
-            stored_height=openable.height,
-            stored_channels=1,
-            stored_bit_depth=8,
-        )
+        rendition_metadata = dict(openable.rendition.metadata or {})
+        rendition_metadata["upload_state"] = "canonical"
+        if border_trim is not None:
+            rendition_metadata["border_trim"] = border_trim.as_metadata()
+        # The canonical file becomes authoritative in one database commit.
+        # Keep the staged source until after that commit: if either model write
+        # fails, the retry still has the original bytes instead of a rendition
+        # row pointing at a file this attempt already deleted.
+        with transaction.atomic():
+            asset.channels = 1
+            asset.bit_depth = 8
+            asset.logical_width = canonical.width
+            asset.logical_height = canonical.height
+            asset.save(
+                update_fields=[
+                    "channels",
+                    "bit_depth",
+                    "logical_width",
+                    "logical_height",
+                    "updated_at",
+                ]
+            )
+            Rendition.objects.filter(id=openable.rendition.id).update(
+                storage_root="DATA_DIR",
+                stored_path=relative_path,
+                path_exists=target_png_path.exists(),
+                is_directory=False,
+                stored_width=canonical.width,
+                stored_height=canonical.height,
+                stored_channels=1,
+                stored_bit_depth=8,
+                metadata=rendition_metadata,
+            )
+
+        if png_writer is not None and source_path != target_png_path and source_path.exists():
+            try:
+                source_path.unlink()
+            except OSError:
+                # The rendition no longer references the staging file. A
+                # Windows scanner may briefly hold it open; the staging sweep
+                # can reclaim this unreferenced copy later.
+                logger.warning("Could not remove staged upload %s", source_path)
     except BaseException as exc:
         # One transaction does three things, and the order does not matter
         # because they commit together: the published pointer is cleared (the

@@ -4,17 +4,9 @@ import { createAssetSegmentation, getSegmentationTypes } from "@/shared/api/asse
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useModelCatalogue } from "@/features/models/useModelCatalogue";
-import {
-  describeDevice,
-  packRunnability,
-  runnabilityForPackId,
-} from "@/features/models/runnable";
-import {
-  DEFAULT_PACK_FOR_ORGANELLE,
-  scaleMismatchForPack,
-  type ScaleMismatch,
-} from "@/features/models/scaleMismatch";
-import { UncalibratedScaleWarning } from "@/features/models/components/UncalibratedScaleWarning";
+import { packRunnability } from "@/features/models/runnable";
+import { ModelAvailabilityIcon } from "@/features/models/ModelAvailabilityIcon";
+import { DEFAULT_PACK_FOR_ORGANELLE } from "@/features/models/scaleMismatch";
 import type { ModelCatalogue, ModelPack } from "@/shared/types/finetune";
 import type {
   ImageSegmentation,
@@ -23,28 +15,38 @@ import type {
 } from "@/shared/types/images";
 import "./SegmentationCreatePanel.css";
 
+export interface SegmentationLaunch {
+  sourceModel: string;
+  runModel: boolean;
+}
+
 interface SegmentationCreatePanelProps {
   imageId: string;
-  onCreated?: (segmentation: ImageSegmentation) => void;
+  onCreated?: (
+    segmentation: ImageSegmentation,
+    launch?: SegmentationLaunch
+  ) => void;
   existingSegmentationTypes?: string[];
   existingSegmentationTypeIds?: string[];
   title?: string;
   description?: string;
-  /**
-   * The asset's pixel size, so the confirmation can say what running without
-   * one costs. `null` means uncalibrated; `undefined` means the caller does not
-   * know, and the dialog then says nothing rather than guessing.
-   */
+  /** Approximate decoded image size, used only for the large-image timing note. */
+  imageSizeBytes?: number | null;
+  /** Retained for callers compiled against the previous scale-warning dialog. */
   pixelSizeNm?: number | null;
 }
 
 interface QuickSegmentationOption {
   id: string;
   label: string;
+  dialogLabel: string;
   name: string;
   group: "organelle";
   sourceModel?: string;
 }
+
+const MANUAL_CHOICE = "manual";
+const LARGE_IMAGE_BYTES = 200 * 1024 * 1024;
 
 const BUILTIN_SEGMENTATION_INTERNAL_NAMES = new Set([
   "quantem_internal_mito",
@@ -70,18 +72,28 @@ function isReusableCustomType(type: SegmentationType): boolean {
  * `source_model`. An organelle the catalogue does not know yields an empty
  * list, and the dialog then behaves as it always did.
  */
+interface ModelChoice {
+  id: string;
+  label: string;
+  pack: ModelPack | null;
+}
+
+const MODEL_FAMILIES = [
+  { id: "quantem", label: "QuantEM" },
+  { id: "omniem", label: "OmniEM" },
+] as const;
+
 function packsForOrganelle(
   catalogue: ModelCatalogue | null,
   organelleId: string
-): ModelPack[] {
-  const packs = (catalogue?.packs ?? []).filter(
-    (pack) => pack.organelle === organelleId
-  );
-  const defaultId = DEFAULT_PACK_FOR_ORGANELLE[organelleId];
-  return [...packs].sort((a, b) => {
-    if (a.id === defaultId) return -1;
-    if (b.id === defaultId) return 1;
-    return a.id.localeCompare(b.id);
+): ModelChoice[] {
+  return MODEL_FAMILIES.map((family) => {
+    const id = `${family.id}:${organelleId}`;
+    return {
+      id,
+      label: family.label,
+      pack: catalogue?.packs.find((candidate) => candidate.id === id) ?? null,
+    };
   });
 }
 
@@ -101,15 +113,17 @@ function preferredPackId(
 ): string | null {
   const defaultId = DEFAULT_PACK_FOR_ORGANELLE[organelleId] ?? null;
   const candidates = packsForOrganelle(catalogue, organelleId);
-  if (candidates.length === 0) return defaultId;
-  const defaultPack = candidates.find((pack) => pack.id === defaultId);
-  if (!defaultPack || packRunnability(defaultPack).state !== "blocked") {
-    return defaultId;
-  }
-  const runnableAlternative = candidates.find(
-    (pack) => pack.id !== defaultId && packRunnability(pack).state === "runnable"
+  const defaultChoice = candidates.find((choice) => choice.id === defaultId);
+  if (!catalogue) return defaultChoice?.id ?? candidates[0]?.id ?? null;
+  if (
+    defaultChoice?.pack &&
+    packRunnability(defaultChoice.pack).state !== "blocked"
+  ) return defaultChoice.id;
+  const usableAlternative = candidates.find(
+    (choice) =>
+      choice.pack && packRunnability(choice.pack).state !== "blocked"
   );
-  return runnableAlternative?.id ?? defaultId;
+  return usableAlternative?.id ?? null;
 }
 
 export function SegmentationCreatePanel({
@@ -119,7 +133,7 @@ export function SegmentationCreatePanel({
   existingSegmentationTypeIds,
   title = "Create a Segmentation Type",
   description = "Choose a preset workflow or create a custom segmentation name.",
-  pixelSizeNm,
+  imageSizeBytes,
 }: SegmentationCreatePanelProps) {
   const [newCustomSegmentationName, setNewCustomSegmentationName] = useState("");
   const [customDialogOpen, setCustomDialogOpen] = useState(false);
@@ -127,9 +141,8 @@ export function SegmentationCreatePanel({
   const [newAnalysisMaskName, setNewAnalysisMaskName] = useState("");
   const [pendingOption, setPendingOption] =
     useState<QuickSegmentationOption | null>(null);
-  // The model the pending run will use. `null` means "the preferred pack" —
-  // the default family, or the other family when only it can run. Reset when
-  // the dialog opens so one preset's choice never leaks onto another.
+  // The exact model/manual choice captured when the dialog opens. `null` only
+  // exists while no organelle dialog is open.
   const [pendingPackChoice, setPendingPackChoice] = useState<string | null>(null);
   const { catalogue } = useModelCatalogue();
   const { data: segmentationTypes } = useApiQuery(getSegmentationTypes, []);
@@ -139,17 +152,31 @@ export function SegmentationCreatePanel({
   // be mistaken for a reusable custom type.
   const quickSegmentationOptions = useMemo<QuickSegmentationOption[]>(
     () => [
-      { id: "mito", label: "Mitochondria", name: "Mitochondria", group: "organelle" },
+      {
+        id: "mito",
+        label: "Mitochondria",
+        dialogLabel: "mitochondria",
+        name: "Mitochondria",
+        group: "organelle",
+      },
       {
         id: "er",
         label: "ER",
+        dialogLabel: "ER",
         name: "Endoplasmic Reticulum",
         group: "organelle",
       },
-      { id: "nucleus", label: "Nucleus", name: "Nucleus", group: "organelle" },
+      {
+        id: "nucleus",
+        label: "Nucleus",
+        dialogLabel: "nucleus",
+        name: "Nucleus",
+        group: "organelle",
+      },
       {
         id: "ld",
         label: "Lipid Droplets",
+        dialogLabel: "lipid droplet",
         name: "Lipid Droplets",
         group: "organelle",
       },
@@ -184,67 +211,56 @@ export function SegmentationCreatePanel({
   );
 
   const handleCreateSegmentation = useCallback(
-    async (payload: ImageSegmentationCreatePayload) => {
+    async (
+      payload: ImageSegmentationCreatePayload,
+      launch?: SegmentationLaunch
+    ) => {
       const created = await createSegmentation(payload);
       if (!created) return null;
-      onCreated?.(created);
+      onCreated?.(created, launch);
       return created;
     },
     [createSegmentation, onCreated]
   );
 
-  /**
-   * Creating an organelle segmentation is not a free action.
-   *
-   * `POST /api/assets/<id>/segmentations/` enqueues a whole-image inference run
-   * on the spot — roughly a minute of CPU on a 2k image — and the labeling
-   * screen then disables "Run Full Segmentation" until it finishes. Nothing
-   * asked, and on a machine with no installed models the whole thing existed
-   * only as a progress banner stuck at 5%. So: name the cost, name the model,
-   * and say up front when that model cannot run.
-   *
-   * Analysis and custom masks are manual-only; this confirmation belongs only
-   * to a model-backed organelle run.
-   */
+  /** Open the organelle confirmation with a stable model/manual default. */
   const requestCreate = useCallback(
     (option: QuickSegmentationOption) => {
-      setPendingPackChoice(null);
+      // Capture the default now. A catalogue response that arrives while the
+      // dialog is open must not silently turn a manual choice into a model run.
+      setPendingPackChoice(
+        preferredPackId(catalogue, option.id) ?? MANUAL_CHOICE
+      );
       setPendingOption(option);
     },
-    []
+    [catalogue]
   );
 
-  // The default pack for the pending organelle — what the server would run
-  // with if the request said nothing. Shared with the import form, which
-  // queues the same runs from its checkboxes.
-  const defaultPackId = pendingOption
-    ? DEFAULT_PACK_FOR_ORGANELLE[pendingOption.id] ?? null
-    : null;
-  // Both families' packs for this organelle, so the dialog can offer the
-  // same choice the labeling screen's "Model to run" picker offers — instead
-  // of pronouncing "cannot run on this machine" about the default while an
-  // installed alternative goes unmentioned.
+  // Manual plus both released families are always present. Catalogue state
+  // changes only the icon and whether a genuinely incompatible installed pack
+  // can be selected; missing weights are a downloadable state, not a blocker.
   const pendingPacks = pendingOption
     ? packsForOrganelle(catalogue, pendingOption.id)
     : [];
-  const pendingPackId = pendingOption
-    ? pendingPackChoice ?? preferredPackId(catalogue, pendingOption.id)
-    : null;
+  const pendingChoice = pendingPackChoice ?? MANUAL_CHOICE;
 
   const confirmCreate = useCallback(() => {
     if (!pendingOption) return;
     const option = pendingOption;
     setPendingOption(null);
-    void handleCreateSegmentation({
-      segmentation_type_name: option.name,
-      // Stated only when it differs from the server's own default, so a
-      // build with no catalogue keeps the exact request shape it always sent.
-      source_model:
-        pendingPackId && pendingPackId !== defaultPackId
-          ? pendingPackId
-          : undefined,
-    });
-  }, [defaultPackId, handleCreateSegmentation, pendingOption, pendingPackId]);
+    const runModel = pendingChoice !== MANUAL_CHOICE;
+    void handleCreateSegmentation(
+      {
+        segmentation_type_name: option.name,
+        // Creation itself is always manual. A selected model is launched from
+        // the labeling screen so a missing pack can download as its own first
+        // progress step before inference is queued.
+        run_inference: false,
+        source_model: undefined,
+      },
+      { sourceModel: pendingChoice, runModel }
+    );
+  }, [handleCreateSegmentation, pendingChoice, pendingOption]);
 
   const confirmCreateCustom = useCallback(() => {
     const name = newCustomSegmentationName.trim();
@@ -261,78 +277,75 @@ export function SegmentationCreatePanel({
     });
   }, [customIsObjectBased, handleCreateSegmentation, newCustomSegmentationName]);
 
-  const pendingRunnability = runnabilityForPackId(catalogue, pendingPackId);
-  const device = describeDevice(catalogue);
-  // The pack declares a working resolution and this image cannot be resampled
-  // to it. Shared with the labeling screen's run button, which is the other
-  // door into exactly the same inference pass.
-  const scaleMismatch = scaleMismatchForPack(
-    catalogue,
-    pendingPackId,
-    pixelSizeNm
-  );
-  const dialogTone =
-    pendingRunnability.state === "blocked" || scaleMismatch ? "warning" : "default";
-
   return (
     <div className="segmentation-create-card">
       <ConfirmDialog
         isOpen={pendingOption !== null}
-        title={`Create ${pendingOption?.label ?? ""} and run it?`}
-        message={
-          "Creating this segmentation immediately queues one inference pass over the whole image. " +
-          "You can leave the screen while it runs, but it holds the run button until it finishes."
-        }
+        title={`Start ${pendingOption?.dialogLabel ?? ""} segmentation`}
         details={
           <>
-            {/* The labeling screen's "Model to run" choice, at the one moment
-                it matters most: before the run is queued. Rendered whenever
-                the catalogue knows more than one pack for this organelle, so
-                a blocked default is never the end of the sentence while an
-                installed alternative exists. */}
-            {pendingPacks.length > 1 && (
-              <label
-                className="segmentation-create-model-choice"
-                htmlFor="create-source-model-select"
-              >
-                <span>Model to run</span>
-                <select
-                  id="create-source-model-select"
-                  aria-label="Model to run"
-                  value={pendingPackId ?? ""}
-                  onChange={(event) => setPendingPackChoice(event.target.value)}
-                >
-                  {pendingPacks.map((pack) => {
-                    const runnability = packRunnability(pack);
-                    return (
-                      <option key={pack.id} value={pack.id}>
-                        {pack.title}
-                        {runnability.state === "blocked"
-                          ? ` — ${runnability.label}`
-                          : ""}
-                      </option>
-                    );
-                  })}
-                </select>
+            <div
+              className="segmentation-create-model-choices"
+              role="radiogroup"
+              aria-label="Segmentation method"
+            >
+              <label className="segmentation-create-model-option">
+                <input
+                  type="radio"
+                  name="create-source-model"
+                  value={MANUAL_CHOICE}
+                  checked={pendingChoice === MANUAL_CHOICE}
+                  onChange={() => setPendingPackChoice(MANUAL_CHOICE)}
+                />
+                <span>Manual segmentation</span>
+                <span className="segmentation-create-manual-icon" aria-hidden>
+                  ✎
+                </span>
               </label>
-            )}
-            <CreateRunNotice
-              packId={pendingPackId}
-              defaultPackId={defaultPackId}
-              packs={pendingPacks}
-              runnability={pendingRunnability}
-              device={device}
-              scaleMismatch={scaleMismatch}
-            />
+              {pendingPacks.map((choice) => {
+                const blocked =
+                  choice.pack?.installed === true &&
+                  packRunnability(choice.pack).state === "blocked";
+                return (
+                  <label
+                    key={choice.id}
+                    className="segmentation-create-model-option"
+                  >
+                    <input
+                      type="radio"
+                      name="create-source-model"
+                      value={choice.id}
+                      checked={pendingChoice === choice.id}
+                      disabled={blocked}
+                      onChange={() => setPendingPackChoice(choice.id)}
+                    />
+                    <span>{choice.label}</span>
+                    <ModelAvailabilityIcon pack={choice.pack} />
+                  </label>
+                );
+              })}
+            </div>
+            {pendingChoice !== MANUAL_CHOICE ? (
+              <p>
+                The selected model will run on all tiles. If it is not already
+                downloaded, downloading it is the first progress step.
+              </p>
+            ) : null}
+            {pendingChoice !== MANUAL_CHOICE &&
+            imageSizeBytes !== null &&
+            imageSizeBytes !== undefined &&
+            imageSizeBytes > LARGE_IMAGE_BYTES ? (
+              <p>
+                This image is larger than 200 MB, so inference may take several
+                minutes.
+              </p>
+            ) : null}
           </>
         }
-        detailsTone={dialogTone}
         confirmText={
-          pendingRunnability.state === "blocked"
-            ? "Create anyway"
-            : scaleMismatch
-              ? "Create and run uncalibrated"
-              : "Create and run"
+          pendingChoice === MANUAL_CHOICE
+            ? "Start manual segmentation"
+            : "Run model"
         }
         cancelText="Cancel"
         onConfirm={confirmCreate}
@@ -495,114 +508,5 @@ export function SegmentationCreatePanel({
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * What the queued run will cost, and whether it can succeed at all.
- *
- * The model name matters because the run is attributed to it and that
- * attribution ends up in a methods section; the device matters because CPU
- * inference on a 2k image is tens of seconds, not instant.
- */
-function CreateRunNotice({
-  packId,
-  defaultPackId,
-  packs,
-  runnability,
-  device,
-  scaleMismatch,
-}: {
-  packId: string | null;
-  defaultPackId: string | null;
-  packs: ModelPack[];
-  runnability: ReturnType<typeof runnabilityForPackId>;
-  device: string | null;
-  scaleMismatch: ScaleMismatch | null;
-}) {
-  if (runnability.state === "blocked") {
-    // Only true once the alternative has been checked: when the other
-    // family's pack is runnable, `preferredPackId` selects it instead and
-    // this branch is never the dialog's opening line.
-    return (
-      <>
-        <p>
-          <strong>{packId} cannot run on this machine.</strong>{" "}
-          {runnability.reason}
-        </p>
-        <p>
-          The segmentation will still be created and you can annotate it by
-          hand, but the run queued alongside it will fail.{" "}
-          <a href="#/models">Install the model first</a> if you want it to
-          produce candidates.
-        </p>
-      </>
-    );
-  }
-
-  // Said out loud when a *blocked* default was passed over for the selected
-  // model: the run is attributed to the model that made it, and a
-  // substitution the user never noticed is how a methods section names the
-  // wrong one. A user who picked the other family while the default runs
-  // fine gets no such sentence — nothing was substituted.
-  const defaultPack =
-    packId !== defaultPackId && defaultPackId
-      ? packs.find((pack) => pack.id === defaultPackId)
-      : undefined;
-  const blockedDefault =
-    defaultPack && packRunnability(defaultPack).state === "blocked"
-      ? defaultPack
-      : undefined;
-  const blockedDefaultReason = blockedDefault
-    ? packRunnability(blockedDefault).reason
-    : null;
-
-  return (
-    <>
-      {blockedDefault ? (
-        <p>
-          <strong>{blockedDefault.id} cannot run on this machine</strong>
-          {blockedDefaultReason
-            ? ` (${blockedDefaultReason.replace(/\.$/, "")})`
-            : ""}
-          , so the installed {packId} is selected instead. The objects will be
-          attributed to {packId}.{" "}
-          <a href="#/models">Install {blockedDefault.id}</a> if you want the
-          default family.
-        </p>
-      ) : null}
-      {/* Paper-cut 8: the model and device are visual chips, which splits the
-          paragraph into text fragments — read as a unit it came out as "The
-          run will use on .". The sentence itself must carry the names, so the
-          accessible copy is one complete string and the chip version is
-          presentation only. */}
-      <p>
-        <span className="sr-only">
-          {`The run will use ${packId ?? "the default model"}${
-            device ? ` on ${device}` : ""
-          }.`}
-        </span>
-        <span aria-hidden="true">
-          The run will use <strong>{packId ?? "the default model"}</strong>
-          {device ? (
-            <>
-              {" "}
-              on <strong>{device}</strong>
-            </>
-          ) : null}
-          .
-        </span>
-      </p>
-      {/* The viewer badge a few pixels away already says "Pixel size not set".
-          It does not say what that costs, and this is the last gate before the
-          user spends the minute. */}
-      {scaleMismatch ? <UncalibratedScaleWarning mismatch={scaleMismatch} /> : null}
-      {device && !/CUDA|MPS/.test(device) ? (
-        <p>
-          On CPU this takes roughly a minute for a 2k image. Nothing is lost if
-          you cancel — you can run it later from the labeling screen.
-        </p>
-      ) : null}
-    </>
   );
 }

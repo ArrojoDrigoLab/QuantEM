@@ -63,6 +63,13 @@ BytesProgress = Callable[[int, int], None]
 #: How often the download watcher samples progress, in seconds.
 _POLL_SECONDS = 0.5
 
+# ``huggingface_hub`` 1.x closes its shared httpx client after a ConnectError,
+# but the same internal backoff loop can then retain that closed object and
+# raise this RuntimeError instead of making the next request with a fresh
+# client. Retrying the whole Hub operation is safe: downloads are staged in the
+# content-addressed cache, so a completed or partial transfer is reused.
+_CLOSED_HUB_CLIENT = "Cannot send a request, as the client has been closed."
+
 
 class HfError(RuntimeError):
     """Something about the published repository is wrong (bad card, bad digest)."""
@@ -195,6 +202,11 @@ def _prepare_hub_env() -> None:
 
 def _offline_error(what: str, exc: Exception) -> HfUnavailableError:
     """An honest no-network error: name the repo, then the road that still works."""
+    detail = (
+        "the connection could not be established after the download client retried"
+        if _is_closed_hub_client_error(exc)
+        else str(exc)
+    )
     # App copy: this lands on a failed install job and is shown verbatim on the
     # Models screen, so it names a screen and a button, never a command (I-12).
     return HfUnavailableError(
@@ -206,7 +218,7 @@ def _offline_error(what: str, exc: Exception) -> HfUnavailableError:
         # host"). It is a Python type, it means nothing to the reader, and
         # I-12 forbids it; the message it prefixed is the part that carries
         # information.
-        f"What went wrong: {exc}"
+        f"What went wrong: {detail}"
     )
 
 
@@ -234,7 +246,33 @@ def _looks_offline(exc: Exception) -> bool:
         "ProxyError",
         "gaierror",
     }
-    return bool(names & offline_names)
+    return bool(names & offline_names) or _is_closed_hub_client_error(exc)
+
+
+def _is_closed_hub_client_error(exc: BaseException) -> bool:
+    """Whether the Hub retry loop surfaced its stale-client RuntimeError."""
+    return any(_CLOSED_HUB_CLIENT in str(cause) for cause in _walk_causes(exc))
+
+
+def _with_fresh_hub_client_retry(operation: Callable[[], Any], *, what: str) -> Any:
+    """Retry once when huggingface_hub retained a client it already closed.
+
+    This is deliberately narrow: repository errors, digest failures and normal
+    network exceptions keep their existing paths. The workaround only handles
+    the exact lifecycle failure produced by huggingface_hub's own retry loop.
+    """
+    try:
+        return operation()
+    except RuntimeError as exc:
+        if not _is_closed_hub_client_error(exc):
+            raise
+        from huggingface_hub.utils import close_session
+
+        logger.warning(
+            "The Hugging Face HTTP client closed while fetching %s; retrying once.", what
+        )
+        close_session()
+        return operation()
 
 
 def _walk_causes(exc: BaseException) -> list[BaseException]:
@@ -295,7 +333,10 @@ def remote_file_info(filename: str, *, revision: str | None = None) -> RemoteFil
 
     rev = revision or hf_revision()
     try:
-        paths = HfApi().get_paths_info(HF_REPO_ID, [filename], revision=rev)
+        paths = _with_fresh_hub_client_retry(
+            lambda: HfApi().get_paths_info(HF_REPO_ID, [filename], revision=rev),
+            what=f"the metadata of {filename}",
+        )
     except Exception as exc:
         if _looks_offline(exc):
             raise _offline_error(f"the metadata of {filename}", exc) from exc
@@ -355,11 +396,14 @@ def download_file(
 
     def _work() -> None:
         try:
-            result["path"] = hf_hub_download(
-                repo_id=HF_REPO_ID,
-                filename=filename,
-                revision=rev,
-                cache_dir=str(cache_dir),
+            result["path"] = _with_fresh_hub_client_retry(
+                lambda: hf_hub_download(
+                    repo_id=HF_REPO_ID,
+                    filename=filename,
+                    revision=rev,
+                    cache_dir=str(cache_dir),
+                ),
+                what=filename,
             )
         except BaseException as exc:  # noqa: BLE001 -- re-raised on the caller's thread
             result["error"] = exc

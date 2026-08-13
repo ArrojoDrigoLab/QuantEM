@@ -108,6 +108,17 @@
   background: #f8fafc;
 }
 
+.er-roi-test-button {
+  border-color: #0f766e;
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.er-roi-test-button:hover:not(:disabled) {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
 .er-roi-done-toggle {
   display: inline-flex;
   align-items: center;

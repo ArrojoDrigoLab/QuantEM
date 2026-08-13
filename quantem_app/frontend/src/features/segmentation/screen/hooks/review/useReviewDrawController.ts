@@ -27,7 +27,9 @@ interface UseReviewDrawControllerArgs {
   /** Something that worked but did not do what the gesture looked like. */
   showNoticeToast: (message: string) => void;
   submitConfirmedGeometriesOptimistically: (options: {
-    geometries: Array<Array<[number, number]>>;
+    geometries?: Array<Array<[number, number]>>;
+    geometryRings?: Array<Array<Array<[number, number]>>>;
+    operations?: Array<"include" | "exclude">;
     samScores?: Array<number | null | undefined>;
     mergeOverlaps?: boolean;
     manualCreation?: boolean;
@@ -52,22 +54,27 @@ export function useReviewDrawController({
     // 1.0 px on its way out, which moved the outline before the server measured
     // it -- see `SEGMENT_SMOOTHING_TOLERANCE` in `@/config` for the numbers
     // (-7.8% on a 20 px droplet, +4.4% on the same droplet brushed).
-    const brushPolygons = drawing.getBrushPolygons();
-    const payloadGeometries = brushPolygons.map((polygon) =>
-      polygon.map((point) => [point.x, point.y] as [number, number])
+    const brushPolygons = drawing.getBrushPolygonRings();
+    const payloadRings = brushPolygons.map((polygon) =>
+      [polygon.exterior, ...polygon.holes].map((ring) =>
+        ring.map((point) => [point.x, point.y] as [number, number])
+      )
     );
-    if (payloadGeometries.length === 0 && drawing.pendingPolygon) {
-      payloadGeometries.push(
+    const operations = brushPolygons.map((polygon) => polygon.operation);
+    if (payloadRings.length === 0 && drawing.pendingPolygon) {
+      payloadRings.push([
         drawing.pendingPolygon.map(
           (point) => [point.x, point.y] as [number, number]
-        )
-      );
+        ),
+      ]);
+      operations.push(drawing.pendingPolygonOperation);
     }
-    if (payloadGeometries.length === 0) return;
+    if (payloadRings.length === 0) return;
 
     try {
       const response = await submitConfirmedGeometriesOptimistically({
-        geometries: payloadGeometries,
+        geometryRings: payloadRings,
+        operations,
         // ER merges a drawn area into overlapping confirmed objects (combining
         // them into one); other organelles keep the split behavior.
         mergeOverlaps: isErSegmentation,

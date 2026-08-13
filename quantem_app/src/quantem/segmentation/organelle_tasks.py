@@ -464,6 +464,7 @@ def _run_segmentation(
     reporter=None,
     tile_window: TileWindow | None = None,
     image_array=None,
+    adapter_id: str | None = None,
 ) -> int:
     """Run inference and save the result used by the threshold preview.
 
@@ -533,6 +534,7 @@ def _run_segmentation(
             force_recompute_prob_maps=force_recompute_prob_maps,
             tile_window=tile_window,
             image_array=image_array,
+            adapter_id=adapter_id,
         )
         # Surface a slow-path model load on the job record. The engine has
         # already logged the WARNING (and best-effort rewritten the export);
@@ -637,6 +639,7 @@ def run_segmentation_full_task(
     source_model: str | None = None,
     force_recompute_prob_maps: bool = False,
     reporter=None,
+    adapter_id: str | None = None,
 ) -> int:
     """Run inference over the full image. Returns the stored-output count."""
     return _run_segmentation(
@@ -646,6 +649,7 @@ def run_segmentation_full_task(
         source_model=source_model,
         force_recompute_prob_maps=force_recompute_prob_maps,
         reporter=reporter,
+        adapter_id=adapter_id,
     )
 
 
@@ -752,6 +756,7 @@ def _plan_legs(asset_shape, raw_legs: list[dict]) -> list[dict]:
                 "segmentation_type": internal_name,
                 "name": segmentation.segmentation_type.long_name,
                 "source_model": source_model,
+                "adapter_id": str(raw.get("adapter_id") or "").strip() or None,
                 "tiles": tiles,
                 "grid": _leg_pack_grid(segmenter) if segmenter is not None else (float("inf"), 0),
                 "requested_seq": index,
@@ -848,6 +853,7 @@ def run_segmentation_for_image_task(
                     reporter=reporter,
                     tile_window=window,
                     image_array=shared_image,
+                    adapter_id=leg.get("adapter_id"),
                 )
         except Exception as exc:  # noqa: BLE001 -- every leg is reported
             logger.exception(

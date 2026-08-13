@@ -36,11 +36,10 @@ PIXEL_SIZE_FIELDS = ("pixel_size_nm", "pixel_size_nm_z")
 # Where this import goes in the library
 # ---------------------------------------------------------------------------
 #
-# Both optional, and optional is the load-bearing word: an importer who ignores
-# these fields gets exactly the behaviour this door had before they existed --
-# no experiment, no dataset, no prompt, no blocked submit. That is not a
-# degraded path, it is the normal one, and it is the state every library that
-# exists today is in.
+# Both form fields are optional, but an active image's experiment is not. An
+# importer that names no experiment gets a new one named after the image. This
+# keeps the simple one-file import simple while giving every image a stable
+# library home from the moment its row exists.
 #
 # The *shape* is checked here, before a byte is claimed, because "you named a
 # dataset but no experiment" is the user's to fix and needs no file on disk to
@@ -92,20 +91,23 @@ def normalise_import_grouping(
     return grouping
 
 
-def _attach_import_grouping(asset, grouping: ImportGrouping) -> None:
-    """Put a freshly imported asset in its experiment and dataset.
+def _resolve_import_grouping(
+    grouping: ImportGrouping | None,
+    *,
+    display_name: str,
+):
+    """Resolve the experiment and optional dataset for a new image.
 
-    Called inside the transaction that created the asset, so a name that
-    cannot be resolved takes the whole import down rather than leaving a half
-    filed image behind.
+    Called before the asset row is inserted, inside that row's transaction.
+    This avoids creating a temporary per-image experiment and then replacing
+    it when the import form named a shared experiment.
     """
-    if grouping.is_empty:
-        return
-
     from django.core.exceptions import ValidationError as DjangoValidationError
 
     from quantem.library.grouping import resolve_dataset, resolve_experiment
-    from quantem.library.models import validate_asset_grouping
+    from quantem.library.models import create_image_experiment
+
+    grouping = grouping or ImportGrouping("", "", "", "")
 
     try:
         experiment = resolve_experiment(
@@ -117,12 +119,9 @@ def _attach_import_grouping(asset, grouping: ImportGrouping) -> None:
             dataset_id=grouping.dataset_id or None,
             dataset_name=grouping.dataset_name or None,
         )
-        if experiment is not None:
-            asset.experiment = experiment
-            asset.save(update_fields=["experiment", "updated_at"])
-        if dataset is not None:
-            asset.datasets.add(dataset)
-        validate_asset_grouping(asset)
+        if experiment is None:
+            experiment = create_image_experiment(display_name)
+        return experiment, dataset
     except DjangoValidationError as exc:
         # The import view turns a ValueError into a 400 carrying the sentence;
         # a Django ValidationError would fall through to the 500 branch and be
@@ -486,6 +485,7 @@ def create_uploaded_asset(
     segment_er: bool = False,
     segment_nucleus: bool = False,
     segment_ld: bool = False,
+    defer_processing: bool = False,
     swallow_enqueue_errors: bool = False,
     allow_duplicate: bool = False,
     grouping: ImportGrouping | None = None,
@@ -545,6 +545,7 @@ def create_uploaded_asset(
             segment_er=segment_er,
             segment_nucleus=segment_nucleus,
             segment_ld=segment_ld,
+            defer_processing=defer_processing,
             swallow_enqueue_errors=swallow_enqueue_errors,
             grouping=grouping,
         )
@@ -577,6 +578,7 @@ def _record_uploaded_asset(
     segment_er: bool,
     segment_nucleus: bool,
     segment_ld: bool,
+    defer_processing: bool,
     swallow_enqueue_errors: bool,
     grouping: ImportGrouping | None = None,
 ) -> dict:
@@ -605,6 +607,10 @@ def _record_uploaded_asset(
     notes_text = "" if notes is None else str(notes).strip()
 
     with transaction.atomic():
+        experiment, dataset = _resolve_import_grouping(
+            grouping,
+            display_name=display_name,
+        )
         asset = Asset.objects.create(
             id=asset_id,
             display_name=display_name,
@@ -625,6 +631,7 @@ def _record_uploaded_asset(
             # that carries one is a row no future import can recognise.
             source_sha256=source_sha256,
             duplicate_of=duplicate_of,
+            experiment=experiment,
         )
         Rendition.objects.create(
             asset=asset,
@@ -639,6 +646,10 @@ def _record_uploaded_asset(
             stored_bit_depth=int(metadata["bit_depth"]),
             metadata={
                 "upload_state": "staged",
+                # A multi-image import clears this only in the same transaction
+                # that creates all of its job rows. If the app closes first,
+                # the next home-page load can recover the stranded asset.
+                "processing_deferred": defer_processing,
                 "original_filename": original_filename,
                 # Asset.raw_metadata/normalized_metadata were corpus-curation
                 # fields and are gone; the source file's own metadata belongs to
@@ -646,14 +657,52 @@ def _record_uploaded_asset(
                 "source_metadata": _json_safe_metadata(metadata),
             },
         )
-        # Inside the same transaction as the rows it labels: an experiment name
-        # that cannot be resolved must take the import down rather than leave
-        # an image filed under half of one.
-        if grouping is not None:
-            _attach_import_grouping(asset, grouping)
+        if dataset is not None:
+            asset.datasets.add(dataset)
 
-    try:
-        Job.enqueue(
+    if not defer_processing:
+        try:
+            enqueue_upload_pipeline(
+                asset,
+                segment_mito=segment_mito,
+                segment_er=segment_er,
+                segment_nucleus=segment_nucleus,
+                segment_ld=segment_ld,
+            )
+        except Exception:
+            if not swallow_enqueue_errors:
+                raise
+
+    asset.refresh_from_db()
+    return serialize_asset_detail(asset)
+
+
+def enqueue_upload_pipeline(
+    asset: Asset,
+    *,
+    segment_mito: bool = False,
+    segment_er: bool = False,
+    segment_nucleus: bool = False,
+    segment_ld: bool = False,
+) -> Job:
+    """Queue initial processing once for an imported image.
+
+    Multi-image imports deliberately create every asset before calling this
+    function. The open-job check makes the batch-start endpoint safe to retry
+    if its response is lost after the transaction commits.
+    """
+    existing_job = (
+        Job.objects.filter(
+            type=JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
+            payload_json__asset_id=str(asset.id),
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if existing_job is not None:
+        job = existing_job
+    else:
+        job = Job.enqueue(
             job_type=JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
             payload={
                 "asset_id": str(asset.id),
@@ -667,12 +716,12 @@ def _record_uploaded_asset(
             queue_name=QUEUE_P2_UPLOAD,
             tags=[f"asset:{asset.id}"],
         )
-    except Exception:
-        if not swallow_enqueue_errors:
-            raise
 
-    asset.refresh_from_db()
-    return serialize_asset_detail(asset)
+    full = asset.renditions.filter(type=Rendition.TYPE_FULL).first()
+    if full is not None and full.metadata.get("processing_deferred"):
+        full.metadata = {**full.metadata, "processing_deferred": False}
+        full.save(update_fields=["metadata", "updated_at"])
+    return job
 
 
 def _json_safe_metadata(metadata: dict) -> dict:
@@ -686,7 +735,7 @@ def _json_safe_metadata(metadata: dict) -> dict:
     return payload
 
 
-def update_asset(asset: Asset, payload: dict) -> dict:
+def update_asset(asset: Asset, payload: dict, *, inside_transaction: bool = False) -> dict:
     allowed = {"display_name", "notes", *PIXEL_SIZE_FIELDS}
     updates = {key: payload[key] for key in allowed if key in payload}
     for field in PIXEL_SIZE_FIELDS:
@@ -694,10 +743,17 @@ def update_asset(asset: Asset, payload: dict) -> dict:
             updates[field] = parse_pixel_size_nm(updates[field])
     if not updates:
         return serialize_asset_detail(asset)
-    with transaction.atomic():
+
+    def apply_updates() -> None:
         for field, value in updates.items():
             setattr(asset, field, value)
         asset.save(update_fields=[*updates.keys(), "updated_at"])
+
+    if inside_transaction:
+        apply_updates()
+    else:
+        with transaction.atomic():
+            apply_updates()
 
     asset.refresh_from_db()
     return serialize_asset_detail(asset)

@@ -1,13 +1,4 @@
-/**
- * Pixel-size display and editor.
- *
- * `PATCH /api/assets/<id>/ {"pixel_size_nm": ...}` has always worked; until
- * this component existed nothing in the client called it, so an EM export with
- * no resolution tag was permanently stuck at `calibrated: false` and could
- * never produce a µm² number. The badge is deliberately loud about provenance:
- * "read from file" and "entered by hand" are different evidence, and the number
- * ends up in a caption.
- */
+/** Pixel-size display and editor. */
 
 import { useEffect, useState } from "react";
 import { updateAsset } from "@/shared/api/assets";
@@ -15,38 +6,24 @@ import {
   formatPixelSizeNm,
   parsePixelSizeInput,
   resolvePixelSize,
-  type ResolvedPixelSize,
 } from "@/shared/pixelSize";
 import { Badge, Button } from "@/shared/ui/design";
 import { cx } from "@/shared/ui/cx";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import type { AssetDetail } from "@/shared/types/images";
 
-export interface PixelSizeBadgeProps {
-  resolved: ResolvedPixelSize;
+export interface PixelSizeTagProps {
+  valueNm: number | null;
   className?: string;
-  /** Omit source provenance where the surrounding interface needs only scale. */
-  showProvenance?: boolean;
 }
 
 /**
- * Read-only pixel size. Uncalibrated is `tone="warning"` because it genuinely
- * blocks every physical-unit measurement -- unlike, say, a missing GPU.
- *
- * The provenance is always in the text. It used to have a `compact` mode that
- * dropped it "where space is tight", which the library cards and the labeling
- * header both used -- so on the two screens where images are compared side by
- * side, "read from the file" and "typed by a person" were distinguishable only
- * by the badge being emerald rather than cyan, plus a `title` tooltip that no
- * keyboard or touch user can reach. That is the distinction a figure caption
- * turns on, and it now reads the same everywhere: "5 nm/px · from file".
+ * The one read-only representation of image resolution across the application.
+ * A calibrated tag contains only the normalized value: `X nm/px`.
  */
-export function PixelSizeBadge({
-  resolved,
-  className,
-  showProvenance = true,
-}: PixelSizeBadgeProps) {
-  if (!resolved.calibrated) {
+export function PixelSizeTag({ valueNm, className }: PixelSizeTagProps) {
+  const label = formatPixelSizeNm(valueNm);
+  if (!label) {
     return (
       <Badge
         tone="warning"
@@ -57,58 +34,11 @@ export function PixelSizeBadge({
       </Badge>
     );
   }
-  const { provenance: rawProvenance, title, tone } = describeProvenance(resolved);
-  const provenance = showProvenance ? rawProvenance : null;
   return (
-    <Badge tone={tone} className={className} title={title}>
-      {formatPixelSizeNm(resolved.valueNm)}
-      {provenance === null ? null : ` · ${provenance}`}
+    <Badge tone="good" className={className}>
+      {label}
     </Badge>
   );
-}
-
-/**
- * The provenance sentence for a calibrated value.
- *
- * `"unknown"` says so in words rather than falling silent. It must never fall
- * through to the "entered by hand" branch: that branch asserts the file
- * declared nothing, and asserting it about an image whose value came out of a
- * TIFF XResolution tag is how the library card ended up contradicting the
- * viewer about the same number. Saying nothing is not safe either, now that
- * every other badge carries a provenance word — an unlabelled one would read as
- * whatever its neighbours say.
- */
-function describeProvenance(resolved: ResolvedPixelSize): {
-  provenance: string | null;
-  title: string;
-  tone: "good" | "info" | "default";
-} {
-  if (resolved.source === "file") {
-    return {
-      provenance: "from file",
-      title: "Read from the image file's own metadata.",
-      tone: "good",
-    };
-  }
-  if (resolved.source === "unknown") {
-    return {
-      provenance: "source not recorded",
-      title:
-        "This list does not record whether the value came from the file or was " +
-        "entered by hand. Open the image to see its provenance.",
-      tone: "default",
-    };
-  }
-  return {
-    provenance: "entered by hand",
-    title:
-      resolved.fileDeclaredNm === null
-        ? "Entered by hand: the image file declared no pixel size."
-        : `Entered by hand. The file declared ${formatPixelSizeNm(
-            resolved.fileDeclaredNm
-          )}.`,
-    tone: "info",
-  };
 }
 
 export interface PixelSizeEditorProps {
@@ -171,7 +101,7 @@ export function PixelSizeEditor({
   if (!editing) {
     return (
       <div className={cx("flex flex-wrap items-center gap-2", className)}>
-        <PixelSizeBadge resolved={resolved} showProvenance={!compact} />
+        <PixelSizeTag valueNm={resolved.valueNm} />
         <Button
           size={compact ? "icon" : "sm"}
           onClick={startEditing}
@@ -225,11 +155,6 @@ export function PixelSizeEditor({
         </Button>
       </div>
       <p className={compact ? "hidden" : "m-0 text-xs text-slate-500"}>
-        {resolved.fileDeclaredNm === null
-          ? "This file declared no pixel size. A value you type here is recorded as entered by hand."
-          : `The file declared ${formatPixelSizeNm(
-              resolved.fileDeclaredNm
-            )}. Changing it marks the value as entered by hand.`}{" "}
         Leave blank to mark the image uncalibrated.
       </p>
       {error ? <p className="m-0 text-xs text-red-700">{error}</p> : null}

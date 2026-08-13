@@ -169,7 +169,7 @@ def test_it_sees_every_shape_the_ruling_names(text: str):
         "packs/quantem__mito/head.pt",
         "/home/web_user",  # Emscripten's fixed virtual filesystem
         "Program Files is a folder with a space in it",
-        "8 nm/px \u00b7 entered by hand",
+        "8 nm/px",
     ],
 )
 def test_it_leaves_everything_else_alone(text: str):

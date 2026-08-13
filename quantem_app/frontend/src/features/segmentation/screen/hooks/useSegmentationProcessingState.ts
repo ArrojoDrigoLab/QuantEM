@@ -13,6 +13,8 @@ import {
 } from "@/shared/api/segmentations/annotations";
 import { runFullSegmentation } from "@/shared/api/segmentations/overlays";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
+import { ensureModelInstalled } from "@/features/models/ensureModelInstalled";
+import { packIdForSourceModel } from "@/features/models/runnable";
 import {
   MODEL_DOWNLOAD_JOB_TYPE,
   ORGANELLE_ACTION_JOB_TYPES,
@@ -52,6 +54,8 @@ interface UseSegmentationProcessingStateArgs {
   currentInstanceParams: SegmentationInstanceParams | null;
   refetchSegmentations: () => Promise<void>;
   refreshSegmentViews: (options?: { deferOverlayRefresh?: boolean }) => Promise<void>;
+  onModelInstalled?: () => void | Promise<void>;
+  onRunError?: (message: string) => void;
 }
 
 export function useSegmentationProcessingState({
@@ -62,9 +66,13 @@ export function useSegmentationProcessingState({
   currentInstanceParams,
   refetchSegmentations,
   refreshSegmentViews,
+  onModelInstalled,
+  onRunError,
 }: UseSegmentationProcessingStateArgs) {
   const [isApplyingFull, setIsApplyingFull] = useState(false);
-  const [isRerunningRoi, setIsRerunningRoi] = useState(false);
+  const [rerunningRoiId, setRerunningRoiId] = useState<string | null>(null);
+  const [previewRoiId, setPreviewRoiId] = useState<string | null>(null);
+  const isRerunningRoi = rerunningRoiId !== null;
   const [isSavingInstanceParams, setIsSavingInstanceParams] = useState(false);
   const [instanceParamsDraft, setInstanceParamsDraft] =
     useState<SegmentationInstanceParams | null>(currentInstanceParams);
@@ -86,6 +94,10 @@ export function useSegmentationProcessingState({
     () => segmentationRois?.find((roi) => roi.is_active) ?? segmentationRois?.[0] ?? null,
     [segmentationRois]
   );
+
+  useEffect(() => {
+    setPreviewRoiId(null);
+  }, [activeSourceModel, currentSegmentation?.id]);
 
   const { data: jobQueueSnapshot, refetch: refetchJobs } = useApiQuery(
     async () => ({ status: await getJobQueueStatus(), receivedAt: Date.now() }),
@@ -319,28 +331,43 @@ export function useSegmentationProcessingState({
     supportsInstanceParams,
   ]);
 
-  const handleRerunRoi = useCallback(async () => {
+  const handleRerunRoi = useCallback(async (roiId?: string) => {
+    const targetRoi = roiId
+      ? segmentationRois?.find((roi) => roi.id === roiId) ?? null
+      : activeRoi;
     if (
       !currentSegmentation ||
-      !activeRoi ||
-      activeRoi.completed_for_segmentation === true ||
+      !targetRoi ||
+      targetRoi.completed_for_segmentation === true ||
       isRerunningRoi ||
       hasQueuedOrRunningOrganelleTask
     ) {
       return;
     }
-    setIsRerunningRoi(true);
+    setRerunningRoiId(targetRoi.id);
+    setPreviewRoiId(targetRoi.id);
     try {
+      const packId = packIdForSourceModel(activeSourceModel);
+      if (!packId) {
+        throw new Error("Select QuantEM or OmniEM before running a model.");
+      }
+      await ensureModelInstalled(packId, {
+        onDownloadQueued: () => refetchJobs(),
+        onInstalled: onModelInstalled,
+      });
       await rerunSegmentationRoi(
         currentSegmentation.id,
-        activeRoi.id,
+        targetRoi.id,
         activeSourceModel
       );
       await Promise.all([refetchJobs(), refetchSegmentations()]);
     } catch (error) {
       console.error("Failed to start ROI rerun:", error);
+      onRunError?.(
+        error instanceof Error ? error.message : "The model could not be started."
+      );
     } finally {
-      setIsRerunningRoi(false);
+      setRerunningRoiId(null);
     }
   }, [
     activeRoi,
@@ -348,8 +375,11 @@ export function useSegmentationProcessingState({
     currentSegmentation,
     hasQueuedOrRunningOrganelleTask,
     isRerunningRoi,
+    onModelInstalled,
+    onRunError,
     refetchJobs,
     refetchSegmentations,
+    segmentationRois,
   ]);
 
   const handleApplyFullImage = useCallback(async () => {
@@ -362,11 +392,23 @@ export function useSegmentationProcessingState({
       return;
     }
     setIsApplyingFull(true);
+    setPreviewRoiId(null);
     try {
+      const packId = packIdForSourceModel(activeSourceModel);
+      if (!packId) {
+        throw new Error("Select QuantEM or OmniEM before running a model.");
+      }
+      await ensureModelInstalled(packId, {
+        onDownloadQueued: () => refetchJobs(),
+        onInstalled: onModelInstalled,
+      });
       await runFullSegmentation(currentSegmentation.id, activeSourceModel);
       await Promise.all([refetchJobs(), refetchSegmentations()]);
     } catch (error) {
       console.error("Failed to start full segmentation run:", error);
+      onRunError?.(
+        error instanceof Error ? error.message : "The model could not be started."
+      );
     } finally {
       setIsApplyingFull(false);
     }
@@ -376,6 +418,8 @@ export function useSegmentationProcessingState({
     hasQueuedOrRunningOrganelleTask,
     isApplyingFull,
     isRerunningRoi,
+    onModelInstalled,
+    onRunError,
     refetchJobs,
     refetchSegmentations,
   ]);
@@ -453,6 +497,8 @@ export function useSegmentationProcessingState({
     hasQueuedOrRunningOrganelleTask,
     isApplyingFull,
     isRerunningRoi,
+    rerunningRoiId,
+    previewRoiId,
     isSavingInstanceParams,
     instanceParamsDraft,
     setInstanceParamsDraft,

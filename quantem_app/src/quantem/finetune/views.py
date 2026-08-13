@@ -288,6 +288,8 @@ class AdapterApplyView(APIView):
             )
         adapter.applied_at = timezone.now()
         adapter.save(update_fields=["applied_at", "updated_at"])
+        if adapter.segmentation_type_id and adapter.segmentation_id:
+            adapter.applied_assets.add(adapter.segmentation.asset_id)
         body = serialize_adapter(adapter)
         body["rerun_advice"] = rerun_advice(adapter)
         return Response(body, status=status.HTTP_200_OK)

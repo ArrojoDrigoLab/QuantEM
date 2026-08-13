@@ -23,6 +23,7 @@ import { useConfirmedGeometrySubmission } from "@/features/segmentation/screen/h
 import { useSegmentationReviewWorkflow } from "@/features/segmentation/screen/hooks/useSegmentationReviewWorkflow";
 import { useSegmentationInteractionRouter } from "@/features/segmentation/screen/hooks/useSegmentationInteractionRouter";
 import { useReviewSamBoxController } from "@/features/segmentation/screen/hooks/review/useReviewSamBoxController";
+import { optimisticSegmentForSamResponse } from "@/features/sam/optimistic";
 import { useSegmentationKeyboardShortcuts } from "@/features/segmentation/screen/hooks/useSegmentationKeyboardShortcuts";
 import { useSegmentationScreenUiState } from "@/features/segmentation/screen/hooks/useSegmentationScreenUiState";
 import { useRemoveAreaWorkflow } from "@/features/segmentation/screen/hooks/useRemoveAreaWorkflow";
@@ -34,9 +35,7 @@ import {
   runnabilityForPackId,
 } from "@/features/models/runnable";
 import { appliedAdapterState } from "@/features/models/appliedAdapter";
-import { scaleMismatchForPack } from "@/features/models/scaleMismatch";
 import { clearSegmentationManualLabels } from "@/shared/api/segmentations/annotations";
-import { resolvePixelSize } from "@/shared/pixelSize";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useRestartBlocker } from "@/features/update/restartGuardHooks";
 import { CONFIRMED_AREA_EXPLANATION } from "@/shared/constants/confirmedArea";
@@ -53,7 +52,10 @@ export function SegmentationScreen() {
   // Whether the model the run button would use can be loaded here. Without
   // this the button cheerfully queued a run that died on a missing encoder,
   // and the queue banner then replaced the error that explained it.
-  const { catalogue: modelCatalogue } = useModelCatalogue();
+  const {
+    catalogue: modelCatalogue,
+    refetchCatalogue,
+  } = useModelCatalogue();
   const modelRunnability = useMemo(
     () =>
       runnabilityForPackId(
@@ -64,9 +66,8 @@ export function SegmentationScreen() {
   );
 
   // Whether this segmentation has an adapted model applied, and whether the
-  // selected source model means the run will actually go through it. The
-  // labeling header is the only screen that starts a run, and it used to say
-  // nothing about either.
+  // selected source model means the next run will actually go through it.
+  // The labeling view used to say nothing about either.
   const appliedAdapter = useMemo(
     () =>
       appliedAdapterState(
@@ -75,20 +76,6 @@ export function SegmentationScreen() {
         route.activeSourceModel
       ),
     [modelCatalogue, route.currentSegmentation?.id, route.activeSourceModel]
-  );
-
-  // Whether starting a run here would put a pack that declares a working
-  // resolution onto an image with no pixel size. The create-segmentation
-  // dialog has asked about this for a while; the run button on this screen is
-  // the other door into the identical inference pass and asked nothing.
-  const runScaleMismatch = useMemo(
-    () =>
-      scaleMismatchForPack(
-        modelCatalogue,
-        packIdForSourceModel(route.activeSourceModel),
-        route.image ? resolvePixelSize(route.image).valueNm : undefined
-      ),
-    [modelCatalogue, route.activeSourceModel, route.image]
   );
 
   const isPointInsideImageBounds = useCallback(
@@ -194,7 +181,29 @@ export function SegmentationScreen() {
     currentInstanceParams: route.currentInstanceParams,
     refetchSegmentations: route.refetchSegmentations,
     refreshSegmentViews: overlayRefresh.refreshSegmentViews,
+    onModelInstalled: refetchCatalogue,
+    onRunError: ui.showErrorToast,
   });
+
+  // The viewer's model dialog creates the manual workspace first, then lands
+  // here with an explicit one-shot request. Running from this mounted screen
+  // lets a missing pack appear as its own download job before inference starts.
+  const consumedAutoRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!route.autoRunRequested || !route.currentSegmentationId) return;
+    if (!packIdForSourceModel(route.activeSourceModel)) return;
+    const key = `${route.currentSegmentationId}:${route.activeSourceModel}`;
+    if (consumedAutoRunRef.current === key) return;
+    consumedAutoRunRef.current = key;
+    route.consumeAutoRunRequest();
+    void processing.handleApplyFullImage();
+  }, [
+    processing.handleApplyFullImage,
+    route.activeSourceModel,
+    route.autoRunRequested,
+    route.consumeAutoRunRequest,
+    route.currentSegmentationId,
+  ]);
 
   const feedback = useSegmentationFeedback({
     currentSegmentationId: route.currentSegmentationId,
@@ -245,6 +254,7 @@ export function SegmentationScreen() {
     showNoticeToast: ui.showNoticeToast,
     submitConfirmedGeometriesOptimistically:
       confirmedSubmission.submitConfirmedGeometriesOptimistically,
+    draftOperation: drawing.draftOperation,
   });
 
   const removeArea = useRemoveAreaWorkflow({
@@ -268,9 +278,6 @@ export function SegmentationScreen() {
     drawing,
     submitConfirmedGeometriesOptimistically:
       confirmedSubmission.submitConfirmedGeometriesOptimistically,
-    refreshSegmentViews: overlayRefresh.refreshSegmentViews,
-    setOverlayManifestPollingEnabled: overlay.manifest.setOverlayManifestPollingEnabled,
-    clearHoverInteraction: hover.clearHoverInteraction,
   });
 
   // These shapes exist only in React until their respective Save/Confirm
@@ -284,8 +291,7 @@ export function SegmentationScreen() {
     completedRoi.hasDraft ||
     erPolygon.hasDraft ||
     removeArea.removeAreaDrawing.brushStrokes.length > 0 ||
-    tissue.addPolygon.hasDraft ||
-    tissue.excludePolygon.hasDraft;
+    Boolean(tissue.activePolygonTool?.hasDraft);
   useRestartBlocker(
     hasUnsavedAnnotationDraft,
     "Finish or clear the unsaved annotation draft before QuantEM restarts."
@@ -329,12 +335,19 @@ export function SegmentationScreen() {
     leftNavigateMode: ui.leftNavigateMode,
     isTissueSegmentation: route.isTissueSegmentation,
     onCorrectionToolChange: reviewMode.handleCorrectionToolChange,
-    onOverlayMutation: (overlayMutation) =>
-      overlayRefresh.handleOverlayMutationRefresh(
-        (overlayMutation ?? null) as Parameters<
-          typeof overlayRefresh.handleOverlayMutationRefresh
-        >[0]
-      ),
+    onObjectCreated: (response) => {
+      const optimisticSegment = optimisticSegmentForSamResponse(
+        route.currentSegmentationId ?? "",
+        response
+      );
+      if (optimisticSegment) {
+        overlayOptimistic.stageOptimisticSegments(
+          [optimisticSegment],
+          overlayOptimistic.getOptimisticTargetRevision(response.overlay)
+        );
+      }
+      overlayRefresh.handleOverlayMutationRefresh(response.overlay);
+    },
     showErrorToast: ui.showErrorToast,
     showNoticeToast: ui.showNoticeToast,
     registerAnnotationActivity: overlayRefresh.registerAnnotationActivity,
@@ -521,8 +534,8 @@ export function SegmentationScreen() {
     removeArea,
     tissue,
     modelRunnability,
+    modelCatalogue,
     appliedAdapter,
-    runScaleMismatch,
     onClearMislabeledObjects: handleClearMislabeledObjects,
     leftSegments,
     tooManyLeft,
@@ -619,12 +632,14 @@ export function SegmentationScreen() {
           // result, so the ID-map overlay and the segment lists are both stale
           // afterwards. The dial deliberately knows nothing about drawing.
           includeLevel={
-            route.currentSegmentation
+            route.currentSegmentation &&
+            packIdForSourceModel(route.activeSourceModel)
               ? {
                   segmentationId: route.currentSegmentation.id,
                   sourceModel: route.activeSourceModel,
                   segmentationInternalName: route.segmentationInternalName,
                   statusStage: route.currentSegmentation.status_stage,
+                  roiId: processing.previewRoiId,
                   onSourceModelChange: route.handleSourceModelChange,
                   onRunQueued: () => {
                     void Promise.all([

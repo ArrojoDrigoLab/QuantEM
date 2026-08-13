@@ -13,7 +13,7 @@
 import { Button } from "@/shared/ui/design";
 import { cx } from "@/shared/ui/cx";
 import { formatBytes } from "@/shared/ui/format";
-import { formatPixelSizeNm } from "@/shared/pixelSize";
+import { PixelSizeTag } from "@/shared/ui/PixelSize";
 import {
   plural,
   type BatchSummary,
@@ -34,6 +34,7 @@ export function ImportQueue({
   onChooseDifferentFile,
   onClearChosenFiles,
   onRemoveFile,
+  onRetryProcessing,
 }: {
   files: ChosenFile[];
   imports: Record<string, FileImportState>;
@@ -46,6 +47,7 @@ export function ImportQueue({
   onChooseDifferentFile: () => void;
   onClearChosenFiles: () => void;
   onRemoveFile: (key: string) => void;
+  onRetryProcessing: () => void;
 }) {
   return (
     <>
@@ -84,8 +86,6 @@ export function ImportQueue({
         {files.map((entry) => {
           const state = imports[entry.key];
           const applied = appliedPixelSize(entry);
-          const declared =
-            entry.scale?.state === "declared" ? entry.scale.pixelSizeNm : null;
           return (
             <li
               key={entry.key}
@@ -107,28 +107,12 @@ export function ImportQueue({
                 <p className="truncate text-sm font-semibold text-slate-900">
                   {entry.file.name}
                 </p>
-                <p className="text-xs text-slate-600">
-                  {formatBytes(entry.file.size)}
-                  {declared !== null
-                    ? ` · declares ${formatPixelSizeNm(declared)}`
-                    : ""}
-                  {/* What this row will actually be imported with. Only
-                      for a batch: with one file the sentence under the
-                      pixel-size box already says it in full, and saying it
-                      twice in two different shapes is how two answers to
-                      one question start. */}
-                  {files.length > 1
-                    ? ` · ${
-                        applied.source === "typed"
-                          ? `importing at ${formatPixelSizeNm(applied.valueNm)} (you typed it)`
-                          : applied.source === "file"
-                            ? `importing at ${formatPixelSizeNm(applied.valueNm)} (from the file)`
-                            : applied.source === "none"
-                              ? "no pixel size: measured in pixels"
-                              : "pixel size not read here; the server will use whatever the file carries"
-                      }`
-                    : ""}
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span>{formatBytes(entry.file.size)}</span>
+                  {applied.source === "unknown" ? null : (
+                    <PixelSizeTag valueNm={applied.valueNm} />
+                  )}
+                </div>
                 {state?.kind === "failed" ? (
                   <p className="mt-1 text-sm text-red-700" role="alert">
                     {state.message}
@@ -184,6 +168,14 @@ export function ImportQueue({
           {batchSummary.failed === 1 ? "is" : "are"} still listed above, with
           the reason.
         </p>
+      ) : null}
+      {batchSummary?.processingError ? (
+        <div className="mt-3 flex flex-wrap items-center gap-3" role="alert">
+          <p className="m-0 text-sm text-red-700">{batchSummary.processingError}</p>
+          <Button size="sm" disabled={importing} onClick={onRetryProcessing}>
+            Start processing
+          </Button>
+        </div>
       ) : null}
     </>
   );

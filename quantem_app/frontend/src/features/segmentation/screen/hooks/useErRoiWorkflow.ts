@@ -11,7 +11,7 @@ import type { Point } from "@/utils/geometry";
 import type { SegmentOverlay } from "@/viewer/types";
 
 /** Fixed labeling ROI size, in source pixels. */
-export const LABELING_ROI_SIZE = 512;
+export const LABELING_ROI_SIZE = 1024;
 
 /** An ROI rectangle that has been placed but not yet created server-side. */
 export interface PendingRoi {
@@ -172,13 +172,15 @@ export function useErRoiWorkflow({
 
   const activateRoi = useCallback(
     async (roiId: string) => {
-      if (!currentSegmentationId || activatingRoiId) return;
+      if (!currentSegmentationId || activatingRoiId) return false;
       setActivatingRoiId(roiId);
       try {
         await activateSegmentationRoi(currentSegmentationId, roiId);
         await refetchSegmentationRois();
+        return true;
       } catch (error) {
         showErrorToast(errorMessage(error, "Failed to switch ROI."));
+        return false;
       } finally {
         setActivatingRoiId(null);
       }

@@ -60,6 +60,16 @@ function getCachedSmoothedGeometry(segment: SegmentObject): Array<[number, numbe
   return coords;
 }
 
+function storedPolygonRings(segment: SegmentObject): Array<Array<[number, number]>> {
+  const geometry = segment.geometry;
+  if (!geometry) return [segment.geometry_coords];
+  if (geometry.type === "Polygon") return geometry.coordinates;
+  // A current SegmentObject row stores one Polygon. Retain a defensive first
+  // polygon for older/future payloads; disconnected results are normally
+  // serialized as separate rows so each remains independently selectable.
+  return geometry.coordinates[0] ?? [segment.geometry_coords];
+}
+
 export function withSmoothedSegmentGeometry<T extends SegmentObject>(segment: T): T {
   if (segment.smoothed_geometry_coords && segment.smoothed_geometry_coords.length >= 3) {
     return segment;
@@ -84,6 +94,12 @@ export function selectSegmentGeometryCoords(
   segment: SegmentObject,
   useSmoothedGeometry: boolean
 ): Array<[number, number]> {
+  const rings = storedPolygonRings(segment);
+  const exterior = rings[0] ?? segment.geometry_coords;
+  // Smoothing only the exterior of a polygon that has holes can move it across
+  // an interior ring. Keep the server's topology-preserving display copy in
+  // that case.
+  if (rings.length > 1) return exterior;
   if (
     useSmoothedGeometry &&
     segment.smoothed_geometry_coords &&
@@ -91,5 +107,11 @@ export function selectSegmentGeometryCoords(
   ) {
     return segment.smoothed_geometry_coords;
   }
-  return segment.geometry_coords;
+  return exterior;
+}
+
+export function selectSegmentHoleCoords(
+  segment: SegmentObject
+): Array<Array<[number, number]>> {
+  return storedPolygonRings(segment).slice(1);
 }

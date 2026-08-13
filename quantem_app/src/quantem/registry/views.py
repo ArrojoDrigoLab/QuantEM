@@ -42,6 +42,7 @@ from rest_framework.views import APIView
 
 from quantem.inference.specs import MODEL_SPECS
 from quantem.jobs.constants import JOB_TYPE_INSTALL_MODEL_PACK, QUEUE_P2_UPLOAD
+from quantem.jobs.models import Job
 from quantem.registry import cache, catalogue, release
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,70 @@ class ModelListView(APIView):
 
     def get(self, request: Request) -> Response:
         return Response(catalogue.catalogue(), status=status.HTTP_200_OK)
+
+
+class ModelDetailView(APIView):
+    """``DELETE /api/models/<pack_id>/`` removes downloaded model weights."""
+
+    def delete(self, request: Request, pack_id: str) -> Response:
+        del request
+        pack_id = str(pack_id or "").strip()
+        if pack_id not in MODEL_SPECS:
+            return _error(f"Unknown model pack {pack_id!r}.", status.HTTP_404_NOT_FOUND)
+        active_install_pack = next(
+            (
+                candidate
+                for candidate in MODEL_SPECS
+                if catalogue.active_install_job(candidate) is not None
+            ),
+            None,
+        )
+        if active_install_pack is not None:
+            return _error(
+                "A model is still downloading. Let that task finish before removing weights.",
+                status.HTTP_409_CONFLICT,
+            )
+        active_model_job = next(
+            (
+                job
+                for job in Job.objects.filter(status__in=Job.OPEN_STATUSES).only(
+                    "payload_json", "tags"
+                )
+                if _job_uses_pack(job, pack_id)
+            ),
+            None,
+        )
+        if active_model_job is not None:
+            return _error(
+                "This model is being used by an active task. Let that task finish before removing it.",
+                status.HTTP_409_CONFLICT,
+            )
+        try:
+            removed = cache.remove_pack(pack_id)
+        except (OSError, RuntimeError) as exc:
+            logger.warning("Could not remove model pack %s: %s", pack_id, exc)
+            return _error(
+                "The model files are currently in use. Close active runs and try again.",
+                status.HTTP_409_CONFLICT,
+            )
+        if not removed:
+            return _error("This model is not downloaded.", status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _job_uses_pack(job: Job, pack_id: str) -> bool:
+    """Whether an open inference or fine-tune job still needs this pack."""
+    if f"source_model:{pack_id}" in (job.tags or []):
+        return True
+    payload = job.payload_json or {}
+    if payload.get("pack_id") == pack_id:
+        return True
+    if payload.get("source_model") == pack_id or payload.get("base_model") == pack_id:
+        return True
+    return any(
+        isinstance(leg, dict) and leg.get("source_model") == pack_id
+        for leg in (payload.get("legs") or [])
+    )
 
 
 def _bundle_root(source_path: Path) -> Path | None:

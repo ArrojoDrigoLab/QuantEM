@@ -17,6 +17,8 @@ than one place and must not be answered twice:
 * **the fold plan**, which decides how many training-plus-evaluation rounds the
   run will do -- and therefore the denominator the progress bar counts to, which
   the queue asks for at enqueue time, before the worker exists.
+* **the step plan**, which scales each round from 300 to 600 steps using the
+  number of tiles that round actually trains on.
 
 Nothing here loads an image or a model. The dialog answers immediately.
 """
@@ -32,6 +34,7 @@ from quantem.finetune.adapt import (
     iter_windows,
     masks_to_model_scale,
     pad_masks_to_tile,
+    steps_for_training_tiles,
     tile_for,
 )
 from quantem.inference import resample
@@ -46,6 +49,7 @@ __all__ = [
     "count_tiles",
     "default_training_mode",
     "plan_folds",
+    "plan_step_counts",
     "planned_round_count",
     "planned_training_units",
     "resolve_scope",
@@ -58,19 +62,13 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-#: The one selectable group that is not an experiment. Images with no experiment
-#: are their own bucket, and the same-experiment rule applies to them as a group
-#: -- so an unassigned image cannot be mixed with an experiment's image either.
-UNASSIGNED = "unassigned"
-
-
 @dataclass
 class ResolvedScope:
     """The images a run will use, and whether the selection is allowed at all."""
 
     asset_ids: list[str] = field(default_factory=list)
     dataset_ids: list[str] = field(default_factory=list)
-    #: The one experiment every image belongs to, or None for unassigned images.
+    #: The one experiment every eligible image belongs to.
     experiment_id: str | None = None
     experiment_name: str = ""
     #: Plain-language reasons the selection cannot be run. Empty means it can.
@@ -139,12 +137,16 @@ def resolve_scope(
         scope.blockers.append("Choose at least one image to fine-tune on.")
         return scope
 
-    experiments = {
-        (str(value) if value else UNASSIGNED)
-        for value in Asset.objects.filter(id__in=scope.asset_ids).values_list(
-            "experiment_id", flat=True
+    experiment_values = set(
+        Asset.objects.filter(id__in=scope.asset_ids).values_list("experiment_id", flat=True)
+    )
+    if None in experiment_values:
+        scope.blockers.append(
+            "One of the images has not been upgraded into an experiment. Restart "
+            "QuantEM to finish the upgrade, then try again."
         )
-    }
+        return scope
+    experiments = {str(value) for value in experiment_values}
     if len(experiments) > 1:
         scope.blockers.append(
             "The images you chose are from more than one experiment. A fine-tune "
@@ -154,13 +156,12 @@ def resolve_scope(
         return scope
 
     only = next(iter(experiments))
-    if only != UNASSIGNED:
-        from quantem.library.models import Experiment  # noqa: PLC0415
+    from quantem.library.models import Experiment  # noqa: PLC0415
 
-        scope.experiment_id = only
-        scope.experiment_name = (
-            Experiment.objects.filter(id=only).values_list("name", flat=True).first() or ""
-        )
+    scope.experiment_id = only
+    scope.experiment_name = (
+        Experiment.objects.filter(id=only).values_list("name", flat=True).first() or ""
+    )
     return scope
 
 
@@ -325,6 +326,30 @@ def plan_folds(
     return folds, split_mode
 
 
+def plan_step_counts(
+    folds: Sequence[TrainingFold],
+    base_model: str,
+    *,
+    fixed_steps: int | None = None,
+    config: AdaptConfig = AdaptConfig(),
+) -> list[int]:
+    """Optimizer steps for each fold, based on that fold's training tiles.
+
+    ``fixed_steps`` preserves the explicit override used by internal callers
+    and focused tests. Normal Fine-Tune dialog runs leave it unset and follow
+    the 300--600 tile-scaled policy.
+    """
+    if fixed_steps is not None:
+        steps = int(fixed_steps)
+        if steps <= 0:
+            raise ValueError("fine-tuning steps must be greater than zero")
+        return [steps for _fold in folds]
+    return [
+        steps_for_training_tiles(count_tiles(fold.train, base_model, config=config))
+        for fold in folds
+    ]
+
+
 # ---------------------------------------------------------------------------
 # The progress denominator
 # ---------------------------------------------------------------------------
@@ -345,6 +370,10 @@ def planned_round_count(payload: dict) -> int:
             return int(recorded)
     except (TypeError, ValueError):
         pass
+
+    planned_steps = payload.get("planned_steps")
+    if isinstance(planned_steps, list) and planned_steps:
+        return len(planned_steps)
 
     from quantem.finetune.models import (  # noqa: PLC0415 -- Django app registry
         TRAINING_MODE_HOLDOUT_1,
@@ -375,7 +404,7 @@ def is_scoped_payload(payload: dict) -> bool:
 
 
 def planned_training_units(payload: dict) -> int | None:
-    """``steps x rounds``: the one number a fine-tune's progress bar counts to.
+    """Total planned optimizer steps across every training round.
 
     A single monotone total covers both halves of what the owner asked the bar
     to show -- how far through the steps, and how far through the rounds -- and
@@ -385,6 +414,17 @@ def planned_training_units(payload: dict) -> int | None:
     """
     if not is_scoped_payload(payload):
         return None
+
+    planned_steps = payload.get("planned_steps")
+    if isinstance(planned_steps, list) and planned_steps:
+        try:
+            values = [int(value) for value in planned_steps]
+        except (TypeError, ValueError):
+            values = []
+        if values and all(value > 0 for value in values):
+            return sum(values)
+
+    # Backward compatibility for queued payloads from the fixed-step scheduler.
     steps = payload.get("steps")
     try:
         steps = int(steps) if steps is not None else AdaptConfig.steps

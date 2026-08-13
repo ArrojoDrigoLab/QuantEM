@@ -182,6 +182,13 @@ describe("useSegmentationOverlayState", () => {
     });
     rerender();
 
+    // A bundle being ready on disk is not the handoff point: retain the vector
+    // until the canvas confirms that it loaded the replacement revision.
+    expect(result.current.optimistic.optimisticExcluded).toHaveLength(1);
+    act(() => {
+      result.current.manifest.handleLeftOverlayRevisionDisplayed(7);
+    });
+
     await waitFor(() => {
       expect(result.current.optimistic.optimisticExcluded).toHaveLength(0);
     });

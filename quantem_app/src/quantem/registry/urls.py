@@ -12,10 +12,11 @@ one can be named in the error.
 
 from django.urls import path
 
-from quantem.registry.views import ModelInstallView, ModelListView
+from quantem.registry.views import ModelDetailView, ModelInstallView, ModelListView
 
 urlpatterns = [
     path("models/", ModelListView.as_view(), name="model-list"),
+    path("models/<str:pack_id>/", ModelDetailView.as_view(), name="model-detail"),
     path(
         "models/<str:pack_id>/install/",
         ModelInstallView.as_view(),

@@ -168,7 +168,7 @@ class DetectorTests(TestCase):
             "Could not reach the QuantEM model repository "
             "(https://huggingface.co/ArrojoeDrigoLab/quantem).",
             "This run found 0 objects at include level 0.50.",
-            "8 nm/px \u00b7 entered by hand",
+            "8 nm/px",
             "Your objects are safe. This only affects the picture the viewer draws from them.",
         ]
         for text in innocent:

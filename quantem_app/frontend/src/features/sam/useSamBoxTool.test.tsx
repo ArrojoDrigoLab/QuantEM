@@ -10,6 +10,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SamBoxResponse } from "./types";
 import { useSamBoxTool } from "./useSamBoxTool";
 
 const promptSamBox = vi.fn();
@@ -35,12 +36,17 @@ const READY = {
   },
 };
 
-const RESPONSE = {
+const RESPONSE: SamBoxResponse = {
   created: 1,
   updated: 0,
   deleted: 0,
   confirmed_ids: ["abc"],
-  overlay: null,
+  overlay: {
+    desired_revision: 1,
+    applied_revision: 1,
+    sync_applied: true,
+    rebuild_mode: "sync_partial",
+  },
   object: { geometry_coords: [], score: 0.9, area: 100 },
   other_candidates: [],
   timing: { cache_hit: false, encode_ms: 500, decode_ms: 20, device: "cuda" },
@@ -59,6 +65,14 @@ function setup(overrides: Partial<Parameters<typeof useSamBoxTool>[0]> = {}) {
     })
   );
   return { hook, onObjectCreated, onError };
+}
+
+function pendingOverlays(
+  result: { current: ReturnType<typeof useSamBoxTool> }
+) {
+  return result.current.overlays.filter((overlay) =>
+    overlay.id.startsWith("sam-box-pending")
+  );
 }
 
 /** Press at the origin, move to (dx, dy) in both spaces, release. */
@@ -159,15 +173,105 @@ describe("useSamBoxTool", () => {
     await drag(hook.result, 50, 50);
 
     await waitFor(() => expect(hook.result.current.isSubmitting).toBe(true));
-    expect(
-      hook.result.current.overlays.some((o) => o.id === "sam-box-pending")
-    ).toBe(true);
+    expect(pendingOverlays(hook.result)).toHaveLength(1);
 
     await act(async () => {
       settle(RESPONSE);
     });
     await waitFor(() => expect(hook.result.current.isSubmitting).toBe(false));
     expect(hook.result.current.overlays).toHaveLength(0);
+  });
+
+  it("keeps the box visible until the returned object has been staged", async () => {
+    let finishStaging: () => void = () => {};
+    const staging = new Promise<void>((resolve) => {
+      finishStaging = resolve;
+    });
+    const onObjectCreated = vi.fn(() => staging);
+    const { hook } = setup({ onObjectCreated });
+    act(() => hook.result.current.setActive(true));
+
+    await drag(hook.result, 50, 50);
+
+    await waitFor(() => expect(onObjectCreated).toHaveBeenCalledWith(RESPONSE));
+    expect(pendingOverlays(hook.result)).toHaveLength(1);
+
+    await act(async () => finishStaging());
+    await waitFor(() => expect(hook.result.current.isSubmitting).toBe(false));
+    expect(hook.result.current.overlays).toHaveLength(0);
+  });
+
+  it("keeps every rapid box until its own request and staging finish", async () => {
+    const requests: Array<{
+      resolve: (response: typeof RESPONSE) => void;
+    }> = [];
+    promptSamBox.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          requests.push({ resolve });
+        })
+    );
+    const stagingResolvers = new Map<string, () => void>();
+    const onObjectCreated = vi.fn(
+      (response: typeof RESPONSE) =>
+        new Promise<void>((resolve) => {
+          stagingResolvers.set(response.confirmed_ids[0], resolve);
+        })
+    );
+    const { hook } = setup({ onObjectCreated });
+    act(() => hook.result.current.setActive(true));
+
+    for (let index = 1; index <= 5; index += 1) {
+      await drag(hook.result, 20 + index, 20 + index);
+    }
+
+    await waitFor(() => expect(requests).toHaveLength(5));
+    expect(pendingOverlays(hook.result)).toHaveLength(5);
+    expect(hook.result.current.pendingCount).toBe(5);
+    expect(
+      new Set(pendingOverlays(hook.result).map(({ id }) => id)).size
+    ).toBe(5);
+
+    const secondResponse = {
+      ...RESPONSE,
+      confirmed_ids: ["second"],
+    };
+    await act(async () => requests[1].resolve(secondResponse));
+    await waitFor(() =>
+      expect(onObjectCreated).toHaveBeenCalledWith(secondResponse)
+    );
+
+    // Its box stays until its own mask is staged, and the other four are not
+    // affected by this request finishing out of order.
+    expect(pendingOverlays(hook.result)).toHaveLength(5);
+    await act(async () => stagingResolvers.get("second")?.());
+    await waitFor(() => expect(pendingOverlays(hook.result)).toHaveLength(4));
+    expect(hook.result.current.isSubmitting).toBe(true);
+    expect(hook.result.current.pendingCount).toBe(4);
+
+    const firstResponse = {
+      ...RESPONSE,
+      confirmed_ids: ["first"],
+    };
+    await act(async () => requests[0].resolve(firstResponse));
+    await waitFor(() =>
+      expect(onObjectCreated).toHaveBeenCalledWith(firstResponse)
+    );
+    expect(pendingOverlays(hook.result)).toHaveLength(4);
+    await act(async () => stagingResolvers.get("first")?.());
+    await waitFor(() => expect(pendingOverlays(hook.result)).toHaveLength(3));
+
+    for (const index of [4, 2, 3]) {
+      const response = {
+        ...RESPONSE,
+        confirmed_ids: [`request-${index}`],
+      };
+      await act(async () => requests[index].resolve(response));
+      await waitFor(() => expect(onObjectCreated).toHaveBeenCalledWith(response));
+      await act(async () => stagingResolvers.get(`request-${index}`)?.());
+    }
+    await waitFor(() => expect(hook.result.current.isSubmitting).toBe(false));
+    expect(pendingOverlays(hook.result)).toHaveLength(0);
   });
 
   it("draws a live rectangle during the drag", async () => {

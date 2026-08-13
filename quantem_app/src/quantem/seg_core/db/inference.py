@@ -125,6 +125,7 @@ def apply_active_adapter(
     segmenter: BaseSegmenter,
     segmentation: ImageSegmentation,
     on_detail: Callable[[str], None] | None = None,
+    adapter_id: str | None = None,
 ) -> str | None:
     """Hand the segmentation's applied adapter to the segmenter, if there is one.
 
@@ -159,7 +160,11 @@ def apply_active_adapter(
         return None
 
     try:
-        adapter = active_adapter_for(segmentation)
+        adapter = (
+            active_adapter_for(segmentation, adapter_id=adapter_id)
+            if adapter_id
+            else active_adapter_for(segmentation)
+        )
     except Exception:
         # An install that never migrated. Loud rather than silent: a user who
         # applied an adapter and gets an uncalibrated run deserves to know.
@@ -168,12 +173,24 @@ def apply_active_adapter(
             segmentation.id,
             exc_info=True,
         )
+        if adapter_id:
+            raise
         return None
     if adapter is None:
+        if adapter_id:
+            raise ValueError(
+                "The selected fine-tune is not available for this organelle, "
+                "so QuantEM did not run the released model in its place."
+            )
         return None
 
     pack_id = getattr(segmenter, "source_model", None)
     if not getattr(segmenter, "supports_adapters", False):
+        if adapter_id:
+            raise ValueError(
+                "The selected fine-tune cannot be used by this model, so QuantEM "
+                "did not run the released model in its place."
+            )
         logger.info(
             "Adapter %s is applied to segmentation %s but %s cannot use one; "
             "running the released model.",
@@ -190,6 +207,8 @@ def apply_active_adapter(
         logger.warning("segmentation %s: %s", segmentation.id, message)
         if on_detail is not None:
             on_detail(message)
+        if adapter_id:
+            raise ValueError(message)
         return None
 
     segmenter.apply_adapter(
@@ -367,6 +386,7 @@ def run_inference_for_segmentation(
     force_recompute_prob_maps: bool = False,
     tile_window: TileWindow | None = None,
     image_array: np.ndarray | None = None,
+    adapter_id: str | None = None,
     **kwargs,
 ) -> tuple[InferenceResult, np.ndarray]:
     """Run organelle inference for a segmentation. Returns (result, image_array).
@@ -404,7 +424,9 @@ def run_inference_for_segmentation(
 
     # Before anything is loaded: a guided fine-tuning result the user applied
     # changes which weights and which threshold this run uses.
-    applied_adapter_id = apply_active_adapter(segmenter, segmentation, on_detail)
+    applied_adapter_id = apply_active_adapter(
+        segmenter, segmentation, on_detail, adapter_id=adapter_id
+    )
     target_image = get_asset_openable(segmentation.asset)
     roi_id = str(roi.id) if roi else None
     prefix = segmenter.prob_map_prefix

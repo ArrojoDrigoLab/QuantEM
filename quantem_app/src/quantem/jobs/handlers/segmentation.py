@@ -157,6 +157,7 @@ def handle_run_segmentation_full_task(
         source_model=normalize_source_model(payload.get("source_model")) or None,
         force_recompute_prob_maps=force_recompute_prob_maps,
         reporter=reporter,
+        adapter_id=str(payload.get("adapter_id") or "").strip() or None,
     )
     reporter.update(progress=100.0, message="Threshold preview ready")
     return {
@@ -199,6 +200,7 @@ def handle_run_segmentation_for_image(
             {
                 "segmentation_id": str(segmentation.id),
                 "source_model": normalize_source_model(raw.get("source_model")) or None,
+                "adapter_id": str(raw.get("adapter_id") or "").strip() or None,
             }
         )
 

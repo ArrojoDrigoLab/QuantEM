@@ -28,8 +28,13 @@ from .geometry import (
     filter_supported_confirmed_polygons,
     geometries_overlap,
     merge_polygons,
+    safe_union,
 )
-from .overlap import delete_manual_overlap_candidates, resolve_overlap_between_families
+from .overlap import (
+    delete_manual_overlap_candidates,
+    overlap_qualifies_for_union,
+    resolve_overlap_between_families,
+)
 from .persistence import (
     _parse_optional_sam_score,
     _persist_confirmed_family,
@@ -171,6 +176,73 @@ def _confirm_manual_segments(
 
         for manual_family in prepared_manual_families:
             affected_geometries.extend(manual_family.polygons)
+            original_manual_geometry = manual_family.union_geometry()
+            if original_manual_geometry is None:
+                continue
+            # Candidate cleanup is about the user's gesture, not the possibly
+            # larger confirmed family it is merged into below.
+            manual_families.append(
+                _ConfirmedFamily(
+                    segment=None,
+                    polygons=extract_polygons(original_manual_geometry),
+                    features={},
+                    is_manual_new=True,
+                )
+            )
+
+            qualifying_families: list[_ConfirmedFamily] = []
+            for existing_family in confirmed_families:
+                existing_geometry = existing_family.union_geometry()
+                if existing_geometry is None:
+                    continue
+                if overlap_qualifies_for_union(original_manual_geometry, existing_geometry):
+                    qualifying_families.append(existing_family)
+
+            if qualifying_families:
+                # Prefer an already-persisted confirmed object as the survivor.
+                # Every other qualifier is emptied and its row is removed by
+                # the normal family persistence pass below.
+                primary = next(
+                    (family for family in qualifying_families if family.segment is not None),
+                    qualifying_families[0],
+                )
+                merged_geometry: BaseGeometry | None = original_manual_geometry
+                for family in qualifying_families:
+                    existing_geometry = family.union_geometry()
+                    if existing_geometry is not None:
+                        affected_geometries.append(existing_geometry)
+                        merged_geometry = safe_union(merged_geometry, existing_geometry)
+                    if family is not primary:
+                        family.polygons = []
+                        family.dirty = True
+                primary.polygons = extract_polygons(merged_geometry)
+                primary.dirty = True
+
+                for existing_family in confirmed_families:
+                    if any(existing_family is family for family in qualifying_families):
+                        continue
+                    existing_geometry = existing_family.union_geometry()
+                    primary_geometry = primary.union_geometry()
+                    if (
+                        existing_geometry is None
+                        or primary_geometry is None
+                        # Only the incoming gesture authorizes reshaping a
+                        # nearby row. A merged qualifier can expose an older
+                        # overlap between confirmed rows that this edit did
+                        # not touch; leave that pre-existing geometry alone.
+                        or not geometries_overlap(original_manual_geometry, existing_geometry)
+                        or not geometries_overlap(existing_geometry, primary_geometry)
+                    ):
+                        continue
+                    affected_geometries.append(existing_geometry)
+                    if resolve_overlap_between_families(primary, existing_family):
+                        affected_geometries.extend(primary.polygons)
+                        affected_geometries.extend(existing_family.polygons)
+                # The incoming family has been absorbed and must not create a
+                # second row. ``primary`` already sits in confirmed_families.
+                manual_family.polygons = []
+                manual_family.dirty = True
+                continue
 
             for existing_family in confirmed_families:
                 existing_geometry = existing_family.union_geometry()
@@ -185,7 +257,6 @@ def _confirm_manual_segments(
                     affected_geometries.extend(existing_family.polygons)
 
             confirmed_families.append(manual_family)
-            manual_families.append(manual_family)
 
         deleted_candidates, deleted_candidate_geometries = delete_manual_overlap_candidates(
             segmentation=segmentation,

@@ -9,6 +9,11 @@ export interface BrushStrokeInput {
   size: number;
 }
 
+export interface BrushPolygonRings {
+  exterior: Point[];
+  holes: Point[][];
+}
+
 interface StrokeBounds {
   minX: number;
   minY: number;
@@ -243,6 +248,25 @@ function approximateStrokePolygon(stroke: BrushStrokeInput): Point[] | null {
   return [...hull, { x: hull[0].x, y: hull[0].y }];
 }
 
+function approximateStrokePieces(stroke: BrushStrokeInput): BrushPolygonRings[] {
+  if (stroke.points.length <= 1) {
+    const polygon = approximateStrokePolygon(stroke);
+    return polygon ? [{ exterior: polygon, holes: [] }] : [];
+  }
+  // The large-raster fallback must not take a convex hull of an entire bent or
+  // closed stroke: doing that to a large brush-drawn ring silently fills its
+  // hole. Capsules for each consecutive segment remain bounded in memory and
+  // are unioned by the confirmation endpoint, reconstructing the same path
+  // topology without allocating the full raster client-side.
+  return stroke.points.slice(0, -1).flatMap((point, index) => {
+    const polygon = approximateStrokePolygon({
+      size: stroke.size,
+      points: [point, stroke.points[index + 1]],
+    });
+    return polygon ? [{ exterior: polygon, holes: [] }] : [];
+  });
+}
+
 class DisjointSet {
   private readonly parent: number[];
 
@@ -446,14 +470,14 @@ function makeVertexKey(x: number, y: number): string {
   return `${x},${y}`;
 }
 
-function extractComponentOuterLoop(
+function extractComponentRings(
   component: LabeledComponent,
   labels: Int32Array,
   width: number,
   height: number,
   originX: number,
   originY: number
-): Point[] | null {
+): BrushPolygonRings | null {
   const edges: Edge[] = [];
 
   for (const index of component.pixels) {
@@ -579,21 +603,23 @@ function extractComponentOuterLoop(
   }
 
   loops.sort((left, right) => right.area - left.area);
-  return loops[0].points;
+  return {
+    exterior: loops[0].points,
+    // Every remaining boundary loop belongs to background enclosed by this
+    // connected foreground component. Keeping these rings is what prevents a
+    // brush-drawn donut from silently becoming a filled disk on confirmation.
+    holes: loops.slice(1).map((loop) => loop.points),
+  };
 }
 
-function extractPolygonsForCluster(strokes: BrushStrokeInput[]): Point[][] {
+function extractPolygonsForCluster(strokes: BrushStrokeInput[]): BrushPolygonRings[] {
   const bounds = makeRasterBounds(strokes);
   if (!bounds) {
     return [];
   }
 
   if (bounds.width * bounds.height > MAX_RASTER_PIXELS) {
-    if (strokes.length > 1) {
-      return strokes.flatMap((stroke) => extractPolygonsForCluster([stroke]));
-    }
-    const approximation = approximateStrokePolygon(strokes[0]);
-    return approximation ? [approximation] : [];
+    return strokes.flatMap(approximateStrokePieces);
   }
 
   const mask = new Uint8Array(bounds.width * bounds.height);
@@ -614,9 +640,9 @@ function extractPolygonsForCluster(strokes: BrushStrokeInput[]): Point[][] {
     bounds.height
   );
 
-  const polygons: Point[][] = [];
+  const polygons: BrushPolygonRings[] = [];
   for (const component of components) {
-    const polygon = extractComponentOuterLoop(
+    const polygon = extractComponentRings(
       component,
       labels,
       bounds.width,
@@ -624,7 +650,11 @@ function extractPolygonsForCluster(strokes: BrushStrokeInput[]): Point[][] {
       bounds.xMin,
       bounds.yMin
     );
-    if (polygon && polygon.length >= 4 && polygonArea(polygon) > 0) {
+    if (
+      polygon &&
+      polygon.exterior.length >= 4 &&
+      polygonArea(polygon.exterior) > 0
+    ) {
       polygons.push(polygon);
     }
   }
@@ -635,6 +665,14 @@ function extractPolygonsForCluster(strokes: BrushStrokeInput[]): Point[][] {
 export function brushStrokesToConnectedPolygons(
   strokes: BrushStrokeInput[]
 ): Point[][] {
+  return brushStrokesToConnectedPolygonRings(strokes).map(
+    (polygon) => polygon.exterior
+  );
+}
+
+export function brushStrokesToConnectedPolygonRings(
+  strokes: BrushStrokeInput[]
+): BrushPolygonRings[] {
   const validStrokes = strokes.filter((stroke) => stroke.points.length > 0);
   if (validStrokes.length === 0) {
     return [];

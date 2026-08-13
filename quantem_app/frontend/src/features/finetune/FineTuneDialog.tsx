@@ -73,6 +73,7 @@ import type { SegmentationType } from "@/shared/types/images";
 import type {
   FineTuneAdapterSummary,
   FineTuneApplyResponse,
+  FineTunePreviewImage,
   FineTunePreviewResponse,
   FineTuneRunDetail,
   ModelCatalogue,
@@ -108,6 +109,7 @@ function FineTuneDialogBody({
   const titleId = useId();
   const nameId = useId();
   const overwriteId = useId();
+  const savedRunId = useId();
   const searchId = useId();
   const baseModelId = useId();
   const organelleId = useId();
@@ -140,6 +142,7 @@ function FineTuneDialogBody({
 
   const [name, setName] = useState("");
   const [overwriteAdapterId, setOverwriteAdapterId] = useState("");
+  const [savedAdapterId, setSavedAdapterId] = useState("");
   const [baseModel, setBaseModel] = useState("");
   const [modeChoice, setModeChoice] = useState<FineTuneModeChoice>("use_all");
   // A ref, rather than state, so a preview already in flight cannot overwrite
@@ -252,7 +255,7 @@ function FineTuneDialogBody({
   }, [chosenTypeId]);
 
   const currentSelectionKey = chosenTypeId
-    ? selectionKey(chosenTypeId, selection)
+    ? `${selectionKey(chosenTypeId, selection)}|${baseModel}`
     : "";
   const selectionEmpty = isSelectionEmpty(selection);
 
@@ -269,7 +272,10 @@ function FineTuneDialogBody({
     // Debounced: ticking a group is one intent and several state updates, and
     // a request per tick would leave the count trailing the boxes.
     const timer = window.setTimeout(() => {
-      void previewFineTuneScope(toSelectionPayload(chosenTypeId, selection))
+      void previewFineTuneScope({
+        ...toSelectionPayload(chosenTypeId, selection),
+        base_model: baseModel || undefined,
+      })
         .then((response) => {
           if (cancelled) return;
           if (!modeTouchedRef.current) {
@@ -295,7 +301,7 @@ function FineTuneDialogBody({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [chosenTypeId, selection, selectionEmpty, currentSelectionKey]);
+  }, [chosenTypeId, selection, selectionEmpty, currentSelectionKey, baseModel]);
 
   // The preview on screen is only about the selection on screen. Without this
   // the count would keep showing the previous selection's total while the new
@@ -310,15 +316,28 @@ function FineTuneDialogBody({
       null,
     [segmentationType, types, chosenTypeId]
   );
+  const compatibleModelChoices = useMemo(() => {
+    const suggested = suggestBaseModel(
+      resolvedType?.internal_name,
+      modelChoices
+    );
+    const organelle = modelChoices.find((choice) => choice.id === suggested)?.organelle;
+    return organelle
+      ? modelChoices.filter((choice) => choice.organelle === organelle)
+      : [];
+  }, [resolvedType, modelChoices]);
 
   useEffect(() => {
-    if (baseModel) return;
-    const suggestion = suggestBaseModel(resolvedType?.internal_name, modelChoices);
-    const runnable = modelChoices.find(
+    if (compatibleModelChoices.some((choice) => choice.id === baseModel)) return;
+    const suggestion = suggestBaseModel(
+      resolvedType?.internal_name,
+      compatibleModelChoices
+    );
+    const runnable = compatibleModelChoices.find(
       (choice) => choice.id === suggestion && choice.pack?.runnable !== false
     );
-    setBaseModel(runnable?.id ?? suggestion ?? modelChoices[0]?.id ?? "");
-  }, [baseModel, resolvedType, modelChoices]);
+    setBaseModel(runnable?.id ?? suggestion ?? compatibleModelChoices[0]?.id ?? "");
+  }, [baseModel, resolvedType, compatibleModelChoices]);
 
   useEffect(() => {
     if (!adapterId || !settled) return;
@@ -348,6 +367,37 @@ function FineTuneDialogBody({
     () => selectionTotals(scopeGroups, selection),
     [scopeGroups, selection]
   );
+  const applyDatasets = useMemo(() => {
+    const experimentId =
+      runDetail?.experiment?.id ??
+      livePreview?.experiment?.id ??
+      preview?.experiment?.id;
+    if (!experimentId) return [];
+    return scopeGroups.find((group) => group.key === experimentId)?.datasets ?? [];
+  }, [scopeGroups, runDetail, livePreview, preview]);
+  const applyImages = useMemo(() => {
+    const runAssetIds = new Set(runDetail?.asset_ids ?? []);
+    if (runAssetIds.size === 0) {
+      return livePreview?.per_image ?? preview?.per_image ?? [];
+    }
+    const images = new Map<string, FineTunePreviewImage>();
+    for (const group of scopeGroups) {
+      for (const image of [
+        ...group.images,
+        ...group.datasets.flatMap((dataset) => dataset.images),
+      ]) {
+        if (!runAssetIds.has(image.id) || images.has(image.id)) continue;
+        images.set(image.id, {
+          asset_id: image.id,
+          name: image.name,
+          confirmed_areas: image.confirmedAreas,
+          done_rois: image.doneRois,
+          tiles: 0,
+        });
+      }
+    }
+    return [...images.values()];
+  }, [scopeGroups, runDetail, livePreview, preview]);
   const annotationCount = livePreview
     ? livePreview.annotation_count
     : localTotals.annotationCount;
@@ -378,6 +428,16 @@ function FineTuneDialogBody({
     setOverwriteAdapterId(value);
     const chosen = adapters.find((adapter) => adapter.id === value);
     if (chosen) setName(chosen.name);
+  };
+
+  const openSavedFineTune = () => {
+    const chosen = adapters.find((adapter) => adapter.id === savedAdapterId);
+    if (!chosen || chosen.status !== "SUCCESS") return;
+    setName(chosen.name);
+    setRunDetail(null);
+    setApplyResult(null);
+    setApplyError(null);
+    setAdapterId(chosen.id);
   };
 
   const submit = useCallback(async () => {
@@ -413,11 +473,11 @@ function FineTuneDialogBody({
   }, [chosenTypeId, modeChoice, selection, name, overwriteAdapterId, baseModel]);
 
   const apply = useCallback(
-    (assetIds: string[]) => {
+    (assetIds: string[], datasetIds: string[]) => {
       if (!adapterId) return;
       setApplying(true);
       setApplyError(null);
-      void applyFineTuneRun(adapterId, assetIds)
+      void applyFineTuneRun(adapterId, assetIds, datasetIds)
         .then(setApplyResult)
         .catch((error: unknown) => {
           setApplyError(
@@ -559,6 +619,53 @@ function FineTuneDialogBody({
                 </div>
               </div>
 
+              {adapters.length > 0 ? (
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <label
+                    htmlFor={savedRunId}
+                    className="block text-sm font-semibold text-slate-900"
+                  >
+                    Run a saved fine-tune
+                  </label>
+                  <p className="m-0 mt-1 text-xs text-slate-600">
+                    Open a finished model to run it on images or Datasets in its
+                    Experiment. This does not train or overwrite anything.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <select
+                      id={savedRunId}
+                      className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                      value={savedAdapterId}
+                      onChange={(event) => setSavedAdapterId(event.target.value)}
+                    >
+                      <option value="">Choose a saved fine-tune</option>
+                      {adapters.map((adapter) => (
+                        <option
+                          key={adapter.id}
+                          value={adapter.id}
+                          disabled={adapter.status !== "SUCCESS"}
+                        >
+                          {adapter.name}
+                          {adapter.status !== "SUCCESS"
+                            ? ` (${adapter.status.toLowerCase()})`
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      disabled={
+                        !savedAdapterId ||
+                        adapters.find((adapter) => adapter.id === savedAdapterId)
+                          ?.status !== "SUCCESS"
+                      }
+                      onClick={openSavedFineTune}
+                    >
+                      Open
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
               <div>
                 <label
                   htmlFor={baseModelId}
@@ -572,7 +679,7 @@ function FineTuneDialogBody({
                   value={baseModel}
                   onChange={(event) => setBaseModel(event.target.value)}
                 >
-                  {modelChoices.map((choice) => (
+                  {compatibleModelChoices.map((choice) => (
                     <option
                       key={choice.id}
                       value={choice.id}
@@ -753,7 +860,8 @@ function FineTuneDialogBody({
               <FineTuneSuccess
                 name={name}
                 run={runDetail}
-                scopedImages={livePreview?.per_image ?? preview?.per_image ?? []}
+                scopedImages={applyImages}
+                availableDatasets={applyDatasets}
                 applying={applying}
                 applyError={applyError}
                 applyResult={applyResult}

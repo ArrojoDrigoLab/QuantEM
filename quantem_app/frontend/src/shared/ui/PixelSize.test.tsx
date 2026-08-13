@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PixelSizeEditor } from "@/shared/ui/PixelSize";
+import { PixelSizeEditor, PixelSizeTag } from "@/shared/ui/PixelSize";
 import { updateAsset } from "@/shared/api/assets";
 import { ApiRequestError } from "@/shared/api/core/http";
 import type { AssetDetail } from "@/shared/types/images";
@@ -64,7 +64,7 @@ describe("PixelSizeEditor", () => {
     );
   });
 
-  it("marks a file-derived value as read from the file", () => {
+  it("shows a file-derived value as a numeric-only resolution tag", () => {
     render(
       <PixelSizeEditor
         asset={makeAsset({
@@ -80,11 +80,11 @@ describe("PixelSizeEditor", () => {
       />
     );
 
-    expect(screen.getByText(/5 nm\/px · from file/)).toBeInTheDocument();
-    expect(screen.getByTitle(/read from the image file/i)).toBeInTheDocument();
+    expect(screen.getByText("5 nm/px")).toBeInTheDocument();
+    expect(screen.queryByText(/from file|entered by hand/i)).not.toBeInTheDocument();
   });
 
-  it("marks a hand-typed value as entered by hand and names the file's value", () => {
+  it("shows an edited value as the same numeric-only resolution tag", () => {
     render(
       <PixelSizeEditor
         asset={makeAsset({
@@ -100,10 +100,8 @@ describe("PixelSizeEditor", () => {
       />
     );
 
-    expect(screen.getByText(/4\.2 nm\/px · entered by hand/)).toBeInTheDocument();
-    expect(
-      screen.getByTitle("Entered by hand. The file declared 5 nm/px.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("4.2 nm/px")).toBeInTheDocument();
+    expect(screen.queryByText(/from file|entered by hand/i)).not.toBeInTheDocument();
   });
 
   it("clears the calibration when the field is emptied", async () => {
@@ -150,5 +148,21 @@ describe("PixelSizeEditor", () => {
     const message = await screen.findByText(/could not be saved/i);
     expect(message.textContent).toContain("HTTP 403");
     expect(message.textContent).not.toContain("<");
+  });
+});
+
+describe("PixelSizeTag", () => {
+  it("normalizes calibrated values and contains no extra copy", () => {
+    render(<PixelSizeTag valueNm={5} />);
+
+    const tag = screen.getByText("5 nm/px");
+    expect(tag).toHaveTextContent(/^5 nm\/px$/);
+    expect(tag).not.toHaveAttribute("title");
+  });
+
+  it("uses the shared unset state when no resolution is available", () => {
+    render(<PixelSizeTag valueNm={null} />);
+
+    expect(screen.getByText("Pixel size not set")).toBeInTheDocument();
   });
 });

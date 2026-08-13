@@ -71,6 +71,16 @@ export interface SegmentObject {
   scope?: "ROI" | "FULL";
   confidence_score: number | null;
   geometry_coords: Array<[number, number]>;
+  geometry?:
+    | {
+        type: "Polygon";
+        coordinates: Array<Array<[number, number]>>;
+      }
+    | {
+        type: "MultiPolygon";
+        coordinates: Array<Array<Array<[number, number]>>>;
+      }
+    | null;
   smoothed_geometry_coords?: Array<[number, number]>;
   created_at: string;
   updated_at: string;
@@ -94,6 +104,8 @@ export interface SegmentationOverlayMutationState {
  */
 export interface SegmentationOverlayManifest {
   status: "MISSING" | "READY" | "DIRTY" | "BUILDING" | "FAILED";
+  overlay_kind?: "object_ids" | "binary_mask";
+  pickable?: boolean;
   /**
    * Why the last overlay build failed, verbatim from the server.
    *
@@ -138,6 +150,9 @@ export interface OverlayLutJson {
   lut_revision: number;
   bundle_version: number;
   max_label: number;
+  overlay_kind?: "object_ids" | "binary_mask";
+  pickable?: boolean;
+  color?: string;
   objects: OverlayLutObject[];
 }
 
@@ -240,7 +255,10 @@ export interface UserFeedbackListParams {
 }
 
 export interface ConfirmBatchSegmentPayload {
-  geometry_coords: Array<[number, number]>;
+  geometry_coords?: Array<[number, number]>;
+  /** First ring is the exterior; subsequent rings are holes. */
+  geometry_rings?: Array<Array<[number, number]>>;
+  operation?: "include" | "exclude";
   sam_score?: number | null;
 }
 

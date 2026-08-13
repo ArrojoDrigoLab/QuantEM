@@ -24,7 +24,9 @@ from unittest.mock import patch
 import numpy as np
 from django.test import TestCase
 from django.urls import reverse
+from shapely.geometry import box
 
+from quantem.assets.utils import create_roi_image_from_image
 from quantem.inference import resample
 from quantem.inference.segmenter import DL_MODEL_NAME, DinoMitoSegmenter
 from quantem.inference.specs import get_model_spec
@@ -38,13 +40,18 @@ from quantem.jobs.registry import _HANDLERS
 from quantem.jobs.reporter import CancelToken, JobReporter
 from quantem.seg_core.db.inference import StoredMapUnavailable
 from quantem.segmentation.models import (
+    CompletedROI,
     ImageSegmentation,
     ProbabilityMap,
+    RoiSegmentationStatus,
     SegmentationConfig,
     SegmentationResultVersion,
     SegmentObject,
 )
-from quantem.segmentation.organelle_tasks import run_segmentation_full_task
+from quantem.segmentation.organelle_tasks import (
+    run_segmentation_full_task,
+    run_segmentation_roi_task,
+)
 from quantem.segmentation.prob_maps.persistence import (
     LEGACY_MAP_MESSAGE,
     NO_STORED_MAP_MESSAGE,
@@ -116,6 +123,10 @@ class IncludeLevelDialTestCase(TestCase):
         )
         SegmentationConfig.objects.get_or_create(segmentation=self.segmentation)
         self.url = reverse("segmentation-include-level", args=[str(self.segmentation.id)])
+        self.confirm_url = reverse(
+            "segmentation-confirm-model-output",
+            args=[str(self.segmentation.id)],
+        )
 
     def run_the_model(self, threshold: float = 0.5) -> int:
         segmenter = _segmenter(threshold)
@@ -131,6 +142,32 @@ class IncludeLevelDialTestCase(TestCase):
                 segmentation_type=MITO_INTERNAL_NAME,
                 source_model=SOURCE_MODEL,
             )
+
+    def run_the_model_on_roi(self):
+        roi = create_roi_image_from_image(
+            self.image,
+            x=24,
+            y=32,
+            width=128,
+            height=112,
+            source="MANUAL",
+            is_active=True,
+        )
+        segmenter = _segmenter()
+        with (
+            patch("quantem.inference.segmenter.engine", _fake_engine()),
+            patch(
+                "quantem.segmentation.organelle_tasks.get_segmenter",
+                return_value=segmenter,
+            ),
+        ):
+            run_segmentation_roi_task(
+                segmentation_id=str(self.segmentation.id),
+                segmentation_type=MITO_INTERNAL_NAME,
+                roi_id=str(roi.id),
+                source_model=SOURCE_MODEL,
+            )
+        return roi
 
     def work_the_job(self, include_level: float) -> dict:
         """Run the handler the way the worker runs it."""
@@ -176,6 +213,24 @@ class IncludeLevelDialTestCase(TestCase):
             label_state="CANDIDATE",
             superseded_at__isnull=True,
         ).count()
+
+    def candidate(
+        self,
+        bounds: tuple[float, float, float, float],
+        *,
+        source_model: str = SOURCE_MODEL,
+    ) -> SegmentObject:
+        geometry = box(*bounds)
+        return SegmentObject.objects.create(
+            segmentation=self.segmentation,
+            geometry=geometry,
+            centroid=geometry.centroid,
+            bbox=geometry.envelope,
+            label_state="CANDIDATE",
+            source_model=source_model,
+            confidence_score=0.8,
+            features={"source_model": source_model},
+        )
 
 
 class TheWorkerTests(IncludeLevelDialTestCase):
@@ -378,7 +433,13 @@ class TheRouteTests(IncludeLevelDialTestCase):
         assert body["minimum"] == 0.0
         assert body["maximum"] == 1.0
         assert body["object_count"] == 0
+        assert body["measurement_mode"] == "objects"
+        assert body["candidate_count"] == 0
+        assert body["confirmable_candidate_count"] == 0
+        assert body["manual_roi_candidate_count"] == 0
+        assert body["confirmed_model_count"] == 0
         assert body["preview_url"].endswith("/include-level/map")
+        assert body["preview_bounds"] == [0, 0, SIZE, SIZE]
 
     def test_the_preview_route_serves_the_saved_map_without_caching_it(self):
         self.run_the_model(0.5)
@@ -394,6 +455,42 @@ class TheRouteTests(IncludeLevelDialTestCase):
         assert response["Content-Type"] == "image/png"
         assert response["Cache-Control"] == "no-store"
         assert b"".join(response.streaming_content).startswith(b"\x89PNG")
+
+    def test_an_roi_test_exposes_only_that_rois_preview_and_bounds(self):
+        roi = self.run_the_model_on_roi()
+
+        response = self.client.get(
+            self.url,
+            {"source_model": SOURCE_MODEL, "roi_id": str(roi.id)},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["can_move"] is True
+        assert body["preview_bounds"] == [24, 32, 128, 112]
+        assert f"roi_id={roi.id}" in body["preview_url"]
+
+        preview = self.client.get(body["preview_url"])
+        assert preview.status_code == 200
+        assert preview["Content-Type"] == "image/png"
+        assert b"".join(preview.streaming_content).startswith(b"\x89PNG")
+
+    def test_an_roi_include_level_job_keeps_the_roi_scope(self):
+        roi = self.run_the_model_on_roi()
+
+        response = self.client.post(
+            self.url,
+            {
+                "include_level": 0.3,
+                "source_model": SOURCE_MODEL,
+                "roi_id": str(roi.id),
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 202
+        job = Job.objects.get(id=response.json()["job_id"])
+        assert job.payload_json["roi_id"] == str(roi.id)
 
     def test_asking_for_a_level_queues_one_job_and_says_so(self):
         self.run_the_model(0.5)
@@ -489,3 +586,82 @@ class TheRouteTests(IncludeLevelDialTestCase):
         ).json()
 
         assert detail["include_level"] == 0.42
+
+
+class ConfirmWholeModelOutputTests(IncludeLevelDialTestCase):
+    def post_confirm(self, source_model: str = SOURCE_MODEL):
+        return self.client.post(
+            self.confirm_url,
+            {"source_model": source_model},
+            content_type="application/json",
+        )
+
+    def test_confirm_accepts_every_current_candidate_from_the_selected_model(self):
+        first = self.candidate((10, 10, 30, 30))
+        second = self.candidate((50, 50, 75, 75))
+        other_model = self.candidate((90, 90, 110, 110), source_model="omniem:mito")
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["confirmed_count"] == 2
+        assert response.json()["skipped_manual_roi_count"] == 0
+        first.refresh_from_db()
+        second.refresh_from_db()
+        other_model.refresh_from_db()
+        assert first.label_state == "CONFIRMED"
+        assert second.label_state == "CONFIRMED"
+        assert other_model.label_state == "CANDIDATE", (
+            "confirming QuantEM must not also accept OmniEM's comparison output"
+        )
+
+    def test_confirm_leaves_candidates_in_both_manual_roi_representations_unchanged(self):
+        freeform_candidate = self.candidate((20, 20, 35, 35))
+        rectangular_candidate = self.candidate((120, 120, 140, 140))
+        outside_candidate = self.candidate((200, 200, 220, 220))
+        CompletedROI.objects.create(
+            segmentation=self.segmentation,
+            geometry=box(10, 10, 50, 50),
+        )
+        reviewed_roi = create_roi_image_from_image(
+            self.image,
+            x=100,
+            y=100,
+            width=64,
+            height=64,
+            source="MANUAL",
+            is_active=False,
+        )
+        RoiSegmentationStatus.objects.create(
+            image_roi=reviewed_roi,
+            segmentation=self.segmentation,
+            is_complete=True,
+        )
+
+        dial = self.client.get(self.url, {"source_model": SOURCE_MODEL}).json()
+        assert dial["candidate_count"] == 3
+        assert dial["confirmable_candidate_count"] == 1
+        assert dial["manual_roi_candidate_count"] == 2
+        assert dial["manual_roi_count"] == 2
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["confirmed_count"] == 1
+        assert response.json()["skipped_manual_roi_count"] == 2
+        freeform_candidate.refresh_from_db()
+        rectangular_candidate.refresh_from_db()
+        outside_candidate.refresh_from_db()
+        assert freeform_candidate.label_state == "CANDIDATE"
+        assert rectangular_candidate.label_state == "CANDIDATE"
+        assert outside_candidate.label_state == "CONFIRMED"
+
+    def test_a_completed_segmentation_refuses_bulk_confirmation(self):
+        self.candidate((10, 10, 30, 30))
+        self.segmentation.status_stage = "COMPLETED"
+        self.segmentation.save(update_fields=["status_stage"])
+
+        response = self.post_confirm()
+
+        assert response.status_code == 409
+        assert "Unlock it first" in response.json()["detail"]

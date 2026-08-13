@@ -17,8 +17,10 @@ export function useOverlayManifestState({
 }: UseOverlayManifestStateArgs) {
   const [overlayManifestPollingEnabled, setOverlayManifestPollingEnabled] =
     useState(true);
-  const [, setLeftDisplayedOverlayRevision] = useState<number | null>(null);
-  const [, setRightDisplayedOverlayRevision] = useState<number | null>(null);
+  const [leftDisplayedOverlayRevision, setLeftDisplayedOverlayRevision] =
+    useState<number | null>(null);
+  const [rightDisplayedOverlayRevision, setRightDisplayedOverlayRevision] =
+    useState<number | null>(null);
   const { manifest: overlayManifest, refetch: refetchOverlayManifest } =
     useSegmentationOverlayManifest(
       currentSegmentationId,
@@ -105,5 +107,7 @@ export function useOverlayManifestState({
     setOverlayManifestPollingEnabled,
     handleLeftOverlayRevisionDisplayed,
     handleRightOverlayRevisionDisplayed,
+    leftDisplayedOverlayRevision,
+    rightDisplayedOverlayRevision,
   };
 }

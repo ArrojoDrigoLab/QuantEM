@@ -8,6 +8,7 @@
  */
 
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { WorkflowModeToolbar } from "@/features/segmentation/components/WorkflowModeToolbar";
 
@@ -19,11 +20,13 @@ function renderToolbar(extra: Partial<Parameters<typeof WorkflowModeToolbar>[0]>
       correctionTool="draw"
       hoverActionMode="confirm"
       drawBrushSize={24}
+      draftOperation="include"
       hasDrawStrokes={false}
       onReviewPhaseChange={vi.fn()}
       onCorrectionToolChange={vi.fn()}
       onHoverActionModeChange={vi.fn()}
       onDrawBrushSizeChange={vi.fn()}
+      onDraftOperationChange={vi.fn()}
       onConfirmShape={vi.fn()}
       onClearDrawing={vi.fn()}
       {...extra}
@@ -32,6 +35,18 @@ function renderToolbar(extra: Partial<Parameters<typeof WorkflowModeToolbar>[0]>
 }
 
 describe("WorkflowModeToolbar slots", () => {
+  it("defaults to Include and can switch a draft to Exclude", async () => {
+    const onDraftOperationChange = vi.fn();
+    renderToolbar({
+      reviewPhase: "correction",
+      draftOperation: "include",
+      onDraftOperationChange,
+    });
+    expect(screen.getByRole("button", { name: "Include" })).toHaveClass("active");
+    await userEvent.click(screen.getByRole("button", { name: "Exclude" }));
+    expect(onDraftOperationChange).toHaveBeenCalledWith("exclude");
+  });
+
   it("renders an extra mode as a Correct sub-tool, not beside Review and Correct", () => {
     renderToolbar({
       reviewPhase: "correction",

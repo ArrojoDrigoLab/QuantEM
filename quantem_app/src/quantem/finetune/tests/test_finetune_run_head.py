@@ -341,5 +341,8 @@ class FailedOverwriteTests(TestCase):
         assert not staged_head_path(str(adapter.id)).exists()
         adapter.refresh_from_db()
         assert adapter.status == "FAILED"
-        assert "untouched and still in use" in adapter.error
+        # This row was never applied, so its old file is preserved but must not
+        # be described as still in use. The stronger promise belongs only to a
+        # replacement whose live routing state is explicitly preserved.
+        assert adapter.error == "the disk went away"
         assert adapter.head_path == f"adapters/{adapter.id}/head.pt"

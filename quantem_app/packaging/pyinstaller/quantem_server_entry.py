@@ -27,6 +27,19 @@ import sys
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "quantem_server_settings")
+
+    # Release CI sets this on the frozen executable.  A plain ``--help`` only
+    # proves that argparse starts; it does not reach PyTorch's lazy model
+    # support imports, which allowed a sidecar without SymPy to ship and made
+    # every OmniEM inference fail.  Keep this probe here, at the actual frozen
+    # import boundary, rather than simulating it in the source environment.
+    if os.environ.get("QUANTEM_FROZEN_SELFTEST") == "1":
+        import sympy  # noqa: F401
+        import torch.fx.experimental.symbolic_shapes  # noqa: F401
+
+        print("QuantEM frozen model runtime: OK")
+        sys.exit(0)
+
     from quantem.cli import main
 
     sys.exit(main())

@@ -115,8 +115,9 @@ describe("the run panel", () => {
     expect(within(organelles[1]).getByText(/2 of 88 tiles/)).toBeInTheDocument();
 
     const download = screen.getByTestId("run-progress-row-download");
+    expect(within(download).getByText("Download model…")).toBeInTheDocument();
     expect(
-      within(download).getByText("downloading the model — 118 of 365 MB")
+      within(download).getByText("QuantEM — Nucleus — 118 of 365 MB")
     ).toBeInTheDocument();
   });
 

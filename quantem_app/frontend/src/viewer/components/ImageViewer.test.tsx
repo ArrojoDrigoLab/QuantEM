@@ -3,7 +3,10 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageViewer } from "@/viewer/components/ImageViewer";
 import { resetVivOmeZarrCacheForTests } from "@/viewer/imageViewerCache";
-import type { ViewerNgffOverlayLayerSpec } from "@/viewer/types";
+import type {
+  ViewerIdMapOverlaySpec,
+  ViewerNgffOverlayLayerSpec,
+} from "@/viewer/types";
 
 type MockVivSource = {
   labels: string[];
@@ -91,6 +94,20 @@ function makeOverlaySpec(id: string, ngffUrl: string): ViewerNgffOverlayLayerSpe
     color: "#33cc66",
     opacity: 0.4,
     channelIndices: [0],
+  };
+}
+
+function makeIdMapSpec(revision: number): ViewerIdMapOverlaySpec {
+  return {
+    id: "review-id-map",
+    ngffUrl: `/review.zarr?rev=1-${revision}`,
+    revision,
+    lut: new Uint8Array(8),
+    maxLabel: 1,
+    lutRevision: revision,
+    fillOpacity: 0.25,
+    borderOpacity: 0.95,
+    showBorders: true,
   };
 }
 
@@ -220,6 +237,56 @@ describe("ImageViewer", () => {
       expect(getLayerIds()).toContain("viv-overlay-rev-2");
       expect(getLayerIds()).not.toContain("viv-overlay-rev-1");
     });
+  });
+
+  it("reports an ID-map revision only after that replacement has loaded", async () => {
+    const nextRevision = createDeferred<MockVivResult>();
+    const onRevisionDisplayed = vi.fn();
+    loadOmeZarrMock.mockImplementation((url: string) => {
+      if (url === "/image.zarr") return Promise.resolve(makeVivResult());
+      if (url.includes("/review.zarr/") && url.endsWith("?rev=1-5")) {
+        return Promise.resolve(makeVivResult());
+      }
+      if (url.includes("/review.zarr/") && url.endsWith("?rev=1-6")) {
+        return nextRevision.promise;
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    const { rerender } = render(
+      <ImageViewer
+        image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }}
+        overlays={{
+          idMapOverlays: [makeIdMapSpec(5)],
+          onRasterRevisionDisplayed: onRevisionDisplayed,
+        }}
+      />
+    );
+
+    await waitFor(() => expect(onRevisionDisplayed).toHaveBeenCalledWith(5));
+    rerender(
+      <ImageViewer
+        image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }}
+        overlays={{
+          idMapOverlays: [makeIdMapSpec(6)],
+          onRasterRevisionDisplayed: onRevisionDisplayed,
+        }}
+      />
+    );
+
+    await waitFor(() =>
+      expect(loadOmeZarrMock).toHaveBeenCalledWith(
+        "/review.zarr/labels?rev=1-6",
+        { type: "multiscales" }
+      )
+    );
+    expect(onRevisionDisplayed).not.toHaveBeenCalledWith(6);
+
+    await act(async () => {
+      nextRevision.resolve(makeVivResult());
+      await nextRevision.promise;
+    });
+    await waitFor(() => expect(onRevisionDisplayed).toHaveBeenCalledWith(6));
   });
 
   it("shares OME-Zarr loads across viewers for identical URLs", async () => {

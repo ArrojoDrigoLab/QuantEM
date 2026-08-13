@@ -53,4 +53,11 @@ describe("features/finetune/trainingModes", () => {
       `${USE_ALL_TILE_CEILING} tiles or fewer`
     );
   });
+
+  it("explains the tile-scaled 300-to-600-step schedule", () => {
+    const help = TRAINING_MODE_HELP.join(" ");
+    expect(help).toContain("20 steps per tile");
+    expect(help).toContain("minimum of 300");
+    expect(help).toContain("maximum of 600");
+  });
 });

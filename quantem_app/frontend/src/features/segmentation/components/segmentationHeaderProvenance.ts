@@ -15,7 +15,7 @@
  * A third claim hides inside "no objects", and getting it wrong sends the user
  * the opposite way from the fix. **Not yet run** and **ran and found nothing**
  * both show zero, and this said the first for both: "Nothing has been run with
- * QuantEM on this image ... Run Full Segmentation to produce some, or choose
+ * QuantEM on this image ... Run model to produce some, or choose
  * another model." A calibrated 5 nm/px image, run to completion with zero
  * candidates, got that -- so the reading was *press the button*, when the button
  * had been pressed and would produce the same nothing again, and the suggested
@@ -56,6 +56,7 @@ import type { ImageSegmentation, SourceModelOption } from "@/shared/types";
  * as "confirmed/manual only", which is exactly the intent.
  */
 export const NONE_SOURCE_MODEL = "none";
+const MANUAL_SOURCE_MODEL = "manual";
 
 /**
  * `error` is not a louder `warning`.
@@ -243,7 +244,14 @@ export function describeDisplayedObjects({
   // both counts (`count === 0`, and `count === null` with nothing confirmed)
   // would otherwise describe a finished run as one that never happened.
   const runNotice = segmentation?.run_notice ?? null;
-  if (runNotice) {
+  const noticeMatchesDisplayedModel = Boolean(
+    runNotice?.source_model &&
+      activeSourceModel !== NONE_SOURCE_MODEL &&
+      activeSourceModel !== MANUAL_SOURCE_MODEL &&
+      runNotice.source_model === activeSourceModel &&
+      (!displayedSourceModel || displayedSourceModel === activeSourceModel)
+  );
+  if (runNotice && noticeMatchesDisplayedModel) {
     return {
       // The server's own short line (`run_notice.summary`), not one composed
       // here. There are two kinds of empty run and they need different chips:
@@ -279,7 +287,7 @@ export function describeDisplayedObjects({
   if (count === 0) {
     return {
       summary: `No objects from ${label} yet`,
-      detail: `Nothing has been run with ${label} on this image, so ${label} has produced no objects here. Run Full Segmentation to produce some, or choose another model.${staleNote}`,
+      detail: `No successful empty result from ${label} is displayed on this image. Run model to produce one, or choose another model.${staleNote}`,
       tone: "warning",
     };
   }

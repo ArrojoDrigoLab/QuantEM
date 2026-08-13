@@ -2,11 +2,11 @@
  * Whether a segmentation's objects were made at the pixel size the image
  * records now — and the warning to show when they were not.
  *
- * The gap this closes was reported end to end. The labeling header said
- * "5 nm/px · entered by hand" and an ordinary objects chip over a set produced
- * before that number existed; nothing on the screen where a user decides the
- * work is finished said so, and neither did the Analysis screen before a run
- * was spent. It surfaced in the finished bundle, as blank micron columns and
+ * The gap this closes was reported end to end. The labeling header showed a
+ * current "5 nm/px" tag and an ordinary objects chip over a set produced before
+ * that number existed; nothing on the screen where a user decides the work is
+ * finished said so, and neither did the Analysis screen before a run was spent.
+ * It surfaced in the finished bundle, as blank micron columns and
  * `calibrated: false`, after the run had already cost its minutes.
  *
  * The verdict is the server's (`objects_pixel_size.predates_calibration`, the

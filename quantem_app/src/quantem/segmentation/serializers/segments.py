@@ -6,6 +6,7 @@ from quantem.segmentation.confidence import segment_confidence_score
 from quantem.segmentation.geometry_serialization import (
     GEOMETRY_DETAIL_FULL,
     geometry_coords_from_polygon,
+    geometry_payload,
     normalize_geometry_detail,
 )
 from quantem.segmentation.models import SegmentObject
@@ -19,6 +20,7 @@ from quantem.segmentation.segment_status import (
 
 class SegmentObjectSerializer(serializers.ModelSerializer):
     geometry_coords = serializers.SerializerMethodField()
+    geometry = serializers.SerializerMethodField()
     confidence_score = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
 
@@ -39,6 +41,7 @@ class SegmentObjectSerializer(serializers.ModelSerializer):
             # reads them straight off this payload.
             "features",
             "geometry_coords",
+            "geometry",
             "created_at",
             "updated_at",
         ]
@@ -51,6 +54,14 @@ class SegmentObjectSerializer(serializers.ModelSerializer):
 
     def get_geometry_coords(self, obj):
         return geometry_coords_from_polygon(
+            obj.geometry,
+            geometry_detail=normalize_geometry_detail(
+                self.context.get("geometry_detail", GEOMETRY_DETAIL_FULL)
+            ),
+        )
+
+    def get_geometry(self, obj):
+        return geometry_payload(
             obj.geometry,
             geometry_detail=normalize_geometry_detail(
                 self.context.get("geometry_detail", GEOMETRY_DETAIL_FULL)

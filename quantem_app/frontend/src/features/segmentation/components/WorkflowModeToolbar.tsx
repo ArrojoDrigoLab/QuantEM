@@ -71,11 +71,13 @@ interface WorkflowModeToolbarProps {
   correctionTool: CorrectionTool;
   hoverActionMode: HoverActionMode;
   drawBrushSize: number;
+  draftOperation: "include" | "exclude";
   hasDrawStrokes: boolean;
   onReviewPhaseChange: (phase: "model" | "correction") => void;
   onCorrectionToolChange: (tool: CorrectionTool) => void;
   onHoverActionModeChange: (mode: HoverActionMode) => void;
   onDrawBrushSizeChange: (size: number) => void;
+  onDraftOperationChange: (operation: "include" | "exclude") => void;
   onConfirmShape: () => void;
   onClearDrawing: () => void;
   showGroupConfirm?: boolean;
@@ -107,11 +109,13 @@ export function WorkflowModeToolbar({
   correctionTool,
   hoverActionMode,
   drawBrushSize,
+  draftOperation,
   hasDrawStrokes,
   onReviewPhaseChange,
   onCorrectionToolChange,
   onHoverActionModeChange,
   onDrawBrushSizeChange,
+  onDraftOperationChange,
   onConfirmShape,
   onClearDrawing,
   showGroupConfirm = true,
@@ -214,6 +218,27 @@ export function WorkflowModeToolbar({
             </div>
           )}
         </>
+      )}
+
+      {workflowMode === "review" && reviewPhase === "correction" && (
+        <div className="mode-toolbar-group" aria-label="Drawing operation">
+          <button
+            type="button"
+            className={draftOperation === "include" ? "active" : ""}
+            aria-pressed={draftOperation === "include"}
+            onClick={() => onDraftOperationChange("include")}
+          >
+            Include
+          </button>
+          <button
+            type="button"
+            className={draftOperation === "exclude" ? "active" : ""}
+            aria-pressed={draftOperation === "exclude"}
+            onClick={() => onDraftOperationChange("exclude")}
+          >
+            Exclude
+          </button>
+        </div>
       )}
 
       {workflowMode === "review" && reviewPhase === "correction" && isErSegmentation && (

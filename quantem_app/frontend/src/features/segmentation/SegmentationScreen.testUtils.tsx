@@ -72,13 +72,18 @@ const harness = vi.hoisted(() => ({
   },
   drawingState: {
     pendingPolygon: null,
+    pendingPolygonOperation: "include" as const,
     brushStrokes: [],
     brushSize: 24,
+    draftOperation: "include" as const,
     clearDrawing: vi.fn(),
     setBrushSize: vi.fn(),
+    setDraftOperation: vi.fn(),
     handleBrushStroke: vi.fn(),
     handleDrawComplete: vi.fn(),
     getBrushPolygons: vi.fn(() => []),
+    getBrushPolygonRings: vi.fn(() => []),
+    eraseBrushStrokesAt: vi.fn(),
   },
 }));
 
@@ -440,4 +445,5 @@ export function setupSegmentationScreenTest() {
   drawingState.pendingPolygon = null;
   drawingState.brushStrokes = [];
   drawingState.brushSize = 24;
+  drawingState.getBrushPolygonRings.mockReturnValue([]);
 }

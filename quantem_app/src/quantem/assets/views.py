@@ -7,8 +7,10 @@ from __future__ import annotations
 import importlib
 import logging
 from functools import lru_cache
+from uuid import UUID
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from rest_framework import status
@@ -16,17 +18,20 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from quantem import __version__
 from quantem.core.config import DATA_DIR
 from quantem.core.local_storage import resolve_stored_path
 
 from .asset_mutations import (
     create_uploaded_asset,
+    enqueue_upload_pipeline,
     normalise_import_grouping,
     tombstone_asset,
     update_asset,
 )
 from .asset_openable import get_asset_openable
 from .asset_resolver import active_asset_queryset, get_active_asset
+from .models import Rendition
 from .ngff import render_lowest_resolution_ngff_png_from_root
 from .pyramid_authority import (
     Intent,
@@ -67,36 +72,30 @@ def _truthy(value) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes", "on"}
 
 
-#: What a caller sends to mean "the images that are in none of them".
-#:
-#: Unassigned is a bucket, not a gap. It is the state every existing library is
-#: in and the state an image returns to when its experiment is deleted, so the
-#: filter has to be able to name it -- and it cannot be named by an id, because
-#: there is no row to have one. A literal is the only thing left, and it is
-#: spelled out here rather than at three call sites.
-UNASSIGNED = "none"
+#: What a caller sends to mean "images in no dataset". Active images always
+#: have an experiment, so there is intentionally no equivalent experiment
+#: bucket.
+NO_DATASET = "none"
 
 
 def _grouping_filter(assets, request):
-    """Narrow to one experiment or dataset, or to the images in neither.
+    """Narrow to one experiment or dataset.
 
     Repeated parameters are a union (``?experiment=a&experiment=b``), which is
-    what a multi-select sends. ``none`` may be mixed in with real ids, so
-    "these two experiments, plus everything not yet filed" is one request.
+    what a multi-select sends. ``none`` remains meaningful only for datasets.
     """
     experiments = [value for value in request.query_params.getlist("experiment") if value]
     if experiments:
-        named = [value for value in experiments if value != UNASSIGNED]
-        matcher = Q(experiment_id__in=named) if named else Q()
-        if UNASSIGNED in experiments:
-            matcher = matcher | Q(experiment__isnull=True)
-        assets = assets.filter(matcher)
+        # Ignore the retired unassigned sentinel from a stale client. If it is
+        # the only value this deliberately returns no active images.
+        named = [value for value in experiments if value != NO_DATASET]
+        assets = assets.filter(experiment_id__in=named)
 
     datasets = [value for value in request.query_params.getlist("dataset") if value]
     if datasets:
-        named = [value for value in datasets if value != UNASSIGNED]
+        named = [value for value in datasets if value != NO_DATASET]
         matcher = Q(datasets__id__in=named) if named else Q()
-        if UNASSIGNED in datasets:
+        if NO_DATASET in datasets:
             matcher = matcher | Q(datasets__isnull=True)
         # ``distinct`` because a many-to-many join returns one row per matching
         # membership, so an image in two of the chosen datasets would otherwise
@@ -200,6 +199,7 @@ class AssetUploadView(APIView):
                 segment_er=_truthy(request.data.get("segment_er")),
                 segment_nucleus=_truthy(request.data.get("segment_nucleus")),
                 segment_ld=_truthy(request.data.get("segment_ld")),
+                defer_processing=_truthy(request.data.get("defer_processing")),
                 swallow_enqueue_errors=True,
             )
             return Response(payload, status=status.HTTP_201_CREATED)
@@ -211,6 +211,97 @@ class AssetUploadView(APIView):
                 {"error": f"Error processing image: {str(exc)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class AssetUploadPipelineBatchStartView(APIView):
+    """Start processing only after every file in a multi-image import exists.
+
+    The client uploads files sequentially with ``defer_processing=true``, then
+    submits the successful asset ids here. All job rows are committed in one
+    transaction, so a worker cannot claim image one while the rest of the batch
+    is still being queued. Repeating the request is safe.
+    """
+
+    def post(self, request):
+        uploads = request.data.get("uploads")
+        if not isinstance(uploads, list) or not uploads:
+            return Response(
+                {"error": '"uploads" must be a non-empty list.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        parsed: list[tuple[str, dict[str, bool]]] = []
+        seen: set[str] = set()
+        for item in uploads:
+            if not isinstance(item, dict):
+                return Response(
+                    {"error": "Every upload entry must be an object."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            raw_asset_id = str(item.get("asset_id") or "").strip()
+            try:
+                asset_id = str(UUID(raw_asset_id))
+            except ValueError:
+                return Response(
+                    {"error": "Every upload entry must have a valid asset_id."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if asset_id in seen:
+                return Response(
+                    {"error": "Every upload entry must have a unique asset_id."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            seen.add(asset_id)
+            parsed.append(
+                (
+                    asset_id,
+                    {
+                        "segment_mito": _truthy(item.get("segment_mito")),
+                        "segment_er": _truthy(item.get("segment_er")),
+                        "segment_nucleus": _truthy(item.get("segment_nucleus")),
+                        "segment_ld": _truthy(item.get("segment_ld")),
+                    },
+                )
+            )
+
+        job_ids: list[str] = []
+        with transaction.atomic():
+            assets = {
+                str(asset.id): asset
+                for asset in active_asset_queryset().select_for_update().filter(id__in=seen)
+            }
+            missing = seen - assets.keys()
+            if missing:
+                return Response(
+                    {"error": "One or more imported images were not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            for asset_id, options in parsed:
+                asset = assets[asset_id]
+                job = enqueue_upload_pipeline(asset, **options)
+                job_ids.append(str(job.id))
+        return Response({"job_ids": job_ids}, status=status.HTTP_202_ACCEPTED)
+
+
+class AssetUploadPipelineRecoveryView(APIView):
+    """Resume deferred imports left behind by an interrupted browser session."""
+
+    def post(self, request):
+        del request
+        job_ids: list[str] = []
+        with transaction.atomic():
+            assets = list(
+                active_asset_queryset()
+                .select_for_update()
+                .filter(
+                    preprocess_stage="ENCODING",
+                    renditions__type=Rendition.TYPE_FULL,
+                    renditions__metadata__processing_deferred=True,
+                )
+                .distinct()
+            )
+            for asset in assets:
+                job_ids.append(str(enqueue_upload_pipeline(asset).id))
+        return Response({"job_ids": job_ids}, status=status.HTTP_202_ACCEPTED)
 
 
 class AssetListView(APIView):
@@ -307,10 +398,9 @@ class SystemStatusView(APIView):
     """
     API view for system status information.
 
-    Returns CUDA availability, the image formats this build can import, and the
-    largest upload it will accept -- so the upload UI's file filter and its size
-    check are both driven by the backend rather than by hard-coded numbers that
-    can drift from what the server actually does.
+    Returns the installed app version, CUDA availability, the image formats
+    this build can import, and the largest upload it will accept. Settings and
+    upload validation therefore stay aligned with the backend automatically.
     """
 
     def get(self, request):
@@ -327,6 +417,7 @@ class SystemStatusView(APIView):
 
         return Response(
             {
+                "app_version": __version__,
                 "cuda_available": cuda_available,
                 "supported_upload_formats": list(UPLOAD_SUFFIXES),
                 # The size half of the same contract. ``quantem serve`` hands

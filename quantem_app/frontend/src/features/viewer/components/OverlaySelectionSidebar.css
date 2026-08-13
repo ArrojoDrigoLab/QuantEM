@@ -24,9 +24,33 @@
   text-transform: uppercase;
 }
 
+.overlay-existing-section {
+  padding: 16px;
+  border: 1px solid #d7dde4;
+  border-radius: 12px;
+  background: #f7f9fb;
+  color: #1f2937;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.overlay-existing-section h4 {
+  margin: 0;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .overlay-empty {
   font-size: 13px;
   color: #9a9a9a;
+}
+
+.overlay-existing-section .overlay-empty {
+  color: #4b5563;
 }
 
 .overlay-list {
@@ -40,6 +64,7 @@
   padding: 8px;
   border-radius: 8px;
   background: #1c1c1c;
+  color: #f5f5f5;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -63,9 +88,15 @@
 
 .overlay-toggle {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   font-size: 14px;
+}
+
+.overlay-toggle input {
+  flex: 0 0 auto;
 }
 
 .overlay-name {
@@ -76,9 +107,17 @@
   white-space: nowrap;
 }
 
+.overlay-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .overlay-open-button,
 .overlay-accordion-button {
   display: inline-flex;
+  flex: 0 0 28px;
   width: 28px;
   height: 28px;
   align-items: center;

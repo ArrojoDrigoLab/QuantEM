@@ -52,6 +52,7 @@ export interface BatchSummary {
   attempted: number;
   imported: number;
   failed: number;
+  processingError?: string;
 }
 
 export function normaliseExtension(value: string): string {

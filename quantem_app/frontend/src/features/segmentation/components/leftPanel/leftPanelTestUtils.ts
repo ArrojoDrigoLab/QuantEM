@@ -86,6 +86,7 @@ export function makeLeftPanelProps(
     },
     roi: {
       activeRoi: null,
+      rois: [],
       completedRois: [],
       roiPoints: [],
       roiPointsSubmitted: 0,

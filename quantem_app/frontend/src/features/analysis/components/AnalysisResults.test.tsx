@@ -67,6 +67,13 @@ function makeRun(overrides: Partial<AnalysisRun> = {}): AnalysisRun {
 }
 
 describe("AnalysisResults distance section", () => {
+  it("uses the shared numeric-only resolution tag", () => {
+    render(<AnalysisResults run={makeRun()} />);
+
+    expect(screen.getByText("5 nm/px")).toBeInTheDocument();
+    expect(screen.queryByText(/entered by hand|from file/i)).not.toBeInTheDocument();
+  });
+
   it("does not render the point distribution panel", () => {
     render(<AnalysisResults run={makeRun()} />);
 

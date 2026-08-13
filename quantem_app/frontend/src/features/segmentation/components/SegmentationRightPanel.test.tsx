@@ -78,6 +78,7 @@ function makeProps(
     confirmedSegments: [makeSegment("c1", "CONFIRMED")],
     tooManyRight: false,
     activeRoi: null,
+    rois: [],
     removeMode: "none",
     onRemoveModeChange: vi.fn(),
     onRemoveObjectPointClick: vi.fn(),
@@ -142,17 +143,40 @@ describe("SegmentationRightPanel", () => {
             created_at: "2026-01-01T00:00:00Z",
             updated_at: "2026-01-01T00:00:00Z",
           },
+          rois: [
+            {
+              id: "roi-2",
+              segmentation: "seg-1",
+              x: 200,
+              y: 200,
+              width: 100,
+              height: 100,
+              source: "MANUAL",
+              seed: null,
+              is_active: false,
+              is_complete: false,
+              created_at: "2026-01-02T00:00:00Z",
+              updated_at: "2026-01-02T00:00:00Z",
+            },
+          ],
         })}
       />
     );
 
     const lastCall = viewerPropsSpy.mock.calls.at(-1)?.[0] as {
       overlays?: {
-        persistent?: Array<{ id: string }>;
+        persistent?: Array<{
+          id: string;
+          strokeOpacity?: number;
+          strokeDasharray?: string;
+        }>;
       };
     };
     expect(lastCall.overlays?.persistent?.at(0)?.id).toBe("c1");
     expect(lastCall.overlays?.persistent?.at(-1)?.id).toBe("roi-frame");
+    expect(
+      lastCall.overlays?.persistent?.find((overlay) => overlay.id === "roi-frame-roi-2")
+    ).toMatchObject({ strokeOpacity: 0.4, strokeDasharray: "8 6" });
   });
 
   it("toggles remove objects mode off when pressed while active", async () => {

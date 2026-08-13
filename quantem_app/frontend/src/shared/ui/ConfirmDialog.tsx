@@ -8,7 +8,7 @@ import "./ConfirmDialog.css";
 export interface ConfirmDialogProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message?: string;
   /**
    * Consequences of confirming that are specific to *this* invocation --
    * counts, names, sizes. Rendered under the message and inside the dialog's
@@ -76,15 +76,21 @@ export function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={details ? `${messageId} ${detailsId}` : messageId}
+        aria-describedby={
+          [message ? messageId : null, details ? detailsId : null]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
         onClick={(e) => e.stopPropagation()}
       >
         <h3 id={titleId} className="confirm-dialog-title">
           {title}
         </h3>
-        <p id={messageId} className="confirm-dialog-message">
-          {message}
-        </p>
+        {message ? (
+          <p id={messageId} className="confirm-dialog-message">
+            {message}
+          </p>
+        ) : null}
         {details ? (
           <div
             id={detailsId}

@@ -15,6 +15,7 @@ import { useApiQuery } from "@/shared/hooks/useApiQuery";
 
 export const LABELING_VIEW = "labeling";
 export const VIEWER_VIEW = "viewer";
+export const ANALYSIS_MASK_VIEW = "analysis-mask";
 
 const SegmentationScreen = lazy(() =>
   import("@/features/segmentation/SegmentationScreen").then((module) => ({
@@ -24,6 +25,11 @@ const SegmentationScreen = lazy(() =>
 const ViewerScreen = lazy(() =>
   import("@/features/viewer/ViewerScreen").then((module) => ({
     default: module.ViewerScreen,
+  }))
+);
+const AnalysisMaskScreen = lazy(() =>
+  import("@/features/analysisMasks/AnalysisMaskScreen").then((module) => ({
+    default: module.AnalysisMaskScreen,
   }))
 );
 
@@ -89,7 +95,11 @@ export function AssetRoute() {
     );
   }
 
-  if (view !== LABELING_VIEW && view !== VIEWER_VIEW) {
+  if (
+    view !== LABELING_VIEW &&
+    view !== VIEWER_VIEW &&
+    view !== ANALYSIS_MASK_VIEW
+  ) {
     return <Navigate to={`/assets/${assetId}/${VIEWER_VIEW}`} replace />;
   }
 
@@ -99,7 +109,13 @@ export function AssetRoute() {
   // sit, so it covered the name of the image being viewed.
   return (
     <Suspense fallback={<RouteFallback />}>
-      {view === VIEWER_VIEW ? <ViewerScreen /> : <SegmentationScreen />}
+      {view === VIEWER_VIEW ? (
+        <ViewerScreen />
+      ) : view === ANALYSIS_MASK_VIEW ? (
+        <AnalysisMaskScreen />
+      ) : (
+        <SegmentationScreen />
+      )}
     </Suspense>
   );
 }

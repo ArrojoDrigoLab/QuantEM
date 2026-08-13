@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   getAssetNgffThumbnailUrl,
   getAssetPreviewThumbnailUrl,
@@ -6,32 +7,29 @@ import {
 import { resolveEntryPixelSize } from "@/shared/pixelSize";
 import { cx } from "@/shared/ui/cx";
 import { Badge, Button } from "@/shared/ui/design";
-import { PixelSizeBadge } from "@/shared/ui/PixelSize";
-import { getStageDisplay } from "@/features/library/components/imageCardUtils";
+import { PixelSizeTag } from "@/shared/ui/PixelSize";
 import type { HomeEntry } from "@/shared/types/images";
+import { isLibraryEntryProcessing } from "@/features/library/components/imageCardUtils";
 
 const NGFF_THUMBNAIL_CACHE_VERSION = "ngff-thumb-v2";
 const PREVIEW_THUMBNAIL_CACHE_VERSION = "preview-thumb-v1";
 
 export function ImageCard({
   image,
-  onOpen,
   onDelete,
   deleting = false,
   justImported = false,
   selectable = false,
   selected = false,
   onToggleSelect,
+  useActionMenu = false,
+  onEdit,
+  onExport,
 }: {
   image: HomeEntry;
-  onOpen: (assetId: string) => void;
   onDelete?: (image: HomeEntry) => void;
   deleting?: boolean;
-  /**
-   * This is the image the user just imported. The confirmation strip above the
-   * grid says "it is the first card below"; this is what makes that sentence
-   * point at something.
-   */
+  /** This image belongs to the latest import batch and is pinned/highlighted. */
   justImported?: boolean;
   /**
    * The library is in selecting mode, so this card carries a tick box.
@@ -43,13 +41,39 @@ export function ImageCard({
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: (assetId: string, selected: boolean) => void;
+  /** Replace the direct trash button with an Edit/Delete overflow menu. */
+  useActionMenu?: boolean;
+  onEdit?: (image: HomeEntry) => void;
+  onExport?: (image: HomeEntry) => void;
 }) {
   const assetId = image.id;
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
+  const actionsMenuId = useId();
+  const errorTooltipId = useId();
   useEffect(() => {
     setThumbnailFailed(false);
+    setActionsOpen(false);
   }, [image.id, image.updated_at]);
-  const ready = image.ngff_ready || image.preprocess_stage === "DONE";
+  useEffect(() => {
+    if (!actionsOpen) return undefined;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!actionsRef.current?.contains(event.target as Node)) {
+        setActionsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActionsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [actionsOpen]);
+  const processing = isLibraryEntryProcessing(image);
   const failed =
     image.preprocess_stage === "FAILED" || image.preprocess_stage === "CANCELLED";
   // Prefer the dedicated PREVIEW rendition when it exists; otherwise fall back
@@ -65,17 +89,8 @@ export function ImageCard({
         `${image.updated_at}-${NGFF_THUMBNAIL_CACHE_VERSION}`
       );
   const showThumbnail = !thumbnailFailed;
-  // The list payload carries no renditions, but it does carry
-  // `file_declared_pixel_size_nm`, which is all the provenance needs. Before
-  // that field existed every calibrated image here resolved to "manual" and the
-  // tooltip asserted the file declared nothing -- contradicting the viewer,
-  // which read the same 5 nm/px straight off the TIFF tag.
-  //
-  // The provenance is printed on the badge, not left to its colour: this is the
-  // screen where images are compared side by side, and "read from the file"
-  // versus "typed by a person" is the difference between a number a caption can
-  // cite and one that needs checking. Emerald-vs-cyan plus a hover tooltip was
-  // reachable by neither a keyboard nor a touch screen.
+  // Resolve list payloads through the same pixel-size path as detail screens;
+  // the shared tag owns the formatting in both places.
   const pixelSize = resolveEntryPixelSize(image);
   return (
     <article
@@ -103,7 +118,7 @@ export function ImageCard({
           />
         </label>
       ) : null}
-      {onDelete ? (
+      {onDelete && !useActionMenu ? (
         <Button
           className="absolute right-2 top-2 z-10 h-8 w-8 border-red-200 bg-white/95 text-red-700 shadow-sm hover:border-red-300 hover:bg-red-50"
           size="icon"
@@ -135,6 +150,136 @@ export function ImageCard({
           </svg>
         </Button>
       ) : null}
+      {useActionMenu && (onEdit || onExport || onDelete) ? (
+        <div ref={actionsRef} className="absolute right-2 top-2 z-20">
+          <Button
+            className="h-8 w-8 bg-white/95 shadow-sm"
+            size="icon"
+            variant="secondary"
+            aria-label={`Options for ${image.display_name}`}
+            aria-expanded={actionsOpen}
+            aria-haspopup="menu"
+            aria-controls={actionsOpen ? actionsMenuId : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setActionsOpen((current) => !current);
+            }}
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+              <circle cx="12" cy="5" r="1.8" fill="currentColor" />
+              <circle cx="12" cy="12" r="1.8" fill="currentColor" />
+              <circle cx="12" cy="19" r="1.8" fill="currentColor" />
+            </svg>
+          </Button>
+          {actionsOpen ? (
+            <div
+              id={actionsMenuId}
+              className="absolute right-0 mt-1 w-28 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+              role="menu"
+            >
+              {onEdit ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-100"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setActionsOpen(false);
+                    onEdit(image);
+                  }}
+                >
+                  Edit
+                </button>
+              ) : null}
+              {onExport ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-100"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setActionsOpen(false);
+                    onExport(image);
+                  }}
+                >
+                  Export
+                </button>
+              ) : null}
+              {onDelete ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="block w-full px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+                  disabled={deleting}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setActionsOpen(false);
+                    onDelete(image);
+                  }}
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {processing ? (
+        <span
+          className="absolute bottom-3 right-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border border-cyan-200 bg-white/95 text-cyan-700 shadow-sm"
+          role="status"
+          aria-label={`Processing ${image.display_name}`}
+          title="Processing image"
+        >
+          <svg
+            className="h-4 w-4 animate-spin"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="9"
+              stroke="currentColor"
+              strokeWidth="3"
+            />
+            <path
+              className="opacity-90"
+              d="M21 12a9 9 0 0 0-9-9"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeWidth="3"
+            />
+          </svg>
+        </span>
+      ) : null}
+      {failed ? (
+        <span className="group absolute bottom-3 right-3 z-20">
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-red-200 bg-white/95 text-base font-bold text-red-700 shadow-sm"
+            aria-label={`Import failed for ${image.display_name}`}
+            aria-describedby={errorTooltipId}
+          >
+            !
+          </button>
+          <span
+            id={errorTooltipId}
+            role="tooltip"
+            className="invisible absolute bottom-full right-0 mb-2 w-72 rounded-lg border border-red-200 bg-white p-3 text-left text-xs font-normal leading-5 text-slate-800 opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+          >
+            <span className="block">
+              {image.preprocess_error || "The image could not be processed."}
+            </span>
+            <span className="mt-2 block">
+              Delete this image and try to re-upload it.
+            </span>
+          </span>
+        </span>
+      ) : null}
       {/* `flex-1 min-h-0`, not `aspect-[4/3]`.
           The grid is row-virtualised, so the card height is a constant the
           layout has to live inside. With an aspect-ratio thumbnail the card's
@@ -146,7 +291,11 @@ export function ImageCard({
           the text block does not use, and the text block can never be clipped.
           `min-h-0` is required or the flex item refuses to shrink below its
           content. */}
-      <div className="min-h-0 flex-1 bg-slate-100">
+      <Link
+        to={`/assets/${assetId}/viewer`}
+        className="min-h-0 flex-1 bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-cyan-500"
+        aria-label={`Open ${image.display_name}`}
+      >
         {showThumbnail ? (
           <img
             className="h-full w-full object-cover"
@@ -164,37 +313,30 @@ export function ImageCard({
             <span className="text-sm">NGFF required</span>
           </div>
         )}
-      </div>
+      </Link>
       <div className="shrink-0 space-y-3 p-3">
         <div>
           {/* Two lines' worth of box, always: `line-clamp-2` caps a long name at
               two lines, and reserving the second keeps every card's image/text
               seam on the same line across a row. */}
           <h3 className="line-clamp-2 min-h-10 text-sm font-semibold text-slate-950">
-            {/* Hash route, not a bare path: the app runs under HashRouter with
-                `base: './'`, so a middle-click or "copy link address" on
-                "/assets/<id>/viewer" navigates for real and lands on a white
-                screen. The onClick keeps the in-app (non-reloading) route. */}
-            <a
-              href={`#/assets/${assetId}/viewer`}
+            {/* Keep navigation declarative. AssetRoute derives selection from
+                the URL, so the card does not maintain a second route state. */}
+            <Link
+              to={`/assets/${assetId}/viewer`}
               className="text-left font-semibold text-cyan-800 hover:text-cyan-950 hover:underline focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              onClick={(event) => {
-                event.preventDefault();
-                onOpen(assetId);
-              }}
             >
               {image.display_name}
-            </a>
+            </Link>
           </h3>
-          {/* One line, ellipsised. A 60-character filename used to wrap to three
-              and push the badges out of the card; the whole string is still
-              readable on hover and on the viewer screen. */}
-          <p
-            className="mt-1 truncate text-xs text-slate-500"
-            title={image.original_filename}
-          >
-            {image.original_filename}
-          </p>
+          {image.notes?.trim() ? (
+            <p
+              className="mt-1 line-clamp-2 text-xs leading-4 text-slate-600"
+              title={image.notes}
+            >
+              {image.notes}
+            </p>
+          ) : null}
           {/* slate-600, not slate-400: the dimensions are information, and
               slate-400 on white is 2.63:1. */}
           <p className="text-xs text-slate-600">
@@ -206,24 +348,9 @@ export function ImageCard({
         </div>
         <div className="flex flex-wrap gap-1.5">
           {justImported ? <Badge tone="info">Just imported</Badge> : null}
-          {/* A failed import is not an amber "still working on it". Rendered
-              as its own span rather than through `Badge`'s tone set, which has
-              no danger tone -- and the reason, which is on the payload as
-              `preprocess_error` and was shown nowhere at all, is on the
-              tooltip instead of behind a trip to the Tasks drawer. */}
-          {failed ? (
-            <span
-              className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700"
-              title={image.preprocess_error || undefined}
-            >
-              {getStageDisplay(image)}
-            </span>
-          ) : (
-            <Badge tone={ready ? "good" : "warning"}>
-              {getStageDisplay(image)}
-            </Badge>
-          )}
-          <PixelSizeBadge resolved={pixelSize} />
+          {pixelSize.calibrated ? (
+            <PixelSizeTag valueNm={pixelSize.valueNm} />
+          ) : null}
         </div>
       </div>
     </article>

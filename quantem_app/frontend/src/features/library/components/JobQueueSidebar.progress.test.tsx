@@ -287,8 +287,9 @@ describe("the Tasks drawer during a run", () => {
     render(<JobQueueSidebar isOpen onClose={vi.fn()} />);
     const download = await screen.findByTestId("run-progress-row-download");
 
+    expect(within(download).getByText("Download model…")).toBeInTheDocument();
     expect(
-      within(download).getByText("downloading the model — 118 of 365 MB")
+      within(download).getByText("QuantEM — Nucleus — 118 of 365 MB")
     ).toBeInTheDocument();
     // Bytes, never a percentage: that is what stops it reading as the run.
     expect(within(download).queryByText(/%/)).toBeNull();

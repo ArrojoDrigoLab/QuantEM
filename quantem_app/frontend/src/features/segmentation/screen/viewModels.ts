@@ -39,7 +39,7 @@ export function buildLeftPanelWorkflowState({
   samBoxActive,
 }: {
   isTissueSegmentation: boolean;
-  tissueTool: "brush" | "polygon" | "exclude";
+  tissueTool: "brush" | "polygon";
   leftNavigateMode: boolean;
   workflowMode: WorkflowMode;
   leftMode: LeftMode;
@@ -95,11 +95,12 @@ export function buildLeftPanelWorkflowState({
 
 export function buildSegmentationRoiViewModel(
   activeRoi: SegmentationLeftPanelProps["roi"]["activeRoi"],
-  completedRois: SegmentationLeftPanelProps["roi"]["completedRois"] = []
+  rois: SegmentationLeftPanelProps["roi"]["rois"] = []
 ): SegmentationLeftPanelProps["roi"] {
   return {
     activeRoi,
-    completedRois,
+    rois,
+    completedRois: rois.filter((roi) => Boolean(roi.completed_for_segmentation)),
     roiPoints: [],
     roiPointsSubmitted: 0,
     roiComplete: Boolean(activeRoi?.is_complete),

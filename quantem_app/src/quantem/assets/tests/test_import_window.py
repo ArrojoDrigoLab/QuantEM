@@ -203,6 +203,39 @@ def _enter_the_window(asset: Asset) -> None:
     regenerate_ngff_from_plane(openable, plane)
 
 
+class InitialImportBorderTrimTests(TestCase):
+    def test_the_canonical_image_is_trimmed_once_and_retries_do_not_crop_it_again(self):
+        source = np.full((12, 14), 255, dtype=np.uint8)
+        source[2:10, 3:11] = make_em_like_array(8, 8, seed=31)
+        asset = _stage_upload(source, name="bordered.tif")
+
+        prepare_asset_renditions(str(asset.id))
+
+        asset.refresh_from_db()
+        rendition = asset.renditions.get(type=Rendition.TYPE_FULL)
+        canonical_path = get_asset_openable(asset).path
+        first_canonical = np.asarray(Image.open(canonical_path))
+        self.assertEqual(first_canonical.shape, (8, 8))
+        self.assertEqual((asset.logical_width, asset.logical_height), (8, 8))
+        self.assertEqual(rendition.metadata["upload_state"], "canonical")
+        self.assertEqual(
+            rendition.metadata["border_trim"],
+            {
+                "left": 3,
+                "top": 2,
+                "right": 3,
+                "bottom": 2,
+                "original_width": 14,
+                "original_height": 12,
+            },
+        )
+
+        prepare_asset_renditions(str(asset.id))
+
+        second_canonical = np.asarray(Image.open(get_asset_openable(asset).path))
+        self.assertTrue(np.array_equal(second_canonical, first_canonical))
+
+
 class WindowReadAgreementTests(TestCase):
     """F1: openable must not mean "different pixels for a while"."""
 

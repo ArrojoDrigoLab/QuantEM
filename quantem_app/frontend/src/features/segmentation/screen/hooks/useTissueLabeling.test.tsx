@@ -1,6 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { removeSegmentationArea } from "@/shared/api/segmentations/annotations";
 import { useTissueLabeling } from "@/features/segmentation/screen/hooks/useTissueLabeling";
 import { makeSegmentation } from "@/features/segmentation/SegmentationScreen.testUtils";
 import type { useDrawing } from "@/hooks/useDrawing";
@@ -8,7 +7,9 @@ import type { Point } from "@/utils/geometry";
 import type { ConfirmBatchResponse } from "@/shared/types/segmentation";
 
 type SubmitOptions = {
-  geometries: Array<Array<[number, number]>>;
+  geometries?: Array<Array<[number, number]>>;
+  geometryRings?: Array<Array<Array<[number, number]>>>;
+  operations?: Array<"include" | "exclude">;
   samScores?: Array<number | null | undefined>;
   mergeOverlaps?: boolean;
   manualCreation?: boolean;
@@ -31,16 +32,6 @@ const makeSubmitSpy = (
 ): Mock<(options: SubmitOptions) => Promise<ConfirmBatchResponse | null>> =>
   vi.fn(async () => response);
 
-vi.mock("@/shared/api/segmentations/annotations", async () => {
-  const actual = await vi.importActual<
-    typeof import("@/shared/api/segmentations/annotations")
-  >("@/shared/api/segmentations/annotations");
-  return {
-    ...actual,
-    removeSegmentationArea: vi.fn(),
-  };
-});
-
 /** A minimal stand-in for the screen-level drawing state. */
 function makeDrawingStub(
   brushPolygons: Point[][] = []
@@ -55,6 +46,15 @@ function makeDrawingStub(
     handleDrawComplete: vi.fn(),
     handleBrushStroke: vi.fn(),
     getBrushPolygons: vi.fn(() => brushPolygons),
+    getBrushPolygonRings: vi.fn(() =>
+      brushPolygons.map((exterior) => ({
+        exterior,
+        holes: [],
+        operation: "include" as const,
+      }))
+    ),
+    draftOperation: "include",
+    setDraftOperation: vi.fn(),
     eraseBrushStrokesAt: vi.fn(),
     clearDrawing: vi.fn(),
   } as unknown as ReturnType<typeof useDrawing>;
@@ -84,9 +84,6 @@ function makeArgs(
     showNoticeToast: vi.fn(),
     drawing: makeDrawingStub(),
     submitConfirmedGeometriesOptimistically: makeSubmitSpy(),
-    refreshSegmentViews: vi.fn(async () => {}),
-    setOverlayManifestPollingEnabled: vi.fn(),
-    clearHoverInteraction: vi.fn(),
     ...overrides,
   };
 }
@@ -119,6 +116,7 @@ describe("useTissueLabeling", () => {
   it("defaults to the brush tool", () => {
     const { result } = renderHook(() => useTissueLabeling(makeArgs()));
     expect(result.current.tool).toBe("brush");
+    expect(result.current.operation).toBe("include");
     expect(result.current.activePolygonTool).toBeNull();
   });
 
@@ -148,7 +146,8 @@ describe("useTissueLabeling", () => {
     const [payload] = submit.mock.calls[0];
     expect(payload.mergeOverlaps).toBe(true);
     expect(payload.manualCreation).toBe(true);
-    expect(payload.geometries).toHaveLength(1);
+    expect(payload.geometryRings).toHaveLength(1);
+    expect(payload.operations).toEqual(["include"]);
     expect(drawing.clearDrawing).toHaveBeenCalled();
   });
 
@@ -165,59 +164,40 @@ describe("useTissueLabeling", () => {
     });
     await waitFor(() => expect(result.current.activePolygonTool).not.toBeNull());
 
-    await traceAndClose(result.current.addPolygon);
+    await traceAndClose(result.current.polygon);
 
     expect(submit).toHaveBeenCalledTimes(1);
     const [payload] = submit.mock.calls[0];
     expect(payload.mergeOverlaps).toBe(true);
     expect(payload.geometries).toHaveLength(1);
-    const ring = payload.geometries[0];
+    const ring = payload.geometries?.[0] ?? [];
     expect(ring.length).toBeGreaterThanOrEqual(4);
     expect(ring[0]).toEqual(ring[ring.length - 1]);
-    expect(removeSegmentationArea).not.toHaveBeenCalled();
+    expect(payload.operations).toEqual(["include"]);
   });
 
-  it("excludes a closed polygon from the mask via remove-area", async () => {
-    vi.mocked(removeSegmentationArea).mockResolvedValue({
-      created: 0,
-      updated: 1,
-      deleted: 0,
-      created_ids: [],
-      updated_ids: ["seg-obj-1"],
-      deleted_ids: [],
-      overlay: null,
-    });
+  it("excludes a closed polygon through the draft operation", async () => {
     const submit = makeSubmitSpy();
-    const refreshSegmentViews = vi.fn(async () => {});
-    const setOverlayManifestPollingEnabled = vi.fn();
+    const drawing = makeDrawingStub();
+    drawing.draftOperation = "exclude";
     const { result } = renderHook(() =>
       useTissueLabeling(
         makeArgs({
+          drawing,
           submitConfirmedGeometriesOptimistically: submit,
-          refreshSegmentViews,
-          setOverlayManifestPollingEnabled,
         })
       )
     );
 
     act(() => {
-      result.current.setTool("exclude");
+      result.current.setTool("polygon");
     });
     await waitFor(() => expect(result.current.activePolygonTool).not.toBeNull());
 
-    await traceAndClose(result.current.excludePolygon);
+    await traceAndClose(result.current.polygon);
 
-    expect(removeSegmentationArea).toHaveBeenCalledTimes(1);
-    const [segId, payload] = vi.mocked(removeSegmentationArea).mock.calls[0];
-    expect(segId).toBe("seg-1");
-    expect(payload.areas).toHaveLength(1);
-    expect(payload.areas[0].geometry_coords.length).toBeGreaterThanOrEqual(4);
-    // The cut must re-enable polling and trigger an immediate overlay refresh so
-    // the asynchronously-rebuilt hole is picked up.
-    expect(setOverlayManifestPollingEnabled).toHaveBeenCalledWith(true);
-    expect(refreshSegmentViews).toHaveBeenCalled();
-    // Excluding never adds to the mask.
-    expect(submit).not.toHaveBeenCalled();
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit.mock.calls[0][0].operations).toEqual(["exclude"]);
   });
 
   /**
@@ -290,10 +270,10 @@ describe("useTissueLabeling", () => {
         result.current.setTool("polygon");
       });
       await waitFor(() => expect(result.current.activePolygonTool).not.toBeNull());
-      await traceAndClose(result.current.addPolygon);
+      await traceAndClose(result.current.polygon);
 
       expect(showNoticeToast).toHaveBeenCalledWith(
-        expect.stringContaining("Nothing was added to the tissue mask")
+        expect.stringContaining("Nothing was added to the mask")
       );
     });
 
@@ -307,31 +287,37 @@ describe("useTissueLabeling", () => {
         result.current.setTool("polygon");
       });
       await waitFor(() => expect(result.current.activePolygonTool).not.toBeNull());
-      await traceAndClose(result.current.addPolygon);
+      await traceAndClose(result.current.polygon);
 
       expect(showNoticeToast).not.toHaveBeenCalled();
     });
 
     it("reports an exclude ring that cut nothing", async () => {
-      vi.mocked(removeSegmentationArea).mockResolvedValue({
-        created: 0,
-        updated: 0,
-        deleted: 0,
-        created_ids: [],
-        updated_ids: [],
-        deleted_ids: [],
-        overlay: null,
-      });
       const showNoticeToast = vi.fn();
+      const drawing = makeDrawingStub();
+      drawing.draftOperation = "exclude";
       const { result } = renderHook(() =>
-        useTissueLabeling(makeArgs({ showNoticeToast }))
+        useTissueLabeling(
+          makeArgs({
+            drawing,
+            showNoticeToast,
+            submitConfirmedGeometriesOptimistically: makeSubmitSpy({
+              created: 0,
+              updated: 0,
+              deleted: 0,
+              confirmed_ids: [],
+              outlines: null,
+              measurement: null,
+            }),
+          })
+        )
       );
 
       act(() => {
-        result.current.setTool("exclude");
+        result.current.setTool("polygon");
       });
       await waitFor(() => expect(result.current.activePolygonTool).not.toBeNull());
-      await traceAndClose(result.current.excludePolygon);
+      await traceAndClose(result.current.polygon);
 
       expect(showNoticeToast).toHaveBeenCalledWith(
         expect.stringContaining("Nothing was excluded")
@@ -341,30 +327,37 @@ describe("useTissueLabeling", () => {
     it("reports a cut whose objects could not be re-measured", async () => {
       // 207. The hole is committed; the stored area still describes the shape
       // before the cut, and that is the number that reaches objects.csv.
-      vi.mocked(removeSegmentationArea).mockResolvedValue({
+      const failedMeasurement = {
         created: 0,
         updated: 1,
         deleted: 0,
-        created_ids: [],
-        updated_ids: ["seg-obj-1"],
-        deleted_ids: [],
+        confirmed_ids: ["seg-obj-1"],
         overlay: null,
+        outlines: null,
         measurement: {
           measured: 0,
           unmeasured_ids: ["seg-obj-1"],
           detail: "The image could not be opened, so these were not measured.",
         },
-      });
+      } satisfies ConfirmBatchResponse;
       const showNoticeToast = vi.fn();
+      const drawing = makeDrawingStub();
+      drawing.draftOperation = "exclude";
       const { result } = renderHook(() =>
-        useTissueLabeling(makeArgs({ showNoticeToast }))
+        useTissueLabeling(
+          makeArgs({
+            drawing,
+            showNoticeToast,
+            submitConfirmedGeometriesOptimistically: makeSubmitSpy(failedMeasurement),
+          })
+        )
       );
 
       act(() => {
-        result.current.setTool("exclude");
+        result.current.setTool("polygon");
       });
       await waitFor(() => expect(result.current.activePolygonTool).not.toBeNull());
-      await traceAndClose(result.current.excludePolygon);
+      await traceAndClose(result.current.polygon);
 
       expect(showNoticeToast).toHaveBeenCalledWith(
         expect.stringContaining("were not measured")

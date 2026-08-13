@@ -35,7 +35,7 @@ describe("CompositionPanel (honesty rule 6)", () => {
         wholeImageDenominator={false}
       />
     );
-    expect(screen.getByText("Pixel size unset — pixels only")).toBeInTheDocument();
+    expect(screen.getByText("Pixel size not set")).toBeInTheDocument();
     expect(container.textContent).not.toContain("µm");
   });
 
@@ -49,7 +49,7 @@ describe("CompositionPanel (honesty rule 6)", () => {
       />
     );
     expect(container.textContent).toContain("µm²");
-    expect(screen.getByText("5.00 nm/px")).toBeInTheDocument();
+    expect(screen.getByText("5 nm/px")).toBeInTheDocument();
   });
 
   it("warns when the whole image was used as the denominator", () => {

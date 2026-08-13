@@ -30,6 +30,11 @@ const ModelsScreen = lazy(() =>
     default: module.ModelsScreen,
   }))
 );
+const ExperimentPage = lazy(() =>
+  import("@/features/experiments/ExperimentPage").then((module) => ({
+    default: module.ExperimentPage,
+  }))
+);
 
 export interface AppRoute {
   /** The `path` prop of the `<Route>`. */
@@ -43,6 +48,7 @@ export const APP_ROUTES: AppRoute[] = [
   // Models are an app-level concern, not an image-level one: a user who never
   // opens Adapt still needs to know what is installed and what can run.
   { path: "/models", element: <ModelsScreen /> },
+  { path: "/experiments/:experimentId", element: <ExperimentPage /> },
   { path: "/assets/:assetId", element: <AssetRedirect /> },
   // Declared before the generic :view route so "analysis" is never mistaken
   // for a viewer/labeling view name.

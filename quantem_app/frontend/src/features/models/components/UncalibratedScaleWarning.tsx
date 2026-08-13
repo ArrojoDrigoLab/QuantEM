@@ -20,7 +20,7 @@
  * sets — not three views of one.
  */
 
-import { formatPixelSizeNm } from "@/shared/pixelSize";
+import { PixelSizeTag } from "@/shared/ui/PixelSize";
 import type { ScaleMismatch } from "@/features/models/scaleMismatch";
 
 /**
@@ -47,9 +47,22 @@ export function UncalibratedObjectSetNotice() {
   );
 }
 
-/** `"quantem:mito (8 nm/px)"`. */
-function describePack(mismatch: ScaleMismatch): string {
-  return `${mismatch.packId} (${formatPixelSizeNm(mismatch.canonicalNm)})`;
+function PackResolution({ mismatch }: { mismatch: ScaleMismatch }) {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      <span>{mismatch.packId}</span>
+      <PixelSizeTag valueNm={mismatch.canonicalNm} />
+    </span>
+  );
+}
+
+function PackResolutionList({ mismatches }: { mismatches: ScaleMismatch[] }) {
+  return mismatches.map((mismatch, index) => (
+    <span key={mismatch.packId}>
+      {index > 0 ? ", " : null}
+      <PackResolution mismatch={mismatch} />
+    </span>
+  ));
 }
 
 export function UncalibratedScaleWarning({
@@ -62,10 +75,10 @@ export function UncalibratedScaleWarning({
       <p>
         <strong>This image has no pixel size</strong>, so {mismatch.packId} will
         run at native scale instead of the{" "}
-        {formatPixelSizeNm(mismatch.canonicalNm)} it was trained at. The objects
-        it finds will be whatever that mismatch produces, and no measurement
-        taken from them can be reported in µm². Set the pixel size on this
-        screen first if you know it.
+        <PixelSizeTag valueNm={mismatch.canonicalNm} /> resolution it was trained
+        at. The objects it finds will be whatever that mismatch produces, and no
+        measurement taken from them can be reported in µm². Set the pixel size
+        on this screen first if you know it.
       </p>
       <UncalibratedObjectSetNotice />
     </>
@@ -101,7 +114,6 @@ export function UncalibratedImportWarning({
   unreadableFileName?: string | null;
 }) {
   if (mismatches.length === 0) return null;
-  const packs = mismatches.map(describePack).join(", ");
   const plural = mismatches.length !== 1;
 
   if (!certain) {
@@ -109,8 +121,9 @@ export function UncalibratedImportWarning({
       <div className="upload-scale-warning" role="status">
         <p>
           <strong>
-            If no pixel size arrives with this image, {packs} will run at the
-            wrong scale.
+            If no pixel size arrives with this image,{" "}
+            <PackResolutionList mismatches={mismatches} /> will run at the wrong
+            scale.
           </strong>{" "}
           {plural ? "They resample" : "It resamples"} to a fixed working
           resolution and fall{plural ? "" : "s"} back to the image's native
@@ -135,8 +148,8 @@ export function UncalibratedImportWarning({
       <p>
         <strong>No pixel size, and {plural ? "models" : "a model"} that
         need{plural ? "" : "s"} one.</strong>{" "}
-        {packs} will run at this image's native
-        scale instead of the resolution {plural ? "they were" : "it was"}{" "}
+        <PackResolutionList mismatches={mismatches} /> will run at this image's
+        native scale instead of the resolution {plural ? "they were" : "it was"}{" "}
         trained at.
       </p>
       <UncalibratedObjectSetNotice />

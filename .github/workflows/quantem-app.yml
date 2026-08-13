@@ -259,10 +259,9 @@ jobs:
             --workpath "${RUNNER_TEMP}/pyi-build" \
             --distpath packaging/pyinstaller/dist
 
-      - name: Check the sidecar runs before bundling it
+      - name: Check the frozen model runtime before bundling it
         run: |
-          ./packaging/pyinstaller/dist/quantem-server/quantem-server --help > /dev/null
-          echo "sidecar starts"
+          QUANTEM_FROZEN_SELFTEST=1 ./packaging/pyinstaller/dist/quantem-server/quantem-server
 
       - name: Build the app
         working-directory: quantem_app/desktop
@@ -301,11 +300,22 @@ jobs:
           hdiutil detach /Volumes/QuantEMCheck
           echo "dmg mounts, app is signed, sidecar runs from inside it"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: QuantEM-macos-arm64
-          path: |
-            quantem_app/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/QuantEM-macos-arm64.dmg
-            quantem_app/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/QuantEM-macos-arm64.dmg.sha256
-          if-no-files-found: error
-          retention-days: 7
+  cleanup-artifacts:
+    name: clean temporary artifacts
+    if: ${{ always() && github.event_name != 'pull_request' }}
+    needs: [test, windows-installer-contract, macos-desktop-build]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete this run's temporary artifacts
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" --jq '.artifacts[].id' |
+            while read -r artifact_id; do
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+            done
