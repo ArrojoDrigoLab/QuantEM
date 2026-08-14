@@ -81,7 +81,8 @@ URL_PREFIXES = (
     "/analysis/", "/adapt/", "/apply/", "/cancel/", "/retry/", "/install/",
     "/models/", "/label/", "/segments/", "/segmentations/", "/complete",
     "/exports/", "/labels/", "/probability-maps/", "/ngff-thumbnail/",
-    "/refinement/", "/export/", "/data/images/",
+    "/refinement/", "/export/", "/data/images/", "/export-png/",
+    "/library-edit/", "/analysis-mask-objects/",
     # route fragments in core/urls.py under the segmentation include
     "/overlay-manifest/", "/overlay-rebuild/", "/overlay-lut/", "/roi/",
     "/user-feedback/", "/config/", "/rerun-roi/", "/apply-full-image/",
