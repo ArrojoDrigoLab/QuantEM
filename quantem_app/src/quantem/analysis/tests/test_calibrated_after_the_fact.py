@@ -519,24 +519,20 @@ class CircularityBiasTravelsWithEveryBundleTests(RunIdentityTestCase):
             )
         return self._run(mito, compartments={"mito": str(mito.id)})
 
-    def test_the_bias_note_ships_when_nothing_was_blanked(self):
+    def test_a_fully_measured_column_has_no_coverage_note(self):
         _run, got = self._bundle_with_reportable_circularity()
         summary = got["result"]["objects"]["summary"]["circularity"]
 
         self.assertGreater(summary["n"], 0, "the column must actually be populated")
         self.assertFalse(summary.get("n_missing"), "nothing should be blanked here")
-        self.assertIn("estimator, not geometry", summary["estimator_note"])
+        self.assertNotIn("note", summary)
+        self.assertNotIn("estimator_note", summary)
 
-    def test_it_reaches_the_caveats_a_reader_actually_sees(self):
+    def test_it_does_not_add_a_metric_essay_to_the_run_caveats(self):
         _run, got = self._bundle_with_reportable_circularity()
         caveats = " ".join(got["result"]["caveats"])
 
-        self.assertIn(
-            "estimator, not geometry",
-            caveats,
-            "the caveat list is where a reader looks; gating it on n_missing "
-            "shipped a populated circularity column with no word of the bias",
-        )
+        self.assertNotIn("estimator, not geometry", caveats)
 
     def test_it_reaches_the_manifest_too(self):
         _run, got = self._bundle_with_reportable_circularity()
@@ -563,11 +559,7 @@ class CircularityBiasTravelsWithEveryBundleTests(RunIdentityTestCase):
         note = entry["column_notes"]["circularity"]
         self.assertIn("estimator, not geometry", note)
         self.assertIn("perimeter_crofton", note)
-        self.assertEqual(
-            note,
-            got["result"]["objects"]["summary"]["circularity"]["estimator_note"],
-            "the file and the summary must not describe the column differently",
-        )
+        self.assertNotIn("owner " + "ruling", note)
 
 
 class UnrecognisedPackCountsAsASkippedResampleTests(RunIdentityTestCase):

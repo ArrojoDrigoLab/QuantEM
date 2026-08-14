@@ -71,10 +71,10 @@ def _pixel_size_step(pixel_size_nm: float | None) -> str:
     )
 
 
-#: Label states that suppress a new candidate landing on top of them. See
-#: :func:`quantem.seg_core.db.extraction.extract_and_save_segments`: a candidate
-#: overlapping a CONFIRMED object by >=30%, or an EXCLUDED one by >=80%, is
-#: dropped rather than saved.
+#: Label states that mean the image already contains reviewed work. EXCLUDED
+#: still suppresses the same rejected proposal during Preview. CONFIRMED is
+#: retained unchanged and painted above the full model preview; overlap is
+#: resolved only by the explicit Confirm action.
 _SUPPRESSING_LABEL_STATES = ("CONFIRMED", "EXCLUDED")
 
 
@@ -194,9 +194,9 @@ def _zero_object_advice(segmentation: ImageSegmentation) -> tuple[str, str, list
     next_steps = [
         f"Nothing changed: the {labelled} object(s) you have already labelled "
         "here are exactly as they were.",
-        "A candidate that lands on an object you have already confirmed or "
-        "excluded is not added again, so a re-run over a proofread image is "
-        "expected to find nothing new.",
+        "Rejected model proposals are not added again. Confirmed outlines stay "
+        "unchanged above any new model preview; accepting that preview later "
+        "merges strong overlaps or removes the confirmed pixels from it.",
     ]
     if uncalibrated:
         next_steps.append(_stale_scale_step(segmentation, uncalibrated))

@@ -35,11 +35,16 @@ function makeSegmentation(
 const MITO = makeSegmentation("seg-mito", "quantem_internal_mito", "Mitochondria");
 const NUCLEUS = makeSegmentation("seg-nuc", "quantem_internal_nucleus", "Nucleus");
 const TISSUE = makeSegmentation("seg-tis", "quantem_internal_tissue", "Tissue");
+const ANALYSIS_MASK = makeSegmentation(
+  "seg-mask",
+  "quantem_internal_analysis_mask",
+  "Analysis Mask"
+);
 const CUSTOM = makeSegmentation("seg-x", "my_own_thing", "My own thing");
 
 function baseState(overrides: Partial<AnalysisFormState> = {}): AnalysisFormState {
   return {
-    ...defaultFormState([MITO, NUCLEUS, TISSUE], MITO.id),
+    ...defaultFormState([MITO, NUCLEUS, TISSUE, ANALYSIS_MASK], MITO.id),
     ...overrides,
   };
 }
@@ -56,13 +61,13 @@ describe("compartmentNameFor", () => {
 });
 
 describe("defaultFormState", () => {
-  it("preselects the tissue segmentation as the tissue mask", () => {
-    const state = defaultFormState([MITO, NUCLEUS, TISSUE], MITO.id);
-    expect(state.tissueSegmentationId).toBe(TISSUE.id);
+  it("preselects the first analysis mask", () => {
+    const state = defaultFormState([MITO, NUCLEUS, TISSUE, ANALYSIS_MASK], MITO.id);
+    expect(state.tissueSegmentationId).toBe(ANALYSIS_MASK.id);
   });
 
-  it("offers every non-tissue segmentation but enables only the one opened", () => {
-    const state = defaultFormState([MITO, NUCLEUS, TISSUE], MITO.id);
+  it("keeps masks out of compartments and enables only the segmentation opened", () => {
+    const state = defaultFormState([MITO, NUCLEUS, TISSUE, ANALYSIS_MASK], MITO.id);
     expect(state.compartments.map((entry) => entry.segmentationId)).toEqual([
       MITO.id,
       NUCLEUS.id,
@@ -89,7 +94,7 @@ describe("buildAnalysisPayload", () => {
     const { payload, error } = buildAnalysisPayload(baseState());
     expect(error).toBeNull();
     expect(payload?.compartments).toEqual({ mito: MITO.id });
-    expect(payload?.tissue_segmentation_id).toBe(TISSUE.id);
+    expect(payload?.tissue_segmentation_id).toBe(ANALYSIS_MASK.id);
     expect(payload?.band_edges_nm).toEqual([0, 50, 100, 200]);
   });
 

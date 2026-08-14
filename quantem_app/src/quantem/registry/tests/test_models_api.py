@@ -108,6 +108,36 @@ class ModelListTests(TestCase):
         # A held-out score never travels without the split it was measured on.
         assert entry["split_mode"] == "image-disjoint"
         assert entry["id"].startswith("adapted:")
+        assert entry["segmentation_ids"] == []
+
+    def test_named_fine_tune_lists_each_labeling_view_it_was_applied_to(self):
+        from django.utils import timezone
+
+        from quantem.assets.models import Asset
+        from quantem.finetune.models import STATUS_SUCCESS, Adapter
+        from quantem.segmentation.models import ImageSegmentation
+        from quantem.segmentation.type_service import get_or_create_mitochondria_type
+
+        asset = Asset.objects.create(display_name="target image")
+        segmentation_type = get_or_create_mitochondria_type()
+        segmentation = ImageSegmentation.objects.create(
+            asset=asset,
+            segmentation_type=segmentation_type,
+        )
+        adapter = Adapter.objects.create(
+            base_model="quantem:mito",
+            name="named target",
+            status=STATUS_SUCCESS,
+            mode="head",
+            segmentation_type=segmentation_type,
+            applied_at=timezone.now(),
+        )
+        adapter.applied_assets.add(asset)
+
+        entry = self.client.get("/api/models/").json()["adapted"][0]
+
+        assert entry["segmentation_id"] is None
+        assert entry["segmentation_ids"] == [str(segmentation.id)]
 
     def test_the_device_block_is_present_and_concrete(self):
         device = self.client.get("/api/models/").json()["device"]

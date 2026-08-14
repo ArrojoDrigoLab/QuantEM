@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DesktopUpdateBanner } from "@/features/update/DesktopUpdateBanner";
+import { DesktopUpdateProvider } from "@/features/update/DesktopUpdateProvider";
 import { RestartGuardProvider } from "@/features/update/restartGuard";
 import { setApiConfig } from "@/shared/api/core/http";
 
@@ -23,6 +24,16 @@ function response(body: unknown): Response {
 }
 
 describe("DesktopUpdateBanner", () => {
+  function renderBanner() {
+    return render(
+      <RestartGuardProvider>
+        <DesktopUpdateProvider>
+          <DesktopUpdateBanner />
+        </DesktopUpdateProvider>
+      </RestartGuardProvider>
+    );
+  }
+
   beforeEach(() => {
     desktop.enabled = true;
     updater.check.mockReset();
@@ -38,11 +49,7 @@ describe("DesktopUpdateBanner", () => {
 
   it("does not check for updates outside the installed desktop build", async () => {
     desktop.enabled = false;
-    render(
-      <RestartGuardProvider>
-        <DesktopUpdateBanner />
-      </RestartGuardProvider>
-    );
+    renderBanner();
 
     await waitFor(() => expect(updater.check).not.toHaveBeenCalled());
     expect(screen.queryByText(/is available/)).not.toBeInTheDocument();
@@ -68,11 +75,7 @@ describe("DesktopUpdateBanner", () => {
       )
     );
     const user = userEvent.setup();
-    render(
-      <RestartGuardProvider>
-        <DesktopUpdateBanner />
-      </RestartGuardProvider>
-    );
+    renderBanner();
 
     await screen.findByText("QuantEM 0.2.0 is available.");
     await user.click(screen.getByRole("button", { name: "Update" }));

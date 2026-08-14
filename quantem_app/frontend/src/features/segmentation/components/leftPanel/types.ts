@@ -23,6 +23,7 @@ import type {
 import type { LeftPanelLayerStyles } from "@/features/segmentation/overlays/segments";
 import type { RoiStroke } from "@/features/segmentation/overlays/roi";
 import type { DraftPolygon } from "@/shared/geometry/draftGeometry";
+import type { PaneOverlayLayerControls } from "@/features/segmentation/components/OverlayLayerMenu";
 
 export interface LeftPanelViewerState {
   image: AssetDetail;
@@ -32,8 +33,8 @@ export interface LeftPanelViewerState {
   viewport: ViewportState | null;
   onViewportChange: (viewport: ViewportState) => void;
   overlayNgffLayers?: ViewerNgffOverlayLayerSpec[];
-  /** The ID-map segmentation review overlay (labels + border + render-time LUT). */
-  idMapOverlay?: ViewerIdMapOverlaySpec | null;
+  /** State-specific ID-map overlays (labels + border + render-time LUT). */
+  idMapOverlays?: ViewerIdMapOverlaySpec[];
   onOverlayRevisionDisplayed?: (revision: number | null) => void;
   transientFitBounds?: ViewerFitBounds | null;
   transientFitBoundsKey?: string | null;
@@ -133,11 +134,13 @@ export interface LeftPanelFeedbackState {
 
 export interface LeftPanelOverlayState {
   disableCorrectionBrush?: boolean;
-  hideActiveRoiOverlay?: boolean;
+  /** Hide the saved frame being replaced by a pending ROI area edit. */
+  hideRoiOverlayId?: string | null;
   extraTransientOverlays?: SegmentOverlay[];
 }
 
 export interface SegmentationLeftPanelProps {
+  layerControls: PaneOverlayLayerControls;
   viewer: LeftPanelViewerState;
   workflow: LeftPanelWorkflowState;
   segments: LeftPanelSegmentState;

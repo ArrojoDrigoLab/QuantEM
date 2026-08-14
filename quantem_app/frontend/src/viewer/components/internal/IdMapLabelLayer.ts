@@ -25,7 +25,6 @@ const BORDER_DARKEN = 0.5;
 const LABEL_SELECTIONS = [{}];
 const CHANNELS_VISIBLE = [true];
 const CHANNEL_COLORS: Array<[number, number, number]> = [[255, 255, 255]];
-const CONTRAST_LIMITS: Array<[number, number]> = [[0, 1]];
 const NO_EXTENSIONS: never[] = [];
 
 export interface IdMapLabelLayerProps {
@@ -39,6 +38,12 @@ export interface IdMapLabelLayerProps {
   maxLabel: number;
   /** Bumps when the LUT content changes (forces re-colorization). */
   lutRevision: number;
+  /** Bumps for client-only LUT changes, such as an optimistic hard delete. */
+  visualRevision: number;
+  /** Object UUID highlighted locally in this pane. */
+  highlightedSegmentId: string | null;
+  /** Bumps when highlightedSegmentId changes. */
+  highlightRevision: number;
   imageWidth: number;
   imageHeight: number;
   fillOpacity: number;
@@ -52,17 +57,28 @@ interface VivTileData {
   data: Array<Uint32Array | Uint16Array | Uint8Array>;
   width: number;
   height: number;
-  _idmapSig?: string;
-  _idmapImg?: ImageData;
+  /** One source tile may feed candidate and confirmed layers with different LUTs. */
+  _idmapCache?: Record<string, { signature: string; image: ImageData }>;
 }
 
 export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
   static layerName = "IdMapLabelLayer";
 
   private _colorize(tile: VivTileData): ImageData {
-    const { lut, maxLabel, lutRevision, fillOpacity, borderOpacity, showBorders } = this.props;
-    const sig = `${lutRevision}|${fillOpacity}|${borderOpacity}|${showBorders}`;
-    if (tile._idmapSig === sig && tile._idmapImg) return tile._idmapImg;
+    const {
+      lut,
+      maxLabel,
+      lutRevision,
+      visualRevision,
+      highlightedSegmentId,
+      highlightRevision,
+      fillOpacity,
+      borderOpacity,
+      showBorders,
+    } = this.props;
+    const sig = `${lutRevision}|${visualRevision}|${highlightRevision}|${highlightedSegmentId ?? ""}|${fillOpacity}|${borderOpacity}|${showBorders}`;
+    const cached = tile._idmapCache?.[this.props.id];
+    if (cached?.signature === sig) return cached.image;
 
     const labels = tile.data[0];
     const { width, height } = tile;
@@ -70,6 +86,14 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
     const out = new Uint8ClampedArray(pixelCount * 4);
     const fillAlpha = Math.round(Math.min(1, Math.max(0, fillOpacity)) * 255);
     const borderAlpha = Math.round(Math.min(1, Math.max(0, borderOpacity)) * 255);
+    let highlightedLabel = 0;
+    if (highlightedSegmentId !== null && this.props.pickMap) {
+      for (const [label, segmentId] of this.props.pickMap) {
+        if (segmentId !== highlightedSegmentId) continue;
+        highlightedLabel = label;
+        break;
+      }
+    }
 
     for (let i = 0; i < pixelCount; i += 1) {
       const id = labels[i];
@@ -78,8 +102,9 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       const alpha = lut[base + 3];
       if (alpha === 0) continue; // hidden by per-state default visibility
 
+      const isHighlighted = highlightedLabel !== 0 && id === highlightedLabel;
       let isBorder = false;
-      if (showBorders) {
+      if (showBorders || isHighlighted) {
         const x = i % width;
         const y = (i - x) / width;
         isBorder =
@@ -89,7 +114,12 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
           (y < height - 1 && labels[i + width] !== id);
       }
       const out4 = i * 4;
-      if (isBorder) {
+      if (isHighlighted) {
+        out[out4] = 0;
+        out[out4 + 1] = 255;
+        out[out4 + 2] = 255;
+        out[out4 + 3] = isBorder ? 255 : Math.max(fillAlpha, 64);
+      } else if (isBorder) {
         out[out4] = lut[base] * BORDER_DARKEN;
         out[out4 + 1] = lut[base + 1] * BORDER_DARKEN;
         out[out4 + 2] = lut[base + 2] * BORDER_DARKEN;
@@ -102,8 +132,8 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       }
     }
     const image = new ImageData(out, width, height);
-    tile._idmapSig = sig;
-    tile._idmapImg = image;
+    tile._idmapCache ??= {};
+    tile._idmapCache[this.props.id] = { signature: sig, image };
     return image;
   }
 
@@ -166,6 +196,12 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
     const { labelsData } = this.props;
     if (!labelsData || labelsData.length === 0) return null;
     const source = labelsData[0] as unknown as { dtype: string };
+    const renderRevision: Array<[number, number]> = [
+      [this.props.lutRevision, this.props.fillOpacity],
+      [this.props.borderOpacity, this.props.showBorders ? 1 : 0],
+      [this.props.visualRevision, 0],
+      [this.props.highlightRevision, 0],
+    ];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const subLayerProps: any = this.getSubLayerProps({
@@ -173,7 +209,11 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       loader: labelsData,
       selections: LABEL_SELECTIONS,
       dtype: source.dtype,
-      contrastLimits: CONTRAST_LIMITS,
+      // Viv 0.19 replaces caller-supplied updateTriggers with its own
+      // getTileData trigger. `contrastLimits` is a compare:true prop on both
+      // Viv layers that our Bitmap renderer otherwise ignores, so carrying the
+      // render revision here redraws cached sublayers without refetching tiles.
+      contrastLimits: renderRevision,
       channelsVisible: CHANNELS_VISIBLE,
       colors: CHANNEL_COLORS,
       opacity: 1,
@@ -185,14 +225,6 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       renderSubLayers: (props: any) => this._renderTile(props),
       // Bypass viv's default ColorPaletteExtension; we colour in renderSubLayers.
       extensions: NO_EXTENSIONS,
-      updateTriggers: {
-        renderSubLayers: [
-          this.props.lutRevision,
-          this.props.fillOpacity,
-          this.props.borderOpacity,
-          this.props.showBorders,
-        ],
-      },
     });
     return new MultiscaleImageLayer(subLayerProps) as unknown as Layer;
   }

@@ -14,6 +14,7 @@ interface UseOptimisticOverlayStateArgs {
   segmentationInternalName: string | null;
   useSmoothedSegmentGeometry: boolean;
   leftPanelLayerStyles: LeftPanelLayerStyles;
+  hiddenSegmentIds: ReadonlySet<string>;
   settledOverlayRevision: number | null;
 }
 
@@ -22,6 +23,7 @@ export function useOptimisticOverlayState({
   segmentationInternalName,
   useSmoothedSegmentGeometry,
   leftPanelLayerStyles,
+  hiddenSegmentIds,
   settledOverlayRevision,
 }: UseOptimisticOverlayStateArgs) {
   const [labelOverrides, setLabelOverrides] = useState<Record<string, LabelState>>({});
@@ -39,14 +41,22 @@ export function useOptimisticOverlayState({
 
   const applyLabelOverrides = useCallback(
     (items: SegmentObject[]) =>
-      items.map((segment) => {
+      items.filter((segment) => !hiddenSegmentIds.has(segment.id)).map((segment) => {
         const override = labelOverrides[segment.id];
         if (!override || override === segment.label_state) {
           return segment;
         }
         return { ...segment, label_state: override };
       }),
-    [labelOverrides]
+    [hiddenSegmentIds, labelOverrides]
+  );
+
+  const visibleOptimisticSegments = useMemo(
+    () =>
+      Object.values(optimisticSegments).filter(
+        (segment) => !hiddenSegmentIds.has(segment.id)
+      ),
+    [hiddenSegmentIds, optimisticSegments]
   );
 
   const clearOptimisticSegments = useCallback((segmentIds: string[]) => {
@@ -186,23 +196,23 @@ export function useOptimisticOverlayState({
 
   const optimisticConfirmed = useMemo(
     () =>
-      Object.values(optimisticSegments).filter(
+      visibleOptimisticSegments.filter(
         (segment) => segment.label_state === "CONFIRMED"
       ),
-    [optimisticSegments]
+    [visibleOptimisticSegments]
   );
   const optimisticExcluded = useMemo(
     () =>
-      Object.values(optimisticSegments).filter(
+      visibleOptimisticSegments.filter(
         (segment) => segment.label_state === "EXCLUDED"
       ),
-    [optimisticSegments]
+    [visibleOptimisticSegments]
   );
 
   const optimisticTransientOverlays = useMemo(
     () =>
       generateLeftPanelOverlays(
-        Object.values(optimisticSegments),
+        visibleOptimisticSegments,
         false,
         segmentationInternalName,
         undefined,
@@ -211,9 +221,9 @@ export function useOptimisticOverlayState({
       ),
     [
       leftPanelLayerStyles,
-      optimisticSegments,
       segmentationInternalName,
       useSmoothedSegmentGeometry,
+      visibleOptimisticSegments,
     ]
   );
 

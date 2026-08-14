@@ -15,6 +15,7 @@
  */
 
 import { apiRequest } from "@/shared/api/core/http";
+import type { SegmentationOverlayMutationState } from "@/shared/types/segmentation";
 
 export interface IncludeLevelState {
   /**
@@ -62,6 +63,8 @@ export interface ConfirmModelOutputResult {
   skipped_manual_roi_count: number;
   manual_roi_count: number;
   remaining_candidate_count: number;
+  /** Raster-overlay revision queued by this confirmation, if anything changed. */
+  overlay: SegmentationOverlayMutationState | null;
 }
 
 export function getIncludeLevel(

@@ -1,0 +1,116 @@
+.overlay-layer-menu {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 8;
+  width: min(230px, calc(100% - 1.2rem));
+  pointer-events: none;
+}
+
+.overlay-layer-menu summary {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: max-content;
+  min-height: 28px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.9);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.14);
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.overlay-layer-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.overlay-layer-menu summary:hover {
+  border-color: #64748b;
+  background: #ffffff;
+}
+
+.overlay-layer-menu summary svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.overlay-layer-menu-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  padding: 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.97);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2);
+  pointer-events: auto;
+}
+
+.overlay-layer-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.45rem;
+  border: 1px solid #dbe4f0;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.overlay-layer-menu-group h4 {
+  margin: 0;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.overlay-layer-menu-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.overlay-layer-menu-control label,
+.overlay-layer-menu-checkbox {
+  color: #334155;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.overlay-layer-menu-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.overlay-layer-menu-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.overlay-layer-menu-slider-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.overlay-layer-menu-slider-row span {
+  min-width: 3rem;
+  color: #475569;
+  font-family: monospace;
+  font-size: 0.72rem;
+  text-align: right;
+}

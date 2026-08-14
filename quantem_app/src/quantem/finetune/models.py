@@ -156,9 +156,9 @@ class Adapter(TimeStampedModel):
     )
     #: Rotate the hold-out over every unit and report the average.
     cv_benchmark = models.BooleanField(default=False)
-    #: ``{"folds": [...], "mean": {...}, "per_image": [...]}``. Per-image results
-    #: are required, not optional: an average over images hides the one the model
-    #: cannot do, which is the one the user needs to know about.
+    #: ``{"folds": [...], "mean": {...}, "per_roi": [...], "per_image": [...]}``.
+    #: Each held-out ROI carries the round's fitted threshold beside Dice and IoU;
+    #: the image summary remains for callers that need one row per image.
     cv_results = models.JSONField(default=dict, blank=True)
     mode = models.CharField(max_length=32, choices=MODE_CHOICES, default=MODE_THRESHOLD_ONLY)
     #: Requested hyper-parameters (steps, lr, seed, ...), as submitted.

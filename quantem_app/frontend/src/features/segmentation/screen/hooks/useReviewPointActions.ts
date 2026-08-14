@@ -1,5 +1,8 @@
 import { useCallback } from "react";
-import { getSegmentsAtPoint } from "@/shared/api/segmentations/annotations";
+import {
+  deleteSegmentsBatch,
+  getSegmentsAtPoint,
+} from "@/shared/api/segmentations/annotations";
 import { useLabelAnswerQueue } from "@/features/segmentation/screen/hooks/useLabelAnswerQueue";
 import { selectBestPointActionSegment, type PointActionMode } from "@/utils/pointAction";
 import type { Point } from "@/utils/geometry";
@@ -24,6 +27,8 @@ interface UseReviewPointActionsArgs {
     options?: { stageOverlay?: boolean }
   ) => void;
   rollbackOptimisticLabel: (segmentId: string) => void;
+  hideOptimisticallyDeletedSegment: (segmentId: string) => boolean;
+  rollbackOptimisticallyDeletedSegment: (segmentId: string) => void;
   clearHoverInteraction: () => void;
   registerAnnotationActivity: () => void;
   stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: number | null) => void;
@@ -45,6 +50,8 @@ export function useReviewPointActions({
   applyLabelOverrides,
   applyOptimisticLabel,
   rollbackOptimisticLabel,
+  hideOptimisticallyDeletedSegment,
+  rollbackOptimisticallyDeletedSegment,
   clearHoverInteraction,
   registerAnnotationActivity,
   stageOptimisticRevisionTargets,
@@ -123,6 +130,38 @@ export function useReviewPointActions({
     ]
   );
 
+  const handleDeleteConfirmedObject = useCallback(
+    async (segmentId: string) => {
+      if (!currentSegmentation) return;
+      // This synchronous client-side hide is the interaction. The request below
+      // persists the same hard delete but does not gate either viewer update.
+      if (!hideOptimisticallyDeletedSegment(segmentId)) return;
+      registerAnnotationActivity();
+      clearHoverInteraction();
+      try {
+        const response = await deleteSegmentsBatch(currentSegmentation.id, {
+          ids: [segmentId],
+          source_model: activeSourceModel,
+        });
+        handleOverlayMutationRefresh(response.overlay);
+      } catch (error) {
+        rollbackOptimisticallyDeletedSegment(segmentId);
+        showErrorToast("Failed to delete the selected object.");
+        console.error("Failed to hard-delete a confirmed object:", error);
+      }
+    },
+    [
+      activeSourceModel,
+      clearHoverInteraction,
+      currentSegmentation,
+      handleOverlayMutationRefresh,
+      hideOptimisticallyDeletedSegment,
+      registerAnnotationActivity,
+      rollbackOptimisticallyDeletedSegment,
+      showErrorToast,
+    ]
+  );
+
   const handleApplyPointAction = useCallback(
     async (point: Point, mode: "confirm" | "reject") => {
       if (!currentSegmentation) return;
@@ -194,6 +233,7 @@ export function useReviewPointActions({
 
   return {
     handleResetConfirmedToCandidate,
+    handleDeleteConfirmedObject,
     handleApplyPointAction,
     /** Send any coalesced answers now; awaited before anything that reads them back. */
     flushLabelAnswers: flushAnswers,

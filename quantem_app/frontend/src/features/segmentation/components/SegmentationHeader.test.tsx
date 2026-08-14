@@ -888,7 +888,7 @@ describe("SegmentationHeader", () => {
           "This run added no new objects. The 14 object(s) already labelled in this image are unchanged.",
         next_steps: [
           "Nothing changed: the 14 object(s) you have already labelled here are exactly as they were.",
-          "A candidate that lands on an object you have already confirmed or excluded is not added again, so a re-run over a proofread image is expected to find nothing new.",
+          "Rejected model proposals are not added again. Confirmed outlines stay unchanged above any new model preview; accepting that preview later merges strong overlaps or removes the confirmed pixels from it.",
         ],
       },
     });

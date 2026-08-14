@@ -73,6 +73,23 @@ export function buildViewerDeckLayers(config: {
     );
   }
 
+  // Probability previews are evidence beneath the accepted object layer. In
+  // particular, red threshold pixels must never cover a green confirmed label.
+  // bounds is [x, y, width, height]; BitmapLayer wants
+  // [left, bottom, right, top] in the viewer's y-down image coordinate space.
+  for (const spec of bitmapOverlays) {
+    const [bx, by, bw, bh] = spec.bounds;
+    layers.push(
+      new BitmapLayer({
+        id: `viewer-bitmap-${spec.id}`,
+        image: spec.image,
+        bounds: [bx, by + bh, bx + bw, by],
+        opacity: spec.opacity,
+        pickable: false,
+      })
+    );
+  }
+
   for (const idMapOverlay of idMapOverlays) {
     const idMapData = idMapDataById[idMapOverlay.id];
     const idMapLabelsData = idMapData?.labelsData ?? null;
@@ -89,6 +106,9 @@ export function buildViewerDeckLayers(config: {
         lut: idMapOverlay.lut,
         maxLabel: idMapOverlay.maxLabel,
         lutRevision: idMapOverlay.lutRevision,
+        visualRevision: idMapOverlay.visualRevision ?? 0,
+        highlightedSegmentId: idMapOverlay.highlightedSegmentId ?? null,
+        highlightRevision: idMapOverlay.highlightRevision ?? 0,
         imageWidth,
         imageHeight,
         fillOpacity: idMapOverlay.fillOpacity,
@@ -128,22 +148,6 @@ export function buildViewerDeckLayers(config: {
         excludeBackground: true,
         opacity: spec.opacity,
       } as VivMultiscaleLayerProps)
-    );
-  }
-
-  // Transient PNG overlays (e.g. ER model previews) drawn on top, positioned by
-  // image-pixel bounds. bounds is [x, y, width, height]; BitmapLayer wants
-  // [left, bottom, right, top] in the viewer's y-down image coordinate space.
-  for (const spec of bitmapOverlays) {
-    const [bx, by, bw, bh] = spec.bounds;
-    layers.push(
-      new BitmapLayer({
-        id: `viewer-bitmap-${spec.id}`,
-        image: spec.image,
-        bounds: [bx, by + bh, bx + bw, by],
-        opacity: spec.opacity,
-        pickable: false,
-      })
     );
   }
 

@@ -204,4 +204,22 @@ describe("useViewerPointerInteractions", () => {
       expect(next.centerY).toBeGreaterThanOrEqual(0);
     });
   });
+
+  it("resolves raster UUIDs locally while hovering and clears on leave", () => {
+    const onShapeHover = vi.fn();
+    const pickRasterObjectId = vi.fn(() => "confirmed-1");
+    const config = makeConfig({ onShapeHover, pickRasterObjectId });
+    const { result } = renderHook(() => useViewerPointerInteractions(config));
+
+    act(() => {
+      result.current.handlePointerMove(pointerEvent(500, 400));
+    });
+    expect(pickRasterObjectId).toHaveBeenCalledWith({ x: 500, y: 400 });
+    expect(onShapeHover).toHaveBeenCalledWith("confirmed-1");
+
+    act(() => {
+      result.current.handleMouseLeave();
+    });
+    expect(onShapeHover).toHaveBeenLastCalledWith(null);
+  });
 });

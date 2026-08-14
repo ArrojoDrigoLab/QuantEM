@@ -460,21 +460,49 @@ def adapted_entries() -> list[dict[str, Any]]:
         logger.debug("Adapter table unavailable", exc_info=True)
         return []
 
-    return [
-        {
-            "id": f"adapted:{adapter.id}",
-            "base": adapter.base_model,
-            "name": adapter.name or f"{adapter.base_model} adapter",
-            "created_at": adapter.created_at,
-            "calibrated_threshold": adapter.calibrated_threshold,
-            "heldout_dice": adapter.heldout_dice,
-            "split_mode": adapter.split_mode,
-            "mode": adapter.mode,
-            "segmentation_id": (str(adapter.segmentation_id) if adapter.segmentation_id else None),
-            "applied_at": adapter.applied_at,
-        }
-        for adapter in rows
-    ]
+    try:
+        from quantem.segmentation.models import ImageSegmentation
+    except Exception:
+        ImageSegmentation = None
+
+    entries = []
+    for adapter in rows:
+        segmentation_ids = [str(adapter.segmentation_id)] if adapter.segmentation_id else []
+        if (
+            ImageSegmentation is not None
+            and adapter.applied_at is not None
+            and adapter.segmentation_type_id is not None
+        ):
+            applied_asset_ids = list(adapter.applied_assets.values_list("id", flat=True))
+            if not applied_asset_ids:
+                # Read compatibility for fine-tunes applied before the explicit
+                # target relation was added. This is the same fallback used by
+                # ``active_adapter_for`` during inference.
+                applied_asset_ids = list(adapter.scope_assets.values_list("id", flat=True))
+            target_ids = ImageSegmentation.objects.filter(
+                asset_id__in=applied_asset_ids,
+                segmentation_type_id=adapter.segmentation_type_id,
+            ).values_list("id", flat=True)
+            segmentation_ids.extend(str(value) for value in target_ids)
+
+        entries.append(
+            {
+                "id": f"adapted:{adapter.id}",
+                "base": adapter.base_model,
+                "name": adapter.name or f"{adapter.base_model} adapter",
+                "created_at": adapter.created_at,
+                "calibrated_threshold": adapter.calibrated_threshold,
+                "heldout_dice": adapter.heldout_dice,
+                "split_mode": adapter.split_mode,
+                "mode": adapter.mode,
+                "segmentation_id": (
+                    str(adapter.segmentation_id) if adapter.segmentation_id else None
+                ),
+                "segmentation_ids": sorted(set(segmentation_ids)),
+                "applied_at": adapter.applied_at,
+            }
+        )
+    return entries
 
 
 def device_block() -> dict[str, Any]:

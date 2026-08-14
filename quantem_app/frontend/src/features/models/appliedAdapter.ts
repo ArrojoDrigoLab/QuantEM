@@ -50,7 +50,10 @@ export function appliedAdapterState(
 
   const applied = catalogue.adapted
     .filter(
-      (entry) => entry.segmentation_id === segmentationId && Boolean(entry.applied_at)
+      (entry) =>
+        Boolean(entry.applied_at) &&
+        (entry.segmentation_id === segmentationId ||
+          entry.segmentation_ids?.includes(segmentationId))
     )
     // `active_adapter_for` orders by `-applied_at`, so the most recently
     // applied one wins when more than one has ever been applied.

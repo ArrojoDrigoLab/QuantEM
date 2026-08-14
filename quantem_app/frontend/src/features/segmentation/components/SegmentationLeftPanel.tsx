@@ -9,9 +9,14 @@ import { buildLeftPanelViewerConfig } from "@/features/segmentation/components/l
 import { LeftPanelDrawingActions } from "@/features/segmentation/components/leftPanel/LeftPanelDrawingActions";
 import { LeftPanelRoiSection } from "@/features/segmentation/components/leftPanel/LeftPanelRoiSection";
 import { LeftPanelStatusMessage } from "@/features/segmentation/components/leftPanel/LeftPanelStatusMessage";
+import { OverlayLayerMenu } from "@/features/segmentation/components/OverlayLayerMenu";
 import type { SegmentationLeftPanelProps } from "@/features/segmentation/components/leftPanel/types";
 import { useThresholdPreviewStore } from "@/features/segmentation/components/threshold/useThresholdPreviewStore";
 import { colorizeProb } from "@/features/segmentation/erPreview/overlayCanvas";
+import {
+  selectSegmentGeometryCoords,
+  selectSegmentHoleCoords,
+} from "@/utils/segmentGeometry";
 import "./SegmentationLeftPanel.css";
 
 export type { SegmentationLeftPanelProps } from "@/features/segmentation/components/leftPanel/types";
@@ -21,11 +26,25 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
   const thresholdOverlay = useThresholdPreviewStore((state) => state.overlay);
   const threshold = useThresholdPreviewStore((state) => state.threshold);
   const thresholdOpacity = useThresholdPreviewStore((state) => state.opacity);
+  const confirmedMasks = useMemo(
+    () =>
+      props.segments.items
+        .filter((segment) => segment.label_state === "CONFIRMED")
+        .map((segment) => ({
+          polygon_coords: selectSegmentGeometryCoords(segment, false),
+          holes: selectSegmentHoleCoords(segment),
+        })),
+    [props.segments.items]
+  );
   const thresholdCanvas = useMemo(
     () =>
       thresholdOverlay
-        ? colorizeProb(thresholdOverlay, threshold, thresholdOpacity, {
-            polygons: props.completedRoi.items,
+          ? colorizeProb(thresholdOverlay, threshold, thresholdOpacity, {
+            // The threshold map is a raw model view beneath accepted work.
+            // Erase confirmed pixels from the bitmap itself as well as drawing
+            // the green vectors later, so transparency settings can never let
+            // red probability pixels bleed through a confirmed object.
+            polygons: [...props.completedRoi.items, ...confirmedMasks],
             rectangles: props.roi.completedRois.map((roi) => ({
               x: roi.x,
               y: roi.y,
@@ -36,6 +55,7 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
         : null,
     [
       props.completedRoi.items,
+      confirmedMasks,
       props.roi.completedRois,
       threshold,
       thresholdOpacity,
@@ -75,7 +95,14 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
         completedRoi={props.completedRoi}
       />
       <LeftPanelRoiSection workflow={props.workflow} roi={props.roi} />
-      <ImageViewer {...viewerProps} />
+      <div className="left-viewer-stage">
+        <ImageViewer {...viewerProps} />
+        <OverlayLayerMenu
+          idPrefix="left-pane"
+          paneLabel="Left pane"
+          {...props.layerControls}
+        />
+      </div>
     </section>
   );
 }

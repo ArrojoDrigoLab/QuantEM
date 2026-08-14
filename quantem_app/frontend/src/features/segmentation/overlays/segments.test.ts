@@ -34,9 +34,26 @@ describe("segmentation overlay segments", () => {
     );
 
     expect(overlays).toHaveLength(3);
-    expect(overlays[0]).toMatchObject({ id: "c", fillColor: "#33cc66", fillOpacity: 0.15 });
+    expect(overlays[0]).toMatchObject({ id: "i", fillColor: "#ff0000", fillOpacity: 0 });
     expect(overlays[1]).toMatchObject({ id: "e", fillColor: "#5c677d", fillOpacity: 0.05 });
-    expect(overlays[2]).toMatchObject({ id: "i", fillColor: "#ff0000", fillOpacity: 0 });
+    expect(overlays[2]).toMatchObject({ id: "c", fillColor: "#33cc66", fillOpacity: 0.15 });
+  });
+
+  it("always paints confirmed outlines after overlapping candidates", () => {
+    const overlays = generateLeftPanelOverlays(
+      [makeSegment("confirmed", "CONFIRMED"), makeSegment("candidate", "CANDIDATE")],
+      false
+    );
+
+    expect(overlays.map((overlay) => overlay.id)).toEqual(["candidate", "confirmed"]);
+
+    const right = generateRightPanelOverlays(
+      [makeSegment("confirmed", "CONFIRMED")],
+      [makeSegment("candidate", "INFERRED")],
+      [],
+      null
+    );
+    expect(right.map((overlay) => overlay.id)).toEqual(["candidate", "confirmed"]);
   });
 
   it("applies custom left-panel layer styles", () => {
@@ -83,6 +100,25 @@ describe("segmentation overlay segments", () => {
       strokeColor: "#00ffff",
       strokeWidth: 4,
       fillOpacity: 0.25,
+    });
+  });
+
+  it("applies an independent right-panel confirmed style, including zero fill", () => {
+    const overlays = generateRightPanelOverlays(
+      [makeSegment("confirmed", "CONFIRMED")],
+      [],
+      [],
+      null,
+      undefined,
+      undefined,
+      false,
+      { strokeWidth: 3.5, fillOpacity: 0 }
+    );
+
+    expect(overlays[0]).toMatchObject({
+      id: "confirmed",
+      strokeWidth: 3.5,
+      fillOpacity: 0,
     });
   });
 

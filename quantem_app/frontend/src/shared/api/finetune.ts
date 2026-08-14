@@ -230,11 +230,13 @@ export function applyFineTuneRun(
 /** Per-image progress for one opt-in Dataset/image application batch. */
 export function getFineTuneApplyProgress(
   adapterId: string,
-  batchId: string
+  batchId?: string | null
 ): Promise<FineTuneApplyProgress> {
-  const query = new URLSearchParams({ batch_id: batchId });
+  const query = batchId
+    ? `?${new URLSearchParams({ batch_id: batchId })}`
+    : "";
   return apiRequest<FineTuneApplyProgress>(
-    `/api/finetune/runs/${encodeURIComponent(adapterId)}/apply/?${query}`
+    `/api/finetune/runs/${encodeURIComponent(adapterId)}/apply/${query}`
   );
 }
 

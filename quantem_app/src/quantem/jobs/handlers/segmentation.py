@@ -102,7 +102,13 @@ def _validate_segmentation_payload(payload: dict) -> ImageSegmentation:
         segmentation_type_internal_name=internal_name,
         source_model=source_model,
     )
-    if get_segmenter_or_none(segmenter_internal_name) is None:
+    if (
+        get_segmenter_or_none(
+            segmenter_internal_name,
+            source_model=source_model,
+        )
+        is None
+    ):
         raise ValueError(f"No segmenter registered for type: {segmenter_internal_name}")
 
     return segmentation

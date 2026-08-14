@@ -16,7 +16,6 @@ import type {
   CorrectionTool,
   SegmentationOverlayManifest,
 } from "@/shared/types/segmentation";
-import type { LeftPanelLayerStyles } from "@/features/segmentation/overlays/segments";
 // Imported across features on purpose. The viewer and the labeling screen fail
 // the same way for the same reason, and finding V4 was the labeling screen
 // saying *nothing* while the viewer said everything -- two renderers of one
@@ -65,16 +64,6 @@ interface ReviewSection {
 }
 
 interface LayersSection {
-  usesRasterReviewOverlay: boolean;
-  showCandidateBorders: boolean;
-  onShowCandidateBordersChange: (value: boolean) => void;
-  showConfirmedBorders: boolean;
-  onShowConfirmedBordersChange: (value: boolean) => void;
-  leftPanelLayerStyles: LeftPanelLayerStyles;
-  onCandidateStrokeWidthChange: (value: number) => void;
-  onCandidateFillOpacityChange: (value: number) => void;
-  onConfirmedStrokeWidthChange: (value: number) => void;
-  onConfirmedFillOpacityChange: (value: number) => void;
   overlayUpdating: boolean;
   /** True only for a build the server has given up on. */
   overlayBuildFailed: boolean;
@@ -104,7 +93,7 @@ export interface SegmentationSidebarProps {
   review: ReviewSection;
   layers: LayersSection;
   view: ViewSection;
-  /** ER-only ROI controls (2048² creation + per-organelle "mark ROI done"). */
+  /** Rectangular ROI controls (1024² default + per-organelle "mark ROI done"). */
   erRoi?: ErRoiSection;
   /**
    * The include-level dial. Absent until a segmentation is selected, and
@@ -149,16 +138,6 @@ export function SegmentationSidebar({
     extraTools,
   } = review;
   const {
-    usesRasterReviewOverlay,
-    showCandidateBorders,
-    onShowCandidateBordersChange,
-    showConfirmedBorders,
-    onShowConfirmedBordersChange,
-    leftPanelLayerStyles,
-    onCandidateStrokeWidthChange,
-    onCandidateFillOpacityChange,
-    onConfirmedStrokeWidthChange,
-    onConfirmedFillOpacityChange,
     overlayUpdating,
     overlayBuildFailed,
     overlayManifest,
@@ -276,127 +255,6 @@ export function SegmentationSidebar({
             />
           )}
         </section>
-        <details className="labeling-sidebar-section labeling-sidebar-collapsible" open>
-          <summary className="labeling-sidebar-collapsible-title">Layers</summary>
-          <div className="layer-style-controls">
-            <section className="layer-style-group">
-              <h4>Candidates</h4>
-              {usesRasterReviewOverlay ? (
-                <div className="layer-style-control">
-                  <label
-                    className="view-confirmed-toggle"
-                    htmlFor="candidate-borders-toggle"
-                  >
-                    <input
-                      id="candidate-borders-toggle"
-                      type="checkbox"
-                      checked={showCandidateBorders}
-                      onChange={(event) =>
-                        onShowCandidateBordersChange(event.target.checked)
-                      }
-                    />
-                    Borders
-                  </label>
-                </div>
-              ) : (
-                <div className="layer-style-control">
-                  <label htmlFor="candidate-border-thickness">Border thickness</label>
-                  <div className="layer-style-slider-row">
-                    <input
-                      id="candidate-border-thickness"
-                      type="range"
-                      min={0.5}
-                      max={8}
-                      step={0.5}
-                      value={leftPanelLayerStyles.candidateStrokeWidth}
-                      onChange={(event) =>
-                        onCandidateStrokeWidthChange(Number(event.target.value))
-                      }
-                    />
-                    <span>{leftPanelLayerStyles.candidateStrokeWidth.toFixed(1)}px</span>
-                  </div>
-                </div>
-              )}
-              <div className="layer-style-control">
-                <label htmlFor="candidate-fill-opacity">Fill opacity</label>
-                <div className="layer-style-slider-row">
-                  <input
-                    id="candidate-fill-opacity"
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={leftPanelLayerStyles.candidateFillOpacity}
-                    onChange={(event) =>
-                      onCandidateFillOpacityChange(Number(event.target.value))
-                    }
-                  />
-                  <span>
-                    {(leftPanelLayerStyles.candidateFillOpacity * 100).toFixed(0)}%
-                  </span>
-                </div>
-              </div>
-            </section>
-            <section className="layer-style-group">
-              <h4>Confirmed</h4>
-              {usesRasterReviewOverlay ? (
-                <div className="layer-style-control">
-                  <label
-                    className="view-confirmed-toggle"
-                    htmlFor="confirmed-borders-toggle"
-                  >
-                    <input
-                      id="confirmed-borders-toggle"
-                      type="checkbox"
-                      checked={showConfirmedBorders}
-                      onChange={(event) =>
-                        onShowConfirmedBordersChange(event.target.checked)
-                      }
-                    />
-                    Borders
-                  </label>
-                </div>
-              ) : (
-                <div className="layer-style-control">
-                  <label htmlFor="confirmed-border-thickness">Border thickness</label>
-                  <div className="layer-style-slider-row">
-                    <input
-                      id="confirmed-border-thickness"
-                      type="range"
-                      min={0.5}
-                      max={8}
-                      step={0.5}
-                      value={leftPanelLayerStyles.confirmedStrokeWidth}
-                      onChange={(event) =>
-                        onConfirmedStrokeWidthChange(Number(event.target.value))
-                      }
-                    />
-                    <span>{leftPanelLayerStyles.confirmedStrokeWidth.toFixed(1)}px</span>
-                  </div>
-                </div>
-              )}
-              <div className="layer-style-control">
-                <label htmlFor="confirmed-fill-opacity">Fill opacity</label>
-                <div className="layer-style-slider-row">
-                  <input
-                    id="confirmed-fill-opacity"
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={leftPanelLayerStyles.confirmedFillOpacity}
-                    onChange={(event) =>
-                      onConfirmedFillOpacityChange(Number(event.target.value))
-                    }
-                  />
-                  <span>
-                    {(leftPanelLayerStyles.confirmedFillOpacity * 100).toFixed(0)}%
-                  </span>
-                </div>
-              </div>
-            </section>
-          </div>
-        </details>
     </aside>
   );
 }

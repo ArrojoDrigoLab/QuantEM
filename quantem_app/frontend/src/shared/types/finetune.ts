@@ -97,6 +97,8 @@ export interface AdaptedModelEntry {
   split_mode: SplitMode;
   mode?: AdaptMode;
   segmentation_id?: string | null;
+  /** Every labeling view this named fine-tune was explicitly applied to. */
+  segmentation_ids?: string[];
   applied_at?: string | null;
 }
 
@@ -463,7 +465,8 @@ export interface FineTuneProgress {
 
 export interface FineTuneCvFold {
   fold: number;
-  held_out_asset_id: string;
+  held_out_asset_id: string | null;
+  threshold?: number | null;
   dice: number | null;
   iou: number | null;
   n_tiles: number;
@@ -472,15 +475,32 @@ export interface FineTuneCvFold {
 export interface FineTuneCvPerImage {
   asset_id: string;
   name: string;
+  threshold?: number | null;
   dice: number | null;
   iou: number | null;
   n_tiles: number;
 }
 
+export interface FineTuneCvPerRoi {
+  fold: number;
+  roi_id: string;
+  /** Stable internal crop name, retained for traceability and the CSV. */
+  roi_name: string;
+  /** Reader-facing ordinal within the image, for example "ROI 2". */
+  roi_label: string;
+  asset_id: string;
+  name: string;
+  threshold: number | null;
+  dice: number | null;
+  iou: number | null;
+}
+
 /** Per-image results are required, not optional: a mean alone hides the outlier. */
 export interface FineTuneCvResults {
   folds: FineTuneCvFold[];
-  mean: { dice: number | null; iou: number | null };
+  mean: { dice: number | null; iou: number | null; threshold?: number | null };
+  /** One row per held-out annotated ROI. Present on runs made by 0.1.2+. */
+  per_roi?: FineTuneCvPerRoi[];
   per_image: FineTuneCvPerImage[];
 }
 

@@ -194,11 +194,9 @@ describe("useSegmentationOverlayState", () => {
     });
   });
 
-  // TODO(overlay-idmap): the raster-channel review overlay was replaced by the
-  // id-map overlay (labels + border + render-time LUT). The id-map specs are
-  // built from an async LUT fetch (useOverlayLut), so detailed spec assertions
-  // belong in a dedicated test that mocks the overlay-lut endpoint. Here we just
-  // verify the surviving toggle state.
+  // Detailed candidate/confirmed/right ID-map spec assertions live with
+  // useOverlayLayerControls. Here we verify this composition hook preserves the
+  // controls it exposes.
   it("retains overlay border toggle state", () => {
     const { result } = renderHook(() => useSegmentationOverlayState(makeArgs()));
 
@@ -209,5 +207,23 @@ describe("useSegmentationOverlayState", () => {
     expect(result.current.manifest.usesRasterReviewOverlay).toBe(true);
     expect(result.current.layers.showCandidateBorders).toBe(false);
     expect(result.current.layers.showConfirmedBorders).toBe(true);
+  });
+
+  it("removes a hard-deleted object from vector data immediately and can roll it back", () => {
+    const segment = makeSegment({ id: "delete-me", label_state: "CONFIRMED" });
+    const { result } = renderHook(() => useSegmentationOverlayState(makeArgs()));
+
+    act(() => {
+      result.current.optimistic.stageOptimisticSegments([segment]);
+      result.current.deletion.hideSegment(segment.id);
+    });
+
+    expect(result.current.optimistic.applyLabelOverrides([segment])).toEqual([]);
+    expect(result.current.optimistic.optimisticConfirmed).toEqual([]);
+
+    act(() => {
+      result.current.deletion.rollbackSegment(segment.id);
+    });
+    expect(result.current.optimistic.applyLabelOverrides([segment])).toEqual([segment]);
   });
 });

@@ -1,1 +1,8 @@
-/* Left panel styles are already in SegmentationScreen.css */
+/* Most left panel styles are in SegmentationScreen.css. */
+
+.left-viewer-stage {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}

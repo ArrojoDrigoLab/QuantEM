@@ -124,6 +124,9 @@ describe("buildLeftPanelViewerConfig", () => {
     });
 
     expect(viewerProps.interactions?.onImageClick).toBe(props.segments.onClick);
+    expect(viewerProps.interactions?.onImagePress).toBe(props.segments.onPress);
+    expect(viewerProps.interactions?.onImageDrag).toBe(props.segments.onDrag);
+    expect(viewerProps.interactions?.onImageRelease).toBe(props.segments.onRelease);
     expect(viewerProps.interactions?.brush?.enabled).toBe(false);
     expect(viewerProps.interactions?.draw?.enabled).toBe(false);
     expect(viewerProps.viewport?.disablePan).toBe(true);

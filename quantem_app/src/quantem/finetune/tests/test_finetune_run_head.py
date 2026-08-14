@@ -157,12 +157,18 @@ class ScopedRunTests(TestCase):
         assert sorted(str(f["held_out_asset_id"]) for f in cv["folds"]) == sorted(self.asset_ids)
         for fold in cv["folds"]:
             assert fold["n_tiles"] >= 1
+            assert 0.0 <= fold["threshold"] <= 1.0
+            assert fold["held_out_rois"]
             # None is allowed and means "undefined here"; a number must be a
             # number, never a zero standing in for one.
             assert fold["dice"] is None or 0.0 <= fold["dice"] <= 1.0
             assert fold["iou"] is None or 0.0 <= fold["iou"] <= 1.0
 
-        assert set(cv["mean"]) == {"dice", "iou"}
+        assert set(cv["mean"]) == {"dice", "iou", "threshold"}
+        assert 0.0 <= cv["mean"]["threshold"] <= 1.0
+        assert len(cv["per_roi"]) == 2
+        assert all(row["roi_label"].startswith("ROI ") for row in cv["per_roi"])
+        assert all(0.0 <= row["threshold"] <= 1.0 for row in cv["per_roi"])
         # Per-image results are required by R13, not optional.
         assert len(cv["per_image"]) == 2
         assert sorted(row["asset_id"] for row in cv["per_image"]) == sorted(self.asset_ids)

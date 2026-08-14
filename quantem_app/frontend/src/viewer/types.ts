@@ -61,6 +61,12 @@ export interface ViewerIdMapOverlaySpec {
   maxLabel: number;
   /** Bumps when the LUT content changes, so the layer re-uploads the palette. */
   lutRevision: number;
+  /** Client-only visual changes that do not alter the server LUT revision. */
+  visualRevision?: number;
+  /** UUID highlighted locally without changing object state. */
+  highlightedSegmentId?: string | null;
+  /** Bumps when the highlighted UUID changes. */
+  highlightRevision?: number;
   fillOpacity: number;
   borderOpacity: number;
   showBorders: boolean;

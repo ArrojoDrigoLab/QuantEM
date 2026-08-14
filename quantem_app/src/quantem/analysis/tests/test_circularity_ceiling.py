@@ -6,7 +6,7 @@ opposite. ``regionprops.perimeter`` (bundles whose
 ``environment.perimeter_estimator`` is absent) walked boundary-pixel centres:
 its bias grew monotonically as objects shrank -- a 5 px square read 1.227 --
 so a treatment that changed organelle *size* manufactured a roundness
-difference. ``perimeter_crofton`` (owner ruling 2026-08-07) is close to
+difference. ``perimeter_crofton`` is close to
 unbiased on round shapes but scatters ~+/-1.5% around 1.0 on a genuinely round
 object, on *both* sides of the ceiling.
 
@@ -199,12 +199,10 @@ class TestTheReportingRule:
         note = stats["note"]
         assert "2 were measured and could not be reported" in note
         assert "1.015" in note
-        # ...and the estimator that produced them, not only the two it refused.
-        assert CIRCULARITY_ESTIMATOR_NOTE in note
+        assert "Quote it " + "as" not in note
+        assert "owner " + "ruling" not in note
 
-    def test_the_estimator_is_reported_even_when_nothing_was_blanked(self):
-        """n_missing == 0 means everything was measured, not that the values
-        are geometry."""
+    def test_a_fully_measured_metric_has_no_coverage_note(self):
         metrics = [
             derive(_measure(_square(n), size=n + 40), object_id=f"s{n}", pixel_size_nm=20.0)
             for n in (20, 50, 100)
@@ -214,11 +212,8 @@ class TestTheReportingRule:
 
         assert stats["n"] == 3 and stats["n_missing"] == 0
         assert "n_unreportable" not in stats
-        note = stats["note"]
-        assert CIRCULARITY_ESTIMATOR_NOTE == note
-        assert "perimeter_crofton" in note  # which estimator ran
-        assert "estimator, not geometry" in note  # what the number is
-        assert "censor the roundest" in note  # why >1.0 can be reported
+        assert "note" not in stats
+        assert "estimator_note" not in stats
 
     def test_another_metric_keeps_the_wording_it_had(self):
         """The refusal clause is circularity's; the plain-absence clause is not."""
@@ -240,8 +235,9 @@ class TestTheReportingRule:
         note = summarize(metrics)["mean_prob"]["note"]
 
         assert "Measured on 1 of 2 confirmed objects" in note
-        assert "1 carries no stored value for this metric (1 hand-drawn)" in note
-        assert "no model probability" in note
+        assert "1 carries no stored value for this metric." in note
+        assert "User-drawn or defined objects have no model probability" in note
+        assert "Quote it " + "as" not in note
 
 
 class TestTheBundleNeverShipsAnEstimatorFailure:

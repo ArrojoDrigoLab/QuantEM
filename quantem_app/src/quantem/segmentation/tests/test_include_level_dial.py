@@ -60,6 +60,7 @@ from quantem.segmentation.prob_maps.persistence import (
     REPLAY_READY,
     stored_map_readiness,
 )
+from quantem.segmentation.source_models import SOURCE_MODEL_MANUAL
 from quantem.segmentation.type_service import get_or_create_mitochondria_type
 from quantem.testing import create_small_test_image
 
@@ -89,8 +90,9 @@ def _model_field(shape: tuple[int, int]) -> np.ndarray:
     return np.clip(field, 0.0, 1.0).astype(np.float32)
 
 
-def _fake_engine():
-    spec = get_model_spec("quantem", "mito")
+def _fake_engine(source_model: str = SOURCE_MODEL):
+    family, _, _organelle = source_model.partition(":")
+    spec = get_model_spec(family, "mito")
 
     def predict_region(_model, image, *, pixel_size_nm=None, **_kwargs):
         context = resample.plan_resample(image.shape[:2], pixel_size_nm, spec.canonical_nm)
@@ -104,9 +106,12 @@ def _fake_engine():
     )
 
 
-def _segmenter(threshold: float = 0.5) -> DinoMitoSegmenter:
+def _segmenter(
+    threshold: float = 0.5,
+    source_model: str = SOURCE_MODEL,
+) -> DinoMitoSegmenter:
     return DinoMitoSegmenter(
-        source_model=SOURCE_MODEL,
+        source_model=source_model,
         fg_threshold=threshold,
         pixel_size_nm=PIXEL_SIZE_NM,
     )
@@ -128,10 +133,14 @@ class IncludeLevelDialTestCase(TestCase):
             args=[str(self.segmentation.id)],
         )
 
-    def run_the_model(self, threshold: float = 0.5) -> int:
-        segmenter = _segmenter(threshold)
+    def run_the_model(
+        self,
+        threshold: float = 0.5,
+        source_model: str = SOURCE_MODEL,
+    ) -> int:
+        segmenter = _segmenter(threshold, source_model)
         with (
-            patch("quantem.inference.segmenter.engine", _fake_engine()),
+            patch("quantem.inference.segmenter.engine", _fake_engine(source_model)),
             patch(
                 "quantem.segmentation.organelle_tasks.get_segmenter",
                 return_value=segmenter,
@@ -140,7 +149,7 @@ class IncludeLevelDialTestCase(TestCase):
             return run_segmentation_full_task(
                 segmentation_id=str(self.segmentation.id),
                 segmentation_type=MITO_INTERNAL_NAME,
-                source_model=SOURCE_MODEL,
+                source_model=source_model,
             )
 
     def run_the_model_on_roi(self):
@@ -169,7 +178,11 @@ class IncludeLevelDialTestCase(TestCase):
             )
         return roi
 
-    def work_the_job(self, include_level: float) -> dict:
+    def work_the_job(
+        self,
+        include_level: float,
+        source_model: str = SOURCE_MODEL,
+    ) -> dict:
         """Run the handler the way the worker runs it."""
         job = Job.enqueue(
             job_type=JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
@@ -177,7 +190,7 @@ class IncludeLevelDialTestCase(TestCase):
                 "segmentation_id": str(self.segmentation.id),
                 "segmentation_type": MITO_INTERNAL_NAME,
                 "include_level": include_level,
-                "source_model": SOURCE_MODEL,
+                "source_model": source_model,
             },
             priority="high",
             resource_class="cpu",
@@ -229,6 +242,26 @@ class IncludeLevelDialTestCase(TestCase):
             label_state="CANDIDATE",
             source_model=source_model,
             confidence_score=0.8,
+            features={"source_model": source_model},
+        )
+
+    def confirmed(
+        self,
+        bounds: tuple[float, float, float, float],
+        *,
+        source_model: str = SOURCE_MODEL_MANUAL,
+        refined: str = "MANUAL",
+    ) -> SegmentObject:
+        geometry = box(*bounds)
+        return SegmentObject.objects.create(
+            segmentation=self.segmentation,
+            geometry=geometry,
+            centroid=geometry.centroid,
+            bbox=geometry.envelope,
+            label_state="CONFIRMED",
+            refined=refined,
+            source_model=source_model,
+            confidence_score=None,
             features={"source_model": source_model},
         )
 
@@ -420,6 +453,13 @@ class WhenTheDialCannotMoveTests(IncludeLevelDialTestCase):
 
 
 class TheRouteTests(IncludeLevelDialTestCase):
+    def test_model_families_have_distinct_probability_map_namespaces(self):
+        quantem = _segmenter(source_model="quantem:mito")
+        omniem = _segmenter(source_model="omniem:mito")
+
+        assert quantem.prob_map_prefix == "mito"
+        assert omniem.prob_map_prefix == "mito_omniem"
+
     def test_the_route_exists_and_reports_where_the_dial_is(self):
         self.run_the_model(0.5)
 
@@ -455,6 +495,57 @@ class TheRouteTests(IncludeLevelDialTestCase):
         assert response["Content-Type"] == "image/png"
         assert response["Cache-Control"] == "no-store"
         assert b"".join(response.streaming_content).startswith(b"\x89PNG")
+
+    def test_omniem_cannot_preview_a_quantem_probability_map(self):
+        self.run_the_model(source_model="quantem:mito")
+
+        body = self.client.get(
+            self.url,
+            {"source_model": "omniem:mito"},
+        ).json()
+
+        assert body["can_move"] is False
+        assert body["detail"] == NO_STORED_MAP_MESSAGE
+        assert "preview_url" not in body
+
+    def test_omniem_replay_reads_its_own_map_and_writes_omniem_candidates(self):
+        self.run_the_model(source_model="quantem:mito")
+        self.run_the_model(source_model="omniem:mito")
+
+        stored = list(
+            ProbabilityMap.objects.filter(segmentation=self.segmentation).order_by("file_path")
+        )
+        assert len(stored) == 2
+        assert len({row.file_path for row in stored}) == 2
+        assert {row.metadata["pack_id"] for row in stored} == {
+            "quantem:mito",
+            "omniem:mito",
+        }
+
+        SegmentObject.objects.filter(
+            segmentation=self.segmentation,
+            source_model="omniem:mito",
+            label_state="CANDIDATE",
+        ).delete()
+
+        outcome = self.work_the_job(0.71, source_model="omniem:mito")
+
+        omniem_candidates = SegmentObject.objects.filter(
+            segmentation=self.segmentation,
+            source_model="omniem:mito",
+            label_state="CANDIDATE",
+            superseded_at__isnull=True,
+        ).count()
+        assert outcome["source_model"] == "omniem:mito"
+        assert outcome["segment_count"] > 0
+        assert omniem_candidates == outcome["segment_count"]
+        assert (
+            self.client.get(
+                self.url,
+                {"source_model": "omniem:mito"},
+            ).json()["candidate_count"]
+            == omniem_candidates
+        )
 
     def test_an_roi_test_exposes_only_that_rois_preview_and_bounds(self):
         roi = self.run_the_model_on_roi()
@@ -606,6 +697,7 @@ class ConfirmWholeModelOutputTests(IncludeLevelDialTestCase):
         assert response.status_code == 200
         assert response.json()["confirmed_count"] == 2
         assert response.json()["skipped_manual_roi_count"] == 0
+        assert response.json()["overlay"]["source_model"] == SOURCE_MODEL
         first.refresh_from_db()
         second.refresh_from_db()
         other_model.refresh_from_db()
@@ -614,6 +706,55 @@ class ConfirmWholeModelOutputTests(IncludeLevelDialTestCase):
         assert other_model.label_state == "CANDIDATE", (
             "confirming QuantEM must not also accept OmniEM's comparison output"
         )
+
+    def test_confirm_merges_at_seventy_percent_and_keeps_manual_provenance(self):
+        manual = self.confirmed((0, 0, 20, 20))
+        candidate = self.candidate((5, 0, 25, 20))
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["confirmed_count"] == 1
+        assert response.json()["merged_candidate_count"] == 1
+        manual.refresh_from_db()
+        assert manual.source_model == SOURCE_MODEL_MANUAL
+        assert manual.refined == "MANUAL"
+        assert manual.geometry.equals(box(0, 0, 25, 20))
+        assert not SegmentObject.objects.filter(pk=candidate.pk).exists()
+
+    def test_non_merging_candidate_excludes_confirmed_pixels_without_changing_them(self):
+        manual = self.confirmed((0, 0, 20, 20))
+        before = bytes(manual.geometry_wkb)
+        candidate = self.candidate((10, 0, 40, 20))
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["confirmed_count"] == 1
+        assert response.json()["merged_candidate_count"] == 0
+        assert response.json()["clipped_candidate_count"] == 1
+        manual.refresh_from_db()
+        candidate.refresh_from_db()
+        assert bytes(manual.geometry_wkb) == before
+        assert manual.geometry.equals(box(0, 0, 20, 20))
+        assert candidate.label_state == "CONFIRMED"
+        assert candidate.geometry.equals(box(20, 0, 40, 20))
+        assert not candidate.geometry.intersects(manual.geometry.buffer(-1e-6))
+
+    def test_size_floor_runs_after_confirmed_pixels_are_excluded(self):
+        manual = self.confirmed((0, 0, 10, 10))
+        before = bytes(manual.geometry_wkb)
+        candidate = self.candidate((4, 0, 14, 10))
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["min_area"] == 60
+        assert response.json()["confirmed_count"] == 0
+        assert response.json()["filtered_after_overlap_count"] == 1
+        manual.refresh_from_db()
+        assert bytes(manual.geometry_wkb) == before
+        assert not SegmentObject.objects.filter(pk=candidate.pk).exists()
 
     def test_confirm_leaves_candidates_in_both_manual_roi_representations_unchanged(self):
         freeform_candidate = self.candidate((20, 20, 35, 35))

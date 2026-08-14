@@ -45,6 +45,25 @@ export function makeLeftPanelProps(
   overrides: Partial<SegmentationLeftPanelProps> = {}
 ): SegmentationLeftPanelProps {
   return {
+    layerControls: {
+      usesRasterOverlay: false,
+      candidates: {
+        strokeWidth: 2,
+        fillOpacity: 0.18,
+        showBorders: true,
+        onStrokeWidthChange: noop,
+        onFillOpacityChange: noop,
+        onShowBordersChange: noop,
+      },
+      confirmed: {
+        strokeWidth: 2,
+        fillOpacity: 0.15,
+        showBorders: true,
+        onStrokeWidthChange: noop,
+        onFillOpacityChange: noop,
+        onShowBordersChange: noop,
+      },
+    },
     viewer: {
       image: makeLeftPanelImage(),
       segmentationTypeInternalName: "quantem_internal_mito",

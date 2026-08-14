@@ -115,9 +115,9 @@ export function PointsPanel({ points, composition, pointsSource }: PointsPanelPr
       {points.n_off_tissue > 0 ? (
         <p className="mt-2 mb-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           {formatInteger(points.n_off_tissue)} of{" "}
-          {formatInteger(points.n_total)} points fell outside the tissue mask and
+          {formatInteger(points.n_total)} points fell outside the analysis mask and
           were excluded. Every fraction and enrichment below is out of the{" "}
-          {formatInteger(points.n_on_tissue)} on-tissue points.
+          {formatInteger(points.n_on_tissue)} points inside the analysis mask.
         </p>
       ) : null}
 

@@ -103,7 +103,8 @@ interface SegmentationHeaderProps {
    * pixel-size badge says the objects predate the calibration, and until this
    * existed the only route it could point at was an endpoint no screen called
    * (`POST .../labels/clear`) — re-running alone is a no-op, because a new
-   * candidate landing on a confirmed or excluded object is dropped. Rejections
+   * rejected candidate is dropped; confirmed objects stay above the full model
+   * preview and are resolved only when that preview is confirmed. Rejections
    * are expected: the confirm dialog stays open and prints them.
    */
   onClearMislabeledObjects?: () => Promise<void>;

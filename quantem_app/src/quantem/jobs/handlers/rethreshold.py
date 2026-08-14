@@ -150,7 +150,13 @@ def handle_reextract_at_include_level(
         segmentation_type_internal_name=segmentation.segmentation_type.internal_name,
         source_model=source_model,
     )
-    segmenter = get_segmenter_or_none(segmenter_internal_name)
+    # The registry key identifies the organelle class; ``source_model`` selects
+    # the QuantEM or OmniEM pack inside that shared class.  Keep the worker on
+    # the same family the request validated and whose stored map it must read.
+    segmenter = get_segmenter_or_none(
+        segmenter_internal_name,
+        source_model=source_model,
+    )
     if segmenter is None:
         # The stored map belongs to a model, and re-thresholding it needs that
         # model's own extraction settings -- its area floor, its closing radius.

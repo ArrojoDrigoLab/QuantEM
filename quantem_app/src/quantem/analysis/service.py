@@ -36,7 +36,13 @@ from quantem.segmentation.run_identity import (
 )
 
 from . import provenance
-from .compartments import CompartmentSet, area_fractions, assign_points
+from .compartments import (
+    AnalysisRegionMask,
+    CompartmentSet,
+    area_fractions,
+    area_fractions_by_region,
+    assign_points,
+)
 from .distances import DEFAULT_BAND_EDGES_NM, distance_to_boundary
 from .montecarlo import (
     DEFAULT_REPLICATES,
@@ -221,6 +227,18 @@ IMAGE_SUMMARY_LAST_FIELDS: tuple[str, ...] = (
     "caveats",
 )
 
+COMPOSITION_CSV_BASE_FIELDS: tuple[str, ...] = (
+    "image_key",
+    "segmentation_id",
+    "analysis_run_id",
+    "group",
+    "pixel_size_nm",
+    "analysis_region_id",
+    "analysis_region_name",
+    "analysis_region_px",
+    "analysis_region_um2",
+)
+
 #: What a column of an exported CSV means, where the name alone is not enough.
 #:
 #: The manifest listed every column by name and defined none of them. Several
@@ -258,14 +276,8 @@ COLUMN_NOTES: dict[str, dict[str, str]] = {
             "Blank means no completed area is recorded at all, which is 'nobody "
             "said', not 'outside'."
         ),
-        # The one column in this file whose *estimator* is biased rather than
-        # whose coverage is partial. Nothing about the column is missing, so
-        # nothing else in the bundle would have flagged it here: a reader who
-        # opens objects.csv, means the circularity column and compares two
-        # groups has done everything right and can still get a shape result out
-        # of a pure size difference. The paragraph is the same one the summary
-        # carries as estimator_note; it is repeated here because this is the
-        # file the number is read out of.
+        # Estimator details travel with the exported column documentation so a
+        # reader can interpret values taken directly from objects.csv.
         "circularity": CIRCULARITY_ESTIMATOR_NOTE,
     },
     "image_summary.csv": {
@@ -320,6 +332,8 @@ class AnalysisInputs:
     compartments: CompartmentSet
     #: Per-object stored features, keyed by object id.
     object_features: dict[str, dict[str, Any]]
+    #: Individually named objects inside the selected Analysis Mask.
+    analysis_regions: tuple[AnalysisRegionMask, ...] = ()
     #: ``SegmentObject.source_model`` per object id: ``"manual"`` for a polygon
     #: a person drew, otherwise the model that produced it. Optional, because
     #: :func:`run_analysis` is usable from a notebook with nothing but a feature
@@ -396,10 +410,10 @@ class AnalysisInputs:
 #: ``segment_count: 0`` with "Nothing changed: the 41 object(s) you have already
 #: labelled here are exactly as they were."
 #:
-#: That behaviour is right:
-#: :func:`quantem.seg_core.db.extraction.extract_and_save_segments` drops a
-#: candidate overlapping a CONFIRMED object by >=30% or an EXCLUDED one by >=80%,
-#: which is what stops a re-run destroying a day of proofreading. The
+#: That behaviour is right: Preview never replaces a confirmed outline. It
+#: paints the complete model proposal beneath it, and Confirm either applies
+#: the 70% union rule or subtracts the confirmed pixels before accepting the
+#: remainder. The
 #: consequence is that the advice is a **no-op on exactly the bundles that carry
 #: it**: every object measured here is CONFIRMED
 #: (:func:`quantem.analysis.loaders.confirmed_objects`), so a re-run cannot
@@ -419,11 +433,12 @@ class AnalysisInputs:
 #: one" is not a route either.
 RERUN_NEEDS_THE_OBJECTS_GONE = (
     "Re-running inference is not by itself enough. Every object measured here "
-    "is one somebody confirmed, and a new candidate that lands on an object "
-    "already confirmed or excluded is dropped rather than saved — that is what "
-    "stops a re-run undoing proofreading — so the run completes, reports no new "
-    "objects, and leaves these ones, and their record of having been produced "
-    "without a pixel size, exactly as they were. The objects have to go first. "
+    "is one somebody confirmed. A new model preview cannot replace it: the "
+    "proposal stays underneath, and accepting it either merges a strong overlap "
+    "or excludes the confirmed pixels. That is what stops a re-run undoing "
+    "proofreading, so these objects and their record of having been produced "
+    "without a pixel size remain exactly as they were. The objects have to go "
+    "first. "
     "Discard objects and re-run, on the labeling screen, deletes this "
     "segmentation's confirmed and excluded objects and runs the model again; "
     "what that produces is stamped with the pixel size the image now has. "
@@ -823,6 +838,11 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
         )
 
     areas = area_fractions(inputs.compartments, pixel_size_nm=pixel_size_nm)
+    region_areas = area_fractions_by_region(
+        inputs.compartments,
+        inputs.analysis_regions,
+        pixel_size_nm=pixel_size_nm,
+    )
 
     # A tissue mask that was supplied but is empty makes every fraction below a
     # ratio to zero, and makes the Monte-Carlo null unsamplable -- there is
@@ -865,6 +885,7 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
             "area_fractions": areas.fractions,
             "areas_px": areas.areas_px,
             "areas_um2": areas.areas_um2,
+            "regions": region_areas,
         },
         "objects": {
             "n": len(metrics),
@@ -896,15 +917,8 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
     # metrics that cover everything. Its own note says so, and so does the
     # caveat list, because those are the two places a reader looks.
     summary = result["objects"]["summary"]
-    # The estimator note is not a coverage note. It was reaching the bundle only
-    # when at least one circularity value had been blanked, so a run whose
-    # objects all cleared the ceiling shipped a full circularity column with no
-    # word of the bias -- and the bias is monotone in size and does not cancel
-    # between groups. Scaling eight real mitochondrial outlines to 0.6x, a pure
-    # size change with identical shapes, moved mean circularity 0.619 -> 0.641,
-    # paired t = 3.596, p = 0.0088: a publishable "mitochondria became more
-    # circular after treatment" out of a correct segmentation and a silent
-    # bundle. Whenever the column is populated at all, the note goes with it.
+    # The estimator note is not a coverage note. It qualifies every populated
+    # circularity column, including runs where no value was blanked.
     estimator_notes = [
         key
         for key, stats in summary.items()
@@ -1176,6 +1190,47 @@ def image_summary_row(result: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
+def composition_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """One wide CSV row per named Analysis Mask object."""
+    composition = result.get("composition") or {}
+    regions = list(composition.get("regions") or [])
+    if not regions:
+        regions = [
+            {
+                "id": "",
+                "name": "Combined analysis area",
+                "tissue_px": composition.get("tissue_px"),
+                "tissue_um2": composition.get("tissue_um2"),
+                "area_fractions": composition.get("area_fractions") or {},
+                "areas_px": composition.get("areas_px") or {},
+                "areas_um2": composition.get("areas_um2"),
+            }
+        ]
+
+    rows: list[dict[str, Any]] = []
+    for region in regions:
+        row: dict[str, Any] = {
+            "image_key": result["image_key"],
+            "segmentation_id": result.get("segmentation_id") or "",
+            "analysis_run_id": result.get("analysis_run_id") or "",
+            "group": result.get("group") or "",
+            "pixel_size_nm": result.get("pixel_size_nm"),
+            "analysis_region_id": region.get("id") or "",
+            "analysis_region_name": region.get("name") or "",
+            "analysis_region_px": region.get("tissue_px"),
+            "analysis_region_um2": region.get("tissue_um2"),
+        }
+        fractions = region.get("area_fractions") or {}
+        areas_px = region.get("areas_px") or {}
+        areas_um2 = region.get("areas_um2") or {}
+        for name, fraction in fractions.items():
+            row[f"{name}_area_fraction"] = fraction
+            row[f"{name}_area_px"] = areas_px.get(name)
+            row[f"{name}_area_um2"] = areas_um2.get(name)
+        rows.append(row)
+    return rows
+
+
 def write_bundle(
     results: list[dict[str, Any]],
     out_dir: Path,
@@ -1220,6 +1275,14 @@ def write_bundle(
         last_fields=IMAGE_SUMMARY_LAST_FIELDS,
     )
 
+    # composition.csv -- one row per named Analysis Mask object
+    comp_rows = [row for result in results for row in composition_rows(result)]
+    comp_columns = _write_csv(
+        out_dir / "composition.csv",
+        comp_rows,
+        fields=COMPOSITION_CSV_BASE_FIELDS,
+    )
+
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(),
         "quantem_version": __version__,
@@ -1250,6 +1313,11 @@ def write_bundle(
                     len(img_rows),
                     img_columns,
                     "one row per image, with that image's caveats in the last column",
+                ),
+                "composition.csv": (
+                    len(comp_rows),
+                    comp_columns,
+                    "one row per named Analysis Mask object",
                 ),
             },
         ),
@@ -1421,8 +1489,7 @@ def _object_manifest(results: list[dict[str, Any]]) -> dict[str, Any]:
     for r in results:
         for key, stats in (r["objects"].get("summary") or {}).items():
             # An estimator note qualifies every value the metric reports, so it
-            # belongs in the manifest whether or not anything was blanked. See
-            # the caveat block above for what shipping without it costs.
+            # belongs in the manifest whether or not anything was blanked.
             if not stats.get("n_missing") and not stats.get("estimator_note"):
                 continue
             entry = coverage.setdefault(key, {"n": 0, "n_objects": 0, "notes": [], "by_image": []})

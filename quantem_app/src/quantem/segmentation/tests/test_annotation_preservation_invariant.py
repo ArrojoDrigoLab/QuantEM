@@ -355,6 +355,13 @@ class ObjectsTheUserDecidedAboutTests(AnnotationPreservationTestCase):
 
         assert _annotation_fingerprint(confirmed) == before
         self.assert_still_visible(confirmed)
+        assert any(
+            candidate.geometry.intersects(confirmed.geometry)
+            for candidate in self.fresh_candidates()
+        ), (
+            "Preview did not materialize the full model result around a confirmed "
+            "object; overlap resolution belongs to Confirm"
+        )
 
     def test_a_hand_drawn_object_survives_a_model_run_unchanged(self):
         """What the drawing tool creates: ``source_model="manual"``, CONFIRMED."""

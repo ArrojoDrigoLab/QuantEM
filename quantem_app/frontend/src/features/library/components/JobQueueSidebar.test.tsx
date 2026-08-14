@@ -472,13 +472,13 @@ describe("JobQueueSidebar", () => {
      * A re-run over a proofread image completes in seconds having added
      * nothing, and the queue said `completed: no new objects` -- true, and
      * silent about the fact that this is the *expected* outcome (a candidate
-     * landing on a confirmed object is dropped, which is what protects
+     * confirmed work stays above model preview output, which is what protects
      * proofreading) and about what to do instead of lowering the threshold.
      * Those three sentences went into the job row and stopped there.
      */
     const ADVICE = [
       "Nothing changed: the 41 object(s) you have already labelled here are exactly as they were.",
-      "A candidate that lands on an object you have already confirmed or excluded is not added again, so a re-run over a proofread image is expected to find nothing new.",
+      "Rejected model proposals are not added again. Confirmed outlines stay unchanged above any new model preview; accepting that preview later merges strong overlaps or removes the confirmed pixels from it.",
       "If you think objects were missed, run over an area you have not labelled yet rather than lowering the threshold over one you have.",
     ];
 

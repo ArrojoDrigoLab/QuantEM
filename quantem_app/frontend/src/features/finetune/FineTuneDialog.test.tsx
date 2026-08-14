@@ -20,6 +20,7 @@ import type {
   FineTunePreviewResponse,
   FineTuneApplyProgress,
   FineTuneProgress,
+  FineTuneRunDetail,
   FineTuneScopeSelectionPayload,
   FineTuneScopeResponse,
 } from "@/shared/types/finetune";
@@ -129,6 +130,7 @@ interface Stubs {
   onStart?: () => void;
   onPreview?: (payload: FineTuneScopeSelectionPayload) => void;
   applyProgress?: Partial<FineTuneApplyProgress>;
+  runDetail?: Partial<FineTuneRunDetail>;
 }
 
 function stubApi({
@@ -139,6 +141,7 @@ function stubApi({
   onStart,
   onPreview,
   applyProgress,
+  runDetail,
 }: Stubs = {}) {
   server.use(
     http.get(`${API}/api/finetune/scope/`, () => HttpResponse.json(SCOPE)),
@@ -170,18 +173,32 @@ function stubApi({
       HttpResponse.json(progressBody(progress))
     ),
     http.get(`${API}/api/finetune/runs/:id/`, ({ params }) =>
-      HttpResponse.json(
-        params.id === "ad-old"
-          ? {
-              id: "ad-old",
-              name: "First attempt",
-              caveats: [],
-              cv_results: {},
-              experiment: { id: "exp-fasted", name: "Fasted cohort" },
-              asset_ids: ["img-1", "img-2", "img-3"],
-            }
-          : { id: "ad-new", caveats: [], cv_results: {} }
-      )
+      HttpResponse.json({
+        id: String(params.id),
+        name: params.id === "ad-old" ? "First attempt" : "New fine-tune",
+        base_model: "quantem:mito",
+        status: "SUCCESS",
+        mode: "head",
+        steps: 600,
+        trainable_params: 10,
+        segmentation_id: null,
+        split_mode: "image-disjoint",
+        train_crop_names: [],
+        heldout_crop_names: [],
+        sweep: {},
+        calibrated_threshold: 0.5,
+        heldout_dice: null,
+        verified_reload: false,
+        train_seconds: 1,
+        applied_at: null,
+        created_at: "2026-01-01T00:00:00Z",
+        error: "",
+        caveats: [],
+        cv_results: {},
+        experiment: { id: "exp-fasted", name: "Fasted cohort" },
+        asset_ids: ["img-1", "img-2", "img-3"],
+        ...runDetail,
+      })
     ),
     http.post(`${API}/api/finetune/runs/:id/apply/`, async ({ request }) => {
       const body = (await request.json()) as {
@@ -546,11 +563,11 @@ describe("FineTuneDialog", () => {
     });
     openDialog();
 
-    await user.selectOptions(
-      await screen.findByLabelText("Run a saved fine-tune"),
-      "ad-old"
-    );
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    const trainTab = await screen.findByRole("tab", { name: "Train" });
+    expect(trainTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText("Run a saved fine-tune")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Apply" }));
 
     expect(await screen.findByTestId("finetune-success")).toHaveTextContent(
       "First attempt"
@@ -566,6 +583,86 @@ describe("FineTuneDialog", () => {
     expect(screen.getByTestId("finetune-apply-datasets")).toHaveTextContent(
       "Liver 24h"
     );
+  });
+
+  it("moves a completed run to Apply and keeps per-ROI CV results there", async () => {
+    const user = userEvent.setup();
+    stubApi({
+      progress: { status: "SUCCESS", step: 900, total_steps: 900, percent: 100 },
+      runDetail: {
+        name: "Test CV",
+        train_crop_names: ["img-1_roi0", "img-1_roi1"],
+        heldout_crop_names: ["img-1_roi2"],
+        cv_results: {
+          folds: [
+            {
+              fold: 0,
+              held_out_asset_id: "img-1",
+              threshold: 0.7,
+              dice: 0.91,
+              iou: 0.84,
+              n_tiles: 2,
+            },
+            {
+              fold: 1,
+              held_out_asset_id: "img-1",
+              threshold: 0.8,
+              dice: 0.93,
+              iou: 0.87,
+              n_tiles: 2,
+            },
+          ],
+          mean: { threshold: 0.75, dice: 0.92, iou: 0.855 },
+          per_roi: [
+            {
+              fold: 0,
+              roi_id: "roi-1",
+              roi_name: "img-1_roi0",
+              roi_label: "ROI 1",
+              asset_id: "img-1",
+              name: "liver_01.tif",
+              threshold: 0.7,
+              dice: 0.91,
+              iou: 0.84,
+            },
+            {
+              fold: 1,
+              roi_id: "roi-2",
+              roi_name: "img-1_roi1",
+              roi_label: "ROI 2",
+              asset_id: "img-1",
+              name: "liver_01.tif",
+              threshold: 0.8,
+              dice: 0.93,
+              iou: 0.87,
+            },
+          ],
+          per_image: [],
+        },
+      },
+    });
+    openDialog();
+    await selectTheDataset(user);
+    await user.type(screen.getByLabelText("Name"), "Test CV");
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Apply" })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      )
+    );
+    const table = within(await screen.findByTestId("finetune-cv-results"));
+    expect(table.getByText("ROI 1")).toBeInTheDocument();
+    expect(table.getByText("ROI 2")).toBeInTheDocument();
+    expect(table.getByText("0.750")).toBeInTheDocument();
+    expect(table.getByRole("button", { name: "Download CSV" })).toBeInTheDocument();
+
+    await user.click(table.getByRole("button", { name: "Methodology" }));
+    expect(
+      screen.getByRole("dialog", { name: "Cross-validation methodology" })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/oracle is the best achievable/i)).not.toBeInTheDocument();
   });
 
   it("says a failure changed nothing, and leaves a way out", async () => {

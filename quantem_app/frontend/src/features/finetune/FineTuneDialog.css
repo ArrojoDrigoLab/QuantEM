@@ -40,3 +40,24 @@
   --run-progress-warning: #b91c1c;
   --run-progress-download: #6d28d9;
 }
+
+.finetune-methodology-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1010;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.finetune-methodology-dialog {
+  width: min(100%, 560px);
+  max-height: min(84vh, 620px);
+  overflow-y: auto;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 20px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.3);
+}

@@ -25,6 +25,30 @@ const UNCALIBRATED: AnalysisComposition = {
   areas_um2: null,
 };
 
+const REGIONAL: AnalysisComposition = {
+  ...CALIBRATED,
+  regions: [
+    {
+      id: "region-1",
+      name: "Islet",
+      tissue_px: 1000,
+      tissue_um2: 0.025,
+      area_fractions: { mito: 0.25 },
+      areas_px: { mito: 250 },
+      areas_um2: { mito: 0.00625 },
+    },
+    {
+      id: "region-2",
+      name: "B Cell 1",
+      tissue_px: 500,
+      tissue_um2: 0.0125,
+      area_fractions: { mito: 0.1 },
+      areas_px: { mito: 50 },
+      areas_um2: { mito: 0.00125 },
+    },
+  ],
+};
+
 describe("CompositionPanel (honesty rule 6)", () => {
   it("renders no µm unit at all when the pixel size is unset", () => {
     const { container } = render(
@@ -52,7 +76,7 @@ describe("CompositionPanel (honesty rule 6)", () => {
     expect(screen.getByText("5 nm/px")).toBeInTheDocument();
   });
 
-  it("warns when the whole image was used as the denominator", () => {
+  it("does not show denominator badges", () => {
     render(
       <CompositionPanel
         composition={CALIBRATED}
@@ -61,12 +85,13 @@ describe("CompositionPanel (honesty rule 6)", () => {
         wholeImageDenominator
       />
     );
-    expect(screen.getByText("Whole image as denominator")).toBeInTheDocument();
+    expect(screen.queryByText("Whole image as denominator")).not.toBeInTheDocument();
+    expect(screen.queryByText("Restricted to the analysis mask")).not.toBeInTheDocument();
   });
 
-  it("does not claim tissue-area fractions when the denominator is the whole image", () => {
-    // With no tissue mask the header badge says "Whole image as denominator";
-    // a footer still reading "Fractions are of tissue area, not of the image"
+  it("does not claim masked-area fractions when the denominator is the whole image", () => {
+    // With no analysis mask the header badge says "Whole image as denominator";
+    // a footer still reading "Fractions are of masked area, not of the image"
     // contradicted it on the same panel.
     const { container } = render(
       <CompositionPanel
@@ -77,26 +102,46 @@ describe("CompositionPanel (honesty rule 6)", () => {
       />
     );
     expect(container.textContent).not.toContain(
-      "Fractions are of tissue area, not of the image."
+      "Fractions are of analysis-mask area, not of the whole image."
     );
     expect(
-      screen.getByText(/Fractions are of the whole image — this run had no tissue mask/)
+      screen.getByText(/Fractions are of the whole image because this run had no Analysis Mask/)
     ).toBeInTheDocument();
   });
 
-  it("keeps the tissue-area footer when the mask restricted the denominator", () => {
-    const { container } = render(
+  it("renders one row per named Analysis Mask object", () => {
+    render(
       <CompositionPanel
-        composition={CALIBRATED}
+        composition={REGIONAL}
         calibrated
         pixelSizeNm={5}
         wholeImageDenominator={false}
       />
     );
-    expect(container.textContent).toContain(
-      "Fractions are of tissue area, not of the image."
+    expect(screen.getByText("Islet")).toBeInTheDocument();
+    expect(screen.getByText("B Cell 1")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Total area (px)" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Total area (µm²)" })).toBeInTheDocument();
+    expect(screen.getByText("1,000")).toBeInTheDocument();
+    expect(screen.getByText("0.025")).toBeInTheDocument();
+    expect(screen.getByText("25.0%")).toBeInTheDocument();
+    expect(screen.getByText("250")).toBeInTheDocument();
+    expect(screen.getByText(/Each row is measured independently/)).toBeInTheDocument();
+  });
+
+  it("offers the composition CSV from the panel header", () => {
+    render(
+      <CompositionPanel
+        composition={REGIONAL}
+        calibrated
+        pixelSizeNm={5}
+        wholeImageDenominator={false}
+        compositionCsvUrl="/composition.csv"
+      />
     );
-    expect(container.textContent).not.toContain("Fractions are of the whole image");
+    expect(
+      screen.getByRole("link", { name: "Download Composition Metrics" })
+    ).toHaveAttribute("href", "/composition.csv");
   });
 
   it("explains a derived cytoplasm rather than letting fractions look additive", () => {
@@ -108,7 +153,7 @@ describe("CompositionPanel (honesty rule 6)", () => {
         wholeImageDenominator={false}
       />
     );
-    expect(screen.getByText(/do not sum to 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Cytoplasm is derived/)).toBeInTheDocument();
   });
 });
 
@@ -127,7 +172,7 @@ describe("PointsPanel (honesty rules 4 and 5)", () => {
       <PointsPanel points={points} composition={CALIBRATED} pointsSource="csv" />
     );
     expect(
-      screen.getByText(/fell outside the tissue mask and were excluded/)
+      screen.getByText(/fell outside the analysis mask and were excluded/)
     ).toBeInTheDocument();
   });
 
@@ -157,7 +202,7 @@ describe("PointsPanel (honesty rules 4 and 5)", () => {
       />
     );
     expect(
-      screen.queryByText(/fell outside the tissue mask/)
+      screen.queryByText(/fell outside the analysis mask/)
     ).not.toBeInTheDocument();
   });
 

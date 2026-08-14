@@ -173,10 +173,17 @@ function renderScreen() {
 
 /** Start a run through the form, which is the only way to get a job id. */
 async function startRun(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole("button", { name: "Run analysis" }));
+  await user.click(await screen.findByRole("button", { name: "Run Analysis" }));
 }
 
 describe("AnalysisScreen", () => {
+  it("does not offer pixel-size editing on the Analysis page", async () => {
+    install({ runStatus: "SUCCESS", jobStatus: "SUCCESS" });
+    renderScreen();
+    await screen.findByText("Quantitative analysis");
+    expect(screen.queryByRole("button", { name: /Edit Pixel Size/i })).not.toBeInTheDocument();
+  });
+
   /**
    * Paper-cut 5: the `?seg=` deep link was honoured only on a full page load.
    * The settle effect kept the first segmentation for the life of the

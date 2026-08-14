@@ -30,6 +30,7 @@ export function useViewerPointerInteractions(config: {
   onImageMouseMove?: (point: Point) => void;
   onImageMouseLeave?: () => void;
   onShapeClick?: (segmentId: string | null) => void;
+  onShapeHover?: (segmentId: string | null) => void;
   /** Resolve the object id under a screen point from the pickable ID-map raster. */
   pickRasterObjectId?: (screenPoint: Point) => string | null;
   overlayScene: { persistent: import("@/viewer/types").SegmentOverlay[]; transient: import("@/viewer/types").SegmentOverlay[] };
@@ -55,6 +56,7 @@ export function useViewerPointerInteractions(config: {
     onImageMouseMove,
     onImageMouseLeave,
     onShapeClick,
+    onShapeHover,
     pickRasterObjectId,
     overlayScene,
     drawMode,
@@ -125,13 +127,23 @@ export function useViewerPointerInteractions(config: {
   );
 
   const maybeEmitMouseMove = useCallback(
-    (imagePoint: Point) => {
+    (imagePoint: Point, screenPoint: Point) => {
       const now = Date.now();
       if (now - lastMouseMoveTsRef.current < MOUSE_MOVE_THROTTLE_MS) return;
       lastMouseMoveTsRef.current = now;
       onImageMouseMove?.(imagePoint);
+      if (onShapeHover) {
+        // Prefer the raster UUID over SVG overlays such as ROI frames. Falling
+        // back to vectors preserves hover in lightweight/vector-only viewers.
+        const rasterSegmentId = !drawMode
+          ? pickRasterObjectId?.(screenPoint) ?? null
+          : null;
+        onShapeHover(
+          rasterSegmentId ?? findSceneOverlayIdAtPoint(imagePoint, overlayScene)
+        );
+      }
     },
-    [onImageMouseMove]
+    [drawMode, onImageMouseMove, onShapeHover, overlayScene, pickRasterObjectId]
   );
 
   const handlePointerDown = useCallback(
@@ -168,7 +180,7 @@ export function useViewerPointerInteractions(config: {
         onImagePress?.(imagePoint, screenPoint);
       }
 
-      maybeEmitMouseMove(imagePoint);
+      maybeEmitMouseMove(imagePoint, screenPoint);
       cursorState.updateOverlayCursor(screenPoint, imagePoint);
       (event.target as Element).setPointerCapture(event.pointerId);
     },
@@ -197,7 +209,7 @@ export function useViewerPointerInteractions(config: {
       cursorState.setIsPointerInside(true);
       cursorState.setLastMouseScreen(screenPoint);
       onImageMove?.(imagePoint, screenPoint);
-      maybeEmitMouseMove(imagePoint);
+      maybeEmitMouseMove(imagePoint, screenPoint);
       cursorState.updateOverlayCursor(screenPoint, imagePoint);
 
       if (drawMode && drawState.drawPoints.length > 0) {
@@ -300,7 +312,8 @@ export function useViewerPointerInteractions(config: {
     cursorState.setIsPointerInside(false);
     cursorState.setLastMouseScreen(null);
     onImageMouseLeave?.();
-  }, [cursorState, onImageMouseLeave]);
+    onShapeHover?.(null);
+  }, [cursorState, onImageMouseLeave, onShapeHover]);
 
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -324,21 +337,19 @@ export function useViewerPointerInteractions(config: {
       if (!imagePoint) return;
 
       if (onShapeClick) {
-        const clickedSegmentId = findSceneOverlayIdAtPoint(imagePoint, overlayScene);
-        if (clickedSegmentId) {
-          onShapeClick(clickedSegmentId);
-          return;
-        }
-        // No vector hit: fall back to the pickable ID-map raster in review/select
-        // modes (brush mode already returned above; skip while drawing) so any
-        // object stays selectable straight off the overlay -- the "object level"
-        // of the raster<->object swap, with no vectors rendered.
+        // Prefer the ID-map object over SVG decorations (notably ROI frames).
+        // This also makes the click independent of a geometry API round trip.
         if (!drawMode) {
           const rasterSegmentId = pickRasterObjectId?.(screenPoint) ?? null;
           if (rasterSegmentId) {
             onShapeClick(rasterSegmentId);
             return;
           }
+        }
+        const clickedSegmentId = findSceneOverlayIdAtPoint(imagePoint, overlayScene);
+        if (clickedSegmentId) {
+          onShapeClick(clickedSegmentId);
+          return;
         }
         onShapeClick(null);
       }

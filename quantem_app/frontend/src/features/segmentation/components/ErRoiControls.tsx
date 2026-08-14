@@ -19,7 +19,7 @@ export interface ErRoiSection {
   testDisabled?: boolean;
   testDisabledReason?: string;
   onStartPlacement: () => void;
-  onMoveRoi: (roiId: string) => void;
+  onEditRoi: (roi: SegmentationRoi) => void;
   onCancelPlacement: () => void;
   onConfirmRoi: () => void;
   onMarkRoiDone: (roiId: string, done: boolean) => void;
@@ -28,7 +28,7 @@ export interface ErRoiSection {
   onTestRoi: (roiId: string) => void;
 }
 
-function roiLabel(roi: SegmentationRoi): string {
+function roiDetails(roi: SegmentationRoi): string {
   return `${roi.width}×${roi.height} px at (${roi.x}, ${roi.y})`;
 }
 
@@ -46,7 +46,7 @@ export function ErRoiControls({
   testDisabled = false,
   testDisabledReason,
   onStartPlacement,
-  onMoveRoi,
+  onEditRoi,
   onCancelPlacement,
   onConfirmRoi,
   onMarkRoiDone,
@@ -63,18 +63,18 @@ export function ErRoiControls({
       ),
     [rois]
   );
-  const moving = relocatingRoiId !== null;
+  const editing = relocatingRoiId !== null;
   const primaryLabel = pendingRoiActive
     ? confirming
-      ? moving
-        ? "Moving ROI..."
-        : "Creating ROI..."
-      : moving
-        ? "Move ROI"
-        : "Create ROI"
+      ? editing
+        ? "Saving..."
+        : "Creating..."
+      : editing
+        ? "Save Area"
+        : "Create"
     : placementActive
-      ? "Cancel placement"
-      : "Add New ROI";
+      ? "Cancel"
+      : "Add New";
   const onPrimaryClick = pendingRoiActive
     ? onConfirmRoi
     : placementActive
@@ -85,19 +85,21 @@ export function ErRoiControls({
     <div className="er-roi-controls">
       <div className="er-roi-heading">
         <h4>ROI</h4>
-        {orderedRois.length > 0 && <span>{orderedRois.length}</span>}
+        <button
+          type="button"
+          className={`er-roi-heading-button ${placementActive ? "active" : ""}`}
+          onClick={onPrimaryClick}
+          disabled={confirming}
+        >
+          {primaryLabel}
+        </button>
       </div>
-      <button
-        type="button"
-        className={`er-roi-button ${placementActive ? "active" : ""}`}
-        onClick={onPrimaryClick}
-        disabled={confirming}
-      >
-        {primaryLabel}
-      </button>
       {placementActive && !pendingRoiActive && (
+        <p className="er-roi-hint">Click to place the new ROI.</p>
+      )}
+      {editing && pendingRoiActive && (
         <p className="er-roi-hint">
-          {moving ? "Click the new center of this ROI." : "Click to place the new ROI."}
+          Drag an edge or corner to resize. Drag inside the ROI to move it.
         </p>
       )}
       {orderedRois.length > 0 && (
@@ -105,12 +107,24 @@ export function ErRoiControls({
           {orderedRois.map((roi, index) => {
             const done = Boolean(roi.completed_for_segmentation);
             const isActive = roi.id === activeRoiId;
-            const label = `ROI ${index + 1}: ${roiLabel(roi)}`;
+            const title = `ROI ${index + 1}: ${roi.width}x${roi.height} px`;
+            const details = roiDetails(roi);
             return (
               <li key={roi.id} className={`er-roi-item ${isActive ? "active" : ""}`}>
                 <div className="er-roi-item-summary">
-                  <span className="er-roi-item-label">{label}</span>
-                  {isActive && <span className="er-roi-active-badge">active</span>}
+                  <span className="er-roi-item-label" title={details}>
+                    {title}
+                  </span>
+                  <button
+                    type="button"
+                    className="er-roi-edit-button"
+                    disabled={done || placementActive || confirming}
+                    aria-pressed={relocatingRoiId === roi.id}
+                    title={done ? "Reopen this ROI before editing its area." : undefined}
+                    onClick={() => onEditRoi(roi)}
+                  >
+                    {relocatingRoiId === roi.id ? "Editing" : "Edit Area"}
+                  </button>
                 </div>
                 <div className="er-roi-item-actions">
                   <button
@@ -121,16 +135,6 @@ export function ErRoiControls({
                   >
                     {activatingRoiId === roi.id ? "Opening..." : "Open"}
                   </button>
-                  {!done && (
-                    <button
-                      type="button"
-                      className="er-roi-action-button"
-                      disabled={placementActive || confirming}
-                      onClick={() => onMoveRoi(roi.id)}
-                    >
-                      Move
-                    </button>
-                  )}
                   <button
                     type="button"
                     className="er-roi-action-button er-roi-test-button"
@@ -152,7 +156,7 @@ export function ErRoiControls({
                   </button>
                   <label className="er-roi-done-toggle" title={ROI_REVIEWED_TOOLTIP}>
                     <input
-                      aria-label={`Mark ${label} done`}
+                      aria-label={`Mark ${title} done`}
                       type="checkbox"
                       checked={done}
                       disabled={markingRoiId === roi.id}
@@ -163,7 +167,7 @@ export function ErRoiControls({
                   <button
                     type="button"
                     className="er-roi-delete-button"
-                    aria-label={`Delete ${label}`}
+                    aria-label={`Delete ${title}`}
                     title="Delete ROI"
                     disabled={deletingRoiId === roi.id}
                     onClick={() => setPendingDeleteRoi(roi)}
@@ -184,6 +188,7 @@ export function ErRoiControls({
                       <path d="M14 11v5" />
                     </svg>
                   </button>
+                  {isActive && <span className="er-roi-active-badge">active</span>}
                 </div>
               </li>
             );
@@ -195,7 +200,7 @@ export function ErRoiControls({
         title="Delete ROI"
         message={
           pendingDeleteRoi
-            ? `Delete ${roiLabel(pendingDeleteRoi)}? It will be removed from every segmentation on this image. Existing segment objects are kept.`
+            ? `Delete ${roiDetails(pendingDeleteRoi)}? It will be removed from every segmentation on this image. Existing segment objects are kept.`
             : ""
         }
         confirmText={

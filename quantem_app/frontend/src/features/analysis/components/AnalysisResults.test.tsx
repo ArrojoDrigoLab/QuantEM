@@ -67,10 +67,22 @@ function makeRun(overrides: Partial<AnalysisRun> = {}): AnalysisRun {
 }
 
 describe("AnalysisResults distance section", () => {
-  it("uses the shared numeric-only resolution tag", () => {
-    render(<AnalysisResults run={makeRun()} />);
+  it("shows the pixel-size tag only in Composition", () => {
+    render(
+      <AnalysisResults
+        run={makeRun({
+          composition: {
+            tissue_px: 100,
+            tissue_um2: 0.0025,
+            area_fractions: { mito: 0.2 },
+            areas_px: { mito: 20 },
+            areas_um2: { mito: 0.0005 },
+          },
+        })}
+      />
+    );
 
-    expect(screen.getByText("5 nm/px")).toBeInTheDocument();
+    expect(screen.getAllByText("5 nm/px")).toHaveLength(1);
     expect(screen.queryByText(/entered by hand|from file/i)).not.toBeInTheDocument();
   });
 
@@ -143,5 +155,52 @@ describe("AnalysisResults distance section", () => {
 
     expect(screen.getByText("12 inside")).toBeInTheDocument();
     expect(screen.queryByText(/of 60/)).not.toBeInTheDocument();
+  });
+});
+
+describe("AnalysisResults caveats", () => {
+  it("does not render the read-before-quoting section", () => {
+    const legacyEssay = "legacy estimator essay";
+    render(
+      <AnalysisResults
+        run={makeRun({
+          objects: {
+            n: 2,
+            density: { count: 2, per_um2: 1 },
+            summary: {
+              circularity: {
+                n: 2,
+                n_objects: 2,
+                n_missing: 0,
+                estimator_note: legacyEssay,
+              },
+            },
+          },
+          caveats: [
+            `circularity: ${legacyEssay}`,
+            "Pixel size was unavailable for physical-unit measurements.",
+          ],
+        })}
+      />
+    );
+
+    expect(screen.queryByText(/legacy estimator essay/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Pixel size was unavailable for physical-unit measurements.")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Read before quoting/)).not.toBeInTheDocument();
+  });
+
+  it("does not render the old export bundle or manifest download", () => {
+    render(
+      <AnalysisResults
+        run={makeRun({
+          exports: ["objects.csv", "image_summary.csv", "manifest.json"],
+        })}
+      />
+    );
+    expect(screen.queryByText("Export bundle")).not.toBeInTheDocument();
+    expect(screen.queryByText("manifest.json")).not.toBeInTheDocument();
+    expect(screen.queryByText("image_summary.csv")).not.toBeInTheDocument();
   });
 });

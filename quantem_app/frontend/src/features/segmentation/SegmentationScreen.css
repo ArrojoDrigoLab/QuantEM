@@ -106,14 +106,18 @@
 
 /* #20693f, not #2f8f5f: white on #2f8f5f is 4.03:1, just under AA. */
 .segmentation-complete-button {
-  padding: 0.5rem 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
   border: 1px solid #20693f;
-  border-radius: 6px;
+  border-radius: 4px;
   background: #20693f;
   color: #fff;
   cursor: pointer;
-  font-size: 0.875rem;
+  font: inherit;
+  font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
   transition: all 0.2s;
 }
 
@@ -241,95 +245,6 @@
   margin: 0;
   font-size: 0.95rem;
   color: #1f2937;
-}
-
-.labeling-sidebar-collapsible {
-  gap: 0.5rem;
-}
-
-.labeling-sidebar-collapsible-title {
-  cursor: pointer;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #1f2937;
-  list-style: none;
-}
-
-.labeling-sidebar-collapsible-title::-webkit-details-marker {
-  display: none;
-}
-
-.labeling-sidebar-collapsible-title::before {
-  content: ">";
-  display: inline-block;
-  margin-right: 0.35rem;
-  transition: transform 0.15s ease;
-}
-
-.labeling-sidebar-collapsible[open] .labeling-sidebar-collapsible-title::before {
-  transform: rotate(90deg);
-}
-
-.layer-style-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.layer-style-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.5rem;
-  border: 1px solid #d6dfeb;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.layer-style-group h4 {
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #334155;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.layer-style-control {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.layer-style-control label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #334155;
-}
-
-.layer-style-slider-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.layer-style-slider-row input[type="range"] {
-  flex: 1;
-  min-width: 0;
-}
-
-.layer-style-slider-row span {
-  min-width: 3.1rem;
-  text-align: right;
-  font-family: monospace;
-  font-size: 0.78rem;
-  color: #475569;
-}
-
-.layer-style-note {
-  font-size: 0.76rem;
-  line-height: 1.35;
-  color: #64748b;
 }
 
 .view-confirmed-toggle {

@@ -2,16 +2,6 @@
 
 export const CONFIRMED_AREA_LABEL = "Confirmed area";
 
-export const CONFIRMED_AREA_EXPLANATION =
-  "Inside a confirmed area, anything you have not confirmed as an object counts " +
-  "as background. Outside it, pixels are ignored.";
-
-export const CONFIRMED_AREA_API_ALIAS_NOTE =
-  "The API calls this a completed ROI.";
-
-export const CONFIRMED_AREA_TOOLTIP =
-  `${CONFIRMED_AREA_EXPLANATION} ${CONFIRMED_AREA_API_ALIAS_NOTE}`;
-
 export const CONFIRMED_AREA_HOW_TO =
   'Switch to Review, choose Correct, then "Confirmed area", and draw round the ' +
   "region you finished.";

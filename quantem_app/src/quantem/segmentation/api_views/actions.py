@@ -53,7 +53,10 @@ def _resolve_resource_class(
         segmentation_type_internal_name=segmentation.segmentation_type.internal_name,
         source_model=source_model,
     )
-    segmenter = get_segmenter_or_none(segmenter_internal_name)
+    segmenter = get_segmenter_or_none(
+        segmenter_internal_name,
+        source_model=source_model,
+    )
     if segmenter is None:
         return "gpu"
     return segmenter.job_resource_class

@@ -2,6 +2,7 @@ import { useOverlayLayerControls } from "@/features/segmentation/screen/hooks/ov
 import { useOverlayManifestState } from "@/features/segmentation/screen/hooks/overlay/useOverlayManifestState";
 import { useOptimisticOverlayState } from "@/features/segmentation/screen/hooks/overlay/useOptimisticOverlayState";
 import { useOverlayRefreshScheduler } from "@/features/segmentation/screen/hooks/overlay/useOverlayRefreshScheduler";
+import { useOptimisticDeletionState } from "@/features/segmentation/screen/hooks/overlay/useOptimisticDeletionState";
 
 interface UseSegmentationOverlayStateArgs {
   currentSegmentationId: string | null;
@@ -24,15 +25,19 @@ export function useSegmentationOverlayState({
     currentSegmentationId,
     activeSourceModel,
   });
+  const deletion = useOptimisticDeletionState(currentSegmentationId);
   const layers = useOverlayLayerControls({
     segmentationId: currentSegmentationId ?? "",
     overlayManifest: manifest.overlayManifest,
+    hiddenSegmentIds: deletion.hiddenSegmentIds,
+    hiddenSegmentVisualRevision: deletion.visualRevision,
   });
   const optimistic = useOptimisticOverlayState({
     currentSegmentationId,
     segmentationInternalName,
     useSmoothedSegmentGeometry,
     leftPanelLayerStyles: layers.leftPanelLayerStyles,
+    hiddenSegmentIds: deletion.hiddenSegmentIds,
     // Do not retire a bridging vector merely because the new bundle exists on
     // disk. Keep it until the always-mounted left viewer has loaded that exact
     // revision, otherwise a large bundle produces a visible blank interval.
@@ -50,6 +55,7 @@ export function useSegmentationOverlayState({
   return {
     manifest,
     optimistic,
+    deletion,
     refresh,
     layers,
   };

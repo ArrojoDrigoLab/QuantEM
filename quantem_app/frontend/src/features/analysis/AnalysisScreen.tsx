@@ -22,10 +22,10 @@ import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import { useJobProgress } from "@/shared/hooks/useJobProgress";
 import { Badge, Button, PageState, Panel } from "@/shared/ui/design";
 import { cx } from "@/shared/ui/cx";
-import { PixelSizeEditor } from "@/shared/ui/PixelSize";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import type { AnalysisRun, GlobalAreaReport } from "@/shared/types/analysis";
 import {
+  ANALYSIS_MASK_INTERNAL_NAME,
   buildAnalysisPayload,
   defaultFormState,
   type AnalysisFormState,
@@ -56,7 +56,7 @@ export function AnalysisScreen() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [measuringGlobal, setMeasuringGlobal] = useState(false);
 
-  const { data: asset, refetch: refetchAsset } = useApiQuery(
+  const { data: asset } = useApiQuery(
     () => (assetId ? getAsset(assetId) : Promise.resolve(null)),
     [assetId]
   );
@@ -138,7 +138,7 @@ export function AnalysisScreen() {
         (segmentation) =>
           segmentation.id !== segmentationId &&
           segmentation.segmentation_type.internal_name ===
-            "quantem_internal_analysis_mask"
+            ANALYSIS_MASK_INTERNAL_NAME
       ),
     [segmentationId, segmentations]
   );
@@ -290,17 +290,6 @@ export function AnalysisScreen() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {/* Editable here, not just reported: an uncalibrated asset is
-                refused physical units outright, and this is the screen where
-                the user finds that out. */}
-            {asset ? (
-              <PixelSizeEditor
-                asset={asset}
-                onSaved={() => {
-                  void refetchAsset();
-                }}
-              />
-            ) : null}
             <Link
               className="inline-flex h-10 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
               to={`/assets/${assetId}/viewer`}
@@ -341,12 +330,6 @@ export function AnalysisScreen() {
                 ))}
               </select>
             </div>
-            {selectedSegmentation ? (
-              <p className="m-0 text-xs text-slate-500">
-                Runs, exports and the Monte-Carlo seed are recorded against this
-                segmentation.
-              </p>
-            ) : null}
           </Panel>
         ) : null}
 
@@ -398,7 +381,6 @@ export function AnalysisScreen() {
             ) : form && segmentations ? (
               <AnalysisConfigForm
                 segmentations={segmentations}
-                selectedSegmentation={selectedSegmentation}
                 state={form}
                 onChange={setForm}
                 onSubmit={() => {

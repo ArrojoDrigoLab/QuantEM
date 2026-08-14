@@ -14,6 +14,9 @@ function makeArgs(
     scheduleHoverSegmentQuery: vi.fn(),
     clearHoverInteraction: vi.fn(),
     onRoiPlacementClick: vi.fn(),
+    onRoiEditPress: vi.fn(),
+    onRoiEditDrag: vi.fn(),
+    onRoiEditRelease: vi.fn(),
     completedRoi: {
       isActive: false,
       handlePolygonClick: vi.fn(),
@@ -85,6 +88,19 @@ describe("useSegmentationInteractionRouter", () => {
     result.current.onLeftClick({ x: 100, y: 120 });
 
     expect(args.onRoiPlacementClick).toHaveBeenCalledWith({ x: 100, y: 120 });
+  });
+
+  it("routes ROI area-edit drags even while navigate mode is active", () => {
+    const args = makeArgs({ roiPlacementActive: true, leftNavigateMode: true });
+    const { result } = renderHook(() => useSegmentationInteractionRouter(args));
+
+    result.current.onLeftImagePress({ x: 10, y: 12 }, { x: 100, y: 120 });
+    result.current.onLeftImageDrag({ x: 20, y: 24 }, { x: 110, y: 132 });
+    result.current.onLeftImageRelease({ x: 30, y: 36 }, { x: 120, y: 144 });
+
+    expect(args.onRoiEditPress).toHaveBeenCalledWith({ x: 10, y: 12 });
+    expect(args.onRoiEditDrag).toHaveBeenCalledWith({ x: 20, y: 24 });
+    expect(args.onRoiEditRelease).toHaveBeenCalledWith({ x: 30, y: 36 });
   });
 
   it("routes ER polygon clicks through the polygon handler", () => {

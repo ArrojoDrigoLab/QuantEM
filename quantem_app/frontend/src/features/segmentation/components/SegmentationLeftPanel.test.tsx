@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { SegmentationLeftPanel } from "@/features/segmentation/components/SegmentationLeftPanel";
@@ -51,6 +51,25 @@ function makeProps(
   overrides: Partial<ComponentProps<typeof SegmentationLeftPanel>> = {}
 ): ComponentProps<typeof SegmentationLeftPanel> {
   return {
+    layerControls: {
+      usesRasterOverlay: false,
+      candidates: {
+        strokeWidth: 2,
+        fillOpacity: 0.18,
+        showBorders: true,
+        onStrokeWidthChange: vi.fn(),
+        onFillOpacityChange: vi.fn(),
+        onShowBordersChange: vi.fn(),
+      },
+      confirmed: {
+        strokeWidth: 2,
+        fillOpacity: 0.15,
+        showBorders: true,
+        onStrokeWidthChange: vi.fn(),
+        onFillOpacityChange: vi.fn(),
+        onShowBordersChange: vi.fn(),
+      },
+    },
     viewer: {
       image: makeImage(),
       segmentationTypeInternalName: "quantem_internal_mito",
@@ -159,5 +178,6 @@ describe("SegmentationLeftPanel", () => {
     };
     expect(lastCall.highlighting?.cursorMode).toBe("target");
     expect(lastCall.highlighting?.hoverCursor).toBe(false);
+    expect(screen.getByLabelText("Left pane overlay options")).toBeInTheDocument();
   });
 });

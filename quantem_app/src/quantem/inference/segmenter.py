@@ -200,7 +200,14 @@ class DinoOrganelleSegmenter(BaseSegmenter):
 
     @property
     def prob_map_prefix(self) -> str:
-        return self._organelle.key
+        # QuantEM historically stored ``<organelle>_dino_prob.png``.  Preserve
+        # that path so existing QuantEM runs remain replayable, while giving
+        # OmniEM its own namespace.  Both families expose the same internal DL
+        # output name (``DINO``), so without a family component one full-image
+        # run overwrites the other model's authoritative probability bytes.
+        if self._family == DEFAULT_FAMILY:
+            return self._organelle.key
+        return f"{self._organelle.key}_{self._family}"
 
     @property
     def source_model(self) -> str:

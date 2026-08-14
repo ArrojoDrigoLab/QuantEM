@@ -17,6 +17,7 @@ import {
 import { getJobQueueStatus } from "@/shared/api/jobs";
 import {
   confirmSegmentsBatch,
+  deleteSegmentsBatch,
   getSegmentsAtPoint,
   listUserFeedback,
   markSegmentationComplete,
@@ -130,6 +131,7 @@ vi.mock("@/shared/api/segmentations/annotations", async () => {
     ...actual,
     getSegmentsAtPoint: vi.fn(),
     confirmSegmentsBatch: vi.fn(),
+    deleteSegmentsBatch: vi.fn(),
     listUserFeedback: vi.fn(),
     markSegmentationComplete: vi.fn(),
     unlockSegmentation: vi.fn(),
@@ -427,6 +429,10 @@ export function setupSegmentationScreenTest() {
       sync_applied: false,
       rebuild_mode: "async_partial",
     },
+  });
+  vi.mocked(deleteSegmentsBatch).mockResolvedValue({
+    deleted: 1,
+    overlay: null,
   });
   vi.mocked(markSegmentationComplete).mockResolvedValue(makeSegmentation());
   vi.mocked(unlockSegmentation).mockResolvedValue(makeSegmentation());

@@ -310,7 +310,7 @@ describe("describeDisplayedObjects", () => {
         "This run added no new objects. The 12 object(s) already labelled in this image are unchanged.",
       next_steps: [
         "Nothing changed: the 12 object(s) you have already labelled here are exactly as they were.",
-        "A candidate that lands on an object you have already confirmed or excluded is not added again, so a re-run over a proofread image is expected to find nothing new.",
+        "Rejected model proposals are not added again. Confirmed outlines stay unchanged above any new model preview; accepting that preview later merges strong overlaps or removes the confirmed pixels from it.",
       ],
     };
 
@@ -330,7 +330,7 @@ describe("describeDisplayedObjects", () => {
       expect(described.detail).toContain(
         "This run added no new objects. The 12 object(s) already labelled in this image are unchanged."
       );
-      expect(described.detail).toContain("expected to find nothing new");
+      expect(described.detail).toContain("Confirmed outlines stay unchanged");
       expect(described.tone).toBe("warning");
     });
   });

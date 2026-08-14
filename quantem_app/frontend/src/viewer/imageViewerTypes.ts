@@ -66,6 +66,7 @@ export interface ImageViewerInteractionConfig {
   onImageMouseMove?: (point: Point) => void;
   onImageMouseLeave?: () => void;
   onShapeClick?: (segmentId: string | null) => void;
+  onShapeHover?: (segmentId: string | null) => void;
   draw?: {
     enabled?: boolean;
     onComplete?: (points: Point[]) => void;

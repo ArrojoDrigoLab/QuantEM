@@ -44,6 +44,11 @@ export interface LeftPanelLayerStyles {
   confirmedFillOpacity: number;
 }
 
+export interface ConfirmedLayerStyle {
+  strokeWidth: number;
+  fillOpacity: number;
+}
+
 function clampOpacity(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value));
@@ -82,6 +87,12 @@ function isCandidateSegment(segment: SegmentObject): boolean {
   return status !== null
     ? isCellCandidateStatus(status)
     : segment.label_state === "CANDIDATE" || segment.label_state === "INFERRED";
+}
+
+function overlayPaintPriority(segment: SegmentObject): number {
+  if (isConfirmedSegment(segment)) return 2;
+  if (segment.label_state === "EXCLUDED") return 1;
+  return 0;
 }
 
 function resolveSegmentColor(
@@ -138,37 +149,43 @@ export function generateLeftPanelOverlays(
     layerStyles?.confirmedFillOpacity ?? CONFIRMED_FILL_OPACITY
   );
 
-  return segments.map((segment) => {
-    const isConfirmed = isConfirmedSegment(segment);
-    const isExcluded = segment.label_state === "EXCLUDED";
-    const isCandidate = isCandidateSegment(segment);
-    const baseColor = resolveSegmentColor(segment, segmentationTypeInternalName);
-    const fillColor = isConfirmed ? CONFIRMED_FILL_COLOR : baseColor;
-    const strokeColor = baseColor;
-    const fillOpacity = isConfirmed
-      ? confirmedFillOpacity
-      : isExcluded
-        ? 0.05
-        : isCandidate
-          ? candidateFillOpacity
-          : 0;
-    const bboxHighlighted = bboxHighlightedIds?.has(segment.id) ?? false;
+  // SVG paint order is array order. Keep model candidates below every decided
+  // outline so a red preview can never hide a green confirmed boundary.
+  return [...segments]
+    .sort(
+      (left, right) => overlayPaintPriority(left) - overlayPaintPriority(right)
+    )
+    .map((segment) => {
+      const isConfirmed = isConfirmedSegment(segment);
+      const isExcluded = segment.label_state === "EXCLUDED";
+      const isCandidate = isCandidateSegment(segment);
+      const baseColor = resolveSegmentColor(segment, segmentationTypeInternalName);
+      const fillColor = isConfirmed ? CONFIRMED_FILL_COLOR : baseColor;
+      const strokeColor = baseColor;
+      const fillOpacity = isConfirmed
+        ? confirmedFillOpacity
+        : isExcluded
+          ? 0.05
+          : isCandidate
+            ? candidateFillOpacity
+            : 0;
+      const bboxHighlighted = bboxHighlightedIds?.has(segment.id) ?? false;
 
-    return {
-      id: segment.id,
-      geometry: segmentGeometry(segment, useSmoothedGeometry),
-      holes: segmentHoles(segment),
-      fillColor,
-      fillOpacity,
-      strokeColor: bboxHighlighted ? "#00ffff" : strokeColor,
-      strokeOpacity: isConfirmed || isExcluded ? 0.85 : 0.3,
-      strokeWidth: bboxHighlighted
-        ? 4
-        : isConfirmed
-          ? confirmedStrokeWidth
-          : candidateStrokeWidth,
-    };
-  });
+      return {
+        id: segment.id,
+        geometry: segmentGeometry(segment, useSmoothedGeometry),
+        holes: segmentHoles(segment),
+        fillColor,
+        fillOpacity,
+        strokeColor: bboxHighlighted ? "#00ffff" : strokeColor,
+        strokeOpacity: isConfirmed || isExcluded ? 0.85 : 0.3,
+        strokeWidth: bboxHighlighted
+          ? 4
+          : isConfirmed
+            ? confirmedStrokeWidth
+            : candidateStrokeWidth,
+      };
+    });
 }
 
 export function generateRightPanelOverlays(
@@ -178,32 +195,46 @@ export function generateRightPanelOverlays(
   rightSelectedSegmentId: string | null,
   segmentationTypeInternalName?: string | null,
   bboxHighlightedIds?: ReadonlySet<string>,
-  useSmoothedGeometry: boolean = false
+  useSmoothedGeometry: boolean = false,
+  confirmedStyle?: ConfirmedLayerStyle
 ): SegmentOverlay[] {
-  return [...confirmedSegments, ...excludedSegments, ...inferredSegments].map((segment) => {
-    const isSelected = segment.id === rightSelectedSegmentId;
-    const isBboxHighlighted = bboxHighlightedIds?.has(segment.id) ?? false;
-    const isConfirmed = isConfirmedSegment(segment);
-    const isExcluded = segment.label_state === "EXCLUDED";
+  const confirmedStrokeWidth = clampStrokeWidth(
+    confirmedStyle?.strokeWidth ?? DEFAULT_CONFIRMED_STROKE_WIDTH
+  );
+  const confirmedFillOpacity = clampOpacity(
+    confirmedStyle?.fillOpacity ?? CONFIRMED_FILL_OPACITY
+  );
 
-    let baseColor = resolveSegmentColor(segment, segmentationTypeInternalName);
-    if (!isConfirmed && !isExcluded && baseColor === RESERVED_EXCLUDED_COLOR) {
-      baseColor = "#ff0000";
+  return [...inferredSegments, ...excludedSegments, ...confirmedSegments].map(
+    (segment) => {
+      const isSelected = segment.id === rightSelectedSegmentId;
+      const isBboxHighlighted = bboxHighlightedIds?.has(segment.id) ?? false;
+      const isConfirmed = isConfirmedSegment(segment);
+      const isExcluded = segment.label_state === "EXCLUDED";
+
+      let baseColor = resolveSegmentColor(segment, segmentationTypeInternalName);
+      if (!isConfirmed && !isExcluded && baseColor === RESERVED_EXCLUDED_COLOR) {
+        baseColor = "#ff0000";
+      }
+
+      const fillColor = isConfirmed ? CONFIRMED_FILL_COLOR : baseColor;
+      const strokeColor = baseColor;
+      const baseStrokeWidth = isSelected
+        ? Math.max(4, confirmedStrokeWidth)
+        : isConfirmed
+          ? confirmedStrokeWidth
+          : 2;
+
+      return {
+        id: segment.id,
+        geometry: segmentGeometry(segment, useSmoothedGeometry),
+        holes: segmentHoles(segment),
+        fillColor,
+        fillOpacity: isConfirmed ? confirmedFillOpacity : isExcluded ? 0.05 : 0,
+        strokeColor: isSelected ? "#00ffff" : strokeColor,
+        strokeOpacity: 0.9,
+        strokeWidth: isBboxHighlighted ? baseStrokeWidth * 2 : baseStrokeWidth,
+      };
     }
-
-    const fillColor = isConfirmed ? CONFIRMED_FILL_COLOR : baseColor;
-    const strokeColor = baseColor;
-    const baseStrokeWidth = isSelected ? 4 : 2;
-
-    return {
-      id: segment.id,
-      geometry: segmentGeometry(segment, useSmoothedGeometry),
-      holes: segmentHoles(segment),
-      fillColor,
-      fillOpacity: isConfirmed ? CONFIRMED_FILL_OPACITY : isExcluded ? 0.05 : 0,
-      strokeColor: isSelected ? "#00ffff" : strokeColor,
-      strokeOpacity: 0.9,
-      strokeWidth: isBboxHighlighted ? baseStrokeWidth * 2 : baseStrokeWidth,
-    };
-  });
+  );
 }

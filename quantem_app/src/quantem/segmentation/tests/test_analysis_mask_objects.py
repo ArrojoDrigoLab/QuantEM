@@ -6,6 +6,8 @@ import numpy as np
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from quantem.analysis.compartments import CompartmentSet, area_fractions_by_region
+from quantem.analysis.loaders import analysis_mask_regions, segmentation_mask
 from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.models import (
     AnalysisMaskObject,
@@ -148,7 +150,7 @@ class AnalysisMaskObjectApiTests(TestCase):
 
 
 class AnalysisMaskObjectRasterTests(TestCase):
-    def test_multiple_named_objects_are_one_analysis_denominator(self):
+    def test_multiple_named_objects_are_a_union_and_independent_analysis_regions(self):
         image = create_small_test_image("Analysis denominator", width=32, height=32)
         segmentation = ImageSegmentation.objects.create(
             asset=image.asset,
@@ -175,3 +177,22 @@ class AnalysisMaskObjectRasterTests(TestCase):
         self.assertTrue(mask[4, 4])
         self.assertTrue(mask[28, 28])
         self.assertFalse(mask[16, 16])
+
+        loaded = segmentation_mask(segmentation, (32, 32))
+        np.testing.assert_array_equal(loaded, mask)
+        regions = analysis_mask_regions(segmentation, (32, 32))
+        self.assertEqual([region.name for region in regions], ["Object 1", "Object 2"])
+
+        mito = np.zeros((32, 32), dtype=bool)
+        mito[0:8, 0:4] = True
+        mito[24:32, 24:32] = True
+        rows = area_fractions_by_region(
+            CompartmentSet({"mito": mito}, tissue=loaded),
+            regions,
+            pixel_size_nm=5.0,
+        )
+        self.assertEqual([row["tissue_px"] for row in rows], [64, 64])
+        self.assertEqual([row["tissue_um2"] for row in rows], [0.0016, 0.0016])
+        self.assertEqual([row["areas_px"]["mito"] for row in rows], [32, 64])
+        self.assertEqual([row["area_fractions"]["mito"] for row in rows], [0.5, 1.0])
+        self.assertEqual([row["areas_um2"]["mito"] for row in rows], [0.0008, 0.0016])

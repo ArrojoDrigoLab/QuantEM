@@ -601,12 +601,27 @@ def _fold_metrics(
     an area that contains nothing to find.
     """
     scored = _scoring_crops(fold.heldout, probs, scaled)
+    held_out_rois = []
+    for crop in fold.heldout:
+        roi_scored = _scoring_crops([crop], probs, scaled)
+        held_out_rois.append(
+            {
+                "roi_id": str(crop.id),
+                "roi_name": crop.name,
+                "asset_id": str(crop.image_key),
+                "threshold": float(threshold),
+                "dice": calibrate.mean_dice(roi_scored, threshold),
+                "iou": calibrate.mean_iou(roi_scored, threshold),
+            }
+        )
     return {
         "fold": fold.index,
         "held_out_asset_id": fold.held_out_asset_id,
+        "threshold": float(threshold),
         "dice": calibrate.mean_dice(scored, threshold),
         "iou": calibrate.mean_iou(scored, threshold),
         "n_tiles": len(fold.train),
+        "held_out_rois": held_out_rois,
     }
 
 
@@ -620,9 +635,37 @@ def _cv_results(folds: list[dict[str, Any]], names: dict[str, str]) -> dict[str,
     """
     dice = [f["dice"] for f in folds if f["dice"] is not None]
     iou = [f["iou"] for f in folds if f["iou"] is not None]
-    per_image: dict[str, dict[str, Any]] = {}
+    thresholds = [f["threshold"] for f in folds if f.get("threshold") is not None]
+    per_roi: list[dict[str, Any]] = []
+    roi_numbers: dict[str, int] = {}
     for fold in folds:
-        asset_id = fold.get("held_out_asset_id")
+        rois = fold.get("held_out_rois")
+        if not isinstance(rois, list):
+            continue
+        for held_out in rois:
+            if not isinstance(held_out, dict):
+                continue
+            asset_id = str(held_out.get("asset_id") or "")
+            if not asset_id:
+                continue
+            roi_numbers[asset_id] = roi_numbers.get(asset_id, 0) + 1
+            per_roi.append(
+                {
+                    "fold": int(fold.get("fold") or 0),
+                    "roi_id": str(held_out.get("roi_id") or ""),
+                    "roi_name": str(held_out.get("roi_name") or ""),
+                    "roi_label": f"ROI {roi_numbers[asset_id]}",
+                    "asset_id": asset_id,
+                    "name": names.get(asset_id, ""),
+                    "threshold": held_out.get("threshold"),
+                    "dice": held_out.get("dice"),
+                    "iou": held_out.get("iou"),
+                }
+            )
+    per_image: dict[str, dict[str, Any]] = {}
+    image_rows = per_roi if per_roi else folds
+    for row_source in image_rows:
+        asset_id = row_source.get("asset_id") or row_source.get("held_out_asset_id")
         if not asset_id:
             continue
         row = per_image.setdefault(
@@ -632,19 +675,37 @@ def _cv_results(folds: list[dict[str, Any]], names: dict[str, str]) -> dict[str,
                 "name": names.get(str(asset_id), ""),
                 "dice": None,
                 "iou": None,
+                "threshold": None,
                 "n_tiles": 0,
+                "_dice": [],
+                "_iou": [],
+                "_thresholds": [],
             },
         )
-        row["dice"] = fold["dice"]
-        row["iou"] = fold["iou"]
-        row["n_tiles"] = fold["n_tiles"]
+        if row_source.get("dice") is not None:
+            row["_dice"].append(row_source["dice"])
+        if row_source.get("iou") is not None:
+            row["_iou"].append(row_source["iou"])
+        if row_source.get("threshold") is not None:
+            row["_thresholds"].append(row_source["threshold"])
+        row["n_tiles"] += 1 if per_roi else int(row_source.get("n_tiles") or 0)
+
+    image_results = []
+    for key in sorted(per_image):
+        row = per_image[key]
+        row["dice"] = float(np.mean(row.pop("_dice"))) if row["_dice"] else None
+        row["iou"] = float(np.mean(row.pop("_iou"))) if row["_iou"] else None
+        row["threshold"] = float(np.mean(row.pop("_thresholds"))) if row["_thresholds"] else None
+        image_results.append(row)
     return {
         "folds": folds,
         "mean": {
             "dice": float(np.mean(dice)) if dice else None,
             "iou": float(np.mean(iou)) if iou else None,
+            "threshold": float(np.mean(thresholds)) if thresholds else None,
         },
-        "per_image": [per_image[key] for key in sorted(per_image)],
+        "per_roi": per_roi,
+        "per_image": image_results,
     }
 
 

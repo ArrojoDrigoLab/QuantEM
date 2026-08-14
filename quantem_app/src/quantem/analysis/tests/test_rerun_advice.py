@@ -9,8 +9,9 @@ proofread image. The run completed SUCCESS and returned::
 
 Every part of that is correct.
 :func:`quantem.seg_core.db.extraction.extract_and_save_segments` drops a
-candidate overlapping a CONFIRMED object by >=30% or an EXCLUDED one by >=80%,
-which is what stops a re-run destroying a day of proofreading. The consequence
+Preview keeps model output underneath CONFIRMED objects and Confirm preserves
+their boundaries unless the 70% union rule applies. That is what stops a re-run
+destroying a day of proofreading. The consequence
 is that **once an image has been proofread, "re-run inference" can never lift
 the uncalibrated stamp**: those objects keep ``native_pixel_size_nm: null`` for
 good and every future bundle repeats the same caveat. The user followed the
@@ -69,8 +70,8 @@ class TheAdviceIsTrueTests(RerunAdviceTestCase):
         caveats = self._caveats()
 
         self.assertIn("Re-running inference is not by itself enough", caveats)
-        self.assertIn("already confirmed or excluded is dropped", caveats)
-        self.assertIn("reports no new objects", caveats)
+        self.assertIn("A new model preview cannot replace it", caveats)
+        self.assertIn("excludes the confirmed pixels", caveats)
 
     def test_it_names_the_route_that_does_work(self):
         caveats = self._caveats()

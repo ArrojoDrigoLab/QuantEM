@@ -25,11 +25,9 @@ which are measured under different pixel conventions
 **above its own ceiling of 1.0** for small compact objects — a shipped
 ``objects.csv`` carried 1.2272 and the summary above it read ``MAX 1.227``. The
 rule this module follows is that an impossible number is not a measurement:
-values over :data:`CIRCULARITY_REPORT_CEILING` are blanked with the reason recorded, and
-because the bias that produces them is one-directional and monotone in size,
-every circularity summary carries :data:`CIRCULARITY_ESTIMATOR_NOTE` even when
-nothing was blanked. Which perimeter estimator to report is a separate decision
-and is not taken here.
+values over :data:`CIRCULARITY_REPORT_CEILING` are blanked with the reason
+recorded. Which perimeter estimator to report is a separate decision and is not
+taken here.
 """
 
 from __future__ import annotations
@@ -54,8 +52,7 @@ CIRCULARITY_KEY = "circularity"
 #: it for every other shape — that is the isoperimetric inequality, not a
 #: convention, a unit choice or a rounding tolerance. A value above it therefore
 #: says something about the *estimator* and nothing about the object, so
-#: :func:`derive` refuses to export it. See
-#: :data:`CIRCULARITY_ESTIMATOR_NOTE` for what it says instead.
+#: :func:`derive` refuses to export it.
 CIRCULARITY_MAX = 1.0
 
 #: The value above which a circularity is withheld as an estimator failure.
@@ -83,12 +80,10 @@ CIRCULARITY_ABOVE_CEILING_REASON = (
     f"The theoretical ceiling is {CIRCULARITY_MAX:g}, and the estimator's "
     "measured envelope for a genuinely round object reaches about 1.011 — so a "
     "value beyond 1.015 measures the estimator failing on a small object, not "
-    "the object, and is left blank rather than exported as a roundness. Their "
-    "area, perimeter and every other column are unaffected and still theirs."
+    "the object, and is left blank rather than exported as a roundness."
 )
 
-#: The paragraph that travels with **every** circularity summary, whether or not
-#: any row was refused above.
+#: The estimator description included with exported column documentation.
 #:
 #: Blanking the impossible values is the floor, not the fix. The estimator is
 #: biased in one direction over the whole range, by an amount that depends on
@@ -104,12 +99,12 @@ CIRCULARITY_ABOVE_CEILING_REASON = (
 CIRCULARITY_ESTIMATOR_NOTE = (
     "circularity is 4*pi*area/perimeter^2; 1.0 is its theoretical ceiling, "
     "reached only by a perfect circle. The perimeter here is scikit-image's "
-    "perimeter_crofton on the pixel mask (owner ruling 2026-08-07; bundles "
+    "perimeter_crofton on the pixel mask. Bundles "
     "whose environment.perimeter_estimator field is absent or names "
     "regionprops.perimeter used the earlier estimator, whose bias grew as "
     "objects shrank and could turn a pure size change into a roundness "
     "difference — perimeter and circularity are not comparable across that "
-    "boundary). Crofton is close to unbiased on round shapes: a disc measures "
+    "boundary. Crofton is close to unbiased on round shapes: a disc measures "
     "0.995 at r=10 px, 1.008 at r=20 and 1.001 at r=80, against a true 1.0. It "
     "is still an estimator, not geometry. A genuinely round object scatters "
     "within about 1.5% of 1.0, on both sides, so a value slightly above 1.0 "
@@ -277,10 +272,7 @@ def derive(
     the reason recorded in :attr:`ObjectMetrics.unreportable` rather than
     exported. A shipped ``objects.csv`` carried ``circularity = 1.2272``, and
     the screen above it reported ``MAX 1.227`` for a quantity whose ceiling is
-    1.0. The values that survive are still biased upward and still
-    size-dependent; that is what :data:`CIRCULARITY_ESTIMATOR_NOTE` is for, and
-    :func:`summarize` attaches it to every circularity summary whether or not
-    anything was blanked here.
+    1.0.
     """
     out: dict[str, float | None] = {
         metric: _f(features.get(stored)) for metric, stored in STORED_FEATURE_FOR_METRIC.items()
@@ -356,14 +348,9 @@ def summarize(
     plain-English ``note`` travel with the number itself, so whatever renders it
     cannot show one without the other.
 
-    **A metric whose estimator is biased carries that too, at full n.** An
-    ``n_missing`` of zero means every object was measured; it does not mean the
-    measurement is fit to be compared between groups. ``circularity`` is the one
-    quantity here whose estimator is known to be biased in a fixed direction by
-    an amount that depends on object size, so :data:`CIRCULARITY_ESTIMATOR_NOTE`
-    is appended to its ``note`` unconditionally -- there is no value of ``n`` at
-    which "smaller objects score rounder" stops applying, and the rows it
-    applies to are all of them.
+    Values withheld after measurement are counted separately from values that
+    were never stored, allowing the interface to explain the two cases without
+    displaying a full caveat paragraph beneath the table.
     """
     if not metrics:
         return {}
@@ -422,15 +409,6 @@ def summarize(
                     unreportable_reason=(refused[0].unreportable[key] if refused else ""),
                 )
             )
-        if key == CIRCULARITY_KEY:
-            notes.append(CIRCULARITY_ESTIMATOR_NOTE)
-            # Also its own key. Folded into ``note`` it was indistinguishable
-            # from a coverage sentence, and every consumer downstream gated on
-            # ``n_missing`` -- so a run that blanked nothing shipped a full
-            # circularity column and said nothing about the bias. "Partly
-            # measured" and "systematically biased" are different claims and a
-            # reader needs the second one whether or not the first applies.
-            entry["estimator_note"] = CIRCULARITY_ESTIMATOR_NOTE
         if notes:
             entry["note"] = " ".join(notes)
         out[key] = entry
@@ -513,16 +491,12 @@ def _coverage_note(
         )
     note = (
         f"Measured on {n} of {total} confirmed object{'s' if total != 1 else ''}; "
-        f"{' and '.join(clauses)} ({breakdown}). "
-        f"Quote it as n={n}, not as the whole image."
+        f"{' and '.join(clauses)}. Missing sources: {breakdown}."
     )
     if n_unreportable and unreportable_reason:
         note += f" {unreportable_reason}"
-    if key == "mean_prob" and set(missing_by_source) == {MANUAL_SOURCE}:
-        note += (
-            " A hand-drawn object has no model probability behind it, so this "
-            "absence is expected rather than a lost measurement."
-        )
+    if key == "mean_prob":
+        note += " User-drawn or defined objects have no model probability behind them."
     return note
 
 

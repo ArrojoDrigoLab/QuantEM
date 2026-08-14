@@ -153,7 +153,7 @@ class ExtractionReplacementGuaranteeTests(TestCase):
             roi=self.roi,
         )
 
-        self.assertEqual(created, 1)
+        self.assertEqual(created, 2)
         self.assertFalse(SegmentObject.objects.filter(id=old_generated_candidate.id).exists())
         self.assertFalse(SegmentObject.objects.filter(id=old_generated_inferred.id).exists())
         self.assertTrue(SegmentObject.objects.filter(id=old_generated_outside_roi.id).exists())
@@ -166,9 +166,11 @@ class ExtractionReplacementGuaranteeTests(TestCase):
             label_state="CANDIDATE",
             features__mito_generated=True,
         )
-        self.assertEqual(generated_candidates.count(), 2)
+        # The old out-of-ROI candidate survives and Preview writes both new
+        # full-map candidates, including the one beneath CONFIRMED geometry.
+        self.assertEqual(generated_candidates.count(), 3)
 
-    def test_confirmed_overlap_blocks_at_30_percent_but_excluded_remains_at_80(self):
+    def test_preview_keeps_confirmed_overlap_but_excluded_still_blocks_at_80_percent(self):
         self._create_segment(
             label_state="CONFIRMED",
             coords=_square_coords(0, 0),
@@ -226,7 +228,7 @@ class ExtractionReplacementGuaranteeTests(TestCase):
             roi=self.roi,
         )
 
-        self.assertEqual(created, 2)
+        self.assertEqual(created, 3)
         created_centroids = {
             (round(seg.centroid.x), round(seg.centroid.y))
             for seg in SegmentObject.objects.filter(
@@ -235,4 +237,4 @@ class ExtractionReplacementGuaranteeTests(TestCase):
                 features__mito_generated=True,
             )
         }
-        self.assertEqual(created_centroids, {(13, 5), (52, 5)})
+        self.assertEqual(created_centroids, {(12, 5), (13, 5), (52, 5)})

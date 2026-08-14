@@ -23,6 +23,9 @@ interface UseSegmentationInteractionRouterArgs {
   ) => void;
   clearHoverInteraction: () => void;
   onRoiPlacementClick: (point: Point) => void;
+  onRoiEditPress: (point: Point) => void;
+  onRoiEditDrag: (point: Point) => void;
+  onRoiEditRelease: (point: Point) => void;
   completedRoi: {
     isActive: boolean;
     handlePolygonClick: (point: Point) => void;
@@ -76,6 +79,9 @@ export function useSegmentationInteractionRouter({
   scheduleHoverSegmentQuery,
   clearHoverInteraction,
   onRoiPlacementClick,
+  onRoiEditPress,
+  onRoiEditDrag,
+  onRoiEditRelease,
   completedRoi,
   erPolygon,
   tissue,
@@ -145,7 +151,11 @@ export function useSegmentationInteractionRouter({
 
   const onLeftImagePress = useCallback(
     (imagePoint: Point, screenPoint: Point) => {
-      if (leftNavigateMode || roiPlacementActive) return;
+      if (roiPlacementActive) {
+        onRoiEditPress(imagePoint);
+        return;
+      }
+      if (leftNavigateMode) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
       // Before the group-selection check: both are box drags, and whichever is
       // switched on owns the gesture.
@@ -158,6 +168,7 @@ export function useSegmentationInteractionRouter({
     },
     [
       leftNavigateMode,
+      onRoiEditPress,
       review,
       roiPlacementActive,
       completedRoi,
@@ -169,7 +180,11 @@ export function useSegmentationInteractionRouter({
 
   const onLeftImageDrag = useCallback(
     (imagePoint: Point, screenPoint: Point) => {
-      if (leftNavigateMode || roiPlacementActive) return;
+      if (roiPlacementActive) {
+        onRoiEditDrag(imagePoint);
+        return;
+      }
+      if (leftNavigateMode) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
       if (samBox?.isActive) {
         samBox.handleImageDrag(imagePoint, screenPoint);
@@ -180,6 +195,7 @@ export function useSegmentationInteractionRouter({
     },
     [
       leftNavigateMode,
+      onRoiEditDrag,
       review,
       roiPlacementActive,
       completedRoi,
@@ -191,7 +207,11 @@ export function useSegmentationInteractionRouter({
 
   const onLeftImageRelease = useCallback(
     (imagePoint: Point, screenPoint: Point) => {
-      if (leftNavigateMode || roiPlacementActive) return;
+      if (roiPlacementActive) {
+        onRoiEditRelease(imagePoint);
+        return;
+      }
+      if (leftNavigateMode) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
       if (samBox?.isActive) {
         samBox.handleImageRelease(imagePoint, screenPoint);
@@ -202,6 +222,7 @@ export function useSegmentationInteractionRouter({
     },
     [
       leftNavigateMode,
+      onRoiEditRelease,
       review,
       roiPlacementActive,
       completedRoi,

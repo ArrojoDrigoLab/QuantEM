@@ -245,12 +245,9 @@ class TheScaleIsNotADistributionTests(ObjectTableTestCase):
         self.assertIsNone(objects["values_in_pixel_size_nm"])
         self.assertNotIn("pixel_size_nm", objects["summary"])
 
-    def test_the_metric_count_in_the_caveats_counts_metrics(self):
-        """``N of M metrics are measured on fewer than ...`` had a constant in M."""
+    def test_partial_metric_coverage_is_not_duplicated_in_run_caveats(self):
         result = self._bundle()["result"]
         summary = result["objects"]["summary"]
 
         self.assertTrue(all(key not in summary for key in ("pixel_size_nm", "aspect_ratio")))
-        for caveat in result["caveats"]:
-            if "metrics" in caveat and "measured on fewer than" in caveat:
-                self.assertIn(f"of {len(summary)} metrics", caveat)
+        self.assertFalse(any("measured on fewer than" in caveat for caveat in result["caveats"]))

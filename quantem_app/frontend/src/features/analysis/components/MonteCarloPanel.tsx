@@ -127,7 +127,7 @@ export function MonteCarloPanel({
           covered z has to cover p as well -- a blank with no explanation is
           read as a rendering fault, and a wrong 0.048 was read as a finding. */}
       <p className="mt-3 mb-0 text-xs text-slate-500">
-        The null is complete spatial randomness inside the tissue mask, seeded
+        The null is complete spatial randomness inside the analysis mask, seeded
         per (image, replicate) so it does not depend on processing order. The
         p-value is empirical with the +1 correction, so with{" "}
         {monteCarlo.replicates} replicates it cannot go below{" "}

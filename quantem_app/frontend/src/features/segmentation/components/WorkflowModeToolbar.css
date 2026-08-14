@@ -1,21 +1,5 @@
 /* Toolbar styles are already in SegmentationScreen.css */
 
-/* The confirmed-area explainer. Prose in a toolbar is unusual, but this is the
-   one control whose purpose cannot be inferred from its label, and the only
-   place the reason was previously written was a 400 response body. */
-.mode-toolbar-explainer {
-  margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  color: #475569;
-  max-width: 34ch;
-}
-
-.mode-toolbar-alias {
-  color: #64748b;
-  font-style: italic;
-}
-
 .confirmed-area-group {
   align-items: flex-start;
 }

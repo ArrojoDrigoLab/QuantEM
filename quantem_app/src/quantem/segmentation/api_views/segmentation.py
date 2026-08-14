@@ -230,7 +230,10 @@ def _create_segmentation_for_asset(request, *, asset):
     segmenter = (
         None
         if not queue_inference
-        else get_segmenter_or_none(segmenter_internal_name or segmentation_type.internal_name)
+        else get_segmenter_or_none(
+            segmenter_internal_name or segmentation_type.internal_name,
+            source_model=source_model,
+        )
     )
     if segmenter is not None:
         tags = [

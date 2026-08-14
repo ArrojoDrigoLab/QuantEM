@@ -94,7 +94,8 @@ export function AboutThisResult({
       {objectsPixelSize && isOrganelle && onOpenClearRerun && (
         // The way out of the state the chip describes, beside the chip that
         // describes it. Re-running alone is a no-op — a new candidate
-        // landing on a confirmed or excluded object is dropped, which is
+        // rejected proposal is dropped; confirmed geometry stays above the
+        // preview and is resolved only when the preview is confirmed, which is
         // what protects proofreading — so recovery is delete-then-re-run,
         // and it asks first.
         <button

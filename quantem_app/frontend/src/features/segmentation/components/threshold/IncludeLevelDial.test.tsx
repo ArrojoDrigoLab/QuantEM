@@ -2,12 +2,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { server } from "@/test/msw/server";
 
 import { IncludeLevelDial } from "./IncludeLevelDial";
 import type { IncludeLevelState } from "./api";
+import { useThresholdPreviewStore } from "./useThresholdPreviewStore";
 
 const SEG_ID = "11111111-1111-4111-8111-111111111111";
 const BASE = "http://127.0.0.1:8000";
@@ -41,6 +42,10 @@ function serveState(value: IncludeLevelState) {
 function renderDial(props: Partial<ComponentProps<typeof IncludeLevelDial>> = {}) {
   return render(<IncludeLevelDial segmentationId={SEG_ID} {...props} />);
 }
+
+afterEach(() => {
+  useThresholdPreviewStore.getState().clear();
+});
 
 describe("IncludeLevelDial", () => {
   it("uses Threshold as the compact title and keeps the explanation on hover", async () => {
@@ -121,9 +126,20 @@ describe("IncludeLevelDial", () => {
 
     renderDial({ onReextracted });
     fireEvent.change(await screen.findByRole("slider"), { target: { value: "0.48" } });
+    useThresholdPreviewStore.getState().setOverlay({
+      probData: new Uint8ClampedArray(4),
+      width: 1,
+      height: 1,
+      bounds: [0, 0, 1, 1],
+      color: [239, 68, 68],
+      sourceModel: "quantem:mito",
+    });
     await userEvent.click(screen.getByTestId("include-level-apply"));
 
     await waitFor(() => expect(onReextracted).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(useThresholdPreviewStore.getState().overlay).toBeNull()
+    );
   });
 
   it("moves the unavailable explanation into a tooltip and shows Run model", async () => {
@@ -159,12 +175,19 @@ describe("IncludeLevelDial", () => {
     );
 
     renderDial();
-    await userEvent.click(await screen.findByRole("button", { name: "Preview" }));
+    const previewButton = await screen.findByRole("button", {
+      name: "Preview / Process",
+    });
+    expect(previewButton).toHaveAttribute(
+      "title",
+      "Turn this model and threshold setting into objects. Normalizes the shapes and applies size thresholds."
+    );
+    await userEvent.click(previewButton);
 
     await waitFor(() => expect(bodies).toEqual([{ include_level: 0.41 }]));
   });
 
-  it("renames Preview to Confirm and confirms the selected model across the image", async () => {
+  it("renames Preview / Process to Confirm and confirms the selected model across the image", async () => {
     let current = state({
       include_level: 0.35,
       candidate_count: 4,
@@ -174,6 +197,8 @@ describe("IncludeLevelDial", () => {
     });
     const confirmBodies: unknown[] = [];
     const onReextracted = vi.fn();
+    const onConfirmStarted = vi.fn();
+    const onConfirmCommitted = vi.fn();
     server.use(
       http.get(DIAL_URL, () => HttpResponse.json(current)),
       http.post(CONFIRM_URL, async ({ request }) => {
@@ -193,11 +218,23 @@ describe("IncludeLevelDial", () => {
           skipped_manual_roi_count: 2,
           manual_roi_count: 1,
           remaining_candidate_count: 2,
+          overlay: {
+            desired_revision: 7,
+            applied_revision: 6,
+            sync_applied: false,
+            rebuild_mode: "async_full",
+            source_model: "quantem:mito",
+          },
         });
       })
     );
 
-    renderDial({ sourceModel: "quantem:mito", onReextracted });
+    renderDial({
+      sourceModel: "quantem:mito",
+      onReextracted,
+      onConfirmStarted,
+      onConfirmCommitted,
+    });
 
     expect(await screen.findByRole("button", { name: "Confirm" })).toBeEnabled();
     expect(screen.getByText(/2 candidates inside manually annotated ROIs/i)).toBeInTheDocument();
@@ -205,6 +242,10 @@ describe("IncludeLevelDial", () => {
 
     await waitFor(() =>
       expect(confirmBodies).toEqual([{ source_model: "quantem:mito" }])
+    );
+    expect(onConfirmStarted).toHaveBeenCalledTimes(1);
+    expect(onConfirmCommitted).toHaveBeenCalledWith(
+      expect.objectContaining({ desired_revision: 7, source_model: "quantem:mito" })
     );
     await waitFor(() => expect(onReextracted).toHaveBeenCalled());
     expect(

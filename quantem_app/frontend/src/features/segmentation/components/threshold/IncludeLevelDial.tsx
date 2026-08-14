@@ -8,6 +8,7 @@ import { runFullSegmentation } from "@/shared/api/segmentations/overlays";
 import { rerunSegmentationRoi } from "@/shared/api/segmentations/rois";
 import { useJobProgress } from "@/shared/hooks/useJobProgress";
 import type { ModelCatalogue, ModelPack, OrganelleKey } from "@/shared/types/finetune";
+import type { SegmentationOverlayMutationState } from "@/shared/types/segmentation";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 
 import { confirmModelOutput, getIncludeLevel, setIncludeLevel } from "./api";
@@ -25,6 +26,8 @@ import { useThresholdPreviewStore } from "./useThresholdPreviewStore";
 
 /** The saved probability map has 8-bit precision; hundredths are ample here. */
 const STEP = 0.01;
+const PREVIEW_PROCESS_TOOLTIP =
+  "Turn this model and threshold setting into objects. Normalizes the shapes and applies size thresholds.";
 
 type ModelAction = {
   kind: "install" | "run";
@@ -79,6 +82,10 @@ export interface IncludeLevelDialProps {
   onRunFinished?: () => void;
   /** Refresh objects and overlays after a successful Preview or Confirm. */
   onReextracted?: () => void;
+  /** Keep the confirmed-pane veil active across the asynchronous raster rebuild. */
+  onConfirmStarted?: () => void;
+  onConfirmCommitted?: (overlay: SegmentationOverlayMutationState | null) => void;
+  onConfirmFailed?: () => void;
 }
 
 export function IncludeLevelDial({
@@ -91,6 +98,9 @@ export function IncludeLevelDial({
   onRunQueued,
   onRunFinished,
   onReextracted,
+  onConfirmStarted,
+  onConfirmCommitted,
+  onConfirmFailed,
 }: IncludeLevelDialProps) {
   const [state, setState] = useState<IncludeLevelState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -150,11 +160,19 @@ export function IncludeLevelDial({
     setPreviewThreshold(position);
   }, [position, setPreviewThreshold]);
 
+  const settled = state?.include_level ?? state?.default_include_level ?? null;
+  const moved = draft !== null && levelsDiffer(draft, settled);
+  const needsPreview = state?.include_level === null || moved;
+
   const previewUrl = state?.preview_url;
   const previewBounds = state?.preview_bounds;
   const previewBoundsKey = previewBounds?.join(":") ?? "";
   useEffect(() => {
-    if (!previewUrl || !state?.can_move) {
+    // The probability bitmap is only a live threshold-selection aid. Once the
+    // selected level has been materialized, the candidate overlay is the
+    // authoritative post-processed preview (closing, hole fill, size filter),
+    // and drawing both produces misleading double opacity and apparent holes.
+    if (!needsPreview || !previewUrl || !state?.can_move) {
       clearPreview();
       return undefined;
     }
@@ -183,6 +201,7 @@ export function IncludeLevelDial({
     previewBounds,
     previewBoundsKey,
     previewUrl,
+    needsPreview,
     setPreviewOverlay,
     sourceModel,
     state?.can_move,
@@ -282,9 +301,6 @@ export function IncludeLevelDial({
   }, [modelAction, segmentationInternalName, sourceModel, startRun, startingModel]);
 
   const working = submitting || confirming || applyJobId !== null;
-  const settled = state?.include_level ?? state?.default_include_level ?? null;
-  const moved = draft !== null && levelsDiffer(draft, settled);
-  const needsPreview = state?.include_level === null || moved;
 
   const preview = useCallback(async () => {
     if (working) return;
@@ -309,9 +325,11 @@ export function IncludeLevelDial({
   const confirm = useCallback(async () => {
     if (working || !sourceModel || roiId) return;
     setConfirming(true);
+    onConfirmStarted?.();
     setSubmitError(null);
     try {
       const result = await confirmModelOutput(segmentationId, sourceModel);
+      onConfirmCommitted?.(result.overlay);
       const confirmed = result.confirmed_count;
       const skipped = result.skipped_manual_roi_count;
       setConfirmationMessage(
@@ -329,13 +347,24 @@ export function IncludeLevelDial({
       if (next) setDraft(null);
       onReextracted?.();
     } catch (error) {
+      onConfirmFailed?.();
       setSubmitError(
         extractApiErrorMessage(error, "The model output could not be confirmed.")
       );
     } finally {
       setConfirming(false);
     }
-  }, [load, onReextracted, roiId, segmentationId, sourceModel, working]);
+  }, [
+    load,
+    onConfirmCommitted,
+    onConfirmFailed,
+    onConfirmStarted,
+    onReextracted,
+    roiId,
+    segmentationId,
+    sourceModel,
+    working,
+  ]);
 
   if (loadError) {
     return (
@@ -362,7 +391,7 @@ export function IncludeLevelDial({
   const canConfirmWholeImage =
     objectMode && !roiId && !needsPreview && confirmableCandidateCount > 0;
   const actionLabel = needsPreview
-    ? "Preview"
+    ? "Preview / Process"
     : canConfirmWholeImage
       ? "Confirm"
       : roiId
@@ -431,6 +460,7 @@ export function IncludeLevelDial({
           type="button"
           className="include-level-apply"
           data-testid="include-level-apply"
+          title={needsPreview ? PREVIEW_PROCESS_TOOLTIP : undefined}
           disabled={working || (!needsPreview && !canConfirmWholeImage)}
           onClick={() => void (needsPreview ? preview() : confirm())}
         >

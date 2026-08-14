@@ -65,6 +65,23 @@ describe("appliedAdapterState", () => {
     expect(state?.adapter.calibrated_threshold).toBe(0.45);
   });
 
+  it("finds a named fine-tune through its applied target views", () => {
+    const state = appliedAdapterState(
+      catalogue([
+        adapted({
+          segmentation_id: null,
+          segmentation_ids: ["seg-1", "seg-2"],
+          name: "Test CV",
+        }),
+      ]),
+      "seg-2",
+      "quantem:mito"
+    );
+
+    expect(state?.active).toBe(true);
+    expect(state?.adapter.name).toBe("Test CV");
+  });
+
   it("ignores an adapter that was trained but never applied", () => {
     // `apply_active_adapter` filters on `applied_at`; training alone changes
     // nothing about a run.

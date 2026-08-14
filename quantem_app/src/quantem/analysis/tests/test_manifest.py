@@ -386,7 +386,7 @@ class BundleOutputChecksumTests(ManifestTestCase):
         _, out, got = self._run()
         outputs = self._outputs(got["manifest"])
 
-        assert set(outputs) == {"objects.csv", "image_summary.csv"}
+        assert set(outputs) == {"objects.csv", "image_summary.csv", "composition.csv"}
         for name, entry in outputs.items():
             digest = provenance.sha256_file(out / name)
             assert entry["sha256"] == digest, name

@@ -33,6 +33,8 @@ interface UseSegmentationReviewWorkflowArgs {
     options?: { stageOverlay?: boolean }
   ) => void;
   rollbackOptimisticLabel: (segmentId: string) => void;
+  hideOptimisticallyDeletedSegment: (segmentId: string) => boolean;
+  rollbackOptimisticallyDeletedSegment: (segmentId: string) => void;
   stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: number | null) => void;
   getOptimisticTargetRevision: (
     overlay: SegmentationOverlayMutationState | null | undefined
@@ -79,6 +81,8 @@ export function useSegmentationReviewWorkflow({
   applyLabelOverrides,
   applyOptimisticLabel,
   rollbackOptimisticLabel,
+  hideOptimisticallyDeletedSegment,
+  rollbackOptimisticallyDeletedSegment,
   stageOptimisticRevisionTargets,
   getOptimisticTargetRevision,
   handleOverlayMutationRefresh,
@@ -122,6 +126,8 @@ export function useSegmentationReviewWorkflow({
     applyLabelOverrides,
     applyOptimisticLabel,
     rollbackOptimisticLabel,
+    hideOptimisticallyDeletedSegment,
+    rollbackOptimisticallyDeletedSegment,
     clearHoverInteraction,
     registerAnnotationActivity,
     stageOptimisticRevisionTargets,
@@ -225,6 +231,7 @@ export function useSegmentationReviewWorkflow({
     pointActions: {
       handleApplyPointAction: pointActions.handleApplyPointAction,
       handleResetConfirmedToCandidate: pointActions.handleResetConfirmedToCandidate,
+      handleDeleteConfirmedObject: pointActions.handleDeleteConfirmedObject,
     },
     derived: {
       reviewInteractionSegments,

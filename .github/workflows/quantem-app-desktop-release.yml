@@ -424,6 +424,16 @@ jobs:
           version="$(python desktop/scripts/verify_release_versions.py --tag "$RELEASE_TAG")"
           rm -f ../release-assets/*.payload-manifest.json
           gh release create "$RELEASE_TAG" --draft --generate-notes
+          release_id="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"${RELEASE_TAG}\" and .draft == true) | .id"
+          )"
+          case "$release_id" in
+            ''|*[!0-9]*)
+              echo "Could not resolve exactly one numeric draft release ID for ${RELEASE_TAG}." >&2
+              exit 1
+              ;;
+          esac
           gh release view "$RELEASE_TAG" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
           python desktop/scripts/build_update_metadata.py --version "$version" --tag "$RELEASE_TAG" --assets-dir ../release-assets --notes-file "$RUNNER_TEMP/release-notes.md" --output ../release-assets/quantem-app-latest.json
           python desktop/scripts/build_release_notes.py --version "$version" --tag "$RELEASE_TAG" --generated-notes "$RUNNER_TEMP/release-notes.md" --output "$RUNNER_TEMP/public-release-notes.md"
@@ -434,7 +444,7 @@ jobs:
           label_asset() {
             filename="$1"
             label="$2"
-            asset_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq ".assets[] | select(.name == \"${filename}\") | .id")"
+            asset_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq ".assets[] | select(.name == \"${filename}\") | .id")"
             test -n "$asset_id"
             gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" -f "label=${label}" > /dev/null
           }

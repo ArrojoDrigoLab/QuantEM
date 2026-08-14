@@ -80,21 +80,6 @@ function makeProps(layers: Partial<SidebarProps["layers"]> = {}): SidebarProps {
       onApplyGroupAction: vi.fn(),
     },
     layers: {
-      usesRasterReviewOverlay: true,
-      showCandidateBorders: true,
-      onShowCandidateBordersChange: vi.fn(),
-      showConfirmedBorders: true,
-      onShowConfirmedBordersChange: vi.fn(),
-      leftPanelLayerStyles: {
-        candidateStrokeWidth: 2,
-        candidateFillOpacity: 0.25,
-        confirmedStrokeWidth: 2,
-        confirmedFillOpacity: 0.25,
-      } as SidebarProps["layers"]["leftPanelLayerStyles"],
-      onCandidateStrokeWidthChange: vi.fn(),
-      onCandidateFillOpacityChange: vi.fn(),
-      onConfirmedStrokeWidthChange: vi.fn(),
-      onConfirmedFillOpacityChange: vi.fn(),
       overlayUpdating: false,
       overlayBuildFailed: false,
       overlayManifest: null,
@@ -240,6 +225,7 @@ describe("SegmentationSidebar, when the overlay build has failed", () => {
     render(<SegmentationSidebar {...makeProps({ overlayUpdating: true })} />);
 
     expect(screen.getByText("Overlay updating.")).toBeInTheDocument();
+    expect(screen.queryByText("Layers")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Overlay could not be rebuilt")
     ).not.toBeInTheDocument();

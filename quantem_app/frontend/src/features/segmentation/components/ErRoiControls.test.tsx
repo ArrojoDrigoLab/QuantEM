@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -39,7 +39,7 @@ function renderControls(overrides: Partial<ErRoiSection> = {}) {
     activatingRoiId: null,
     testingRoiId: null,
     onStartPlacement: vi.fn(),
-    onMoveRoi: vi.fn(),
+    onEditRoi: vi.fn(),
     onCancelPlacement: vi.fn(),
     onConfirmRoi: vi.fn(),
     onMarkRoiDone: vi.fn(),
@@ -52,25 +52,30 @@ function renderControls(overrides: Partial<ErRoiSection> = {}) {
 }
 
 describe("ErRoiControls", () => {
-  it("shows the active ROI, its source coordinates, and a size-neutral creation action", () => {
+  it("puts the compact Add New action on the ROI heading and shows ROI dimensions", () => {
     renderControls();
 
-    expect(screen.getByRole("heading", { name: "ROI" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add New ROI" })).toBeInTheDocument();
-    expect(screen.getByText("ROI 1: 512×512 px at (100, 200)")).toBeInTheDocument();
-    expect(screen.getByText("active")).toBeInTheDocument();
+    const heading = screen.getByRole("heading", { name: "ROI" }).parentElement;
+    expect(heading).not.toBeNull();
+    expect(within(heading!).getByRole("button", { name: "Add New" })).toBeInTheDocument();
+    expect(screen.getByText("ROI 1: 512x512 px")).toBeInTheDocument();
+    const active = screen.getByText("active");
+    expect(active.parentElement).toHaveClass("er-roi-item-actions");
   });
 
-  it("offers explicit controls to open, move, test, delete, and mark an ROI done", async () => {
+  it("offers Edit Area on the title line with the remaining ROI actions below", async () => {
     const user = userEvent.setup();
-    const onMoveRoi = vi.fn();
+    const roi = makeRoi();
+    const onEditRoi = vi.fn();
     const onTestRoi = vi.fn();
     const onMarkRoiDone = vi.fn();
-    renderControls({ onMoveRoi, onTestRoi, onMarkRoiDone });
+    renderControls({ rois: [roi], onEditRoi, onTestRoi, onMarkRoiDone });
 
+    const editArea = screen.getByRole("button", { name: "Edit Area" });
+    expect(editArea.parentElement).toHaveClass("er-roi-item-summary");
+    await user.click(editArea);
+    expect(onEditRoi).toHaveBeenCalledWith(roi);
     expect(screen.getByRole("button", { name: "Open" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Move" }));
-    expect(onMoveRoi).toHaveBeenCalledWith("roi-1");
     await user.click(screen.getByRole("button", { name: "Test" }));
     expect(onTestRoi).toHaveBeenCalledWith("roi-1");
     await user.click(screen.getByRole("checkbox", { name: /mark roi 1.*done/i }));
@@ -78,12 +83,12 @@ describe("ErRoiControls", () => {
     expect(screen.getByRole("button", { name: /delete roi 1/i })).toBeInTheDocument();
   });
 
-  it("hides Move after the ROI is marked done", () => {
+  it("keeps Edit Area visible but disabled after the ROI is marked done", () => {
     renderControls({
       rois: [makeRoi({ completed_for_segmentation: true })],
     });
 
-    expect(screen.queryByRole("button", { name: "Move" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Area" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Open" })).toBeEnabled();
     expect(screen.getByRole("checkbox", { name: /mark roi 1.*done/i })).toBeChecked();
   });
@@ -103,13 +108,9 @@ describe("ErRoiControls", () => {
       is_active: true,
       created_at: "2026-01-02T00:00:00Z",
     });
-    const rendered = renderControls({
-      rois: [newer, older],
-      activeRoiId: newer.id,
-    });
+    const rendered = renderControls({ rois: [newer, older], activeRoiId: newer.id });
 
-    expect(screen.getByText("ROI 1: 512×512 px at (10, 20)")).toBeInTheDocument();
-    expect(screen.getByText("ROI 2: 512×512 px at (30, 40)")).toBeInTheDocument();
+    expect(screen.getAllByText(/ROI [12]: 512x512 px/)).toHaveLength(2);
 
     rendered.rerender(
       <ErRoiControls
@@ -122,21 +123,22 @@ describe("ErRoiControls", () => {
       />
     );
 
-    expect(screen.getByText("ROI 1: 512×512 px at (10, 20)")).toBeInTheDocument();
-    expect(screen.getByText("ROI 2: 512×512 px at (30, 40)")).toBeInTheDocument();
+    expect(screen.getAllByText(/ROI [12]: 512x512 px/)).toHaveLength(2);
   });
 
-  it("shows creation and relocation as deliberate pending actions", () => {
-    renderControls({ placementActive: true });
+  it("shows placement and area editing as deliberate pending actions", () => {
+    const placing = renderControls({ placementActive: true });
     expect(screen.getByText("Click to place the new ROI.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel placement" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    placing.unmount();
 
     renderControls({
       placementActive: true,
       pendingRoiActive: true,
       relocatingRoiId: "roi-1",
     });
-    expect(screen.getByRole("button", { name: "Move ROI" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save Area" })).toBeInTheDocument();
+    expect(screen.getByText(/drag an edge or corner to resize/i)).toBeInTheDocument();
   });
 
   it("explains the scope of a deletion before it happens", async () => {

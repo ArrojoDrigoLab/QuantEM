@@ -1,15 +1,6 @@
-/**
- * Everything one analysis run measured.
- *
- * The caveats come first, above any number they qualify. They are produced at
- * the point of measurement (uncalibrated image, no tissue mask, points that
- * fell off the tissue, a compartment whose enrichment is circular by
- * construction), and a reader who scrolls straight to a table has still seen
- * them.
- */
+/** Everything one completed analysis run measured. */
 
 import { Badge, Panel } from "@/shared/ui/design";
-import { PixelSizeTag } from "@/shared/ui/PixelSize";
 import { formatNumber, formatTimestamp } from "@/shared/ui/format";
 import { getAnalysisExportUrl } from "@/shared/api/analysis";
 import type { AnalysisRun } from "@/shared/types/analysis";
@@ -17,27 +8,6 @@ import { BandHistogram } from "@/features/analysis/components/BandHistogram";
 import { CompositionPanel } from "@/features/analysis/components/CompositionPanel";
 import { MonteCarloPanel } from "@/features/analysis/components/MonteCarloPanel";
 import { ObjectsPanel } from "@/features/analysis/components/ObjectsPanel";
-
-const EXPORT_DESCRIPTIONS: Record<string, string> = {
-  "objects.csv": "One row per confirmed object, every metric.",
-  "image_summary.csv": "One row per image: fractions, density, enrichment, z.",
-  "manifest.json": "What produced these numbers, and the aggregation rule.",
-};
-
-function ExportLink({ runId, name }: { runId: string; name: string }) {
-  return (
-    <a
-      className="inline-flex flex-col rounded-md border border-slate-300 bg-white px-3 py-2 text-left shadow-sm hover:bg-slate-50"
-      href={getAnalysisExportUrl(runId, name)}
-      download
-    >
-      <span className="text-sm font-medium text-slate-900">{name}</span>
-      <span className="text-xs text-slate-500">
-        {EXPORT_DESCRIPTIONS[name] ?? "Export bundle file."}
-      </span>
-    </a>
-  );
-}
 
 export interface AnalysisResultsProps {
   run: AnalysisRun;
@@ -129,38 +99,8 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {run.group ? <Badge tone="info">group: {run.group}</Badge> : null}
-            <PixelSizeTag valueNm={calibrated ? run.pixel_size_nm : null} />
           </div>
         </div>
-
-        {run.caveats.length > 0 ? (
-          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-amber-800">
-              Read before quoting these numbers
-            </p>
-            <ul className="m-0 mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
-              {run.caveats.map((caveat) => (
-                <li key={caveat}>{caveat}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {run.exports.length > 0 ? (
-          <div className="mt-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Export bundle
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {run.exports.map((name) => (
-                <ExportLink key={name} runId={run.id} name={name} />
-              ))}
-            </div>
-            <p className="m-0 mt-2 text-xs text-slate-500">
-              Written to {run.export_dir}
-            </p>
-          </div>
-        ) : null}
       </Panel>
 
       {run.composition ? (
@@ -169,6 +109,11 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
           calibrated={calibrated}
           pixelSizeNm={run.pixel_size_nm}
           wholeImageDenominator={wholeImage}
+          compositionCsvUrl={
+            run.exports.includes("composition.csv")
+              ? getAnalysisExportUrl(run.id, "composition.csv")
+              : null
+          }
         />
       ) : null}
 

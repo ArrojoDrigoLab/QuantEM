@@ -93,7 +93,7 @@ export function ExperimentPreviewPanel({
         </h2>
         {data || entries.length > 0 ? (
           <p className="m-0 text-sm text-slate-600">
-            Previewing {entries.length} of {total} {total === 1 ? "image" : "images"}
+            {entries.length} of {total} {total === 1 ? "image" : "images"}
           </p>
         ) : null}
       </div>

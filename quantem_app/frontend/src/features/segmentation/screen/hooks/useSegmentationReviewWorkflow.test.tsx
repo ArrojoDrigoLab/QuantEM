@@ -24,6 +24,8 @@ function renderWorkflow(exitNavigateMode: () => void) {
       applyLabelOverrides: (items) => items,
       applyOptimisticLabel: vi.fn(),
       rollbackOptimisticLabel: vi.fn(),
+      hideOptimisticallyDeletedSegment: vi.fn(() => true),
+      rollbackOptimisticallyDeletedSegment: vi.fn(),
       stageOptimisticRevisionTargets: vi.fn(),
       getOptimisticTargetRevision: () => null,
       handleOverlayMutationRefresh: vi.fn(),

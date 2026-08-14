@@ -351,7 +351,7 @@ class ServiceTests(AnalysisRunTestCase):
 
         bundle = Path(run.export_dir)
         self.assertTrue(bundle.is_dir(), run.export_dir)
-        for name in ("objects.csv", "image_summary.csv", "manifest.json"):
+        for name in ("objects.csv", "image_summary.csv", "composition.csv", "manifest.json"):
             self.assertTrue((bundle / name).is_file(), f"{name} was not written")
 
         results = run.results
@@ -492,7 +492,7 @@ class ServiceTests(AnalysisRunTestCase):
         # And the bundle is still written, because the composition and
         # morphometrics are still real measurements.
         bundle = Path(run.export_dir)
-        for name in ("objects.csv", "image_summary.csv", "manifest.json"):
+        for name in ("objects.csv", "image_summary.csv", "composition.csv", "manifest.json"):
             self.assertTrue((bundle / name).is_file(), name)
 
     def test_a_requested_distance_analysis_says_when_it_is_skipped(self):
@@ -887,7 +887,7 @@ class AnalysisApiTests(AnalysisRunTestCase):
         self.assertEqual(body["export_dir"], run.export_dir)
         self.assertEqual(
             sorted(body["exports"]),
-            ["image_summary.csv", "manifest.json", "objects.csv"],
+            ["composition.csv", "image_summary.csv", "manifest.json", "objects.csv"],
         )
         # Sections that were not computed are null, not missing.
         self.assertIsNone(body["points"])

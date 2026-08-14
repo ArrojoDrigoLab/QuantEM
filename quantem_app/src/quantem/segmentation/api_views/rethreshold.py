@@ -44,7 +44,9 @@ from django.urls import path, reverse
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shapely import STRtree
 from shapely.geometry import box
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from shapely.prepared import prep
 
@@ -55,6 +57,7 @@ from quantem.jobs.constants import (
     QUEUE_P1_INTERACTIVE,
 )
 from quantem.jobs.models import Job
+from quantem.seg_core.db.extraction import resolve_min_area
 from quantem.seg_core.db.prob_maps import get_prob_map_file_path
 from quantem.seg_core.registry import get_segmenter_or_none
 from quantem.segmentation.models import (
@@ -77,7 +80,20 @@ from quantem.segmentation.segment_status import status_for_segment_lifecycle
 from quantem.segmentation.services.confirm_batch.feature_refresh import (
     _enqueue_segment_feature_refresh,
 )
+from quantem.segmentation.services.confirm_batch.geometry import (
+    extract_polygons,
+    filter_supported_confirmed_polygons,
+    geometries_overlap,
+    geometry_area,
+    safe_difference,
+    safe_intersection,
+    safe_union,
+)
+from quantem.segmentation.services.confirm_batch.overlap import (
+    overlap_qualifies_for_union,
+)
 from quantem.segmentation.source_models import (
+    SOURCE_MODEL_MANUAL,
     default_source_model_for_organelle,
     get_source_model_definition,
     normalize_source_model,
@@ -218,6 +234,10 @@ def _partition_model_candidates(
             "label_state",
             "refined",
             "status",
+            "source_model",
+            "confidence_score",
+            "features",
+            "run_version",
         )
     )
     manual_geometries = _manual_review_geometries(segmentation)
@@ -258,6 +278,270 @@ def _model_output_counts(
     }
 
 
+def _confirmed_primary_key(segment: SegmentObject) -> tuple[int, int, str]:
+    """Keep hand-drawn provenance when a candidate joins an existing object."""
+
+    return (
+        0 if segment.source_model == SOURCE_MODEL_MANUAL or segment.refined == "MANUAL" else 1,
+        0 if segment.refined == "MANUAL" else 1,
+        str(segment.id),
+    )
+
+
+def _candidate_remainder(
+    geometry: BaseGeometry,
+    blockers: list[BaseGeometry],
+) -> BaseGeometry | None:
+    """Remove confirmed pixels without changing any confirmed boundary."""
+
+    if not blockers:
+        return geometry
+    try:
+        blocked = unary_union(blockers)
+    except Exception:
+        blocked = None
+        for blocker in blockers:
+            blocked = safe_union(blocked, blocker)
+    if blocked is None:
+        return geometry
+    return safe_difference(geometry, blocked)
+
+
+def _post_exclusion_polygons(
+    geometry: BaseGeometry | None,
+    *,
+    min_area: int,
+) -> list:
+    """Usable connected pieces that still meet the organelle's native-pixel floor."""
+
+    polygons = filter_supported_confirmed_polygons(extract_polygons(geometry))
+    return [polygon for polygon in polygons if geometry_area(polygon) >= min_area]
+
+
+def _confirm_model_candidates(
+    *,
+    segmentation: ImageSegmentation,
+    candidates: list[SegmentObject],
+    min_area: int,
+) -> dict[str, int]:
+    """Accept model candidates without ever seam-splitting a confirmed object.
+
+    Preview candidates retain the full post-processed model geometry.  At this
+    explicit confirmation boundary, a candidate and an existing confirmed
+    object are unioned only when the established 70% either-direction rule
+    qualifies.  Otherwise the confirmed union is subtracted from the model
+    candidate, every confirmed outline stays byte-for-byte unchanged, and the
+    minimum-area floor is applied to the remaining connected pieces.
+    """
+
+    confirmed = list(
+        SegmentObject.objects.filter(
+            segmentation=segmentation,
+            label_state="CONFIRMED",
+            superseded_at__isnull=True,
+        ).only(
+            "id",
+            "geometry_wkb",
+            "label_state",
+            "refined",
+            "status",
+            "source_model",
+            "features",
+        )
+    )
+    confirmed_geometries = [segment.geometry for segment in confirmed]
+    tree = STRtree(confirmed_geometries) if confirmed_geometries else None
+    current_geometry = {
+        str(segment.id): geometry
+        for segment, geometry in zip(confirmed, confirmed_geometries, strict=True)
+    }
+    deleted_confirmed_ids: set[str] = set()
+
+    plain_confirmations: list[SegmentObject] = []
+    accepted_candidates = 0
+    merged_candidates = 0
+    clipped_candidates = 0
+    filtered_candidates = 0
+    created_fragments = 0
+    deleted_confirmed = 0
+
+    for candidate in candidates:
+        candidate_geometry = candidate.geometry
+        neighbours: list[tuple[SegmentObject, BaseGeometry]] = []
+        if tree is not None:
+            for position in tree.query(candidate_geometry).tolist():
+                existing = confirmed[int(position)]
+                existing_id = str(existing.id)
+                if existing_id in deleted_confirmed_ids:
+                    continue
+                geometry = current_geometry.get(existing_id)
+                if geometry is not None and geometries_overlap(candidate_geometry, geometry):
+                    neighbours.append((existing, geometry))
+
+        if not neighbours:
+            candidate.label_state = "CONFIRMED"
+            candidate.refined = "UNREFINED"
+            candidate.confidence_score = None
+            candidate.status = status_for_segment_lifecycle(
+                label_state=candidate.label_state,
+                refined=candidate.refined,
+            )
+            plain_confirmations.append(candidate)
+            accepted_candidates += 1
+            continue
+
+        qualifying = [
+            (segment, geometry)
+            for segment, geometry in neighbours
+            if overlap_qualifies_for_union(candidate_geometry, geometry)
+        ]
+        if qualifying:
+            qualifying_ids = {str(segment.id) for segment, _geometry in qualifying}
+            # Pixels belonging to a distinct, non-qualifying confirmed object
+            # are never pulled into the union through the candidate.
+            candidate_piece = _candidate_remainder(
+                candidate_geometry,
+                [
+                    geometry
+                    for segment, geometry in neighbours
+                    if str(segment.id) not in qualifying_ids
+                ],
+            )
+            merged_geometry: BaseGeometry | None = candidate_piece
+            for _segment, geometry in qualifying:
+                merged_geometry = safe_union(merged_geometry, geometry)
+            merged_polygons = _post_exclusion_polygons(
+                merged_geometry,
+                min_area=1,
+            )
+            if not merged_polygons:
+                # Defensive fallback: every qualifying existing object is real
+                # geometry, so a failed union must preserve them, not delete them.
+                filtered_candidates += 1
+                candidate.delete()
+                continue
+            # Usually this is one connected union. If clipping against a
+            # distinct confirmed object disconnects it, keep every component
+            # and assign each old confirmed row to the component containing
+            # most of its old area. No defensive repair may discard a person's
+            # already-confirmed geometry.
+            members_by_polygon: list[list[SegmentObject]] = [[] for _polygon in merged_polygons]
+            for segment, geometry in qualifying:
+                best_index = max(
+                    range(len(merged_polygons)),
+                    key=lambda index: geometry_area(
+                        safe_intersection(merged_polygons[index], geometry)
+                    ),
+                )
+                members_by_polygon[best_index].append(segment)
+
+            for polygon, members in zip(
+                merged_polygons,
+                members_by_polygon,
+                strict=True,
+            ):
+                if not members:
+                    SegmentObject.objects.create(
+                        segmentation=segmentation,
+                        geometry=polygon,
+                        centroid=polygon.centroid,
+                        bbox=polygon.envelope,
+                        label_state="CONFIRMED",
+                        refined="UNREFINED",
+                        source_model=candidate.source_model,
+                        confidence_score=None,
+                        features=dict(candidate.features or {}),
+                        run_version=candidate.run_version,
+                    )
+                    created_fragments += 1
+                    continue
+
+                primary = min(members, key=_confirmed_primary_key)
+                primary.geometry = polygon
+                primary.centroid = polygon.centroid
+                primary.bbox = polygon.envelope
+                primary.save(update_fields=["geometry", "centroid", "bbox"])
+                current_geometry[str(primary.id)] = polygon
+                redundant_ids = [str(segment.id) for segment in members if segment.id != primary.id]
+                if redundant_ids:
+                    SegmentObject.objects.filter(
+                        segmentation=segmentation,
+                        id__in=redundant_ids,
+                    ).delete()
+                    deleted_confirmed_ids.update(redundant_ids)
+                    deleted_confirmed += len(redundant_ids)
+            candidate.delete()
+            accepted_candidates += 1
+            merged_candidates += 1
+            continue
+
+        remainder = _candidate_remainder(
+            candidate_geometry,
+            [geometry for _segment, geometry in neighbours],
+        )
+        pieces = _post_exclusion_polygons(remainder, min_area=min_area)
+        if not pieces:
+            candidate.delete()
+            filtered_candidates += 1
+            continue
+
+        pieces.sort(key=geometry_area, reverse=True)
+        primary_piece = pieces[0]
+        candidate.geometry = primary_piece
+        candidate.centroid = primary_piece.centroid
+        candidate.bbox = primary_piece.envelope
+        candidate.label_state = "CONFIRMED"
+        candidate.refined = "UNREFINED"
+        candidate.confidence_score = None
+        candidate.status = status_for_segment_lifecycle(
+            label_state=candidate.label_state,
+            refined=candidate.refined,
+        )
+        candidate.save(
+            update_fields=[
+                "geometry",
+                "centroid",
+                "bbox",
+                "label_state",
+                "refined",
+                "confidence_score",
+                "status",
+            ]
+        )
+        for piece in pieces[1:]:
+            SegmentObject.objects.create(
+                segmentation=segmentation,
+                geometry=piece,
+                centroid=piece.centroid,
+                bbox=piece.envelope,
+                label_state="CONFIRMED",
+                refined="UNREFINED",
+                source_model=candidate.source_model,
+                confidence_score=None,
+                features=dict(candidate.features or {}),
+                run_version=candidate.run_version,
+            )
+        accepted_candidates += 1
+        clipped_candidates += 1
+        created_fragments += max(0, len(pieces) - 1)
+
+    if plain_confirmations:
+        SegmentObject.objects.bulk_update(
+            plain_confirmations,
+            ["label_state", "refined", "confidence_score", "status"],
+            batch_size=500,
+        )
+
+    return {
+        "confirmed_count": accepted_candidates,
+        "merged_candidate_count": merged_candidates,
+        "clipped_candidate_count": clipped_candidates,
+        "filtered_after_overlap_count": filtered_candidates,
+        "created_fragment_count": created_fragments,
+        "deleted_confirmed_count": deleted_confirmed,
+    }
+
+
 def _refusal(detail: str, *, code: ErrorCode | None = None) -> Response:
     """A 409 the client can both read and act on.
 
@@ -277,7 +561,14 @@ def _resolve_segmenter(segmentation: ImageSegmentation, source_model: str):
         segmentation_type_internal_name=segmentation.segmentation_type.internal_name,
         source_model=source_model,
     )
-    segmenter = get_segmenter_or_none(segmenter_internal_name)
+    # QuantEM and OmniEM share one segmenter class per organelle.  The selected
+    # pack is therefore constructor state, not something the registry key can
+    # express.  Dropping it here silently turns every OmniEM replay into a
+    # QuantEM replay while the route continues to count OmniEM candidates.
+    segmenter = get_segmenter_or_none(
+        segmenter_internal_name,
+        source_model=source_model,
+    )
     if segmenter is None:
         return None, MODEL_UNAVAILABLE_MESSAGE
 
@@ -565,6 +856,11 @@ class SegmentationConfirmModelOutputView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        segmenter, resolved = _resolve_segmenter(segmentation, source_model)
+        if segmenter is None:
+            return _refusal(resolved)
+        min_area = resolve_min_area(segmenter, None)
+
         reconcile_segmentation_status(segmentation)
         blocking_job = active_segmentation_job(
             segmentation,
@@ -581,28 +877,27 @@ class SegmentationConfirmModelOutputView(APIView):
                 segmentation,
                 source_model,
             )
-            for candidate in confirmable:
-                candidate.label_state = "CONFIRMED"
-                candidate.refined = "UNREFINED"
-                candidate.status = status_for_segment_lifecycle(
-                    label_state=candidate.label_state,
-                    refined=candidate.refined,
-                )
-            if confirmable:
-                SegmentObject.objects.bulk_update(
-                    confirmable,
-                    ["label_state", "refined", "status"],
-                    batch_size=500,
-                )
+            confirmation = _confirm_model_candidates(
+                segmentation=segmentation,
+                candidates=confirmable,
+                min_area=min_area,
+            )
+            changed = bool(
+                confirmation["confirmed_count"]
+                or confirmation["filtered_after_overlap_count"]
+                or confirmation["deleted_confirmed_count"]
+            )
+            if changed:
                 overlay = register_overlay_mutation_all_bundles(
                     segmentation,
                     dirty_bbox=full_image_dirty_bbox(segmentation),
+                    source_model=source_model,
                     allow_sync_partial=False,
                 )
             else:
                 overlay = None
 
-        if confirmable:
+        if changed:
             _enqueue_segment_feature_refresh(
                 segmentation_id=str(segmentation.id),
                 segment_ids=[],
@@ -613,7 +908,8 @@ class SegmentationConfirmModelOutputView(APIView):
             {
                 "segmentation_id": str(segmentation.id),
                 "source_model": source_model,
-                "confirmed_count": len(confirmable),
+                **confirmation,
+                "min_area": min_area,
                 "skipped_manual_roi_count": len(protected),
                 "manual_roi_count": manual_roi_count,
                 "remaining_candidate_count": len(protected),

@@ -76,7 +76,7 @@ export function buildLeftPanelViewerConfig({
       persistent: overlayScene.persistent,
       transient: overlayScene.transient,
       rasterLayers: viewer.overlayNgffLayers ?? [],
-      idMapOverlays: viewer.idMapOverlay ? [viewer.idMapOverlay] : [],
+      idMapOverlays: viewer.idMapOverlays ?? [],
       onRasterRevisionDisplayed: viewer.onOverlayRevisionDisplayed,
     },
     interactions: {
@@ -86,9 +86,12 @@ export function buildLeftPanelViewerConfig({
           : segments.onClick,
       onImageMouseMove: workflow.navigateMode ? undefined : segments.onMouseMove,
       onImageMouseLeave: workflow.navigateMode ? undefined : segments.onMouseLeave,
-      onImagePress: workflow.navigateMode ? undefined : segments.onPress,
-      onImageDrag: workflow.navigateMode ? undefined : segments.onDrag,
-      onImageRelease: workflow.navigateMode ? undefined : segments.onRelease,
+      onImagePress:
+        workflow.navigateMode && !roiPlacementActive ? undefined : segments.onPress,
+      onImageDrag:
+        workflow.navigateMode && !roiPlacementActive ? undefined : segments.onDrag,
+      onImageRelease:
+        workflow.navigateMode && !roiPlacementActive ? undefined : segments.onRelease,
       draw: {
         enabled:
           !roiPlacementActive &&

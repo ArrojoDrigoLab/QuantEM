@@ -9,6 +9,7 @@ pin the non-obvious decisions that have caused release-only failures.
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -17,6 +18,7 @@ BUILD_SCRIPT = PROJECT_ROOT / "packaging" / "pyinstaller" / "build.ps1"
 ENTRY_POINT = PROJECT_ROOT / "packaging" / "pyinstaller" / "quantem_server_entry.py"
 CI_WORKFLOW = PROJECT_ROOT.parent / ".github" / "workflows" / "quantem-app.yml"
 RELEASE_WORKFLOW = PROJECT_ROOT.parent / ".github" / "workflows" / "quantem-app-desktop-release.yml"
+DESKTOP_CAPABILITY = PROJECT_ROOT / "desktop" / "src-tauri" / "capabilities" / "default.json"
 
 
 def _analysis_excludes(source: str) -> set[str]:
@@ -68,3 +70,11 @@ def test_normal_pyinstaller_build_is_quiet_without_hiding_real_warnings():
     assert "$env:PYI_LOG_LEVEL = $logLevel" in source
     assert "Assuming this is not an Anaconda environment" in source
     assert "--log-level $logLevel" in source
+
+
+def test_desktop_updater_is_authorized_for_dynamic_loopback_ui():
+    """The shipped UI is served from a random 127.0.0.1 port, not frontendDist."""
+
+    capability = json.loads(DESKTOP_CAPABILITY.read_text(encoding="utf-8"))
+    assert capability["remote"]["urls"] == ["http://127.0.0.1:*"]
+    assert {"updater:default", "process:default"} <= set(capability["permissions"])

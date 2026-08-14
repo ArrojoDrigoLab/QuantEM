@@ -8,21 +8,52 @@
 
 .er-roi-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  min-height: 24px;
   color: #1e293b;
 }
 
-.er-roi-heading h4,
-.er-roi-heading span {
+.er-roi-heading h4 {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
 }
 
-.er-roi-heading span {
-  color: #64748b;
-  font-variant-numeric: tabular-nums;
+.er-roi-heading-button,
+.er-roi-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 1px 7px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.er-roi-heading-button:hover:not(:disabled),
+.er-roi-edit-button:hover:not(:disabled) {
+  border-color: #64748b;
+  background: #f8fafc;
+}
+
+.er-roi-heading-button.active,
+.er-roi-edit-button[aria-pressed="true"] {
+  border-color: #0e7490;
+  background: #ecfeff;
+  color: #0e7490;
+}
+
+.er-roi-heading-button:disabled,
+.er-roi-edit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .er-roi-hint {
@@ -67,14 +98,22 @@
 
 .er-roi-item-summary {
   min-width: 0;
+  justify-content: space-between;
 }
 
 .er-roi-item-label {
+  min-width: 0;
   overflow-wrap: anywhere;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
+.er-roi-edit-button {
+  flex: 0 0 auto;
+}
+
 .er-roi-active-badge {
+  margin-left: auto;
   padding: 0 5px;
   border-radius: 999px;
   background: #e0f2fe;
@@ -140,35 +179,6 @@
 
 .er-roi-action-button:disabled,
 .er-roi-delete-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.er-roi-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #394150;
-  border-radius: 0.45rem;
-  background: #111827;
-  color: #f9fafb;
-  cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease;
-}
-
-.er-roi-button:hover:not(:disabled) {
-  background: #1f2937;
-  border-color: #4b5563;
-}
-
-.er-roi-button.active {
-  border-color: #ffd166;
-  box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.35);
-}
-
-.er-roi-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

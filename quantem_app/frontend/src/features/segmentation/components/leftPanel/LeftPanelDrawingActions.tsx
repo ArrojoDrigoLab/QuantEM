@@ -1,4 +1,3 @@
-import { CONFIRMED_AREA_TOOLTIP } from "@/shared/constants/confirmedArea";
 import type {
   LeftPanelCompletedRoiState,
   LeftPanelDrawingState,
@@ -52,7 +51,6 @@ export function LeftPanelDrawingActions({
           type="button"
           disabled={!completedRoi.canSave || completedRoi.isSaving}
           onClick={completedRoi.onRequestSave}
-          title={CONFIRMED_AREA_TOOLTIP}
         >
           {completedRoi.isSaving
             ? "Saving..."

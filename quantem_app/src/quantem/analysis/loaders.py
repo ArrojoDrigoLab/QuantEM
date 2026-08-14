@@ -36,11 +36,17 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from django.db.models import Count, QuerySet
 
+from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.instance_params import (
     INSTANCE_PARAM_KEYS,
     supports_instance_params,
 )
-from quantem.segmentation.models import ImageSegmentation, SegmentObject
+from quantem.segmentation.models import (
+    AnalysisMaskObject,
+    GlobalMask,
+    ImageSegmentation,
+    SegmentObject,
+)
 from quantem.segmentation.overlay_ngff.render import geometry_to_rings, rasterize_region
 from quantem.segmentation.run_identity import (
     RUN_FEATURE_KEY,
@@ -53,6 +59,7 @@ from quantem.segmentation.source_models import (
     normalize_source_model,
 )
 from quantem.segmentation.type_definitions import (
+    ANALYSIS_MASK,
     ER,
     LIPID_DROPLETS,
     MITOCHONDRIA,
@@ -61,7 +68,7 @@ from quantem.segmentation.type_definitions import (
 )
 
 from . import provenance
-from .compartments import CompartmentSet
+from .compartments import AnalysisRegionMask, CompartmentSet
 from .distances import DEFAULT_BAND_EDGES_NM
 from .models import AnalysisRun
 from .montecarlo import DEFAULT_REPLICATES, DEFAULT_SEED
@@ -225,12 +232,20 @@ def object_centroids(segmentation: ImageSegmentation) -> np.ndarray:
 
 
 def segmentation_mask(segmentation: ImageSegmentation, shape: tuple[int, int]) -> np.ndarray:
-    """Union of a segmentation's confirmed object polygons as a boolean mask.
+    """A segmentation's authoritative boolean mask.
 
-    Each object is painted into its own bounding box rather than into a
-    full-image canvas, so a segmentation with ten thousand small objects costs
-    the area of those objects and not ten thousand image-sized allocations.
+    Global segmentations, including Analysis Masks, are stored as one
+    :class:`~quantem.segmentation.models.GlobalMask`. Object-mode segmentations
+    are the union of their confirmed object polygons.
     """
+    if segmentation.segmentation_type.measurement_mode == "global":
+        mask = load_global_mask(segmentation)
+        if mask.shape != shape:
+            raise AnalysisInputError(
+                f"Stored global mask shape {mask.shape} does not match image shape {shape}."
+            )
+        return mask.astype(bool, copy=False)
+
     height, width = shape
     mask = np.zeros((height, width), dtype=bool)
 
@@ -261,6 +276,54 @@ def segmentation_mask(segmentation: ImageSegmentation, shape: tuple[int, int]) -
         )
         mask[y0:y1, x0:x1] |= labels != 0
     return mask
+
+
+def analysis_mask_regions(
+    segmentation: ImageSegmentation | None,
+    shape: tuple[int, int],
+) -> tuple[AnalysisRegionMask, ...]:
+    """Rasterise each named Analysis Mask object inside its own bounding box."""
+    if (
+        segmentation is None
+        or segmentation.segmentation_type.internal_name != ANALYSIS_MASK.internal_name
+    ):
+        return ()
+
+    height, width = shape
+    regions: list[AnalysisRegionMask] = []
+    objects = AnalysisMaskObject.objects.filter(segmentation=segmentation).order_by(
+        "sort_order", "created_at"
+    )
+    for obj in objects.iterator():
+        geometry = obj.geometry
+        rings = geometry_to_rings(geometry)
+        if geometry is None or geometry.is_empty or not rings:
+            continue
+        min_x, min_y, max_x, max_y = geometry.bounds
+        x0 = max(0, int(math.floor(min_x)))
+        y0 = max(0, int(math.floor(min_y)))
+        x1 = min(width, int(math.ceil(max_x)) + 1)
+        y1 = min(height, int(math.ceil(max_y)) + 1)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        labels, _border = rasterize_region(
+            [{"label": 1, "priority": 0, "area": 0.0, "rings": rings}],
+            x0=x0,
+            y0=y0,
+            x1=x1,
+            y1=y1,
+            border_width=1,
+        )
+        regions.append(
+            AnalysisRegionMask(
+                identifier=str(obj.id),
+                name=obj.name,
+                x0=x0,
+                y0=y0,
+                mask=labels != 0,
+            )
+        )
+    return tuple(regions)
 
 
 # ---------------------------------------------------------------------------
@@ -616,9 +679,29 @@ def _mask_provenance(
     *,
     shape: tuple[int, int],
 ) -> dict[str, Any]:
-    counts = source_counts(segmentation)
+    is_global = segmentation.segmentation_type.measurement_mode == "global"
+    is_analysis_mask = segmentation.segmentation_type.internal_name == ANALYSIS_MASK.internal_name
+    counts = (
+        {SOURCE_MODEL_MANUAL: n_objects}
+        if is_analysis_mask and n_objects
+        else source_counts(segmentation)
+    )
     hand_drawn = counts.get(SOURCE_MODEL_MANUAL, 0)
-    return {
+    mask_storage = None
+    if is_global:
+        try:
+            global_record = segmentation.global_mask
+        except GlobalMask.DoesNotExist:
+            global_record = None
+        mask_storage = provenance.section(
+            {
+                "recorded_from": "saved global mask",
+                "source": getattr(global_record, "source", "") or "",
+                "metadata": getattr(global_record, "metadata", {}) or {},
+            },
+            {},
+        )
+    result = {
         "compartment": name,
         "segmentation_id": str(segmentation.id),
         "segmentation_type": segmentation.segmentation_type.internal_name,
@@ -647,6 +730,9 @@ def _mask_provenance(
         },
         "run": run_provenance(segmentation, compartment=name),
     }
+    if mask_storage is not None:
+        result["mask_storage"] = mask_storage
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -2195,6 +2281,7 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
         )
 
     comp = build_compartment_set(compartment_segmentations, tissue=tissue, shape=shape)
+    regions = analysis_mask_regions(tissue, shape)
 
     points_xy: np.ndarray | None = None
     # Rows the imported CSV could not be read from. Raised here rather than in
@@ -2219,7 +2306,10 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
     ]
     if tissue is not None:
         tissue_provenance = _mask_provenance(
-            "tissue", tissue, confirmed_objects(tissue).count(), shape=shape
+            "tissue",
+            tissue,
+            len(regions) if regions else confirmed_objects(tissue).count(),
+            shape=shape,
         )
     else:
         tissue_provenance = None
@@ -2250,8 +2340,10 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
 
     loaded_provenance = {
         "mask_source": (
-            "Confirmed segment objects, rasterised from their stored polygons "
-            "(exteriors and holes). Candidate and inferred objects are excluded."
+            "Confirmed segment objects are rasterised from their stored polygons "
+            "for object-mode compartments. Global-mode segmentations, including "
+            "Analysis Masks, use their saved global mask; named Analysis Mask "
+            "objects are also measured independently."
         ),
         "image": image_identity(asset, produced_pixel_size_nm=produced_pixel_size_nm),
         "image_id": str(asset.id),
@@ -2314,6 +2406,7 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
         segmentation_id=str(segmentation.id),
         pixel_size_nm=pixel_size_nm(segmentation),
         compartments=comp,
+        analysis_regions=regions,
         object_features=features,
         object_sources=sources,
         object_in_reviewed_area=objects_in_reviewed_area(segmentation, union=review_union),

@@ -883,9 +883,9 @@ class RealInferenceToManifestTests(TestCase):
 
         ``_device_provenance`` was landed forward-compatibly and had nothing to
         read: no writer put a device on a run, so this field was null in every
-        bundle QuantEM had ever produced. Owner ruling R4 requires the record
-        (R5 requires that it not be used to police a comparison), and this is
-        the whole path -- segmenter, run identity, object features, manifest --
+        bundle QuantEM had ever produced. The run identity contract requires
+        the record without using it to police a comparison, and this is the
+        whole path -- segmenter, run identity, object features, manifest --
         rather than a fabricated stamp.
         """
         assert self._infer_and_confirm() >= 1

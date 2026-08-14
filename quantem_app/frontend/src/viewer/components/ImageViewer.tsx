@@ -154,6 +154,7 @@ export function ImageViewer({
     onImageMouseMove: interactions?.onImageMouseMove,
     onImageMouseLeave: interactions?.onImageMouseLeave,
     onShapeClick: interactions?.onShapeClick,
+    onShapeHover: interactions?.onShapeHover,
     overlayScene,
     drawMode,
     brushMode,

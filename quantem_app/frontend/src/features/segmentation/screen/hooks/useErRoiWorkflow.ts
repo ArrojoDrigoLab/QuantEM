@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   activateSegmentationRoi,
@@ -6,16 +6,24 @@ import {
   deleteSegmentationRoi,
   setRoiCompleteForSegmentation,
 } from "@/shared/api/segmentations/rois";
-import { generateRoiFrameOverlay } from "@/features/segmentation/overlays/roi";
+import {
+  generateRoiEditHandleOverlays,
+  generateRoiFrameOverlay,
+} from "@/features/segmentation/overlays/roi";
+import {
+  resolveRoiEditHandle,
+  updateRoiForDrag,
+  type RoiEditHandle,
+} from "@/features/segmentation/roiEditing";
 import type { Point } from "@/utils/geometry";
-import type { SegmentOverlay } from "@/viewer/types";
+import type { SegmentationRoi } from "@/shared/types/segmentation";
 
 /** Fixed labeling ROI size, in source pixels. */
 export const LABELING_ROI_SIZE = 1024;
 
 /** An ROI rectangle that has been placed but not yet created server-side. */
 export interface PendingRoi {
-  /** The ROI to replace when the user chose Move; null means create a new one. */
+  /** The ROI to replace when the user chose Edit Area; null means create a new one. */
   roiId: string | null;
   x: number;
   y: number;
@@ -30,7 +38,7 @@ interface UseErRoiWorkflowArgs {
   isPointInsideImageBounds: (point: Point) => boolean;
   refetchSegmentationRois: () => Promise<unknown> | void;
   registerAnnotationActivity?: () => void;
-  /** Called after an ROI is created or moved (to enter Correct mode). */
+  /** Called after an ROI is created or area-edited (to enter Correct mode). */
   onRoiConfirmed?: () => void;
   showErrorToast: (message: string) => void;
 }
@@ -44,9 +52,9 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 /**
- * Place, relocate, activate, remove, and mark ROI windows for any organelle
- * labeling workflow. Moving safely creates the new window before removing the
- * old one, so a failed placement never strands the user without an ROI.
+ * Place, resize, relocate, activate, remove, and mark ROI windows for any
+ * organelle labeling workflow. Editing safely creates the new window before
+ * removing the old one, so a failed save never strands the user without an ROI.
  */
 export function useErRoiWorkflow({
   currentSegmentationId,
@@ -65,6 +73,11 @@ export function useErRoiWorkflow({
   const [markingRoiId, setMarkingRoiId] = useState<string | null>(null);
   const [deletingRoiId, setDeletingRoiId] = useState<string | null>(null);
   const [activatingRoiId, setActivatingRoiId] = useState<string | null>(null);
+  const editGestureRef = useRef<{
+    handle: RoiEditHandle;
+    dragStart: Point;
+    bounds: PendingRoi;
+  } | null>(null);
 
   const beginPlacement = useCallback(
     (roiId: string | null) => {
@@ -72,17 +85,34 @@ export function useErRoiWorkflow({
       setRelocatingRoiId(roiId);
       setPlacementActive(true);
       setPendingRoi(null);
+      editGestureRef.current = null;
     },
     [enabled]
   );
 
   const startPlacement = useCallback(() => beginPlacement(null), [beginPlacement]);
-  const moveRoi = useCallback((roiId: string) => beginPlacement(roiId), [beginPlacement]);
+  const editRoi = useCallback(
+    (roi: SegmentationRoi) => {
+      if (!enabled) return;
+      setRelocatingRoiId(roi.id);
+      setPlacementActive(true);
+      setPendingRoi({
+        roiId: roi.id,
+        x: roi.x,
+        y: roi.y,
+        width: roi.width,
+        height: roi.height,
+      });
+      editGestureRef.current = null;
+    },
+    [enabled]
+  );
 
   const cancelPlacement = useCallback(() => {
     setPlacementActive(false);
     setPendingRoi(null);
     setRelocatingRoiId(null);
+    editGestureRef.current = null;
   }, []);
 
   const resolvePendingRoi = useCallback(
@@ -100,6 +130,40 @@ export function useErRoiWorkflow({
       return { roiId: relocatingRoiId, x, y, width, height };
     },
     [image, isPointInsideImageBounds, relocatingRoiId]
+  );
+
+  const handleEditPress = useCallback((point: Point) => {
+    if (!pendingRoi?.roiId) return;
+    const handle = resolveRoiEditHandle(pendingRoi, point);
+    editGestureRef.current = handle
+      ? { handle, dragStart: point, bounds: pendingRoi }
+      : null;
+  }, [pendingRoi]);
+
+  const handleEditDrag = useCallback(
+    (point: Point) => {
+      const gesture = editGestureRef.current;
+      if (!gesture || !image) return;
+      setPendingRoi({
+        roiId: gesture.bounds.roiId,
+        ...updateRoiForDrag(
+          gesture.bounds,
+          gesture.handle,
+          gesture.dragStart,
+          point,
+          image
+        ),
+      });
+    },
+    [image]
+  );
+
+  const handleEditRelease = useCallback(
+    (point: Point) => {
+      handleEditDrag(point);
+      editGestureRef.current = null;
+    },
+    [handleEditDrag]
   );
 
   const confirmRoi = useCallback(async () => {
@@ -125,6 +189,7 @@ export function useErRoiWorkflow({
       setPendingRoi(null);
       setPlacementActive(false);
       setRelocatingRoiId(null);
+      editGestureRef.current = null;
       registerAnnotationActivity?.();
       onRoiConfirmed?.();
     } catch (error) {
@@ -135,6 +200,7 @@ export function useErRoiWorkflow({
         setPendingRoi(null);
         setPlacementActive(false);
         setRelocatingRoiId(null);
+        editGestureRef.current = null;
         showErrorToast(
           "The new ROI was created, but the previous ROI could not be removed."
         );
@@ -210,36 +276,41 @@ export function useErRoiWorkflow({
     ]
   );
 
-  const pendingRoiOverlay = useMemo<SegmentOverlay | null>(
-    () =>
-      pendingRoi
-        ? generateRoiFrameOverlay(
-            {
-              x: pendingRoi.x,
-              y: pendingRoi.y,
-              width: pendingRoi.width,
-              height: pendingRoi.height,
-            },
-            "labeling-roi-pending"
-          )
-        : null,
+  const pendingRoiOverlays = useMemo(
+    () => {
+      if (!pendingRoi) return [];
+      const bounds = {
+        x: pendingRoi.x,
+        y: pendingRoi.y,
+        width: pendingRoi.width,
+        height: pendingRoi.height,
+      };
+      const frame = generateRoiFrameOverlay(bounds, "labeling-roi-pending");
+      return [
+        ...(frame ? [frame] : []),
+        ...(pendingRoi.roiId ? generateRoiEditHandleOverlays(bounds) : []),
+      ];
+    },
     [pendingRoi]
   );
 
   return {
     placementActive,
     pendingRoi,
-    pendingRoiOverlay,
+    pendingRoiOverlays,
     relocatingRoiId,
     confirming,
     markingRoiId,
     deletingRoiId,
     activatingRoiId,
     startPlacement,
-    moveRoi,
+    editRoi,
     cancelPlacement,
     resolvePendingRoi,
     setPendingRoi,
+    handleEditPress,
+    handleEditDrag,
+    handleEditRelease,
     confirmRoi,
     markRoiDone,
     deleteRoi,

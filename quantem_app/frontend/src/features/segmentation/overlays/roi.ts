@@ -3,6 +3,11 @@ import type { SegmentationRoi } from "@/shared/types/segmentation";
 import type { Point } from "@/utils/geometry";
 import { brushStrokesToConnectedPolygons } from "@/utils/brushMask";
 import { boundsToGeometry, circlePoints } from "@/features/segmentation/overlays/shared";
+import {
+  roiEditHandleCenters,
+  roiEditHandleRadius,
+  type RoiRectangle,
+} from "@/features/segmentation/roiEditing";
 
 export interface RoiStroke {
   id: string;
@@ -34,6 +39,24 @@ export function generateRoiFrameOverlay(
     strokeWidth: 3,
     strokeDasharray: style.strokeDasharray,
   };
+}
+
+export function generateRoiEditHandleOverlays(bounds: RoiRectangle): SegmentOverlay[] {
+  const radius = roiEditHandleRadius(bounds);
+  return roiEditHandleCenters(bounds).map(({ handle, point }) => ({
+    id: `labeling-roi-handle-${handle}`,
+    geometry: boundsToGeometry({
+      x: point.x - radius,
+      y: point.y - radius,
+      width: radius * 2,
+      height: radius * 2,
+    }),
+    fillColor: "#ffd166",
+    fillOpacity: 1,
+    strokeColor: "#111827",
+    strokeOpacity: 0.95,
+    strokeWidth: 1.5,
+  }));
 }
 
 export function generateRoiOverlays(

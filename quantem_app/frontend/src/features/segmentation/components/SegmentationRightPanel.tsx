@@ -2,7 +2,7 @@
  * Right panel component for confirmed-object view.
  */
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ImageViewer } from "@/viewer/components/ImageViewer";
 import { generateRightPanelOverlays } from "@/features/segmentation/overlays/segments";
 import {
@@ -21,6 +21,10 @@ import type { SegmentObject, SegmentationRoi } from "@/shared/types/segmentation
 import type { Point } from "@/utils/geometry";
 import { getAssetNgffUrl } from "@/shared/api/assets";
 import { composeOverlayScene } from "@/viewer/overlays/scene";
+import {
+  OverlayLayerMenu,
+  type PaneOverlayLayerControls,
+} from "@/features/segmentation/components/OverlayLayerMenu";
 import "./SegmentationRightPanel.css";
 
 export type RightPanelRemoveMode = "none" | "objects" | "area";
@@ -37,7 +41,7 @@ interface SegmentationRightPanelProps {
   rois: SegmentationRoi[];
   removeMode: RightPanelRemoveMode;
   onRemoveModeChange: (mode: RightPanelRemoveMode) => void;
-  onRemoveObjectPointClick: (point: Point) => void;
+  onRemoveObjectClick: (segmentId: string | null) => void;
   removeAreaBrushSize: number;
   onRemoveAreaBrushSizeChange: (size: number) => void;
   removeAreaBrushStrokes: RoiStroke[];
@@ -46,9 +50,11 @@ interface SegmentationRightPanelProps {
   onApplyRemoveArea: () => void;
   removingArea: boolean;
   overlayNgffLayers?: ViewerNgffOverlayLayerSpec[];
-  /** The ID-map segmentation review overlay (labels + border + render-time LUT). */
-  idMapOverlay?: ViewerIdMapOverlaySpec | null;
+  /** State-specific ID-map overlays (labels + border + render-time LUT). */
+  idMapOverlays?: ViewerIdMapOverlaySpec[];
+  layerControls: PaneOverlayLayerControls;
   onOverlayRevisionDisplayed?: (revision: number | null) => void;
+  confirmingObjects?: boolean;
 }
 
 export function SegmentationRightPanel({
@@ -63,7 +69,7 @@ export function SegmentationRightPanel({
   rois,
   removeMode,
   onRemoveModeChange,
-  onRemoveObjectPointClick,
+  onRemoveObjectClick,
   removeAreaBrushSize,
   onRemoveAreaBrushSizeChange,
   removeAreaBrushStrokes,
@@ -72,9 +78,28 @@ export function SegmentationRightPanel({
   onApplyRemoveArea,
   removingArea,
   overlayNgffLayers = [],
-  idMapOverlay = null,
+  idMapOverlays = [],
+  layerControls,
   onOverlayRevisionDisplayed,
+  confirmingObjects = false,
 }: SegmentationRightPanelProps) {
+  const [removeObjectHover, setRemoveObjectHover] = useState({
+    segmentId: null as string | null,
+    revision: 0,
+  });
+  const handleRemoveObjectHover = useCallback((segmentId: string | null) => {
+    const objectId = segmentId?.startsWith("roi-frame") ? null : segmentId;
+    setRemoveObjectHover((previous) =>
+      previous.segmentId === objectId
+        ? previous
+        : { segmentId: objectId, revision: previous.revision + 1 }
+    );
+  }, []);
+
+  useEffect(() => {
+    if (removeMode !== "objects") handleRemoveObjectHover(null);
+  }, [handleRemoveObjectHover, removeMode]);
+
   const rightPersistentOverlays = useMemo<SegmentOverlay[]>(
     () => {
       const overlays: SegmentOverlay[] = [...generateRoiOverlays(activeRoi, rois)];
@@ -83,10 +108,14 @@ export function SegmentationRightPanel({
           confirmedSegments,
           [],
           [],
-          null,
+          removeMode === "objects" ? removeObjectHover.segmentId : null,
           segmentationTypeInternalName,
           undefined,
-          useSmoothedGeometry
+          useSmoothedGeometry,
+          {
+            strokeWidth: layerControls.confirmed.strokeWidth,
+            fillOpacity: layerControls.confirmed.fillOpacity,
+          }
         )
       );
       return overlays;
@@ -95,9 +124,24 @@ export function SegmentationRightPanel({
       activeRoi,
       rois,
       confirmedSegments,
+      removeMode,
+      removeObjectHover.segmentId,
       segmentationTypeInternalName,
       useSmoothedGeometry,
+      layerControls.confirmed.fillOpacity,
+      layerControls.confirmed.strokeWidth,
     ]
+  );
+
+  const displayedIdMapOverlays = useMemo(
+    () =>
+      idMapOverlays.map((overlay) => ({
+        ...overlay,
+        highlightedSegmentId:
+          removeMode === "objects" ? removeObjectHover.segmentId : null,
+        highlightRevision: removeObjectHover.revision,
+      })),
+    [idMapOverlays, removeMode, removeObjectHover]
   );
 
   const removeAreaOverlays = useMemo<SegmentOverlay[]>(
@@ -123,34 +167,34 @@ export function SegmentationRightPanel({
       }),
     [removeAreaOverlays, removeMode, rightPersistentOverlays]
   );
-  const idMapOverlays = useMemo(
-    () => (idMapOverlay ? [idMapOverlay] : []),
-    [idMapOverlay]
-  );
-
   return (
-    <section className="seg-right confirmed-only">
+    <section className="seg-right confirmed-only" aria-busy={confirmingObjects}>
       <div className="remove-tools-row">
         <button
           type="button"
           className={`remove-mode-button ${removeMode === "objects" ? "active" : ""}`}
-          onClick={() =>
-            onRemoveModeChange(removeMode === "objects" ? "none" : "objects")
-          }
+          onClick={() => {
+            const nextMode = removeMode === "objects" ? "none" : "objects";
+            if (nextMode !== "objects") handleRemoveObjectHover(null);
+            onRemoveModeChange(nextMode);
+          }}
         >
           Remove objects
         </button>
         <button
           type="button"
           className={`remove-mode-button ${removeMode === "area" ? "active" : ""}`}
-          onClick={() => onRemoveModeChange(removeMode === "area" ? "none" : "area")}
+          onClick={() => {
+            handleRemoveObjectHover(null);
+            onRemoveModeChange(removeMode === "area" ? "none" : "area");
+          }}
         >
           Remove area
         </button>
       </div>
       {removeMode === "objects" && (
         <div className="remove-area-hint">
-          Click confirmed objects to move them back to candidate.
+          Hover to highlight. Click once to permanently delete an object.
         </div>
       )}
       {removeMode === "area" && (
@@ -195,35 +239,62 @@ export function SegmentationRightPanel({
           Many confirmed shapes in view; rendering may be slower.
         </div>
       )}
-      <ImageViewer
-        image={{
-          ngffUrl: getAssetNgffUrl(image.id, null),
-          width: image.width,
-          height: image.height,
-        }}
-        className="viewer-container"
-        viewport={{
-          state: viewport ?? undefined,
-          onChange: onViewportChange,
-        }}
-        overlays={{
-          persistent: overlayScene.persistent,
-          transient: overlayScene.transient,
-          rasterLayers: overlayNgffLayers,
-          idMapOverlays,
-          onRasterRevisionDisplayed: onOverlayRevisionDisplayed,
-        }}
-        interactions={{
-          onImageClick:
-            removeMode === "objects" ? onRemoveObjectPointClick : undefined,
-          brush: {
-            enabled: removeMode === "area",
-            size: removeAreaBrushSize,
-            color: "#f97316",
-            onStroke: removeMode === "area" ? onRemoveAreaBrushStroke : undefined,
-          },
-        }}
-      />
+      <div className="right-viewer-stage">
+        <ImageViewer
+          image={{
+            ngffUrl: getAssetNgffUrl(image.id, null),
+            width: image.width,
+            height: image.height,
+          }}
+          className="viewer-container"
+          viewport={{
+            state: viewport ?? undefined,
+            onChange: onViewportChange,
+          }}
+          overlays={{
+            persistent: overlayScene.persistent,
+            transient: overlayScene.transient,
+            rasterLayers: overlayNgffLayers,
+            idMapOverlays: displayedIdMapOverlays,
+            onRasterRevisionDisplayed: onOverlayRevisionDisplayed,
+          }}
+          interactions={{
+            onShapeHover:
+              removeMode === "objects" ? handleRemoveObjectHover : undefined,
+            onShapeClick:
+              removeMode === "objects"
+                ? (segmentId) => {
+                    handleRemoveObjectHover(null);
+                    onRemoveObjectClick(
+                      segmentId?.startsWith("roi-frame") ? null : segmentId
+                    );
+                  }
+                : undefined,
+            brush: {
+              enabled: removeMode === "area",
+              size: removeAreaBrushSize,
+              color: "#f97316",
+              onStroke: removeMode === "area" ? onRemoveAreaBrushStroke : undefined,
+            },
+          }}
+        />
+        <OverlayLayerMenu
+          idPrefix="right-pane"
+          paneLabel="Right pane"
+          {...layerControls}
+          candidates={undefined}
+        />
+        {confirmingObjects ? (
+          <div
+            className="confirming-objects-veil"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="confirming-objects-spinner" aria-hidden="true" />
+            <span>Confirming these objects...</span>
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }

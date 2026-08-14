@@ -4,14 +4,20 @@ import { clamp } from "@/features/segmentation/screen/utils/bbox";
 import {
   useOverlayLut,
   useOverlayPickMap,
+  type OverlayLutState,
 } from "@/features/segmentation/screen/hooks/overlay/useOverlayLut";
 import type { ViewerIdMapOverlaySpec } from "@/viewer/types";
 import type { SegmentationOverlayManifest } from "@/shared/types/segmentation";
-import type { LeftPanelLayerStyles } from "@/features/segmentation/overlays/segments";
+import type {
+  ConfirmedLayerStyle,
+  LeftPanelLayerStyles,
+} from "@/features/segmentation/overlays/segments";
 
 interface UseOverlayLayerControlsArgs {
   segmentationId: string;
   overlayManifest: SegmentationOverlayManifest | null;
+  hiddenSegmentIds?: ReadonlySet<string>;
+  hiddenSegmentVisualRevision?: number;
 }
 
 const DEFAULT_LEFT_PANEL_LAYER_STYLES: LeftPanelLayerStyles = {
@@ -21,8 +27,15 @@ const DEFAULT_LEFT_PANEL_LAYER_STYLES: LeftPanelLayerStyles = {
   confirmedFillOpacity: 0.2,
 };
 
+const DEFAULT_RIGHT_PANEL_CONFIRMED_STYLE: ConfirmedLayerStyle = {
+  strokeWidth: 2,
+  fillOpacity: 0.2,
+};
+
 // Stable module ref (useOverlayLut keys its effect on the joined value).
-const RIGHT_PANEL_HIDDEN_STATES = ["candidate"];
+const CANDIDATE_LAYER_HIDDEN_STATES = ["confirmed", "excluded"];
+const CONFIRMED_LAYER_HIDDEN_STATES = ["candidate", "excluded"];
+const NO_HIDDEN_SEGMENTS = new Set<string>();
 
 /**
  * Appends/overwrites a `?rev=` cache key on the bundle URL so the browser and
@@ -53,30 +66,52 @@ function withRasterRevision(
   return `${path}?${params.toString()}${hash}`;
 }
 
+/** Zeroes only the locally deleted UUIDs without waiting for a new server LUT. */
+function hideSegmentsInLut(
+  lut: OverlayLutState | null,
+  pickMap: Map<number, string> | null,
+  hiddenSegmentIds: ReadonlySet<string>
+): OverlayLutState | null {
+  if (!lut || !pickMap || hiddenSegmentIds.size === 0) return lut;
+  let rgba: Uint8Array | null = null;
+  for (const [label, segmentId] of pickMap) {
+    if (!hiddenSegmentIds.has(segmentId) || label > lut.maxLabel) continue;
+    rgba ??= lut.rgba.slice();
+    rgba[label * 4 + 3] = 0;
+  }
+  return rgba ? { ...lut, rgba } : lut;
+}
+
 export function useOverlayLayerControls({
   segmentationId,
   overlayManifest,
+  hiddenSegmentIds = NO_HIDDEN_SEGMENTS,
+  hiddenSegmentVisualRevision = 0,
 }: UseOverlayLayerControlsArgs) {
   const [showCandidateBorders, setShowCandidateBorders] = useState(true);
   const [showConfirmedBorders, setShowConfirmedBorders] = useState(true);
+  const [showRightConfirmedBorders, setShowRightConfirmedBorders] = useState(true);
   const [leftPanelLayerStyles, setLeftPanelLayerStyles] = useState<LeftPanelLayerStyles>(
     DEFAULT_LEFT_PANEL_LAYER_STYLES
   );
+  const [rightPanelConfirmedStyle, setRightPanelConfirmedStyle] =
+    useState<ConfirmedLayerStyle>(DEFAULT_RIGHT_PANEL_CONFIRMED_STYLE);
 
-  const lut = useOverlayLut({
+  // One ID-map layer has one scalar fill opacity, so candidates and confirmed
+  // objects need separate state-filtered LUTs for their controls to be real.
+  const candidateLut = useOverlayLut({
     segmentationId,
     sourceModel: overlayManifest?.source_model ?? null,
     lutRevision: overlayManifest?.lut_revision ?? null,
     enabled: !!overlayManifest?.ngff_url,
+    hiddenStates: CANDIDATE_LAYER_HIDDEN_STATES,
   });
-  // The right (review) panel shows confirmed objects only, so hide candidate-
-  // state labels in its raster LUT. (INFERRED resolves to the "candidate" state.)
-  const rightLut = useOverlayLut({
+  const confirmedLut = useOverlayLut({
     segmentationId,
     sourceModel: overlayManifest?.source_model ?? null,
     lutRevision: overlayManifest?.lut_revision ?? null,
     enabled: !!overlayManifest?.ngff_url,
-    hiddenStates: RIGHT_PANEL_HIDDEN_STATES,
+    hiddenStates: CONFIRMED_LAYER_HIDDEN_STATES,
   });
 
   const pickMap = useOverlayPickMap({
@@ -88,6 +123,14 @@ export function useOverlayLayerControls({
         : null,
     enabled: !!overlayManifest?.ngff_url,
   });
+  const visibleCandidateLut = useMemo(
+    () => hideSegmentsInLut(candidateLut, pickMap, hiddenSegmentIds),
+    [candidateLut, hiddenSegmentIds, pickMap]
+  );
+  const visibleConfirmedLut = useMemo(
+    () => hideSegmentsInLut(confirmedLut, pickMap, hiddenSegmentIds),
+    [confirmedLut, hiddenSegmentIds, pickMap]
+  );
 
   const ngffUrl = overlayManifest?.ngff_url
     ? withRasterRevision(
@@ -97,51 +140,78 @@ export function useOverlayLayerControls({
       )
     : null;
 
-  const leftIdMapOverlay = useMemo<ViewerIdMapOverlaySpec | null>(() => {
-    if (!ngffUrl || !lut) return null;
-    return {
-      id: "label-left-idmap",
-      ngffUrl,
-      revision: overlayManifest?.applied_revision,
-      lut: lut.rgba,
-      maxLabel: lut.maxLabel,
-      lutRevision: lut.lutRevision,
-      fillOpacity: leftPanelLayerStyles.confirmedFillOpacity,
-      borderOpacity: RASTER_BORDER_OPACITY,
-      showBorders: showConfirmedBorders || showCandidateBorders,
-      pickMap: pickMap ?? undefined,
-    };
+  const leftIdMapOverlays = useMemo<ViewerIdMapOverlaySpec[]>(() => {
+    if (!ngffUrl) return [];
+    const overlays: ViewerIdMapOverlaySpec[] = [];
+    if (visibleCandidateLut) {
+      overlays.push({
+        id: "label-left-candidates-idmap",
+        ngffUrl,
+        revision: overlayManifest?.applied_revision,
+        lut: visibleCandidateLut.rgba,
+        maxLabel: visibleCandidateLut.maxLabel,
+        lutRevision: visibleCandidateLut.lutRevision,
+        visualRevision: hiddenSegmentVisualRevision,
+        fillOpacity: leftPanelLayerStyles.candidateFillOpacity,
+        borderOpacity: RASTER_BORDER_OPACITY,
+        showBorders: showCandidateBorders,
+        pickMap: pickMap ?? undefined,
+      });
+    }
+    if (visibleConfirmedLut) {
+      overlays.push({
+        id: "label-left-confirmed-idmap",
+        ngffUrl,
+        revision: overlayManifest?.applied_revision,
+        lut: visibleConfirmedLut.rgba,
+        maxLabel: visibleConfirmedLut.maxLabel,
+        lutRevision: visibleConfirmedLut.lutRevision,
+        visualRevision: hiddenSegmentVisualRevision,
+        fillOpacity: leftPanelLayerStyles.confirmedFillOpacity,
+        borderOpacity: RASTER_BORDER_OPACITY,
+        showBorders: showConfirmedBorders,
+        pickMap: pickMap ?? undefined,
+      });
+    }
+    return overlays;
   }, [
     ngffUrl,
     overlayManifest?.applied_revision,
-    lut,
+    visibleCandidateLut,
+    visibleConfirmedLut,
+    hiddenSegmentVisualRevision,
     pickMap,
+    leftPanelLayerStyles.candidateFillOpacity,
     leftPanelLayerStyles.confirmedFillOpacity,
-    showConfirmedBorders,
     showCandidateBorders,
+    showConfirmedBorders,
   ]);
 
-  const rightIdMapOverlay = useMemo<ViewerIdMapOverlaySpec | null>(() => {
-    if (!ngffUrl || !rightLut) return null;
-    return {
-      id: "label-right-idmap",
-      ngffUrl,
-      revision: overlayManifest?.applied_revision,
-      lut: rightLut.rgba,
-      maxLabel: rightLut.maxLabel,
-      lutRevision: rightLut.lutRevision,
-      fillOpacity: leftPanelLayerStyles.confirmedFillOpacity,
-      borderOpacity: RASTER_BORDER_OPACITY,
-      showBorders: showConfirmedBorders,
-      pickMap: pickMap ?? undefined,
-    };
+  const rightIdMapOverlays = useMemo<ViewerIdMapOverlaySpec[]>(() => {
+    if (!ngffUrl || !visibleConfirmedLut) return [];
+    return [
+      {
+        id: "label-right-confirmed-idmap",
+        ngffUrl,
+        revision: overlayManifest?.applied_revision,
+        lut: visibleConfirmedLut.rgba,
+        maxLabel: visibleConfirmedLut.maxLabel,
+        lutRevision: visibleConfirmedLut.lutRevision,
+        visualRevision: hiddenSegmentVisualRevision,
+        fillOpacity: rightPanelConfirmedStyle.fillOpacity,
+        borderOpacity: RASTER_BORDER_OPACITY,
+        showBorders: showRightConfirmedBorders,
+        pickMap: pickMap ?? undefined,
+      },
+    ];
   }, [
     ngffUrl,
     overlayManifest?.applied_revision,
-    rightLut,
+    visibleConfirmedLut,
+    hiddenSegmentVisualRevision,
     pickMap,
-    leftPanelLayerStyles.confirmedFillOpacity,
-    showConfirmedBorders,
+    rightPanelConfirmedStyle.fillOpacity,
+    showRightConfirmedBorders,
   ]);
 
   return {
@@ -150,8 +220,11 @@ export function useOverlayLayerControls({
     setShowCandidateBorders,
     showConfirmedBorders,
     setShowConfirmedBorders,
-    leftIdMapOverlay,
-    rightIdMapOverlay,
+    rightPanelConfirmedStyle,
+    showRightConfirmedBorders,
+    setShowRightConfirmedBorders,
+    leftIdMapOverlays,
+    rightIdMapOverlays,
     updateLayerStyles: {
       setCandidateStrokeWidth: (value: number) => {
         if (Number.isNaN(value)) return;
@@ -179,6 +252,22 @@ export function useOverlayLayerControls({
         setLeftPanelLayerStyles((prev) => ({
           ...prev,
           confirmedFillOpacity: clamp(value, 0, 1),
+        }));
+      },
+    },
+    updateRightLayerStyle: {
+      setStrokeWidth: (value: number) => {
+        if (Number.isNaN(value)) return;
+        setRightPanelConfirmedStyle((prev) => ({
+          ...prev,
+          strokeWidth: clamp(value, 0.5, 8),
+        }));
+      },
+      setFillOpacity: (value: number) => {
+        if (Number.isNaN(value)) return;
+        setRightPanelConfirmedStyle((prev) => ({
+          ...prev,
+          fillOpacity: clamp(value, 0, 1),
         }));
       },
     },

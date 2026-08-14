@@ -9,16 +9,10 @@
  * candidate ones — and the panel says so, because "n" here is not the number of
  * things the model found.
  *
- * Any metric that arrives with a note prints it under its own row. That is not
- * decoration: the caveat block above this table promises the reader that a
- * partly-measured metric "carries its own n and the reason for it in the
- * summary table", and an estimator note applies to a column that is fully
- * populated and has no n to explain it. See `metricNote`.
+ * Partly measured metrics carry a compact tooltip beside the metric name.
  */
 
-import { Fragment } from "react";
-
-import { Badge, Button, Panel } from "@/shared/ui/design";
+import { Button, Panel } from "@/shared/ui/design";
 import { formatInteger, formatNumber, NOT_MEASURED } from "@/shared/ui/format";
 import { downloadCsv } from "@/utils/downloadText";
 import type { AnalysisObjects } from "@/shared/types/analysis";
@@ -27,28 +21,24 @@ import { metricNote } from "@/features/analysis/components/objectsPanelUtils";
 /** Metric rows we never show: constants, not distributions. */
 const HIDDEN_METRICS = new Set(["pixel_size_nm"]);
 
-/**
- * Everything this metric's own row has to say, deduplicated.
- *
- * Two keys arrive and they overlap. `note` is coverage ("measured on 4 of 90")
- * with the estimator paragraph already appended when the metric has one;
- * `estimator_note` is that paragraph on its own, and it is published whether or
- * not anything was blanked. Printing both concatenated repeats the estimator
- * text on every partly-measured row, and printing only `note` was not an option
- * either — a metric may carry the estimator note without a coverage sentence.
- * So: take `note`, and append `estimator_note` only when it is not already in
- * there.
- *
- * Why this row exists at all: the caveat block above the table tells a reader
- * that a metric "carries its own n and the reason for it in the summary table",
- * and until now the summary table carried the n and not the reason. Worse, a
- * fully populated circularity column shipped with no word of an estimator bias
- * that is monotone in object size — eight real mitochondrial outlines scaled to
- * 0.6x, a pure size change with identical shapes, move mean circularity
- * 0.6186 -> 0.6409, paired t = 3.596, p = 0.0088. That is a publishable
- * "mitochondria became more circular" out of a correct segmentation, and the
- * sentence that prevents it has to be beside the number.
- */
+function MetricNoteIndicator({ metric, note }: { metric: string; note: string }) {
+  const neutral = metric === "mean_prob";
+  return (
+    <button
+      type="button"
+      className={`ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border text-[11px] font-bold leading-none ${
+        neutral
+          ? "border-slate-400 text-slate-600"
+          : "border-amber-500 bg-amber-50 text-amber-700"
+      }`}
+      aria-label={`${metric} measurement note: ${note}`}
+      title={note}
+    >
+      !
+    </button>
+  );
+}
+
 export interface ObjectsPanelProps {
   objects: AnalysisObjects;
   calibrated: boolean;
@@ -71,9 +61,7 @@ export function ObjectsPanel({
   const handleDownloadSummary = () => {
     downloadCsv(
       `object-summary-${downloadStem}.csv`,
-      // `note` travels with the numbers. A mean lifted out of this file into a
-      // spreadsheet looks the same whether or not its estimator is biased, and
-      // the sentence that says it is was on a screen the file does not carry.
+      // Keep the same concise coverage explanation in the downloaded summary.
       ["metric", "n", "mean", "sd", "median", "iqr", "min", "max", "note"],
       metricNames.map((name) => {
         const row = objects.summary[name];
@@ -86,7 +74,7 @@ export function ObjectsPanel({
           row.iqr ?? "",
           row.min ?? "",
           row.max ?? "",
-          metricNote(row) ?? "",
+          metricNote(name, row) ?? "",
         ];
       })
     );
@@ -96,7 +84,20 @@ export function ObjectsPanel({
     <Panel className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-sm font-semibold text-slate-900">Objects</h3>
-        <Badge tone="info">Confirmed objects only</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={handleDownloadSummary}>
+            Download Summary Table
+          </Button>
+          {objectsCsvUrl ? (
+            <a
+              className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+              href={objectsCsvUrl}
+              download
+            >
+              Download All Objects
+            </a>
+          ) : null}
+        </div>
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -160,17 +161,17 @@ export function ObjectsPanel({
               <tbody>
                 {metricNames.map((name) => {
                   const row = objects.summary[name];
-                  const note = metricNote(row);
+                  const note = metricNote(name, row);
                   return (
-                    <Fragment key={name}>
-                      <tr
-                        className={
-                          note
-                            ? "border-b border-slate-100/0"
-                            : "border-b border-slate-100"
-                        }
-                      >
-                        <td className="py-1 pr-3 text-slate-700">{name}</td>
+                    <tr key={name} className="border-b border-slate-100">
+                        <td className="py-1 pr-3 text-slate-700">
+                          <span className="inline-flex items-center">
+                            {name}
+                            {note ? (
+                              <MetricNoteIndicator metric={name} note={note} />
+                            ) : null}
+                          </span>
+                        </td>
                         <td className="py-1 pr-3 tabular-nums text-slate-900">
                           {formatInteger(row.n)}
                         </td>
@@ -192,21 +193,7 @@ export function ObjectsPanel({
                         <td className="py-1 tabular-nums text-slate-900">
                           {formatNumber(row.max)}
                         </td>
-                      </tr>
-                      {/* Under the row, spanning it, not folded into a title
-                          attribute: a bias warning nobody hovers over is a
-                          warning nobody reads. */}
-                      {note ? (
-                        <tr className="border-b border-slate-100">
-                          <td colSpan={8} className="pb-2 pr-3">
-                            <p className="m-0 text-xs leading-relaxed text-amber-800">
-                              <span className="font-semibold">{name}:</span>{" "}
-                              {note}
-                            </p>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
+                    </tr>
                   );
                 })}
               </tbody>
@@ -214,18 +201,6 @@ export function ObjectsPanel({
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={handleDownloadSummary}>
-              Download this table
-            </Button>
-            {objectsCsvUrl ? (
-              <a
-                className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-800 shadow-sm hover:bg-slate-50"
-                href={objectsCsvUrl}
-                download
-              >
-                Download objects.csv (one row per object)
-              </a>
-            ) : null}
             <p className="m-0 text-xs text-slate-500">
               SD is the sample standard deviation; it is blank for n = 1.
             </p>

@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LibraryPage } from "@/features/library/LibraryPage";
+import { DesktopUpdateProvider } from "@/features/update/DesktopUpdateProvider";
+import { RestartGuardProvider } from "@/features/update/restartGuard";
 import {
   getAsset,
   getHomeEntryPage,
@@ -139,7 +141,11 @@ describe("LibraryPage", () => {
   function renderPage() {
     return render(
       <MemoryRouter>
-        <LibraryPage />
+        <RestartGuardProvider>
+          <DesktopUpdateProvider>
+            <LibraryPage />
+          </DesktopUpdateProvider>
+        </RestartGuardProvider>
       </MemoryRouter>
     );
   }
@@ -156,7 +162,7 @@ describe("LibraryPage", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByText("v0.1.2")).toBeInTheDocument();
-    expect(screen.getByText("CPU")).toBeInTheDocument();
+    expect(screen.getByText("CPU-only")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Models" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Models" })).not.toBeInTheDocument();
   });
@@ -173,7 +179,7 @@ describe("LibraryPage", () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(await screen.findByRole("button", { name: "How this works" }));
+    await user.click(await screen.findByRole("button", { name: "Guide" }));
     expect(screen.getByRole("button", { name: "Hide guide" })).toBeInTheDocument();
     expect(window.localStorage.getItem("quantem-workflow-guide-dismissed-v1")).toBe("1");
   });
@@ -255,7 +261,7 @@ describe("LibraryPage", () => {
       "href",
       "/experiments/11111111-1111-1111-1111-111111111111"
     );
-    expect(await screen.findByText("Previewing 1 of 1 image")).toBeInTheDocument();
+    expect(await screen.findByText("1 of 1 image")).toBeInTheDocument();
     expect(screen.getByText("Glucose infusion sample")).toBeInTheDocument();
     await waitFor(() =>
       expect(getHomeEntryPage).toHaveBeenCalledWith(

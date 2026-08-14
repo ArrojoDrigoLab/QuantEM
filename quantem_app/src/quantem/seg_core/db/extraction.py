@@ -22,9 +22,12 @@ and reports what the write did.
 
 Two kinds of protection, and only one of them is about objects
 --------------------------------------------------------------
-``candidate_protection`` answers "does this new shape land on an outline the
-user has already decided about". That is the whole of it: one shape against one
-labeled shape. It is not, and cannot be, an answer to the other thing a user
+``candidate_protection`` answers whether a new shape repeats a rejection. A
+confirmed outline is deliberately *not* consulted while Preview materializes
+the full probability map: the overlay paint order keeps that preview beneath
+confirmed work, and whole-image confirmation later applies the 70% merge rule
+or subtracts the confirmed geometry before accepting the remainder. It is not,
+and cannot be, an answer to the other thing a user
 tells this application -- that a **region** is finished.
 
 A :class:`~quantem.segmentation.models.CompletedROI` polygon, and an
@@ -378,7 +381,16 @@ def run_extraction(
             segmenter.name,
         )
 
-    protection = build_protection_index(segmentation, source_model)
+    # Preview materializes the full thresholded map. Confirmed objects remain
+    # untouched and paint above these candidates; resolving their geometry is
+    # deferred to the explicit whole-image Confirm action, where the existing
+    # 70% union rule can be applied and non-merged candidates can be clipped.
+    # Rejections still suppress the same model's repeated proposal here.
+    protection = build_protection_index(
+        segmentation,
+        source_model,
+        include_confirmed=False,
+    )
 
     write_result = write_segments(
         segmentation,
@@ -451,8 +463,9 @@ def extract_and_save_segments(
     """Extract segments and save as CANDIDATE SegmentObjects.
 
     Performs candidate replacement: deletes existing generated inferred/candidate
-    segments (filtered by segmenter's generated_flag), excludes new ones
-    that overlap >=30% with CONFIRMED or >=80% with EXCLUDED.
+    segments (filtered by segmenter's generated_flag) and excludes new ones
+    that repeat an EXCLUDED decision. CONFIRMED geometry is resolved only when
+    the user confirms the preview, not while the full-map preview is generated.
 
     Args:
         segmenter: The organelle segmenter instance.

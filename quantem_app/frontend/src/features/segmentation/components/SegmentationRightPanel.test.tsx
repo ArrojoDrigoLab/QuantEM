@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -81,7 +81,7 @@ function makeProps(
     rois: [],
     removeMode: "none",
     onRemoveModeChange: vi.fn(),
-    onRemoveObjectPointClick: vi.fn(),
+    onRemoveObjectClick: vi.fn(),
     removeAreaBrushSize: 24,
     onRemoveAreaBrushSizeChange: vi.fn(),
     removeAreaBrushStrokes: [],
@@ -89,6 +89,17 @@ function makeProps(
     canApplyRemoveArea: false,
     onApplyRemoveArea: vi.fn(),
     removingArea: false,
+    layerControls: {
+      usesRasterOverlay: false,
+      confirmed: {
+        strokeWidth: 2,
+        fillOpacity: 0.2,
+        showBorders: true,
+        onStrokeWidthChange: vi.fn(),
+        onFillOpacityChange: vi.fn(),
+        onShowBordersChange: vi.fn(),
+      },
+    },
     ...overrides,
   };
 }
@@ -108,12 +119,47 @@ describe("SegmentationRightPanel", () => {
         transient?: Array<{ id: string }>;
       };
       interactions?: {
-        onImageClick?: unknown;
+        onShapeClick?: unknown;
       };
     };
     expect(lastCall.overlays?.persistent?.map((overlay) => overlay.id)).toEqual(["c1"]);
     expect(lastCall.overlays?.transient).toEqual([]);
-    expect(lastCall.interactions?.onImageClick).toBeUndefined();
+    expect(lastCall.interactions?.onShapeClick).toBeUndefined();
+    expect(screen.getByLabelText("Right pane overlay options")).toBeInTheDocument();
+  });
+
+  it("applies the right pane confirmed fill opacity independently", () => {
+    viewerPropsSpy.mockClear();
+    render(
+      <SegmentationRightPanel
+        {...makeProps({
+          layerControls: {
+            usesRasterOverlay: false,
+            confirmed: {
+              strokeWidth: 3,
+              fillOpacity: 0,
+              showBorders: true,
+              onStrokeWidthChange: vi.fn(),
+              onFillOpacityChange: vi.fn(),
+              onShowBordersChange: vi.fn(),
+            },
+          },
+        })}
+      />
+    );
+
+    const lastCall = viewerPropsSpy.mock.calls.at(-1)?.[0] as {
+      overlays?: {
+        persistent?: Array<{
+          id: string;
+          fillOpacity: number;
+          strokeWidth: number;
+        }>;
+      };
+    };
+    expect(
+      lastCall.overlays?.persistent?.find((overlay) => overlay.id === "c1")
+    ).toMatchObject({ fillOpacity: 0, strokeWidth: 3 });
   });
 
   it("shows many-shapes warning for confirmed overlays", () => {
@@ -122,6 +168,22 @@ describe("SegmentationRightPanel", () => {
     expect(
       screen.getByText("Many confirmed shapes in view; rendering may be slower.")
     ).toBeInTheDocument();
+  });
+
+  it("dims the confirmed viewer while newly confirmed objects are building", () => {
+    render(
+      <SegmentationRightPanel
+        {...makeProps({ confirmingObjects: true })}
+      />
+    );
+
+    expect(screen.getByText("Confirming these objects...")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveClass("confirming-objects-veil");
+    expect(screen.getByRole("status").parentElement).toHaveClass("right-viewer-stage");
+    expect(screen.getByTestId("image-viewer").closest("section")).toHaveAttribute(
+      "aria-busy",
+      "true"
+    );
   });
 
   it("includes roi overlay after confirmed overlays", () => {
@@ -195,13 +257,38 @@ describe("SegmentationRightPanel", () => {
 
     const lastCall = viewerPropsSpy.mock.calls.at(-1)?.[0] as {
       interactions?: {
-        onImageClick?: unknown;
+        onShapeClick?: unknown;
+        onShapeHover?: unknown;
       };
     };
-    expect(lastCall.interactions?.onImageClick).toBeTypeOf("function");
+    expect(lastCall.interactions?.onShapeClick).toBeTypeOf("function");
+    expect(lastCall.interactions?.onShapeHover).toBeTypeOf("function");
+    expect(screen.getByText(/Click once to permanently delete/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Remove objects" }));
     expect(onRemoveModeChange).toHaveBeenCalledWith("none");
+  });
+
+  it("passes the picked UUID straight to deletion with no keyboard step", () => {
+    const onRemoveObjectClick = vi.fn();
+    viewerPropsSpy.mockClear();
+    render(
+      <SegmentationRightPanel
+        {...makeProps({
+          removeMode: "objects",
+          onRemoveObjectClick,
+        })}
+      />
+    );
+
+    const lastCall = viewerPropsSpy.mock.calls.at(-1)?.[0] as {
+      interactions?: { onShapeClick?: (segmentId: string | null) => void };
+    };
+    act(() => {
+      lastCall.interactions?.onShapeClick?.("confirmed-1");
+    });
+
+    expect(onRemoveObjectClick).toHaveBeenCalledWith("confirmed-1");
   });
 
   it("shows remove-area controls and brush mode when active", () => {
@@ -238,10 +325,59 @@ describe("SegmentationRightPanel", () => {
           onStroke?: unknown;
         };
         onImageClick?: unknown;
+        onShapeClick?: unknown;
       };
     };
     expect(lastCall.interactions?.brush?.enabled).toBe(true);
     expect(lastCall.interactions?.brush?.onStroke).toBeTypeOf("function");
     expect(lastCall.interactions?.onImageClick).toBeUndefined();
+    expect(lastCall.interactions?.onShapeClick).toBeUndefined();
+  });
+
+  it("highlights the independently hovered confirmed object", () => {
+    viewerPropsSpy.mockClear();
+    render(
+      <SegmentationRightPanel
+        {...makeProps({
+          removeMode: "objects",
+          confirmedSegments: [makeSegment("hovered", "CONFIRMED")],
+          idMapOverlays: [
+            {
+              id: "confirmed-idmap",
+              ngffUrl: "/overlay.zarr",
+              lut: new Uint8Array(8),
+              maxLabel: 1,
+              lutRevision: 1,
+              fillOpacity: 0.2,
+              borderOpacity: 1,
+              showBorders: true,
+              pickMap: new Map([[1, "hovered"]]),
+            },
+          ],
+        })}
+      />
+    );
+
+    const initialCall = viewerPropsSpy.mock.calls.at(-1)?.[0] as {
+      interactions?: { onShapeHover?: (segmentId: string | null) => void };
+    };
+    act(() => {
+      initialCall.interactions?.onShapeHover?.("hovered");
+    });
+    const lastCall = viewerPropsSpy.mock.calls.at(-1)?.[0] as {
+      overlays?: {
+        persistent?: Array<{ id: string; strokeColor: string; strokeWidth?: number }>;
+        idMapOverlays?: Array<{
+          highlightedSegmentId?: string | null;
+          highlightRevision?: number;
+        }>;
+      };
+    };
+    expect(lastCall.overlays?.persistent?.find((item) => item.id === "hovered"))
+      .toMatchObject({ strokeColor: "#00ffff", strokeWidth: 4 });
+    expect(lastCall.overlays?.idMapOverlays?.[0]).toMatchObject({
+      highlightedSegmentId: "hovered",
+      highlightRevision: 1,
+    });
   });
 });

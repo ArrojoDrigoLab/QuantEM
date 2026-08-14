@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   generateDrawStrokeOverlays,
+  generateRoiEditHandleOverlays,
   generateRoiOverlays,
   generateRoiStrokeOverlays,
 } from "@/features/segmentation/overlays/roi";
@@ -64,6 +65,24 @@ describe("segmentation overlay roi", () => {
       strokeOpacity: 0.4,
       strokeDasharray: "8 6",
     });
+  });
+
+  it("builds eight visible edge and corner handles for an edited ROI", () => {
+    const overlays = generateRoiEditHandleOverlays({
+      x: 100,
+      y: 200,
+      width: 1024,
+      height: 1024,
+    });
+
+    expect(overlays).toHaveLength(8);
+    expect(overlays.map((overlay) => overlay.id)).toEqual(
+      expect.arrayContaining([
+        "labeling-roi-handle-north-west",
+        "labeling-roi-handle-east",
+        "labeling-roi-handle-south-east",
+      ])
+    );
   });
 
   it("builds roi stroke overlays for point and brush strokes", () => {

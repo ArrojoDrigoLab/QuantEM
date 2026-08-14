@@ -122,6 +122,7 @@ function FineTuneDialogBody({
   );
   const [catalogue, setCatalogue] = useState<ModelCatalogue | null>(null);
   const [adapters, setAdapters] = useState<FineTuneAdapterSummary[]>([]);
+  const [dialogMode, setDialogMode] = useState<"train" | "apply">("train");
   const [scopeGroups, setScopeGroups] = useState(() => buildScopeTree(null));
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
@@ -345,12 +346,34 @@ function FineTuneDialogBody({
     let cancelled = false;
     void getFineTuneRun(adapterId)
       .then((detail) => {
-        if (!cancelled) setRunDetail(detail);
+        if (cancelled) return;
+        setRunDetail(detail);
+        setName((current) => detail.name || current);
+        setAdapters((current) => {
+          if (current.some((adapter) => adapter.id === adapterId)) return current;
+          return [
+            {
+              id: adapterId,
+              name: detail.name || "Saved fine-tune",
+              base_model: detail.base_model,
+              status: "SUCCESS",
+              created_at: detail.created_at,
+              experiment: detail.experiment ?? null,
+              asset_count: detail.asset_ids?.length ?? 0,
+            },
+            ...current,
+          ];
+        });
       })
       .catch(() => {
         // The run succeeded; only the extra detail is missing. The success
         // panel stands without it.
         if (!cancelled) setRunDetail(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setSavedAdapterId(adapterId);
+        setDialogMode("apply");
       });
     return () => {
       cancelled = true;
@@ -421,6 +444,10 @@ function FineTuneDialogBody({
 
   const phase: "form" | "running" | "done" =
     adapterId === null ? "form" : settled ? "done" : "running";
+  const selectedAdapter = adapters.find((adapter) => adapter.id === savedAdapterId);
+  const hasSavedFineTune =
+    adapters.some((adapter) => adapter.status === "SUCCESS") ||
+    progress?.status === "SUCCESS";
 
   // --- actions -----------------------------------------------------------
 
@@ -430,14 +457,36 @@ function FineTuneDialogBody({
     if (chosen) setName(chosen.name);
   };
 
-  const openSavedFineTune = () => {
-    const chosen = adapters.find((adapter) => adapter.id === savedAdapterId);
+  const selectSavedFineTune = (value: string) => {
+    setSavedAdapterId(value);
+    const chosen = adapters.find((adapter) => adapter.id === value);
+    if (!chosen) {
+      setAdapterId(null);
+      setRunDetail(null);
+      return;
+    }
     if (!chosen || chosen.status !== "SUCCESS") return;
     setName(chosen.name);
     setRunDetail(null);
     setApplyResult(null);
     setApplyError(null);
     setAdapterId(chosen.id);
+  };
+
+  const showApplyMode = () => {
+    setDialogMode("apply");
+    const chosen =
+      adapters.find((adapter) => adapter.id === savedAdapterId && adapter.status === "SUCCESS") ??
+      adapters.find((adapter) => adapter.status === "SUCCESS");
+    if (chosen) selectSavedFineTune(chosen.id);
+  };
+
+  const showTrainMode = () => {
+    setDialogMode("train");
+    setAdapterId(null);
+    setRunDetail(null);
+    setApplyResult(null);
+    setApplyError(null);
   };
 
   const submit = useCallback(async () => {
@@ -496,7 +545,7 @@ function FineTuneDialogBody({
   return (
     <div
       className="finetune-dialog-overlay"
-      onClick={phase === "running" ? undefined : onClose}
+      onClick={dialogMode === "train" && phase === "running" ? undefined : onClose}
     >
       <div
         ref={panelRef}
@@ -513,9 +562,11 @@ function FineTuneDialogBody({
               Fine-tune a model
             </h2>
             <p className="m-0 mt-0.5 text-xs text-slate-600">
-              {organelleLabel
-                ? `Train on your own ${organelleLabel.toLowerCase()} annotations.`
-                : "Train on your own annotations, one organelle at a time."}
+              {dialogMode === "apply"
+                ? "Run a saved fine-tune and review its saved results."
+                : organelleLabel
+                  ? `Train on your own ${organelleLabel.toLowerCase()} annotations.`
+                  : "Train on your own annotations, one organelle at a time."}
             </p>
           </div>
           {/* Not just "Close": the footer has a Close too, and two controls
@@ -531,8 +582,43 @@ function FineTuneDialogBody({
           </Button>
         </div>
 
+        {hasSavedFineTune ? (
+          <div
+            className="flex gap-1 border-b border-slate-200 bg-slate-50 px-5 py-2"
+            role="tablist"
+            aria-label="Fine-tune action"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dialogMode === "train"}
+              className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
+                dialogMode === "train"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+              onClick={showTrainMode}
+            >
+              Train
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={dialogMode === "apply"}
+              className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
+                dialogMode === "apply"
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+              onClick={showApplyMode}
+            >
+              Apply
+            </button>
+          </div>
+        ) : null}
+
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {phase === "form" ? (
+          {dialogMode === "train" && phase === "form" ? (
             <div className="flex flex-col gap-5">
               {!segmentationType ? (
                 <div>
@@ -618,53 +704,6 @@ function FineTuneDialogBody({
                   ) : null}
                 </div>
               </div>
-
-              {adapters.length > 0 ? (
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <label
-                    htmlFor={savedRunId}
-                    className="block text-sm font-semibold text-slate-900"
-                  >
-                    Run a saved fine-tune
-                  </label>
-                  <p className="m-0 mt-1 text-xs text-slate-600">
-                    Open a finished model to run it on images or Datasets in its
-                    Experiment. This does not train or overwrite anything.
-                  </p>
-                  <div className="mt-2 flex gap-2">
-                    <select
-                      id={savedRunId}
-                      className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 text-sm"
-                      value={savedAdapterId}
-                      onChange={(event) => setSavedAdapterId(event.target.value)}
-                    >
-                      <option value="">Choose a saved fine-tune</option>
-                      {adapters.map((adapter) => (
-                        <option
-                          key={adapter.id}
-                          value={adapter.id}
-                          disabled={adapter.status !== "SUCCESS"}
-                        >
-                          {adapter.name}
-                          {adapter.status !== "SUCCESS"
-                            ? ` (${adapter.status.toLowerCase()})`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      disabled={
-                        !savedAdapterId ||
-                        adapters.find((adapter) => adapter.id === savedAdapterId)
-                          ?.status !== "SUCCESS"
-                      }
-                      onClick={openSavedFineTune}
-                    >
-                      Open
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
 
               <div>
                 <label
@@ -837,7 +876,7 @@ function FineTuneDialogBody({
             </div>
           ) : null}
 
-          {phase === "running" ? (
+          {dialogMode === "train" && phase === "running" ? (
             <div className="flex flex-col gap-3" data-testid="finetune-running">
               <RunProgressList
                 className="finetune-progress"
@@ -855,20 +894,7 @@ function FineTuneDialogBody({
             </div>
           ) : null}
 
-          {phase === "done" ? (
-            progress?.status === "SUCCESS" ? (
-              <FineTuneSuccess
-                name={name}
-                run={runDetail}
-                scopedImages={applyImages}
-                availableDatasets={applyDatasets}
-                applying={applying}
-                applyError={applyError}
-                applyResult={applyResult}
-                onApply={apply}
-                onClose={onClose}
-              />
-            ) : (
+          {dialogMode === "train" && phase === "done" && progress?.status !== "SUCCESS" ? (
               <div className="flex flex-col gap-3" data-testid="finetune-failed">
                 <p className="m-0 text-sm text-red-700" role="alert">
                   {progress?.error ||
@@ -880,11 +906,70 @@ function FineTuneDialogBody({
                   </p>
                 ) : null}
               </div>
-            )
+          ) : null}
+
+          {dialogMode === "apply" ? (
+            <div className="flex flex-col gap-4" data-testid="finetune-apply-mode">
+              <div>
+                <label
+                  htmlFor={savedRunId}
+                  className="block text-sm font-semibold text-slate-900"
+                >
+                  Fine-tuned model
+                </label>
+                <p className="m-0 mt-1 text-xs text-slate-600">
+                  Its cross-validation results and latest image runs stay with it.
+                </p>
+                <select
+                  id={savedRunId}
+                  className="mt-2 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
+                  value={savedAdapterId}
+                  onChange={(event) => selectSavedFineTune(event.target.value)}
+                >
+                  <option value="">Choose a saved fine-tune</option>
+                  {adapters.map((adapter) => (
+                    <option
+                      key={adapter.id}
+                      value={adapter.id}
+                      disabled={adapter.status !== "SUCCESS"}
+                    >
+                      {adapter.name}
+                      {adapter.status !== "SUCCESS"
+                        ? ` (${adapter.status.toLowerCase()})`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {adapterId && phase === "running" ? (
+                <p className="m-0 text-sm text-slate-600">Loading the saved fine-tuneâ€¦</p>
+              ) : null}
+              {adapterId && phase === "done" && progress?.status === "SUCCESS" ? (
+                <FineTuneSuccess
+                  adapterId={adapterId}
+                  name={runDetail?.name || selectedAdapter?.name || name}
+                  run={runDetail}
+                  baseModel={
+                    runDetail?.base_model || selectedAdapter?.base_model || baseModel
+                  }
+                  segmentationTypeName={
+                    resolvedType?.long_name || resolvedType?.short_name || ""
+                  }
+                  scopedImages={applyImages}
+                  availableDatasets={applyDatasets}
+                  applying={applying}
+                  applyError={applyError}
+                  applyResult={applyResult}
+                  onApply={apply}
+                  onClose={onClose}
+                />
+              ) : null}
+            </div>
           ) : null}
         </div>
 
-        {phase === "form" ? (
+        {dialogMode === "train" && phase === "form" ? (
           <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
             <Button onClick={onClose}>Cancel</Button>
             <Button variant="primary" disabled={!canSubmit} onClick={() => void submit()}>
@@ -892,12 +977,12 @@ function FineTuneDialogBody({
             </Button>
           </div>
         ) : null}
-        {phase === "running" ? (
+        {dialogMode === "train" && phase === "running" ? (
           <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
             <Button onClick={onClose}>Close and keep running</Button>
           </div>
         ) : null}
-        {phase === "done" && progress?.status !== "SUCCESS" ? (
+        {dialogMode === "train" && phase === "done" && progress?.status !== "SUCCESS" ? (
           // The success panel carries its own two buttons. A failure had none,
           // leaving the header cross as the only way out of a dialog that has
           // just told you something went wrong.

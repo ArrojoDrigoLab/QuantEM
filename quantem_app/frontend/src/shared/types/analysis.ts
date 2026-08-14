@@ -45,33 +45,31 @@ export interface AnalysisMetricSummary {
   n_objects?: number | null;
   /** Of those, how many have no value here. */
   n_missing?: number | null;
-  /**
-   * Everything the backend wants said about this row, as one paragraph.
-   *
-   * Coverage first ("measured on 4 of 90…") and then the estimator note, if
-   * the metric has one, already joined — so it is a superset of
-   * `estimator_note` whenever both exist. Rendering both verbatim would print
-   * the estimator paragraph twice; see `metricNote` in `ObjectsPanel`.
-   */
+  /** Missing values that were measured but rejected as estimator failures. */
+  n_unreportable?: number | null;
+  /** Why an estimator-produced value was rejected. */
+  unreportable_reason?: string | null;
+  /** Coverage explanation for partial measurements. */
   note?: string | null;
-  /**
-   * What this metric's *estimator* does to every value in the column, blanks
-   * or no blanks.
-   *
-   * Not a coverage sentence and not gated on one. Circularity's names the
-   * perimeter estimator in force (perimeter_crofton since the 2026-08-07
-   * ruling; the earlier regionprops.perimeter biased small objects upward
-   * enough to turn a pure size change into a "shape change") and what its
-   * remaining limits are — a fully populated column with nothing missing
-   * still needs it. A run that blanked nothing used to ship that column
-   * silently. Rendered verbatim: the words are the backend's.
-   */
+  /** Legacy saved runs may include a long estimator explanation here. */
   estimator_note?: string | null;
 }
 
 export interface AnalysisComposition {
   tissue_px: number;
   /** Null whenever pixel size is unset — do not render µm² in that state. */
+  tissue_um2: number | null;
+  area_fractions: Record<string, number>;
+  areas_px: Record<string, number>;
+  areas_um2: Record<string, number> | null;
+  /** Individually named objects from the selected Analysis Mask. */
+  regions?: AnalysisCompositionRegion[];
+}
+
+export interface AnalysisCompositionRegion {
+  id: string;
+  name: string;
+  tissue_px: number;
   tissue_um2: number | null;
   area_fractions: Record<string, number>;
   areas_px: Record<string, number>;

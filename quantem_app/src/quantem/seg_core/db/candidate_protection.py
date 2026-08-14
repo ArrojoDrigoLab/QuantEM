@@ -8,9 +8,10 @@ extracted polygon that lands on top of a labeled one.
 
 Two thresholds, not one
 -----------------------
-* A new candidate overlapping a **CONFIRMED** object by >= 30 % is dropped. The
-  bar is low because the confirmed object is already the answer for that piece
-  of the image; a second polygon over it is a duplicate, not a discovery.
+* The generic index can drop a new candidate overlapping a **CONFIRMED** object
+  by >= 30 %. Whole-map Preview deliberately disables this layer: it keeps the
+  complete model proposal beneath the confirmed overlay, then Confirm applies
+  the 70% merge-or-exclude rule without changing confirmed boundaries.
 * A new candidate overlapping an **EXCLUDED** object needs >= 80 % before it is
   dropped. The bar is high because "not this shape" is a narrower statement than
   "yes, this shape": a genuinely different object that merely touches a rejected
@@ -56,7 +57,7 @@ from quantem.segmentation.source_models import SOURCE_MODEL_MANUAL
 
 logger = logging.getLogger(__name__)
 
-#: A new candidate overlapping a CONFIRMED object this much is a duplicate.
+#: Generic confirmed-protection threshold. Preview opts out; see module docs.
 CONFIRMED_OVERLAP_THRESHOLD = 0.3
 #: A new candidate overlapping an EXCLUDED object this much is the same refusal.
 EXCLUDED_OVERLAP_THRESHOLD = 0.8
@@ -257,6 +258,8 @@ class ProtectionIndex:
 def build_protection_index(
     segmentation: ImageSegmentation,
     source_model: str,
+    *,
+    include_confirmed: bool = True,
 ) -> ProtectionIndex:
     """Load and index everything this segmentation's user has already decided.
 
@@ -266,11 +269,15 @@ def build_protection_index(
     the user's own manual work, because a rejection of one model's proposal is
     not a rejection of another model's.
     """
-    confirmed = load_protected_geometries(
-        SegmentObject.objects.filter(
-            segmentation=segmentation,
-            label_state="CONFIRMED",
+    confirmed = (
+        load_protected_geometries(
+            SegmentObject.objects.filter(
+                segmentation=segmentation,
+                label_state="CONFIRMED",
+            )
         )
+        if include_confirmed
+        else []
     )
     excluded = load_protected_geometries(
         SegmentObject.objects.filter(

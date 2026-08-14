@@ -10,12 +10,7 @@
  */
 
 import type { ReactNode } from "react";
-import {
-  CONFIRMED_AREA_API_ALIAS_NOTE,
-  CONFIRMED_AREA_EXPLANATION,
-  CONFIRMED_AREA_LABEL,
-  CONFIRMED_AREA_TOOLTIP,
-} from "@/shared/constants/confirmedArea";
+import { CONFIRMED_AREA_LABEL } from "@/shared/constants/confirmedArea";
 import type { WorkflowMode } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import type {
   GroupHoverActionMode,
@@ -278,25 +273,15 @@ export function WorkflowModeToolbar({
           </div>
           {extraModes && <div className="mode-toolbar-group mode-toolbar-subtools">{extraModes}</div>}
 
-          {/* Confirmed area is a separate, distinct control (training mask).
-              The explanation sits next to the button because it is the only
-              thing that makes the button's purpose guessable. */}
+          {/* Confirmed area is a separate, distinct control (training mask). */}
           <div className="mode-toolbar-group confirmed-area-group">
             <button
               className={correctionTool === "completed_roi" ? "active" : ""}
               onClick={() => onCorrectionToolChange("completed_roi")}
               aria-pressed={correctionTool === "completed_roi"}
-              aria-describedby="confirmed-area-explainer"
-              title={CONFIRMED_AREA_TOOLTIP}
             >
               {CONFIRMED_AREA_LABEL}
             </button>
-            <p className="mode-toolbar-explainer" id="confirmed-area-explainer">
-              {CONFIRMED_AREA_EXPLANATION}{" "}
-              <span className="mode-toolbar-alias">
-                {CONFIRMED_AREA_API_ALIAS_NOTE}
-              </span>
-            </p>
           </div>
 
           {(correctionTool === "draw" || correctionTool === "erase") && (
@@ -360,20 +345,11 @@ export function WorkflowModeToolbar({
               className={correctionTool === "completed_roi" ? "active" : ""}
               onClick={() => onCorrectionToolChange("completed_roi")}
               aria-pressed={correctionTool === "completed_roi"}
-              aria-describedby="confirmed-area-explainer-simple"
-              title={CONFIRMED_AREA_TOOLTIP}
             >
               {CONFIRMED_AREA_LABEL}
             </button>
           </div>
           {extraModes && <div className="mode-toolbar-group mode-toolbar-subtools">{extraModes}</div>}
-
-          <p className="mode-toolbar-explainer" id="confirmed-area-explainer-simple">
-            {CONFIRMED_AREA_EXPLANATION}{" "}
-            <span className="mode-toolbar-alias">
-              {CONFIRMED_AREA_API_ALIAS_NOTE}
-            </span>
-          </p>
 
           {correctionTool === "draw" && (
             <div className="mode-toolbar-group">

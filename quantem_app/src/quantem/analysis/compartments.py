@@ -148,6 +148,65 @@ class AreaFractions:
     areas_um2: dict[str, float] | None
 
 
+@dataclass(frozen=True)
+class AnalysisRegionMask:
+    """One named Analysis Mask object rasterised only inside its bounding box."""
+
+    identifier: str
+    name: str
+    x0: int
+    y0: int
+    mask: np.ndarray
+
+
+def area_fractions_by_region(
+    comp: CompartmentSet,
+    regions: tuple[AnalysisRegionMask, ...],
+    *,
+    pixel_size_nm: float | None = None,
+) -> list[dict[str, object]]:
+    """Composition inside each named Analysis Mask object.
+
+    Region masks are bounding-box crops rather than image-sized arrays. This is
+    important for large EM montages: four named regions should not require four
+    additional full-resolution boolean images in memory.
+    """
+    px_um2 = (
+        (pixel_size_nm / 1000.0) ** 2 if pixel_size_nm is not None and pixel_size_nm > 0 else None
+    )
+    rows: list[dict[str, object]] = []
+    for region in regions:
+        height, width = region.mask.shape
+        y1 = region.y0 + height
+        x1 = region.x0 + width
+        total = int(np.count_nonzero(region.mask))
+        areas_px = {
+            name: int(
+                np.count_nonzero(mask[region.y0 : y1, region.x0 : x1].astype(bool) & region.mask)
+            )
+            for name, mask in comp.masks.items()
+        }
+        if "nucleus" in areas_px and "cytoplasm" not in areas_px:
+            areas_px["cytoplasm"] = total - areas_px["nucleus"]
+        fractions = {name: (area / total if total else 0.0) for name, area in areas_px.items()}
+        rows.append(
+            {
+                "id": region.identifier,
+                "name": region.name,
+                "tissue_px": total,
+                "tissue_um2": total * px_um2 if px_um2 is not None else None,
+                "area_fractions": fractions,
+                "areas_px": areas_px,
+                "areas_um2": (
+                    {name: area * px_um2 for name, area in areas_px.items()}
+                    if px_um2 is not None
+                    else None
+                ),
+            }
+        )
+    return rows
+
+
 def area_fractions(comp: CompartmentSet, *, pixel_size_nm: float | None = None) -> AreaFractions:
     """Area of each compartment as a fraction of tissue area.
 

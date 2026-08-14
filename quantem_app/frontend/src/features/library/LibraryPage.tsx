@@ -667,7 +667,7 @@ export function LibraryPage() {
               }}
               aria-expanded={showHelp}
             >
-              {showHelp ? "Hide guide" : "How this works"}
+              {showHelp ? "Hide guide" : "Guide"}
             </Button>
             <FineTuneMenuButton />
             <Button onClick={() => setIsQueueSidebarOpen(true)}>Tasks & Queues</Button>
@@ -895,7 +895,7 @@ export function LibraryPage() {
         ) : null}
 
         {!entriesLoading && !entriesError ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
             {/* slate-600: slate-500 on white is 4.48:1, just under AA. */}
             <p className="text-sm text-slate-600">
               {/* `max` because the pinned import is on screen a beat before it
@@ -905,9 +905,6 @@ export function LibraryPage() {
                   loading state every three seconds. */}
               {entriesRefetching ? " · updating…" : ""}
             </p>
-            <Button onClick={() => setPreviewRefreshKey((current) => current + 1)}>
-              Refresh previews
-            </Button>
           </div>
         ) : null}
 

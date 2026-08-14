@@ -180,6 +180,29 @@ export function useSegmentationScreenViewModels({
 
     const leftPanelProps = buildSegmentationLeftPanelProps({
       base: {
+        layerControls: {
+          usesRasterOverlay: overlayManifest.usesRasterReviewOverlay,
+          candidates: {
+            strokeWidth: overlayLayers.leftPanelLayerStyles.candidateStrokeWidth,
+            fillOpacity: overlayLayers.leftPanelLayerStyles.candidateFillOpacity,
+            showBorders: overlayLayers.showCandidateBorders,
+            onStrokeWidthChange:
+              overlayLayers.updateLayerStyles.setCandidateStrokeWidth,
+            onFillOpacityChange:
+              overlayLayers.updateLayerStyles.setCandidateFillOpacity,
+            onShowBordersChange: overlayLayers.setShowCandidateBorders,
+          },
+          confirmed: {
+            strokeWidth: overlayLayers.leftPanelLayerStyles.confirmedStrokeWidth,
+            fillOpacity: overlayLayers.leftPanelLayerStyles.confirmedFillOpacity,
+            showBorders: overlayLayers.showConfirmedBorders,
+            onStrokeWidthChange:
+              overlayLayers.updateLayerStyles.setConfirmedStrokeWidth,
+            onFillOpacityChange:
+              overlayLayers.updateLayerStyles.setConfirmedFillOpacity,
+            onShowBordersChange: overlayLayers.setShowConfirmedBorders,
+          },
+        },
         viewer: {
           image: route.image,
           segmentationTypeInternalName: route.segmentationInternalName,
@@ -188,8 +211,8 @@ export function useSegmentationScreenViewModels({
           viewport: route.viewport,
           onViewportChange: handleLeftViewportChange,
           overlayNgffLayers: [],
-          idMapOverlay:
-            reviewMode.workflowMode === "review" ? overlayLayers.leftIdMapOverlay : null,
+          idMapOverlays:
+            reviewMode.workflowMode === "review" ? overlayLayers.leftIdMapOverlays : [],
           onOverlayRevisionDisplayed: overlayManifest.handleLeftOverlayRevisionDisplayed,
           transientFitBounds: focusedRoi
             ? {
@@ -264,11 +287,11 @@ export function useSegmentationScreenViewModels({
         },
         overlays: {
           disableCorrectionBrush,
-          hideActiveRoiOverlay: erRoi.pendingRoi !== null,
+          hideRoiOverlayId: erRoi.pendingRoi?.roiId ?? null,
           extraTransientOverlays: [
             ...overlayOptimistic.optimisticTransientOverlays,
             ...samBox.overlays,
-            ...(erRoi.pendingRoiOverlay ? [erRoi.pendingRoiOverlay] : []),
+            ...erRoi.pendingRoiOverlays,
             ...(erPolygon.active
               ? generateCompletedRoiDraftOverlays(
                   erPolygon.polygons,
@@ -309,7 +332,10 @@ export function useSegmentationScreenViewModels({
       rois: processing.segmentationRois ?? [],
       removeMode: removeArea.rightPanelRemoveMode,
       onRemoveModeChange: removeArea.setRightPanelRemoveMode,
-      onRemoveObjectPointClick: reviewPointActions.handleResetConfirmedToCandidate,
+      onRemoveObjectClick: (segmentId) => {
+        if (!segmentId) return;
+        void reviewPointActions.handleDeleteConfirmedObject(segmentId);
+      },
       removeAreaBrushSize: removeArea.removeAreaDrawing.brushSize,
       onRemoveAreaBrushSizeChange: removeArea.removeAreaDrawing.setBrushSize,
       removeAreaBrushStrokes: removeArea.removeAreaDrawing.brushStrokes,
@@ -319,9 +345,20 @@ export function useSegmentationScreenViewModels({
         void removeArea.handleApplyRemoveArea();
       },
       removingArea: removeArea.isRemovingArea,
+      layerControls: {
+        usesRasterOverlay: overlayManifest.usesRasterReviewOverlay,
+        confirmed: {
+          strokeWidth: overlayLayers.rightPanelConfirmedStyle.strokeWidth,
+          fillOpacity: overlayLayers.rightPanelConfirmedStyle.fillOpacity,
+          showBorders: overlayLayers.showRightConfirmedBorders,
+          onStrokeWidthChange: overlayLayers.updateRightLayerStyle.setStrokeWidth,
+          onFillOpacityChange: overlayLayers.updateRightLayerStyle.setFillOpacity,
+          onShowBordersChange: overlayLayers.setShowRightConfirmedBorders,
+        },
+      },
       overlayNgffLayers: [],
-      idMapOverlay:
-        reviewMode.workflowMode === "review" ? overlayLayers.rightIdMapOverlay : null,
+      idMapOverlays:
+        reviewMode.workflowMode === "review" ? overlayLayers.rightIdMapOverlays : [],
       onOverlayRevisionDisplayed: overlayManifest.handleRightOverlayRevisionDisplayed,
     });
 
@@ -416,16 +453,6 @@ export function useSegmentationScreenViewModels({
         extraModes: samBox.controls,
       },
       layers: {
-        usesRasterReviewOverlay: overlayManifest.usesRasterReviewOverlay,
-        showCandidateBorders: overlayLayers.showCandidateBorders,
-        onShowCandidateBordersChange: overlayLayers.setShowCandidateBorders,
-        showConfirmedBorders: overlayLayers.showConfirmedBorders,
-        onShowConfirmedBordersChange: overlayLayers.setShowConfirmedBorders,
-        leftPanelLayerStyles: overlayLayers.leftPanelLayerStyles,
-        onCandidateStrokeWidthChange: overlayLayers.updateLayerStyles.setCandidateStrokeWidth,
-        onCandidateFillOpacityChange: overlayLayers.updateLayerStyles.setCandidateFillOpacity,
-        onConfirmedStrokeWidthChange: overlayLayers.updateLayerStyles.setConfirmedStrokeWidth,
-        onConfirmedFillOpacityChange: overlayLayers.updateLayerStyles.setConfirmedFillOpacity,
         overlayUpdating: overlayManifest.overlayUpdating,
         // Finding V4: the sidebar could say a build was in progress but had no
         // way to say one had failed, so a terminal failure showed as silence.
@@ -467,7 +494,7 @@ export function useSegmentationScreenViewModels({
               testDisabled,
               testDisabledReason,
               onStartPlacement: erRoi.startPlacement,
-              onMoveRoi: erRoi.moveRoi,
+              onEditRoi: erRoi.editRoi,
               onCancelPlacement: erRoi.cancelPlacement,
               onConfirmRoi: () => {
                 void erRoi.confirmRoi();

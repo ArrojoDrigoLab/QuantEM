@@ -109,7 +109,7 @@ describe("buildLeftPanelVectorScene", () => {
     });
   });
 
-  it("hides only the active ROI overlay when requested", () => {
+  it("hides only the ROI overlay being area-edited", () => {
     const scene = buildLeftPanelVectorScene(
       makeLeftPanelProps({
         roi: {
@@ -146,7 +146,7 @@ describe("buildLeftPanelVectorScene", () => {
           ],
         },
         overlays: {
-          hideActiveRoiOverlay: true,
+          hideRoiOverlayId: "roi-1",
         },
       })
     );

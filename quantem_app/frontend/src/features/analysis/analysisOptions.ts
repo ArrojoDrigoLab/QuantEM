@@ -21,6 +21,7 @@ export const DEFAULT_SEED = 12345;
 export const MAX_REPLICATES = 1000;
 
 export const TISSUE_INTERNAL_NAME = "quantem_internal_tissue";
+export const ANALYSIS_MASK_INTERNAL_NAME = "quantem_internal_analysis_mask";
 
 /**
  * Mirror of `quantem.analysis.loaders.BUILTIN_COMPARTMENT_NAMES`.
@@ -54,7 +55,7 @@ export type PointsSourceChoice = "none" | "centroids" | "csv";
 
 export interface AnalysisFormState {
   compartments: CompartmentSelection[];
-  /** "" means no tissue mask: the whole image is the denominator. */
+  /** "" means no analysis mask: the whole image is the denominator. */
   tissueSegmentationId: string;
   pointsSource: PointsSourceChoice;
   pointsCsv: string;
@@ -74,12 +75,16 @@ export function defaultFormState(
   segmentations: ImageSegmentation[],
   primarySegmentationId: string
 ): AnalysisFormState {
-  const tissue = segmentations.find(
-    (seg) => seg.segmentation_type.internal_name === TISSUE_INTERNAL_NAME
+  const analysisMask = segmentations.find(
+    (seg) => seg.segmentation_type.internal_name === ANALYSIS_MASK_INTERNAL_NAME
   );
   return {
     compartments: segmentations
-      .filter((seg) => seg.id !== tissue?.id)
+      .filter(
+        (seg) =>
+          seg.segmentation_type.internal_name !== TISSUE_INTERNAL_NAME &&
+          seg.segmentation_type.internal_name !== ANALYSIS_MASK_INTERNAL_NAME
+      )
       .map((seg) => ({
         segmentationId: seg.id,
         name: compartmentNameFor(seg),
@@ -87,7 +92,7 @@ export function defaultFormState(
         // every extra compartment is another full-resolution rasterisation.
         enabled: seg.id === primarySegmentationId,
       })),
-    tissueSegmentationId: tissue?.id ?? "",
+    tissueSegmentationId: analysisMask?.id ?? "",
     pointsSource: "none",
     pointsCsv: "",
     distanceTarget: "",

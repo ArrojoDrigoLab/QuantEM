@@ -3,6 +3,7 @@ import { useEffect, useId, useRef } from "react";
 import type { SystemStatus } from "@/shared/types/jobs";
 import { Button } from "@/shared/ui/design";
 import { ModelManagementSection } from "@/features/models/ModelManagementSection";
+import { useDesktopUpdate } from "@/features/update/desktopUpdateHooks";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -22,6 +23,10 @@ export function SettingsDialog({
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const desktopUpdate = useDesktopUpdate();
+  const updateBusy = ["downloading", "downloaded", "waiting", "blocked", "applying"].includes(
+    desktopUpdate.phase
+  );
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -82,21 +87,66 @@ export function SettingsDialog({
         <dl className="mt-5 divide-y divide-slate-200 rounded-xl border border-slate-200 px-4">
           <div className="flex items-center justify-between gap-4 py-3">
             <dt className="text-sm font-medium text-slate-600">App version</dt>
-            <dd className="text-sm font-semibold text-slate-950">
-              {status?.app_version
-                ? `v${status.app_version}`
-                : statusError
-                  ? "Unavailable"
-                  : "Loading…"}
+            <dd className="flex flex-wrap items-center justify-end gap-3 text-sm text-slate-950">
+              <span className="font-semibold">
+                {status?.app_version
+                  ? `v${status.app_version}`
+                  : statusError
+                    ? "Unavailable"
+                    : "Loading…"}
+              </span>
+              {desktopUpdate.phase === "up-to-date" ? (
+                <span>Latest version</span>
+              ) : desktopUpdate.enabled ? (
+                <Button
+                  size="sm"
+                  disabled={desktopUpdate.phase === "checking" || desktopUpdate.update !== null}
+                  onClick={() => void desktopUpdate.checkNow()}
+                >
+                  {desktopUpdate.phase === "checking" ? "Checking…" : "Check for upgrades"}
+                </Button>
+              ) : null}
             </dd>
           </div>
+          {desktopUpdate.update ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-cyan-50 py-3 text-cyan-950">
+              <dt className="sr-only">Upgrade available</dt>
+              <dd className="flex w-full flex-wrap items-center justify-between gap-3 text-sm font-semibold">
+                <span>New version v{desktopUpdate.update.version} is available.</span>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={updateBusy}
+                  onClick={() => void desktopUpdate.upgradeNow()}
+                >
+                  {desktopUpdate.phase === "downloading"
+                    ? "Downloading…"
+                    : desktopUpdate.phase === "applying"
+                      ? "Upgrading…"
+                      : updateBusy
+                        ? "Waiting…"
+                        : "Upgrade now"}
+                </Button>
+                {desktopUpdate.phase === "error" && desktopUpdate.error ? (
+                  <span className="w-full font-normal text-red-700">{desktopUpdate.error}</span>
+                ) : null}
+              </dd>
+            </div>
+          ) : desktopUpdate.phase === "error" ? (
+            <div className="flex items-center justify-between gap-4 py-3">
+              <dt className="sr-only">Upgrade status</dt>
+              <dd className="text-sm text-red-700">
+                {desktopUpdate.error || "QuantEM could not check for upgrades."}
+              </dd>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-4 py-3">
-            <dt className="text-sm font-medium text-slate-600">Compute</dt>
+            <dt className="text-sm font-medium text-slate-600">GPU Acceleration</dt>
             <dd className="text-sm font-semibold text-slate-950">
               {status
                 ? status.cuda_available
-                  ? "CUDA available"
-                  : "CPU"
+                  ? "CUDA-enabled"
+                  : "CPU-only"
                 : statusError
                   ? "Unavailable"
                   : "Loading…"}

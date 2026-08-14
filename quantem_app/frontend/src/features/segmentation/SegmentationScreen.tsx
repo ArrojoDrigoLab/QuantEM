@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawing } from "@/hooks/useDrawing";
 import { useUncertainSegments } from "@/features/segmentation/hooks/useUncertainSegments";
 import { SegmentationHeader } from "@/features/segmentation/components/SegmentationHeader";
@@ -38,8 +38,8 @@ import { appliedAdapterState } from "@/features/models/appliedAdapter";
 import { clearSegmentationManualLabels } from "@/shared/api/segmentations/annotations";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useRestartBlocker } from "@/features/update/restartGuardHooks";
-import { CONFIRMED_AREA_EXPLANATION } from "@/shared/constants/confirmedArea";
 import type { Point } from "@/utils/geometry";
+import type { SegmentationOverlayMutationState } from "@/shared/types/segmentation";
 import "./SegmentationScreen.css";
 
 export function SegmentationScreen() {
@@ -105,12 +105,60 @@ export function SegmentationScreen() {
   });
   const { optimistic: overlayOptimistic } = overlay;
   const { refresh: overlayRefresh } = overlay;
+  const [confirmingObjectsOverlay, setConfirmingObjectsOverlay] = useState<{
+    targetRevision: number | null;
+  } | null>(null);
+
+  const handleConfirmStarted = useCallback(() => {
+    setConfirmingObjectsOverlay({ targetRevision: null });
+  }, []);
+
+  const handleConfirmCommitted = useCallback(
+    (overlayMutation: SegmentationOverlayMutationState | null) => {
+      if (!overlayMutation) {
+        setConfirmingObjectsOverlay(null);
+        return;
+      }
+      overlayRefresh.handleOverlayMutationRefresh(overlayMutation);
+      setConfirmingObjectsOverlay({
+        targetRevision: overlayMutation.desired_revision,
+      });
+    },
+    [overlayRefresh]
+  );
+
+  const handleConfirmFailed = useCallback(() => {
+    setConfirmingObjectsOverlay(null);
+  }, []);
+
+  useEffect(() => {
+    setConfirmingObjectsOverlay(null);
+  }, [route.activeSourceModel, route.currentSegmentationId]);
+
+  useEffect(() => {
+    const targetRevision = confirmingObjectsOverlay?.targetRevision;
+    if (targetRevision == null) return;
+    const displayedRevision = overlay.manifest.rightDisplayedOverlayRevision;
+    const failedRevision = overlay.manifest.overlayManifest?.desired_revision;
+    if (
+      (overlay.manifest.overlayBuildFailed &&
+        failedRevision !== undefined &&
+        failedRevision >= targetRevision) ||
+      (displayedRevision !== null && displayedRevision >= targetRevision)
+    ) {
+      setConfirmingObjectsOverlay(null);
+    }
+  }, [
+    confirmingObjectsOverlay?.targetRevision,
+    overlay.manifest.overlayBuildFailed,
+    overlay.manifest.overlayManifest?.desired_revision,
+    overlay.manifest.rightDisplayedOverlayRevision,
+  ]);
 
   const hover = useSegmentationHoverQuery({
     currentSegmentation: route.currentSegmentation,
     activeSourceModel: route.activeSourceModel,
   });
-
   const confirmedSubmission = useConfirmedGeometrySubmission({
     currentSegmentation: route.currentSegmentation,
     registerAnnotationActivity: overlayRefresh.registerAnnotationActivity,
@@ -135,6 +183,8 @@ export function SegmentationScreen() {
     applyLabelOverrides: overlayOptimistic.applyLabelOverrides,
     applyOptimisticLabel: overlayOptimistic.applyOptimisticLabel,
     rollbackOptimisticLabel: overlayOptimistic.rollbackOptimisticLabel,
+    hideOptimisticallyDeletedSegment: overlay.deletion.hideSegment,
+    rollbackOptimisticallyDeletedSegment: overlay.deletion.rollbackSegment,
     stageOptimisticRevisionTargets: overlayOptimistic.stageOptimisticRevisionTargets,
     getOptimisticTargetRevision: overlayOptimistic.getOptimisticTargetRevision,
     handleOverlayMutationRefresh: overlayRefresh.handleOverlayMutationRefresh,
@@ -321,6 +371,7 @@ export function SegmentationScreen() {
 
   const handleRoiPlacementClick = useCallback(
     (point: Point) => {
+      if (erRoi.relocatingRoiId) return;
       erRoi.setPendingRoi(erRoi.resolvePendingRoi(point));
     },
     [erRoi]
@@ -362,6 +413,9 @@ export function SegmentationScreen() {
     scheduleHoverSegmentQuery: hover.scheduleHoverSegmentQuery,
     clearHoverInteraction: hover.clearHoverInteraction,
     onRoiPlacementClick: handleRoiPlacementClick,
+    onRoiEditPress: erRoi.handleEditPress,
+    onRoiEditDrag: erRoi.handleEditDrag,
+    onRoiEditRelease: erRoi.handleEditRelease,
     completedRoi: {
       isActive: completedRoi.active,
       handlePolygonClick: completedRoi.handlePolygonClick,
@@ -596,8 +650,8 @@ export function SegmentationScreen() {
           }
           message={
             completedRoi.mode === "exclude"
-              ? `Remove this polygon from the confirmed area for this segmentation? Overlapping confirmed regions will be trimmed (or split) accordingly. ${CONFIRMED_AREA_EXPLANATION}`
-              : `Add this polygon to the confirmed area for this segmentation? Overlapping confirmed regions will be merged into one. ${CONFIRMED_AREA_EXPLANATION}`
+              ? "Remove this polygon from the confirmed area for this segmentation? Overlapping confirmed regions will be trimmed (or split) accordingly."
+              : "Add this polygon to the confirmed area for this segmentation? Overlapping confirmed regions will be merged into one."
           }
           details={
             completedRoi.mode === "include" ? (
@@ -651,13 +705,19 @@ export function SegmentationScreen() {
                     void route.refetchSegmentations();
                   },
                   onReextracted: overlayRefresh.refreshSegmentViews,
+                  onConfirmStarted: handleConfirmStarted,
+                  onConfirmCommitted: handleConfirmCommitted,
+                  onConfirmFailed: handleConfirmFailed,
                 }
               : undefined
           }
         />
         <SegmentationLeftPanel {...viewModels.leftPanelProps} />
         {ui.showConfirmedPanel && (
-          <SegmentationRightPanel {...viewModels.rightPanelProps} />
+          <SegmentationRightPanel
+            {...viewModels.rightPanelProps}
+            confirmingObjects={confirmingObjectsOverlay !== null}
+          />
         )}
         {ui.toast && (
           // `role="alert"` interrupts a screen reader, which is right for a

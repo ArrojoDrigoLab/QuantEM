@@ -46,7 +46,15 @@ vi.mock("@deck.gl/core", () => ({
   OrthographicView: class OrthographicView {},
   // IdMapLabelLayer (pulled in transitively via buildViewerDeckLayers) extends
   // CompositeLayer at module-eval time, so the mock must provide it.
-  CompositeLayer: class CompositeLayer {},
+  CompositeLayer: class CompositeLayer {
+    id: string;
+    props: Record<string, unknown>;
+
+    constructor(props: Record<string, unknown>) {
+      this.id = String(props.id);
+      this.props = props;
+    }
+  },
 }));
 
 vi.mock("@hms-dbmi/viv", () => ({
@@ -402,6 +410,35 @@ describe("ImageViewer", () => {
       [51, 204, 102],
       [59, 130, 246],
     ]);
+  });
+
+  it("keeps bitmap probability previews below confirmed ID-map labels", async () => {
+    loadOmeZarrMock.mockResolvedValue(makeVivResult());
+
+    render(
+      <ImageViewer
+        image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }}
+        overlays={{
+          bitmapOverlays: [
+            {
+              id: "threshold-preview",
+              image: document.createElement("canvas"),
+              bounds: [0, 0, 256, 256],
+              opacity: 1,
+            },
+          ],
+          idMapOverlays: [makeIdMapSpec(1)],
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getLayerIds()).toContain("idmap-overlay-review-id-map");
+    });
+    const layerIds = getLayerIds();
+    expect(layerIds.indexOf("viewer-bitmap-threshold-preview")).toBeLessThan(
+      layerIds.indexOf("idmap-overlay-review-id-map")
+    );
   });
 
   it("does not render a z-slider for 2D images", async () => {
