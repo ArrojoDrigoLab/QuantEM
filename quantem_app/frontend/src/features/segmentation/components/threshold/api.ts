@@ -70,11 +70,13 @@ export interface ConfirmModelOutputResult {
 export function getIncludeLevel(
   segmentationId: string,
   sourceModel?: string | null,
-  roiId?: string | null
+  roiId?: string | null,
+  adapterId?: string | null
 ): Promise<IncludeLevelState> {
   const query = new URLSearchParams();
   if (sourceModel) query.set("source_model", sourceModel);
   if (roiId) query.set("roi_id", roiId);
+  if (adapterId) query.set("adapter_id", adapterId);
   const qs = query.toString();
   return apiRequest<IncludeLevelState>(
     `/api/segmentations/${segmentationId}/include-level${qs ? `?${qs}` : ""}`
@@ -85,11 +87,13 @@ export function setIncludeLevel(
   segmentationId: string,
   includeLevel: number,
   sourceModel?: string | null,
-  roiId?: string | null
+  roiId?: string | null,
+  adapterId?: string | null
 ): Promise<IncludeLevelQueued> {
   const body: Record<string, string | number> = { include_level: includeLevel };
   if (sourceModel) body.source_model = sourceModel;
   if (roiId) body.roi_id = roiId;
+  if (adapterId) body.adapter_id = adapterId;
   return apiRequest<IncludeLevelQueued>(
     `/api/segmentations/${segmentationId}/include-level`,
     {

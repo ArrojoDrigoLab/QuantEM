@@ -133,6 +133,7 @@ def handle_run_segmentation_roi_task(
         source_model=normalize_source_model(payload.get("source_model")) or None,
         force_recompute_prob_maps=force_recompute_prob_maps,
         reporter=reporter,
+        adapter_id=str(payload.get("adapter_id") or "").strip() or None,
     )
     reporter.update(progress=100.0, message="ROI threshold preview ready")
     return {

@@ -679,12 +679,20 @@ export const ImageUploadPanel = forwardRef<
             onRetryProcessing={() => void retryDeferredProcessing()}
           />
 
-          <ImportDropZone
-            acceptedExtensions={acceptedExtensions}
-            highlightDropZone={highlightDropZone}
-            batchSummary={null}
-            variant="additional"
-          />
+          {/* The current files still own the upload connection at this point.
+              A second drop cannot be accepted until every request has either
+              landed or failed, so do not leave a control on screen that looks
+              available but silently ignores the files. Once the server has
+              accepted the batch and its encoding jobs have been started,
+              `importing` becomes false and the fresh drop zone returns. */}
+          {!importing ? (
+            <ImportDropZone
+              acceptedExtensions={acceptedExtensions}
+              highlightDropZone={highlightDropZone}
+              batchSummary={null}
+              variant="additional"
+            />
+          ) : null}
 
           <ImportDetailsFields
             files={files}

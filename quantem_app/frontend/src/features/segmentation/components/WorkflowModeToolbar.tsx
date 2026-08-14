@@ -40,12 +40,12 @@ function PolygonIcon() {
   );
 }
 
-/** Brush/pencil draw tool icon. */
-function DrawIcon() {
+/** Paint-brush tool icon. */
+function BrushIcon() {
   return (
     <svg {...ICON_PROPS}>
-      <path d="M12 19l7-7a2.1 2.1 0 0 0-3-3l-7 7-1 4z" />
-      <path d="M8 16l-4 4" />
+      <path d="m9.1 14.9 8-8a2.85 2.85 0 1 1 4 4l-8 8" />
+      <path d="M7.1 14.9a3 3 0 0 0-3 3c0 1.4-1 2.2-2 2.7 1.2.9 2.7 1.4 4.4 1.4a4.5 4.5 0 0 0 4.6-4.5c0-1.4-.9-2.6-2-2.6z" />
     </svg>
   );
 }
@@ -81,13 +81,13 @@ interface WorkflowModeToolbarProps {
   isErSegmentation?: boolean;
   canApplyGroupAction?: boolean;
   onApplyGroupAction?: (mode: GroupHoverActionMode) => void;
-  /** ER polygon tool: a draft polygon is in progress. */
+  /** Object polygon tool: a draft polygon is in progress. */
   polygonHasDraft?: boolean;
-  /** ER polygon tool: the draft can be closed into a filled object. */
+  /** Object polygon tool: the draft can be closed into a filled object. */
   polygonCanClose?: boolean;
-  /** ER polygon tool: close the draft and commit it as a filled ER object. */
+  /** Close the draft and commit it as a filled object. */
   onClosePolygon?: () => void;
-  /** Extra correction sub-tools, rendered beneath Review / Correct. */
+  /** Extra correction sub-tools, rendered beneath the drawing tools. */
   extraModes?: ReactNode;
   /**
    * Extra tool controls, rendered at the end of the toolbar.
@@ -106,7 +106,6 @@ export function WorkflowModeToolbar({
   drawBrushSize,
   draftOperation,
   hasDrawStrokes,
-  onReviewPhaseChange,
   onCorrectionToolChange,
   onHoverActionModeChange,
   onDrawBrushSizeChange,
@@ -136,25 +135,6 @@ export function WorkflowModeToolbar({
 
   return (
     <div className="mode-toolbar">
-      {workflowMode === "review" && (
-        <div className="mode-toolbar-group">
-          <button
-            className={reviewPhase === "model" ? "active" : ""}
-            onClick={() => onReviewPhaseChange("model")}
-            aria-pressed={reviewPhase === "model"}
-          >
-            Review
-          </button>
-          <button
-            className={reviewPhase === "correction" ? "active" : ""}
-            onClick={() => onReviewPhaseChange("correction")}
-            aria-pressed={reviewPhase === "correction"}
-          >
-            Correct
-          </button>
-        </div>
-      )}
-
       {workflowMode === "review" && reviewPhase === "model" && (
         <>
           {!isErSegmentation && (
@@ -255,10 +235,10 @@ export function WorkflowModeToolbar({
               className={`icon-tool-button ${correctionTool === "draw" ? "active" : ""}`}
               onClick={() => onCorrectionToolChange("draw")}
               aria-pressed={correctionTool === "draw"}
-              aria-label="Draw"
-              title="Draw: paint with the brush (adjust diameter below)"
+              aria-label="Brush"
+              title="Brush: paint an object area (adjust diameter below)"
             >
-              <DrawIcon />
+              <BrushIcon />
             </button>
             <button
               type="button"
@@ -333,14 +313,31 @@ export function WorkflowModeToolbar({
 
       {workflowMode === "review" && reviewPhase === "correction" && !isErSegmentation && (
         <>
-          <div className="mode-toolbar-group">
+          <div className="mode-toolbar-group mode-tool-icons">
             <button
-              className={correctionTool === "draw" ? "active" : ""}
+              type="button"
+              className={`icon-tool-button ${correctionTool === "polygon" ? "active" : ""}`}
+              onClick={() => onCorrectionToolChange("polygon")}
+              aria-pressed={correctionTool === "polygon"}
+              aria-label="Polygon"
+              title="Polygon: click to place vertices, press R (or Close polygon) to create the object"
+            >
+              <PolygonIcon />
+            </button>
+            <button
+              type="button"
+              className={`icon-tool-button ${correctionTool === "draw" ? "active" : ""}`}
               onClick={() => onCorrectionToolChange("draw")}
               aria-pressed={correctionTool === "draw"}
+              aria-label="Brush"
+              title="Brush: paint an object area (adjust diameter below)"
             >
-              Draw
+              <BrushIcon />
             </button>
+          </div>
+          {extraModes && <div className="mode-toolbar-group mode-toolbar-subtools">{extraModes}</div>}
+
+          <div className="mode-toolbar-group confirmed-area-group">
             <button
               className={correctionTool === "completed_roi" ? "active" : ""}
               onClick={() => onCorrectionToolChange("completed_roi")}
@@ -349,7 +346,6 @@ export function WorkflowModeToolbar({
               {CONFIRMED_AREA_LABEL}
             </button>
           </div>
-          {extraModes && <div className="mode-toolbar-group mode-toolbar-subtools">{extraModes}</div>}
 
           {correctionTool === "draw" && (
             <div className="mode-toolbar-group">
@@ -379,6 +375,20 @@ export function WorkflowModeToolbar({
               <button disabled={!canClear} onClick={onClearDrawing}>
                 Clear
               </button>
+            </div>
+          )}
+
+          {correctionTool === "polygon" && (
+            <div className="mode-toolbar-group">
+              {polygonHasDraft ? (
+                <button disabled={!polygonCanClose} onClick={onClosePolygon}>
+                  Close polygon (R)
+                </button>
+              ) : (
+                <span className="mode-toolbar-hint">
+                  Click to place vertices; press R to create the object.
+                </span>
+              )}
             </div>
           )}
         </>

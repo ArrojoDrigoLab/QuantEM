@@ -1,6 +1,6 @@
 /** The completed fine-tune, its optional application targets, and live status. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getFineTuneApplyProgress } from "@/shared/api/finetune";
 import { Badge, Button, Panel } from "@/shared/ui/design";
 import type { ScopeDatasetNode } from "@/features/finetune/scopeTree";
@@ -8,6 +8,7 @@ import type {
   FineTuneApplyImageProgress,
   FineTuneApplyProgress,
   FineTuneApplyResponse,
+  FineTuneAppliedImageEvent,
   FineTuneCvPerRoi,
   FineTuneCvResults,
   FineTunePreviewImage,
@@ -135,11 +136,13 @@ function ApplyProgressPanel({
   progress,
   current,
   baseModel,
+  adapterId,
   segmentationTypeName,
 }: {
   progress: FineTuneApplyProgress;
   current: boolean;
   baseModel: string;
+  adapterId: string;
   segmentationTypeName: string;
 }) {
   return (
@@ -162,7 +165,7 @@ function ApplyProgressPanel({
                 segmentationTypeName
               )}?seg=${encodeURIComponent(image.segmentation_id)}&source_model=${encodeURIComponent(
                 baseModel
-              )}`
+              )}&adapter_id=${encodeURIComponent(adapterId)}`
             : null;
           return (
             <li
@@ -226,6 +229,7 @@ export function FineTuneSuccess({
   applyResult,
   onApply,
   onClose,
+  onAppliedImageCompleted,
 }: {
   adapterId: string;
   name: string;
@@ -239,6 +243,7 @@ export function FineTuneSuccess({
   applyResult: FineTuneApplyResponse | null;
   onApply: (assetIds: string[], datasetIds: string[]) => void;
   onClose: () => void;
+  onAppliedImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
 }) {
   const [picked, setPicked] = useState<Set<string>>(
     () => new Set(scopedImages.map((image) => image.asset_id))
@@ -251,6 +256,7 @@ export function FineTuneSuccess({
   );
   const [progressError, setProgressError] = useState<string | null>(null);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
+  const notifiedJobsRef = useRef<Set<string>>(new Set());
   const cv = cvResultsOf(run);
   const cvRows = cvRowsOf(run, cv, scopedImages);
 
@@ -308,6 +314,28 @@ export function FineTuneSuccess({
     };
   }, [adapterId, applyResult?.batch_id]);
 
+  useEffect(() => {
+    if (!applyResult || !applyProgress || !onAppliedImageCompleted) return;
+    for (const image of applyProgress.images) {
+      if (image.status !== "SUCCESS" || notifiedJobsRef.current.has(image.job_id)) {
+        continue;
+      }
+      notifiedJobsRef.current.add(image.job_id);
+      onAppliedImageCompleted({
+        adapterId,
+        baseModel,
+        assetId: image.asset_id,
+        segmentationId: image.segmentation_id,
+      });
+    }
+  }, [
+    adapterId,
+    applyProgress,
+    applyResult,
+    baseModel,
+    onAppliedImageCompleted,
+  ]);
+
   if (applyResult) {
     return (
       <div className="flex flex-col gap-3" data-testid="finetune-applied">
@@ -321,6 +349,7 @@ export function FineTuneSuccess({
             progress={applyProgress}
             current
             baseModel={baseModel}
+            adapterId={adapterId}
             segmentationTypeName={segmentationTypeName}
           />
         ) : (
@@ -422,6 +451,7 @@ export function FineTuneSuccess({
           progress={applyProgress}
           current={false}
           baseModel={baseModel}
+          adapterId={adapterId}
           segmentationTypeName={segmentationTypeName}
         />
       ) : null}

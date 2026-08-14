@@ -6,6 +6,7 @@ import type { ImageViewerProps } from "@/viewer/imageViewerTypes";
 import type { ViewerIdMapOverlaySpec } from "@/viewer/types";
 import { ScaleBar } from "@/viewer/components/ScaleBar";
 import { ViewControls } from "@/viewer/components/ViewControls";
+import { ZoomControls } from "@/viewer/components/ZoomControls";
 import { ViewerCursorOverlay } from "@/viewer/components/internal/ViewerCursorOverlay";
 import { ViewerSvgOverlay } from "@/viewer/components/internal/ViewerSvgOverlay";
 import { ViewerZSlider } from "@/viewer/components/internal/ViewerZSlider";
@@ -53,8 +54,9 @@ export function ImageViewer({
   // rendering from props instead of hiding render state in a mutable ref.
   const idMapOverlays = overlays?.idMapOverlays ?? EMPTY_ID_MAP_OVERLAYS;
   const bitmapOverlays = useMemo(() => overlays?.bitmapOverlays ?? [], [overlays?.bitmapOverlays]);
-  const drawMode = interactions?.draw?.enabled ?? false;
-  const brushMode = interactions?.brush?.enabled ?? false;
+  const navigateMode = interactions?.mode === "navigate";
+  const drawMode = !navigateMode && (interactions?.draw?.enabled ?? false);
+  const brushMode = !navigateMode && (interactions?.brush?.enabled ?? false);
   const brushSize = interactions?.brush?.size ?? 12;
   const brushColor = interactions?.brush?.color ?? "#33cc66";
 
@@ -91,8 +93,8 @@ export function ImageViewer({
   const cursorState = useViewerCursorState({
     brushMode,
     brushSize,
-    cursorMode: highlighting?.cursorMode,
-    hoverBadge: highlighting?.hoverBadge,
+    cursorMode: navigateMode ? undefined : highlighting?.cursorMode,
+    hoverBadge: navigateMode ? undefined : highlighting?.hoverBadge,
     metrics: viewportState.metrics,
   });
 
@@ -142,19 +144,19 @@ export function ImageViewer({
     pickRasterObjectId,
     metrics: viewportState.metrics,
     localViewport: viewportState.localViewport,
-    disablePan: viewport?.disablePan ?? false,
+    disablePan: navigateMode ? false : (viewport?.disablePan ?? false),
     resolvedImageWidth,
     resolvedImageHeight,
     setViewport: viewportState.setViewport,
-    onImageClick: interactions?.onImageClick,
-    onImagePress: interactions?.onImagePress,
-    onImageDrag: interactions?.onImageDrag,
-    onImageRelease: interactions?.onImageRelease,
-    onImageMove: interactions?.onImageMove,
-    onImageMouseMove: interactions?.onImageMouseMove,
-    onImageMouseLeave: interactions?.onImageMouseLeave,
-    onShapeClick: interactions?.onShapeClick,
-    onShapeHover: interactions?.onShapeHover,
+    onImageClick: navigateMode ? undefined : interactions?.onImageClick,
+    onImagePress: navigateMode ? undefined : interactions?.onImagePress,
+    onImageDrag: navigateMode ? undefined : interactions?.onImageDrag,
+    onImageRelease: navigateMode ? undefined : interactions?.onImageRelease,
+    onImageMove: navigateMode ? undefined : interactions?.onImageMove,
+    onImageMouseMove: navigateMode ? undefined : interactions?.onImageMouseMove,
+    onImageMouseLeave: navigateMode ? undefined : interactions?.onImageMouseLeave,
+    onShapeClick: navigateMode ? undefined : interactions?.onShapeClick,
+    onShapeHover: navigateMode ? undefined : interactions?.onShapeHover,
     overlayScene,
     drawMode,
     brushMode,
@@ -187,18 +189,22 @@ export function ImageViewer({
   const showControls = viewport?.showControls ?? true;
   const containerClass = `image-viewer ${className || ""} ${brushMode ? "brush-active" : ""}`.trim();
   const cursorStyle =
+    // Navigate is authoritative. Tool state may remain armed behind it, but
+    // the canvas must always look and act like a pan tool.
+    navigateMode
+      ? "grab"
     // Holding space says "I am moving the image", and it outranks every tool
     // cursor: the pointer has to stop looking like a brush the moment the
     // gesture stops being a stroke.
-    pointerInteractions.panKeyHeld && !viewport?.disablePan
-      ? "grab"
-      : brushMode || highlighting?.cursorMode === "target"
-        ? "none"
-        : highlighting?.hoverCursor
-          ? "pointer"
-          : viewport?.disablePan
-            ? "crosshair"
-            : "";
+      : pointerInteractions.panKeyHeld && !viewport?.disablePan
+        ? "grab"
+        : brushMode || highlighting?.cursorMode === "target"
+          ? "none"
+          : highlighting?.hoverCursor
+            ? "pointer"
+            : viewport?.disablePan
+              ? "crosshair"
+              : "";
 
   return (
     <div ref={containerRef} className={containerClass} style={{ cursor: cursorStyle }}>
@@ -257,7 +263,13 @@ export function ImageViewer({
               Hold space or the middle button to move the image
             </span>
           )}
-          <ScaleBar metrics={viewportState.metrics} pixelSizeNm={image.pixelSizeNm} />
+          <div className="viewer-scale-zoom-cluster">
+            <ScaleBar metrics={viewportState.metrics} pixelSizeNm={image.pixelSizeNm} />
+            <ZoomControls
+              onZoomOut={viewportState.zoomOut}
+              onZoomIn={viewportState.zoomIn}
+            />
+          </div>
         </div>
       )}
     </div>

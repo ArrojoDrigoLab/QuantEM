@@ -23,6 +23,8 @@ export type FineTuneModeChoice = "use_all" | "holdout_1" | "holdout_1_cv";
  * down in the preview response and is honoured as sent.
  */
 export const USE_ALL_TILE_CEILING = 3;
+export const HOLDOUT_MIN_ANNOTATIONS = 2;
+export const HOLDOUT_CV_MIN_ANNOTATIONS = 3;
 
 export interface FineTuneModeOption {
   value: FineTuneModeChoice;
@@ -51,6 +53,19 @@ export const FINE_TUNE_MODE_OPTIONS: FineTuneModeOption[] = [
       "Repeat the hold-out with each annotation held back in turn, and report the average and the per-image results. Slower, by roughly the number of annotations.",
   },
 ];
+
+export function minimumAnnotationsForMode(choice: FineTuneModeChoice): number {
+  if (choice === "holdout_1_cv") return HOLDOUT_CV_MIN_ANNOTATIONS;
+  if (choice === "holdout_1") return HOLDOUT_MIN_ANNOTATIONS;
+  return 0;
+}
+
+export function modeChoiceIsAvailable(
+  choice: FineTuneModeChoice,
+  annotationCount: number
+): boolean {
+  return annotationCount >= minimumAnnotationsForMode(choice);
+}
 
 /** The two wire fields for a choice. */
 export function modeChoicePayload(choice: FineTuneModeChoice): {

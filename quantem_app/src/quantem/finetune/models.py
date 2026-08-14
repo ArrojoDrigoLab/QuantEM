@@ -23,6 +23,8 @@ from quantem.finetune.storage import adapter_head_path
 
 __all__ = [
     "DEFAULT_USE_ALL_MAX_TILES",
+    "HOLDOUT_CV_MIN_ANNOTATIONS",
+    "HOLDOUT_MIN_ANNOTATIONS",
     "TRAINING_MODES",
     "TRAINING_MODE_HOLDOUT_1",
     "TRAINING_MODE_USE_ALL",
@@ -85,6 +87,12 @@ TRAINING_MODES = (TRAINING_MODE_USE_ALL, TRAINING_MODE_HOLDOUT_1)
 #: the boundary: it costs one tile of training data and buys a number that was
 #: not fitted on itself, and a user who wants the tile back can pick *use all*.
 DEFAULT_USE_ALL_MAX_TILES = 3
+
+#: A hold-out needs one annotation to train on and a different one to score.
+HOLDOUT_MIN_ANNOTATIONS = 2
+#: Cross-validation is not a useful selectable benchmark until it can rotate
+#: over at least three annotations.
+HOLDOUT_CV_MIN_ANNOTATIONS = 3
 
 #: Below this many tiles a cross-validated mean is a weak estimate and has to
 #: say so. Four folds over four tiles is four numbers, each from one tile.
@@ -303,8 +311,11 @@ def active_adapter_for(segmentation, adapter_id: str | None = None) -> Adapter |
                 models.Q(status=STATUS_SUCCESS) | models.Q(preserves_live_version=True),
                 id=adapter_id,
                 segmentation_type_id=getattr(segmentation, "segmentation_type_id", None),
-                applied_assets__id=getattr(segmentation, "asset_id", None),
-                applied_at__isnull=False,
+            )
+            .filter(
+                models.Q(applied_assets__id=getattr(segmentation, "asset_id", None))
+                | models.Q(scope_assets__id=getattr(segmentation, "asset_id", None))
+                | models.Q(segmentation=segmentation)
             )
             .order_by("-applied_at")
             .first()

@@ -71,6 +71,23 @@ describe("IncludeLevelDial", () => {
     expect(container.textContent).not.toMatch(/model does not run|objects at this/i);
   });
 
+  it("shows the fine-tune's calculated threshold and identifies its adapter", async () => {
+    const queries: string[] = [];
+    server.use(
+      http.get(DIAL_URL, ({ request }) => {
+        queries.push(new URL(request.url).search);
+        return HttpResponse.json(state({ default_include_level: 0.25 }));
+      })
+    );
+
+    renderDial({ sourceModel: "omniem:mito", adapterId: "adapter-25" });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.25")
+    );
+    expect(queries.some((query) => query.includes("adapter_id=adapter-25"))).toBe(true);
+  });
+
   it("queues nothing while the slider is being dragged", async () => {
     serveState(state({ include_level: 0.5 }));
     const posted = vi.fn();

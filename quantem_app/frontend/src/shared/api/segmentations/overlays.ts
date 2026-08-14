@@ -126,13 +126,17 @@ export function getProbabilityMaps(
 
 export function runFullSegmentation(
   segmentationId: string,
-  sourceModel?: string | null
+  sourceModel?: string | null,
+  adapterId?: string | null
 ): Promise<RunFullSegmentationResponse> {
   return apiRequest<RunFullSegmentationResponse>(
     `/api/segmentations/${segmentationId}/apply-full-image/`,
     {
       method: "POST",
-      body: JSON.stringify(sourceModel ? { source_model: sourceModel } : {}),
+      body: JSON.stringify({
+        ...(sourceModel ? { source_model: sourceModel } : {}),
+        ...(adapterId ? { adapter_id: adapterId } : {}),
+      }),
     }
   );
 }

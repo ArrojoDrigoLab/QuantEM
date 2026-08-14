@@ -199,9 +199,71 @@ describe("useSegmentationProcessingState", () => {
     expect(rerunSegmentationRoi).toHaveBeenCalledWith(
       "seg-1",
       "roi-existing",
-      "quantem:mito"
+      "quantem:mito",
+      null
     );
     expect(result.current.previewRoiId).toBe("roi-existing");
+  });
+
+  it("exposes the exact model used by a queued run on this segmentation", async () => {
+    vi.mocked(getJobQueueStatus).mockResolvedValue({
+      running: [],
+      queues: [
+        {
+          queue_name: "p4_full",
+          display_name: "Full image",
+          pending: [
+            {
+              id: "job-model",
+              type: "run_segmentation_for_image",
+              task_label: "Segment this image",
+              status: "PENDING",
+              progress: 0,
+              cancel_requested: false,
+              queue_name: "p4_full",
+              resource_class: "gpu",
+              created_at: "2026-01-02T00:00:00Z",
+              image: { id: "img-1", display_name: "Image 1" },
+              segmentation: null,
+              model_runs: [
+                {
+                  segmentation_id: "seg-1",
+                  source_model: "omniem:mito",
+                  adapter_id: null,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      failed: [],
+      completed: [],
+      worker: { scheduler_in_process: true },
+      generated_at: "2026-01-02T00:00:00Z",
+    });
+
+    const { result } = renderHook(
+      () =>
+        useSegmentationProcessingState({
+          currentSegmentation: makeSegmentation(),
+          activeSourceModel: "manual",
+          supportsPointFeedback: false,
+          supportsInstanceParams: false,
+          currentInstanceParams: null,
+          refetchSegmentations: vi.fn(async () => {}),
+          refreshSegmentViews: vi.fn(async () => {}),
+        }),
+      { wrapper: RouterWrapper }
+    );
+
+    await waitFor(() => {
+      expect(result.current.currentModelRun).toEqual({
+        jobId: "job-model",
+        status: "PENDING",
+        sourceModel: "omniem:mito",
+        adapterId: null,
+      });
+    });
   });
 });
 

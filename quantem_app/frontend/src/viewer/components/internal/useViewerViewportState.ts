@@ -10,6 +10,10 @@ import {
   oneToOneZoom,
 } from "@/viewer/components/internal/viewerMath";
 
+const VIEWER_ZOOM_STEP = 1.25;
+const MIN_VIEWER_ZOOM = 0.05;
+const MAX_VIEWER_ZOOM = 200;
+
 export function useViewerViewportState(config: {
   viewportState?: ViewportState;
   initialViewport?: ViewportState;
@@ -211,6 +215,22 @@ export function useViewerViewportState(config: {
     );
   }, [effectiveViewport, resolvedImageWidth, setViewport]);
 
+  /** Zoom around the current centre in small, predictable button-sized steps. */
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const nextZoom = Math.max(
+        MIN_VIEWER_ZOOM,
+        Math.min(MAX_VIEWER_ZOOM, effectiveViewport.zoom * factor)
+      );
+      if (nextZoom === effectiveViewport.zoom) return;
+      setViewport({ ...effectiveViewport, zoom: nextZoom }, true);
+    },
+    [effectiveViewport, setViewport]
+  );
+
+  const zoomIn = useCallback(() => zoomBy(VIEWER_ZOOM_STEP), [zoomBy]);
+  const zoomOut = useCallback(() => zoomBy(1 / VIEWER_ZOOM_STEP), [zoomBy]);
+
   /** Back to the view this image opened at. */
   const resetView = useCallback(() => {
     const opening = openingViewportRef.current;
@@ -238,6 +258,8 @@ export function useViewerViewportState(config: {
     deckViewState,
     fitImage,
     zoomOneToOne,
+    zoomIn,
+    zoomOut,
     resetView,
   };
 }

@@ -29,7 +29,7 @@ function isGroupActionMode(
 }
 
 const DEFAULT_CORRECTION_MODE: CorrectionModeState = {
-  reviewPhase: "model",
+  reviewPhase: "correction",
   correctionTool: "draw",
 };
 
@@ -66,7 +66,7 @@ export function useReviewModeState({
             ? "completed_roi"
             : correctionMode.correctionTool === "add"
               ? "add"
-              : // The polygon tool drives clicks through the router's erPolygon
+              : // The polygon tool drives clicks through the router's object-polygon
                 // slot, so it stays in an inert "hover" leftMode (brush/draw off).
                 "hover";
     if (leftMode !== nextMode) {

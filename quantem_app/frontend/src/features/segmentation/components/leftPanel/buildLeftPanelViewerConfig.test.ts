@@ -104,11 +104,10 @@ describe("buildLeftPanelViewerConfig", () => {
     });
   });
 
-  it("keeps clicks live and forces brush/draw/pan off during ROI placement", () => {
+  it("keeps Navigate exclusive while ROI placement remains armed", () => {
     const props = makeLeftPanelProps({
       workflow: {
         ...makeLeftPanelProps().workflow,
-        // Even with navigate mode on and a brush tool selected, placement wins.
         mode: "review",
         reviewPhase: "correction",
         correctionTool: "draw",
@@ -123,12 +122,35 @@ describe("buildLeftPanelViewerConfig", () => {
       overlayScene: { persistent: [], transient: [] },
     });
 
+    expect(viewerProps.interactions?.mode).toBe("navigate");
+    expect(viewerProps.interactions?.onImageClick).toBeUndefined();
+    expect(viewerProps.interactions?.onImagePress).toBeUndefined();
+    expect(viewerProps.interactions?.onImageDrag).toBeUndefined();
+    expect(viewerProps.interactions?.onImageRelease).toBeUndefined();
+    expect(viewerProps.interactions?.brush?.enabled).toBe(false);
+    expect(viewerProps.interactions?.draw?.enabled).toBe(false);
+    expect(viewerProps.viewport?.disablePan).toBe(false);
+  });
+
+  it("routes ROI placement and disables pan after Navigate is turned off", () => {
+    const props = makeLeftPanelProps({
+      workflow: {
+        ...makeLeftPanelProps().workflow,
+        navigateMode: false,
+        roiPlacementActive: true,
+      },
+    });
+
+    const viewerProps = buildLeftPanelViewerConfig({
+      ...props,
+      overlayScene: { persistent: [], transient: [] },
+    });
+
+    expect(viewerProps.interactions?.mode).toBeUndefined();
     expect(viewerProps.interactions?.onImageClick).toBe(props.segments.onClick);
     expect(viewerProps.interactions?.onImagePress).toBe(props.segments.onPress);
     expect(viewerProps.interactions?.onImageDrag).toBe(props.segments.onDrag);
     expect(viewerProps.interactions?.onImageRelease).toBe(props.segments.onRelease);
-    expect(viewerProps.interactions?.brush?.enabled).toBe(false);
-    expect(viewerProps.interactions?.draw?.enabled).toBe(false);
     expect(viewerProps.viewport?.disablePan).toBe(true);
   });
 

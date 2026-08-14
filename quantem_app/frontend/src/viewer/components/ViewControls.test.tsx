@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ScaleBar } from "@/viewer/components/ScaleBar";
 import { ViewControls } from "@/viewer/components/ViewControls";
+import { ZoomControls } from "@/viewer/components/ZoomControls";
 import { buildMetrics } from "@/viewer/components/internal/viewerMath";
 
 describe("ViewControls", () => {
@@ -27,6 +28,20 @@ describe("ViewControls", () => {
     expect(onFit).toHaveBeenCalledTimes(1);
     expect(onOneToOne).toHaveBeenCalledTimes(1);
     expect(onReset).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ZoomControls", () => {
+  it("offers compact zoom-out and zoom-in actions", async () => {
+    const onZoomOut = vi.fn();
+    const onZoomIn = vi.fn();
+    render(<ZoomControls onZoomOut={onZoomOut} onZoomIn={onZoomIn} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Zoom out" }));
+    await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+
+    expect(onZoomOut).toHaveBeenCalledTimes(1);
+    expect(onZoomIn).toHaveBeenCalledTimes(1);
   });
 });
 

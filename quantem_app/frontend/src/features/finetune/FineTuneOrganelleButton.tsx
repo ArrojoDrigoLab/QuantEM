@@ -17,16 +17,22 @@ import { useEffect, useState } from "react";
 import { previewFineTuneScope } from "@/shared/api/finetune";
 import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
 import type { AssetDetail, ImageSegmentation } from "@/shared/types";
+import type { FineTuneAppliedImageEvent } from "@/shared/types/finetune";
 import "./FineTuneOrganelleButton.css";
 
 export function FineTuneOrganelleButton({
   image,
   currentSegmentation,
   eligibilityRevision = "",
+  initialBaseModel = null,
+  onAppliedImageCompleted,
 }: {
   image: AssetDetail;
   currentSegmentation: ImageSegmentation | null;
   eligibilityRevision?: string;
+  /** Released pack currently selected in the labeling header. */
+  initialBaseModel?: string | null;
+  onAppliedImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [annotationCount, setAnnotationCount] = useState<number | null>(null);
@@ -85,6 +91,10 @@ export function FineTuneOrganelleButton({
         onClose={() => setOpen(false)}
         segmentationType={currentSegmentation?.segmentation_type ?? null}
         initialAssetIds={[image.id]}
+        initialBaseModel={initialBaseModel}
+        segmentationId={currentSegmentation?.id ?? null}
+        onAppliedImageCompleted={onAppliedImageCompleted}
+        onAppliedImageQueued={onAppliedImageCompleted}
       />
     </>
   );

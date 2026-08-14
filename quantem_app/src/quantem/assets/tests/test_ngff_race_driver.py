@@ -413,21 +413,22 @@ def mode_kill_debris(kills: str, workdir: str) -> dict:
     published_ok = isinstance(resolved, PublishedPyramid)
     published = resolved.generation_id if published_ok else None
     after_startup_sweep = sorted(child.name for child in root.iterdir())
-    # What is left after the startup pass must be *only* generations that were
-    # sealed and published at some point and are still inside their drain
-    # window -- readers may be in them. Anything a kill interrupted mid-build is
-    # unsealed, and must already be gone.
-    unsealed_left = []
+    # What is left after the startup pass must be *only* a sealed generation
+    # still inside its reader drain window or an ownerless root inside the
+    # deliberate five-second mkdir-to-owner grace window. An owner-tagged build
+    # that a kill interrupted must already be gone.
+    owned_unsealed_left = []
+    unowned_left = []
     for name in after_startup_sweep:
         if name == published:
             continue
         owner = _read_owner_json(root / name)
-        # No owner.json at all means the kill landed between mkdir and the
-        # first write. The sweeper leaves those for a five-second grace so it
-        # cannot delete a directory another process is about to claim, so they
-        # count here too -- the second pass has to have taken them.
-        if owner is None or not owner.get("sealed"):
-            unsealed_left.append(name)
+        # A missing owner means the kill landed between mkdir and the first
+        # write. The second pass below must take it after the grace expires.
+        if owner is None:
+            unowned_left.append(name)
+        elif not owner.get("sealed"):
+            owned_unsealed_left.append(name)
 
     # Now let the drain window elapse for every superseded generation and sweep
     # again: the second rule, on its own.
@@ -454,7 +455,8 @@ def mode_kill_debris(kills: str, workdir: str) -> dict:
             "kept": swept.kept,
         },
         "after_startup_sweep": after_startup_sweep,
-        "unsealed_left_after_startup_sweep": unsealed_left,
+        "owned_unsealed_left_after_startup_sweep": owned_unsealed_left,
+        "unowned_left_after_startup_sweep": unowned_left,
         "drained": {
             "removed": drained.removed,
             "bytes_freed": drained.bytes_freed,

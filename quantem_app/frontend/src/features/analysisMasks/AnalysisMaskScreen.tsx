@@ -486,6 +486,7 @@ export function AnalysisMaskScreen() {
               idMapOverlays: existingMaskOverlays.viewerIdMapOverlays,
             }}
             interactions={{
+              mode: navigateMode ? "navigate" : undefined,
               onImageClick:
                 tool === "polygon" && !navigateMode
                   ? polygon.handlePolygonClick

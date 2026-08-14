@@ -28,6 +28,8 @@ interface SubmitConfirmedGeometriesOptions {
 interface UseErPolygonWorkflowArgs {
   currentSegmentation: ImageSegmentation | null;
   active: boolean;
+  /** ER unions overlapping confirmed areas; other object types remain separate. */
+  mergeOverlaps: boolean;
   isPointInsideImageBounds: (point: Point) => boolean;
   registerAnnotationActivity: () => void;
   showErrorToast: (message: string) => void;
@@ -40,20 +42,21 @@ interface UseErPolygonWorkflowArgs {
 }
 
 /**
- * ER Correct-mode polygon tool.
+ * Correct-mode object polygon tool.
  *
  * Reuses the same vertex-click + `R`-to-close interaction as the Confirmed-Area
  * tool ({@link useCompletedRoiWorkflow} + the `draftGeometry` utils): a click
  * starts a section, a second click ends it, sections auto-connect, and closing
  * the polygon joins the first/last ends. The difference is the commit target --
  * instead of saving a confirmed-area mask, the closed ring is committed as a
- * filled, CONFIRMED manual ER object via the same union path Draw's "Confirm
- * Drawn Area" uses (`submitConfirmedGeometriesOptimistically` with
- * `mergeOverlaps: true`), so it fuses into overlapping confirmed objects.
+ * filled, CONFIRMED manual object via the same path Draw's "Confirm Drawn Area"
+ * uses. ER shapes fuse into overlapping confirmed objects; other organelles
+ * keep the normal split-object behavior.
  */
 export function useErPolygonWorkflow({
   currentSegmentation,
   active,
+  mergeOverlaps,
   isPointInsideImageBounds,
   registerAnnotationActivity,
   showErrorToast,
@@ -240,12 +243,10 @@ export function useErPolygonWorkflow({
     registerAnnotationActivity();
     setSubmitting(true);
     try {
-      // ER fuses a drawn shape into overlapping confirmed objects (union path),
-      // the same commit Draw's "Confirm Drawn Area" uses.
       const response = await submitConfirmedGeometriesOptimistically({
         geometries: [confirmPolygons[0]],
         operations: [draftOperation],
-        mergeOverlaps: true,
+        mergeOverlaps,
         manualCreation: true,
       });
       clearDraft();
@@ -268,6 +269,7 @@ export function useErPolygonWorkflow({
     clearDraft,
     currentSegmentation,
     draftOperation,
+    mergeOverlaps,
     nextId,
     registerAnnotationActivity,
     showErrorToast,

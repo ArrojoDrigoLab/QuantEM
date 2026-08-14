@@ -44,15 +44,22 @@ export interface AppliedAdapterState {
 export function appliedAdapterState(
   catalogue: ModelCatalogue | null | undefined,
   segmentationId: string | null | undefined,
-  selectedSourceModel: string | null | undefined
+  selectedSourceModel: string | null | undefined,
+  selectedAdapterId?: string | null
 ): AppliedAdapterState | null {
   if (!catalogue || !segmentationId) return null;
 
+  const selectedAdapter = selectedAdapterId
+    ? catalogue.adapted.find(
+        (entry) => entry.id === `adapted:${selectedAdapterId}` || entry.id === selectedAdapterId
+      ) ?? null
+    : null;
   const applied = catalogue.adapted
     .filter(
       (entry) =>
         Boolean(entry.applied_at) &&
         (entry.segmentation_id === segmentationId ||
+          entry.applied_segmentation_ids?.includes(segmentationId) ||
           entry.segmentation_ids?.includes(segmentationId))
     )
     // `active_adapter_for` orders by `-applied_at`, so the most recently
@@ -60,7 +67,7 @@ export function appliedAdapterState(
     .sort((left, right) =>
       String(right.applied_at ?? "").localeCompare(String(left.applied_at ?? ""))
     );
-  const adapter = applied[0];
+  const adapter = selectedAdapter ?? applied[0];
   if (!adapter) return null;
 
   const basePack = catalogue.packs.find((pack) => pack.id === adapter.base);

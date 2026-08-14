@@ -407,14 +407,15 @@ class ImportAssignmentTests(TestCase):
         payload.update(extra)
         return self.client.post("/api/assets/upload/", payload, format="multipart")
 
-    def test_an_import_that_names_nothing_gets_a_display_name_experiment(self):
+    def test_an_import_that_names_nothing_gets_an_experiment_and_default_dataset(self):
         response = self._upload()
 
         self.assertEqual(response.status_code, 201, response.data)
         self.assertIsNotNone(response.data["experiment_id"])
         self.assertEqual(response.data["experiment_name"], "Scan 1")
-        self.assertEqual(response.data["dataset_ids"], [])
+        self.assertEqual(response.data["dataset_names"], ["Dataset 1"])
         self.assertEqual(Experiment.objects.count(), 1)
+        self.assertEqual(Dataset.objects.count(), 1)
 
     def test_a_typed_experiment_and_dataset_are_created_and_attached(self):
         response = self._upload(experiment_name="Fasted cohort", dataset_name="Liver 24h")
@@ -443,6 +444,17 @@ class ImportAssignmentTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["experiment_id"], str(experiment.id))
+        self.assertEqual(response.data["dataset_names"], ["Dataset 1"])
+
+    def test_an_omitted_dataset_uses_the_next_free_default_name(self):
+        experiment = Experiment.objects.create(name="Fasted cohort")
+        Dataset.objects.create(experiment=experiment, name="Dataset 1")
+        Dataset.objects.create(experiment=experiment, name="Dataset 2")
+
+        response = self._upload(experiment_id=str(experiment.id))
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["dataset_names"], ["Dataset 3"])
 
     def test_a_dataset_with_no_experiment_is_refused_before_anything_is_imported(self):
         response = self._upload(dataset_name="Liver 24h")

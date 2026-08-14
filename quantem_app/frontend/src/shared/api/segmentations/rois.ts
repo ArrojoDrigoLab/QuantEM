@@ -6,6 +6,7 @@ import type {
   ActivateSegmentationRoiResponse,
   MarkRoiCompleteResponse,
   RerunSegmentationRoiResponse,
+  RoiCompletionResponse,
   SegmentationConfigResponse,
   SegmentObject,
   SegmentationRoi,
@@ -73,8 +74,8 @@ export function setRoiCompleteForSegmentation(
   segmentationId: string,
   roiId: string,
   isComplete: boolean
-): Promise<SegmentationRoi> {
-  return apiRequest<SegmentationRoi>(
+): Promise<RoiCompletionResponse> {
+  return apiRequest<RoiCompletionResponse>(
     `/api/segmentations/${segmentationId}/roi/${roiId}/complete`,
     { method: isComplete ? "POST" : "DELETE" }
   );
@@ -83,7 +84,8 @@ export function setRoiCompleteForSegmentation(
 export function rerunSegmentationRoi(
   segmentationId: string,
   roiId?: string | null,
-  sourceModel?: string | null
+  sourceModel?: string | null,
+  adapterId?: string | null
 ): Promise<RerunSegmentationRoiResponse> {
   return apiRequest<RerunSegmentationRoiResponse>(
     `/api/segmentations/${segmentationId}/rerun-roi/`,
@@ -92,6 +94,7 @@ export function rerunSegmentationRoi(
       body: JSON.stringify({
         ...(roiId ? { roi_id: roiId } : {}),
         ...(sourceModel ? { source_model: sourceModel } : {}),
+        ...(adapterId ? { adapter_id: adapterId } : {}),
       }),
     }
   );

@@ -88,7 +88,7 @@ export function AssetRoute() {
         {/* Nothing has rendered a header yet, so this one is on its own and has
             nothing to overlap. */}
         <button className="back-button" onClick={handleBack} type="button">
-          ← Back to Library
+          ← Back to Home
         </button>
         <div className="loading">Loading...</div>
       </div>

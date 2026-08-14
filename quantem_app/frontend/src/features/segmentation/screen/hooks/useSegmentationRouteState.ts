@@ -18,9 +18,11 @@ import {
   STATUS_POLL_MS,
 } from "@/features/segmentation/screen/utils/constants";
 import {
-  defaultSourceModel,
-  rememberSourceModel,
-} from "@/features/segmentation/screen/utils/sourceModelMemory";
+  buildLabelingModelOptions,
+  defaultLabelingModel,
+  resolveLabelingModel,
+} from "@/features/models/labelingModelOptions";
+import type { ModelCatalogue } from "@/shared/types/finetune";
 
 function normalizeSegmentationName(name: string): string {
   return name
@@ -39,7 +41,10 @@ function formatStage(stage: string, progress: number) {
   return `${stage} (${Math.round(progress)}%)`;
 }
 
-export function useSegmentationRouteState() {
+export function useSegmentationRouteState(
+  modelCatalogue: ModelCatalogue | null = null,
+  modelCatalogueLoading = false
+) {
   const navigate = useNavigate();
   const { segmentationTypeName } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -156,24 +161,75 @@ export function useSegmentationRouteState() {
     [currentSegmentation]
   );
   const sourceModelQueryParam = searchParams.get("source_model")?.trim() || null;
+  const adapterQueryParam = searchParams.get("adapter_id")?.trim() || null;
   const autoRunRequested = searchParams.get("run_model") === "1";
-  const activeSourceModel = useMemo(() => {
-    if (sourceModelOptions.length === 0) return null;
-    // "none" is a synthetic selection (not a real backend source model). The
-    // backend filter treats an unrecognized source model as "confirmed/manual
-    // only", so the left pane shows no model-derived candidates.
-    if (sourceModelQueryParam === "none") return "none";
-    if (
-      sourceModelQueryParam &&
-      sourceModelOptions.some((option) => option.value === sourceModelQueryParam)
-    ) {
+  const modelOptions = useMemo(
+    () => {
+      const options = buildLabelingModelOptions(
+        sourceModelOptions,
+        modelCatalogue,
+        currentSegmentationId
+      );
+      if (!adapterQueryParam) return options;
+      const value = adapterQueryParam.startsWith("adapted:")
+        ? adapterQueryParam
+        : `adapted:${adapterQueryParam}`;
+      if (options.some((option) => option.value === value)) return options;
+      const base = options.find(
+        (option) => option.value === sourceModelQueryParam && option.packId !== null
+      );
+      if (!base) return options;
+      return [
+        ...options,
+        {
+          value,
+          label: "Fine-tuned model",
+          sourceModel: base.sourceModel,
+          adapterId: adapterQueryParam.replace(/^adapted:/, ""),
+          packId: base.packId,
+          adapted: null,
+        },
+      ];
+    },
+    [
+      adapterQueryParam,
+      currentSegmentationId,
+      modelCatalogue,
+      sourceModelOptions,
+      sourceModelQueryParam,
+    ]
+  );
+  const activeModelValue = useMemo(() => {
+    const requestedAdapter = adapterQueryParam
+      ? adapterQueryParam.startsWith("adapted:")
+        ? adapterQueryParam
+        : `adapted:${adapterQueryParam}`
+      : null;
+    if (requestedAdapter && resolveLabelingModel(modelOptions, requestedAdapter)) {
+      return requestedAdapter;
+    }
+    if (sourceModelQueryParam === "none") return "manual";
+    if (sourceModelQueryParam && resolveLabelingModel(modelOptions, sourceModelQueryParam)) {
       return sourceModelQueryParam;
     }
-    // No usable URL param: follow the objects, not `is_default`. The catalogue
-    // default is QuantEM on every organelle, so a reopened screen used to show
-    // "No objects from QuantEM yet" while every candidate sat under OmniEM.
-    return defaultSourceModel(sourceModelOptions, currentSegmentationId);
-  }, [currentSegmentationId, sourceModelOptions, sourceModelQueryParam]);
+    return defaultLabelingModel(
+      modelOptions,
+      modelCatalogue,
+      currentSegmentationId
+    );
+  }, [
+    adapterQueryParam,
+    currentSegmentationId,
+    modelCatalogue,
+    modelOptions,
+    sourceModelQueryParam,
+  ]);
+  const activeModelOption = useMemo(
+    () => resolveLabelingModel(modelOptions, activeModelValue),
+    [activeModelValue, modelOptions]
+  );
+  const activeSourceModel = activeModelOption?.sourceModel ?? null;
+  const activeAdapterId = activeModelOption?.adapterId ?? null;
   const currentInstanceParams = useMemo(
     () => currentSegmentation?.config?.instance_params ?? null,
     [currentSegmentation]
@@ -195,21 +251,27 @@ export function useSegmentationRouteState() {
     navigate("/");
   }, [clearSelection, navigate]);
 
-  const handleSourceModelChange = useCallback(
-    (sourceModel: string) => {
-      // An explicit toggle is the one signal worth remembering: next time
-      // this segmentation opens with no URL param and no single owner of the
-      // objects, this choice is the default.
-      rememberSourceModel(currentSegmentationId, sourceModel);
+  const handleModelChange = useCallback(
+    (modelValue: string) => {
+      const selected = resolveLabelingModel(modelOptions, modelValue);
+      if (!selected) return;
       const next = new URLSearchParams(searchParams);
-      if (sourceModel) {
-        next.set("source_model", sourceModel);
-      } else {
-        next.delete("source_model");
-      }
+      next.set("source_model", selected.sourceModel);
+      if (selected.adapterId) next.set("adapter_id", selected.adapterId);
+      else next.delete("adapter_id");
       setSearchParams(next, { replace: true });
     },
-    [currentSegmentationId, searchParams, setSearchParams]
+    [modelOptions, searchParams, setSearchParams]
+  );
+  const handleAdapterSelection = useCallback(
+    (adapterId: string, sourceModel: string) => {
+      if (!adapterId || !sourceModel) return;
+      const next = new URLSearchParams(searchParams);
+      next.set("source_model", sourceModel);
+      next.set("adapter_id", adapterId);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
   );
 
   const consumeAutoRunRequest = useCallback(() => {
@@ -280,11 +342,29 @@ export function useSegmentationRouteState() {
   ]);
 
   useEffect(() => {
-    if (!activeSourceModel || sourceModelQueryParam === activeSourceModel) return;
+    if (modelCatalogueLoading || !activeModelOption) return;
+    if (
+      sourceModelQueryParam === activeModelOption.sourceModel &&
+      (adapterQueryParam ?? null) === (activeModelOption.adapterId ?? null)
+    ) {
+      return;
+    }
     const next = new URLSearchParams(searchParams);
-    next.set("source_model", activeSourceModel);
+    next.set("source_model", activeModelOption.sourceModel);
+    if (activeModelOption.adapterId) {
+      next.set("adapter_id", activeModelOption.adapterId);
+    } else {
+      next.delete("adapter_id");
+    }
     setSearchParams(next, { replace: true });
-  }, [activeSourceModel, searchParams, setSearchParams, sourceModelQueryParam]);
+  }, [
+    activeModelOption,
+    adapterQueryParam,
+    modelCatalogueLoading,
+    searchParams,
+    setSearchParams,
+    sourceModelQueryParam,
+  ]);
 
   const preprocessReady =
     image?.preprocess_stage === "DONE" ||
@@ -319,10 +399,16 @@ export function useSegmentationRouteState() {
     supportsInstanceParams,
     currentInstanceParams,
     sourceModelOptions,
+    modelOptions,
+    activeModelValue,
+    activeModelOption,
     activeSourceModel,
+    activeAdapterId,
     autoRunRequested,
     consumeAutoRunRequest,
-    handleSourceModelChange,
+    handleModelChange,
+    handleAdapterSelection,
+    handleSourceModelChange: handleModelChange,
     viewport,
     publishFromViewer,
     useSmoothedSegmentGeometry,

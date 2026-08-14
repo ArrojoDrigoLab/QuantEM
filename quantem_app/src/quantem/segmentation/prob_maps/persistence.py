@@ -462,6 +462,7 @@ class StoredMapReadiness:
 
     status: str
     detail: str = ""
+    metadata: dict[str, object] | None = None
 
     @property
     def ready(self) -> bool:
@@ -511,8 +512,12 @@ def stored_map_readiness(
         metadata = dict(record.metadata)
 
     if replay_provenance_problem(metadata) is not None:
-        return StoredMapReadiness(REPLAY_FROM_OLDER_BUILD, LEGACY_MAP_MESSAGE)
-    return StoredMapReadiness(REPLAY_READY)
+        return StoredMapReadiness(
+            REPLAY_FROM_OLDER_BUILD,
+            LEGACY_MAP_MESSAGE,
+            metadata,
+        )
+    return StoredMapReadiness(REPLAY_READY, metadata=metadata)
 
 
 def _roi_window(metadata: dict[str, object]) -> dict[str, int] | None:

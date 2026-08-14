@@ -166,6 +166,36 @@
   white-space: nowrap;
 }
 
+.er-roi-downstream-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #475569;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.er-roi-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #cbd5e1;
+  border-top-color: #0e7490;
+  border-radius: 999px;
+  animation: er-roi-spin 0.7s linear infinite;
+}
+
+@keyframes er-roi-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .er-roi-spinner {
+    animation: none;
+  }
+}
+
 .er-roi-delete-button {
   padding: 2px;
   border: none;

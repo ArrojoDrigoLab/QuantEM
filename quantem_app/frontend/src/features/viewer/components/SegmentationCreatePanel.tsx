@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useApiMutation } from "@/shared/hooks/useApiMutation";
 import { createAssetSegmentation, getSegmentationTypes } from "@/shared/api/assets";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
@@ -6,7 +6,6 @@ import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useModelCatalogue } from "@/features/models/useModelCatalogue";
 import { packRunnability } from "@/features/models/runnable";
 import { ModelAvailabilityIcon } from "@/features/models/ModelAvailabilityIcon";
-import { DEFAULT_PACK_FOR_ORGANELLE } from "@/features/models/scaleMismatch";
 import type { ModelCatalogue, ModelPack } from "@/shared/types/finetune";
 import type {
   ImageSegmentation,
@@ -79,8 +78,8 @@ interface ModelChoice {
 }
 
 const MODEL_FAMILIES = [
-  { id: "quantem", label: "QuantEM" },
-  { id: "omniem", label: "OmniEM" },
+  { id: "quantem", label: "QuantEM (basic model)" },
+  { id: "omniem", label: "OmniEM (large model)" },
 ] as const;
 
 function packsForOrganelle(
@@ -97,33 +96,25 @@ function packsForOrganelle(
   });
 }
 
-/**
- * The pack the dialog preselects: the default family unless it is *known*
- * blocked and another family's pack is known runnable.
- *
- * This is the paper-cut: on a machine with only OmniEM — Mitochondria
- * installed, "Create Mitochondria" led with "quantem:mito cannot run on this
- * machine — Create anyway", never mentioning the installed model one select
- * away on the labeling screen. An unknown runnability changes nothing: the
- * default stays selected rather than being second-guessed.
- */
+/** Prefer the sole downloaded model; otherwise use OmniEM. */
 function preferredPackId(
   catalogue: ModelCatalogue | null,
   organelleId: string
 ): string | null {
-  const defaultId = DEFAULT_PACK_FOR_ORGANELLE[organelleId] ?? null;
   const candidates = packsForOrganelle(catalogue, organelleId);
-  const defaultChoice = candidates.find((choice) => choice.id === defaultId);
-  if (!catalogue) return defaultChoice?.id ?? candidates[0]?.id ?? null;
-  if (
-    defaultChoice?.pack &&
-    packRunnability(defaultChoice.pack).state !== "blocked"
-  ) return defaultChoice.id;
-  const usableAlternative = candidates.find(
-    (choice) =>
-      choice.pack && packRunnability(choice.pack).state !== "blocked"
+  const downloaded = candidates.filter((choice) => choice.pack?.installed === true);
+  const usableDownloaded = downloaded.filter(
+    (choice) => choice.pack && packRunnability(choice.pack).state !== "blocked"
   );
-  return usableAlternative?.id ?? null;
+  if (downloaded.length === 1) return usableDownloaded[0]?.id ?? null;
+
+  const omniem = candidates.find((choice) => choice.id === `omniem:${organelleId}`);
+  const omniemBlocked = Boolean(
+    omniem?.pack?.installed === true &&
+      packRunnability(omniem.pack).state === "blocked"
+  );
+  if (!omniemBlocked) return omniem?.id ?? null;
+  return usableDownloaded[0]?.id ?? null;
 }
 
 export function SegmentationCreatePanel({
@@ -144,6 +135,7 @@ export function SegmentationCreatePanel({
   // The exact model/manual choice captured when the dialog opens. `null` only
   // exists while no organelle dialog is open.
   const [pendingPackChoice, setPendingPackChoice] = useState<string | null>(null);
+  const [pendingPackChoiceTouched, setPendingPackChoiceTouched] = useState(false);
   const { catalogue } = useModelCatalogue();
   const { data: segmentationTypes } = useApiQuery(getSegmentationTypes, []);
 
@@ -223,11 +215,10 @@ export function SegmentationCreatePanel({
     [createSegmentation, onCreated]
   );
 
-  /** Open the organelle confirmation with a stable model/manual default. */
+  /** Open the organelle confirmation with its availability-based default. */
   const requestCreate = useCallback(
     (option: QuickSegmentationOption) => {
-      // Capture the default now. A catalogue response that arrives while the
-      // dialog is open must not silently turn a manual choice into a model run.
+      setPendingPackChoiceTouched(false);
       setPendingPackChoice(
         preferredPackId(catalogue, option.id) ?? MANUAL_CHOICE
       );
@@ -235,6 +226,15 @@ export function SegmentationCreatePanel({
     },
     [catalogue]
   );
+
+  // Re-resolve the default if catalogue data arrives after the dialog opens,
+  // but never overwrite an explicit user choice.
+  useEffect(() => {
+    if (!pendingOption || pendingPackChoiceTouched) return;
+    setPendingPackChoice(
+      preferredPackId(catalogue, pendingOption.id) ?? MANUAL_CHOICE
+    );
+  }, [catalogue, pendingOption, pendingPackChoiceTouched]);
 
   // Manual plus both released families are always present. Catalogue state
   // changes only the icon and whether a genuinely incompatible installed pack
@@ -295,7 +295,10 @@ export function SegmentationCreatePanel({
                   name="create-source-model"
                   value={MANUAL_CHOICE}
                   checked={pendingChoice === MANUAL_CHOICE}
-                  onChange={() => setPendingPackChoice(MANUAL_CHOICE)}
+                  onChange={() => {
+                    setPendingPackChoiceTouched(true);
+                    setPendingPackChoice(MANUAL_CHOICE);
+                  }}
                 />
                 <span>Manual segmentation</span>
                 <span className="segmentation-create-manual-icon" aria-hidden>
@@ -317,7 +320,10 @@ export function SegmentationCreatePanel({
                       value={choice.id}
                       checked={pendingChoice === choice.id}
                       disabled={blocked}
-                      onChange={() => setPendingPackChoice(choice.id)}
+                      onChange={() => {
+                        setPendingPackChoiceTouched(true);
+                        setPendingPackChoice(choice.id);
+                      }}
                     />
                     <span>{choice.label}</span>
                     <ModelAvailabilityIcon pack={choice.pack} />
@@ -327,8 +333,8 @@ export function SegmentationCreatePanel({
             </div>
             {pendingChoice !== MANUAL_CHOICE ? (
               <p>
-                The selected model will run on all tiles. If it is not already
-                downloaded, downloading it is the first progress step.
+                The selected model will run on all tiles. Larger models may be
+                more accurate, but take longer to run.
               </p>
             ) : null}
             {pendingChoice !== MANUAL_CHOICE &&

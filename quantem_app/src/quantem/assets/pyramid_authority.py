@@ -384,7 +384,7 @@ def boot_id() -> str:
         return f"boot-{int((time.time() - time.monotonic()) // 60)}"
 
 
-def _pid_is_this_app(pid: int) -> bool:
+def _pid_is_this_app(pid: int, *, owner_started_at: float | None = None) -> bool:
     """True when ``pid`` is alive *and* is a QuantEM process.
 
     Never a name-based sweep in the other direction: this only ever decides
@@ -395,6 +395,8 @@ def _pid_is_this_app(pid: int) -> bool:
         import psutil  # noqa: PLC0415
 
         process = psutil.Process(int(pid))
+        if owner_started_at is not None and process.create_time() > owner_started_at:
+            return False
         name = (process.name() or "").lower()
         if "python" in name or "quantem" in name:
             return True
@@ -529,7 +531,9 @@ def _owner_is_gone(root: Path, owner: dict) -> bool:
                 lock.unlink()
             return True
     pid = owner.get("pid")
-    return not isinstance(pid, int) or not _pid_is_this_app(pid)
+    started_at = owner.get("started_at")
+    owner_started_at = float(started_at) if isinstance(started_at, (int, float)) else None
+    return not isinstance(pid, int) or not _pid_is_this_app(pid, owner_started_at=owner_started_at)
 
 
 def _write_owner(root: Path, ticket_fields: dict) -> None:

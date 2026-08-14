@@ -2,12 +2,17 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1 1 100%;
+  inline-size: 100%;
+  min-inline-size: 0;
 }
 
 .sam-box-tool-detail {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  inline-size: 100%;
+  min-inline-size: 0;
 }
 
 .sam-box-tool-hint {
@@ -15,6 +20,8 @@
   font-size: 11px;
   line-height: 1.4;
   opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .sam-box-tool-error {
@@ -28,13 +35,21 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  inline-size: 100%;
+  min-inline-size: 0;
 }
 
 .sam-box-tool-progress {
-  width: 100%;
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 0;
   height: 6px;
+  box-sizing: border-box;
+  flex: none;
 }
 
 .sam-box-tool-download {
   align-self: flex-start;
+  inline-size: 7.5rem;
+  justify-content: center;
 }

@@ -22,6 +22,12 @@ export interface SegmentOverlay {
   strokeColor: string;
   strokeOpacity: number;
   strokeWidth?: number;
+  /**
+   * Whether strokeWidth is measured in fixed screen pixels or image pixels.
+   * Overlay outlines default to screen pixels; brush marks use image pixels so
+   * their preview covers exactly the pixels that will be committed.
+   */
+  strokeWidthUnits?: "screen" | "image";
   /** SVG dash pattern, for example "8 6". Omitted for a solid outline. */
   strokeDasharray?: string;
   shape?: "polygon" | "polyline";

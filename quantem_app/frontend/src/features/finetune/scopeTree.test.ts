@@ -17,6 +17,7 @@ import {
   selectionKey,
   selectionTotals,
   setDatasetSelected,
+  setDatasetImageSelected,
   setGroupSelected,
   setImageSelected,
   toSelectionPayload,
@@ -108,6 +109,27 @@ describe("features/finetune/scopeTree", () => {
     expect(selectionTotals(tree, selection).annotationCount).toBe(7);
     // And the image still reads as selected, because it is.
     expect(isImageSelected(selection, "img-1", "ds-liver")).toBe(true);
+  });
+
+  it("expands a selected dataset when one child image is unchecked", () => {
+    const tree = buildScopeTree(SCOPE);
+    const dataset = tree[0].datasets[0];
+    const selected = setDatasetSelected(emptySelection(), dataset, true);
+
+    const withoutFirst = setDatasetImageSelected(
+      selected,
+      dataset,
+      "img-1",
+      false
+    );
+
+    expect(withoutFirst.datasetIds.has("ds-liver")).toBe(false);
+    expect(withoutFirst.assetIds.has("img-1")).toBe(false);
+    expect(withoutFirst.assetIds.size).toBe(9);
+    expect(selectionTotals(tree, withoutFirst)).toEqual({
+      annotationCount: 4,
+      imageCount: 9,
+    });
   });
 
   it("selects and clears a whole experiment", () => {

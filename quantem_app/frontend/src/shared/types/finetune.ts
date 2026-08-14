@@ -99,7 +99,13 @@ export interface AdaptedModelEntry {
   segmentation_id?: string | null;
   /** Every labeling view this named fine-tune was explicitly applied to. */
   segmentation_ids?: string[];
+  /** Labeling views included in the fine-tune's saved scope. */
+  scope_segmentation_ids?: string[];
+  /** Labeling views on which the fine-tune was explicitly run. */
+  applied_segmentation_ids?: string[];
   applied_at?: string | null;
+  /** Latest successful inference for this fine-tune on each labeling view. */
+  last_run_at_by_segmentation?: Record<string, string>;
 }
 
 export interface DeviceInfo {
@@ -431,6 +437,8 @@ export interface FineTuneRunPayload {
   dataset_ids: string[];
   mode: FineTuneMode;
   cv_benchmark: boolean;
+  /** Labeling-view origin, when the dialog was opened beside one segmentation. */
+  segmentation_id?: string;
 }
 
 export interface FineTuneRunResponse {
@@ -528,6 +536,8 @@ export interface FineTuneAdapterSummary {
   created_at: string;
   experiment: FineTuneExperimentRef | string | null;
   asset_count: number;
+  /** Exact training scope, used to match a labeling image to an overwrite target. */
+  asset_ids: string[];
 }
 
 export interface FineTuneApplyQueued {
@@ -566,6 +576,14 @@ export interface FineTuneApplyProgress {
   succeeded: number;
   failed: number;
   images: FineTuneApplyImageProgress[];
+}
+
+/** A fine-tune run that just finished for one image in the open dialog. */
+export interface FineTuneAppliedImageEvent {
+  adapterId: string;
+  baseModel: string;
+  assetId: string;
+  segmentationId: string;
 }
 
 /** The experiment's name, whichever of the two shapes §4.7 turns out to send. */

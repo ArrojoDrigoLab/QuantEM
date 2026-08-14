@@ -423,10 +423,19 @@ jobs:
           set -euo pipefail
           version="$(python desktop/scripts/verify_release_versions.py --tag "$RELEASE_TAG")"
           rm -f ../release-assets/*.payload-manifest.json
-          gh release create "$RELEASE_TAG" --draft --generate-notes
+          release_record="$RUNNER_TEMP/release.json"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > "$release_record" 2>/dev/null; then
+            echo "Reusing existing GitHub release ${RELEASE_TAG}."
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
+              -f "tag_name=${RELEASE_TAG}" \
+              -f "name=${RELEASE_TAG}" \
+              -F draft=true \
+              -F generate_release_notes=true \
+              > "$release_record"
+          fi
           release_id="$(
-            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-              --jq ".[] | select(.tag_name == \"${RELEASE_TAG}\" and .draft == true) | .id"
+            python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$release_record"
           )"
           case "$release_id" in
             ''|*[!0-9]*)
@@ -434,7 +443,7 @@ jobs:
               exit 1
               ;;
           esac
-          gh release view "$RELEASE_TAG" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
+          python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("body") or "", end="")' "$release_record" > "$RUNNER_TEMP/release-notes.md"
           python desktop/scripts/build_update_metadata.py --version "$version" --tag "$RELEASE_TAG" --assets-dir ../release-assets --notes-file "$RUNNER_TEMP/release-notes.md" --output ../release-assets/quantem-app-latest.json
           python desktop/scripts/build_release_notes.py --version "$version" --tag "$RELEASE_TAG" --generated-notes "$RUNNER_TEMP/release-notes.md" --output "$RUNNER_TEMP/public-release-notes.md"
           python -m json.tool ../release-assets/quantem-app-latest.json > /dev/null

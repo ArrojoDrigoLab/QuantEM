@@ -102,6 +102,7 @@ describe("segmentation overlay roi", () => {
     expect(overlays).toHaveLength(2);
     expect(overlays[0]?.id).toBe("roi-stroke-point");
     expect(overlays[1]?.shape).toBe("polyline");
+    expect(overlays[1]?.strokeWidthUnits).toBe("image");
   });
 
   it("builds filled draw overlays from brush strokes", () => {

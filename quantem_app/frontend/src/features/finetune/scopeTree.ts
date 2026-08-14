@@ -181,6 +181,18 @@ export function isDatasetSelected(
   return selection.datasetIds.has(datasetId);
 }
 
+/** The whole dataset is selected, either compactly or as every child image. */
+export function isDatasetFullySelected(
+  selection: ScopeSelection,
+  dataset: ScopeDatasetNode
+): boolean {
+  if (selection.datasetIds.has(dataset.id)) return true;
+  return (
+    dataset.images.length > 0 &&
+    dataset.images.every((image) => selection.assetIds.has(image.id))
+  );
+}
+
 /** An image is in scope on its own account, or because its dataset is. */
 export function isImageSelected(
   selection: ScopeSelection,
@@ -206,6 +218,7 @@ export function setDatasetSelected(
     for (const image of dataset.images) assetIds.delete(image.id);
   } else {
     datasetIds.delete(dataset.id);
+    for (const image of dataset.images) assetIds.delete(image.id);
   }
   return { datasetIds, assetIds };
 }
@@ -219,6 +232,34 @@ export function setImageSelected(
   if (on) assetIds.add(imageId);
   else assetIds.delete(imageId);
   return { datasetIds: new Set(selection.datasetIds), assetIds };
+}
+
+/**
+ * Toggle one image nested under a dataset.
+ *
+ * A dataset id means "all current children", so it cannot encode one excluded
+ * image. The first child exclusion expands that compact choice into explicit
+ * asset ids for every sibling that remains checked. This keeps the payload's
+ * dataset and asset sets disjoint while allowing the visible child boxes to be
+ * real controls instead of read-only decoration.
+ */
+export function setDatasetImageSelected(
+  selection: ScopeSelection,
+  dataset: ScopeDatasetNode,
+  imageId: string,
+  on: boolean
+): ScopeSelection {
+  if (!selection.datasetIds.has(dataset.id)) {
+    return setImageSelected(selection, imageId, on);
+  }
+  if (on) return selection;
+
+  let next = setDatasetSelected(selection, dataset, false);
+  for (const image of dataset.images) {
+    if (image.id === imageId) continue;
+    next = setImageSelected(next, image.id, true);
+  }
+  return next;
 }
 
 /** Every dataset and loose image in one group, on or off together. */
@@ -239,7 +280,7 @@ export function isGroupFullySelected(
 ): boolean {
   if (group.datasets.length === 0 && group.images.length === 0) return false;
   return (
-    group.datasets.every((dataset) => selection.datasetIds.has(dataset.id)) &&
+    group.datasets.every((dataset) => isDatasetFullySelected(selection, dataset)) &&
     group.images.every((image) => selection.assetIds.has(image.id))
   );
 }

@@ -194,7 +194,7 @@ describe("SegmentationHeader", () => {
       onToggleSegmentationComplete: onMarkDone,
     });
 
-    await user.click(screen.getByRole("button", { name: "← Back to Library" }));
+    await user.click(screen.getByRole("button", { name: "← Back to Home" }));
     // "Mark Image Done" can throw away a whole inference pass, so it goes
     // through a confirmation; see the dedicated tests below.
     await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
@@ -669,24 +669,50 @@ describe("SegmentationHeader", () => {
       trainedHead: true,
     };
 
-    it("says the run will use the fine-tuned head, and at what threshold", () => {
+    it("says the run will use the calculated threshold for this image", () => {
       renderHeader({ appliedAdapter: APPLIED });
 
       expect(screen.getByText(/Adapted model: mito @ liver_HFD2/)).toBeInTheDocument();
       expect(
         screen.getByText(
-          /Run model will use your fine-tuned head at threshold 0\.45, not the published 0\.50/
+          /Run model will use the calculated threshold of 0\.45 for this image/
         )
       ).toBeInTheDocument();
     });
 
-    it("marks the adapted option in the model picker", () => {
-      renderHeader({ appliedAdapter: APPLIED });
+    it("keeps the base and fine-tuned models as separate picker options", () => {
+      renderHeader({
+        appliedAdapter: APPLIED,
+        activeModelValue: "adapted:a1",
+        modelOptions: [
+          {
+            value: "quantem:mito",
+            label: "QuantEM",
+            sourceModel: "quantem:mito",
+            adapterId: null,
+            packId: "quantem:mito",
+            adapted: null,
+          },
+          {
+            value: "adapted:a1",
+            label: "mito @ liver_HFD2 (fine-tuned model)",
+            sourceModel: "quantem:mito",
+            adapterId: "a1",
+            packId: "quantem:mito",
+            adapted: APPLIED.adapter,
+          },
+        ],
+      });
 
       expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue(
-        "quantem:mito"
+        "adapted:a1"
       );
-      expect(screen.getByRole("option", { name: "QuantEM (adapted)" })).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "QuantEM" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", {
+          name: "mito @ liver_HFD2 (fine-tuned model)",
+        })
+      ).toBeInTheDocument();
     });
 
     it("warns when the selected model means the adapter will be skipped", () => {
@@ -725,9 +751,7 @@ describe("SegmentationHeader", () => {
         },
       });
 
-      expect(
-        screen.getByText(/will use your calibration at threshold 0\.45/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/calculated threshold of 0\.45/)).toBeInTheDocument();
       expect(screen.queryByText(/fine-tuned head/)).not.toBeInTheDocument();
     });
   });
@@ -739,7 +763,7 @@ describe("SegmentationHeader", () => {
     renderHeader({ onBackToExperiment, onBackToViewer });
 
     expect(
-      screen.getByRole("button", { name: "← Back to Library" })
+      screen.getByRole("button", { name: "← Back to Home" })
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Back to Experiment" }));
     await user.click(screen.getByRole("button", { name: "Back to Viewer" }));

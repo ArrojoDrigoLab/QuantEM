@@ -56,6 +56,8 @@ import {
   ModelAvailabilityIcon,
 } from "@/features/models/ModelAvailabilityIcon";
 import type { ModelCatalogue } from "@/shared/types/finetune";
+import type { FineTuneAppliedImageEvent } from "@/shared/types/finetune";
+import type { LabelingModelOption } from "@/features/models/labelingModelOptions";
 import "./SegmentationHeader.css";
 
 interface SegmentationHeaderProps {
@@ -63,6 +65,8 @@ interface SegmentationHeaderProps {
   currentSegmentation: ImageSegmentation | null;
   sourceModelOptions?: SourceModelOption[];
   activeSourceModel?: string | null;
+  modelOptions?: LabelingModelOption[];
+  activeModelValue?: string | null;
   /**
    * `source_model` off the overlay manifest: the model whose objects the raster
    * on screen was actually built from. Null while the manifest is loading, or
@@ -74,6 +78,8 @@ interface SegmentationHeaderProps {
   onBackToExperiment?: () => void;
   onBackToViewer: () => void;
   onSourceModelChange?: (sourceModel: string) => void;
+  onModelChange?: (model: string) => void;
+  onFineTuneImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
   /**
    * Lock the segmentation, or unlock it.
    *
@@ -115,12 +121,16 @@ export function SegmentationHeader({
   currentSegmentation,
   sourceModelOptions = [],
   activeSourceModel = null,
+  modelOptions,
+  activeModelValue = null,
   displayedSourceModel = null,
   fineTuneEligibilityRevision = "",
   onBackToHome,
   onBackToExperiment,
   onBackToViewer,
   onSourceModelChange,
+  onModelChange,
+  onFineTuneImageCompleted,
   onToggleSegmentationComplete,
   isApplyingFull = false,
   isApplyingActiveRoi = false,
@@ -144,25 +154,44 @@ export function SegmentationHeader({
   const manualOption = sourceModelOptions.find(
     (option) => option.value === "manual"
   );
-  const sourceModelPickerOptions = [
-    manualOption,
-    sourceModelOptions.find((option) => option.model_family === "quantem"),
-    sourceModelOptions.find((option) => option.model_family === "omniem"),
-  ].filter((option): option is SourceModelOption => Boolean(option));
-  const requestedSourceModel =
-    activeSourceModel || sourceModelPickerOptions[0]?.value || NONE_SOURCE_MODEL;
+  const sourceModelPickerOptions: LabelingModelOption[] =
+    modelOptions ??
+    [
+      manualOption,
+      sourceModelOptions.find((option) => option.model_family === "quantem"),
+      sourceModelOptions.find((option) => option.model_family === "omniem"),
+    ]
+      .filter((option): option is SourceModelOption => Boolean(option))
+      .map((option) => ({
+        value: option.value,
+        label: option.value === "manual" ? "Manual segmentation" : option.label,
+        sourceModel: option.value,
+        adapterId: null,
+        packId: option.value === "manual" ? null : option.value,
+        adapted: null,
+      }));
+  const requestedModel =
+    activeModelValue || activeSourceModel || sourceModelPickerOptions[0]?.value || NONE_SOURCE_MODEL;
   // "None" was a legacy picker entry. A model-free workspace is manual
   // segmentation, so never surface a fourth, ambiguous method.
-  const selectedSourceModel =
-    requestedSourceModel === NONE_SOURCE_MODEL ? "manual" : requestedSourceModel;
-  const selectedPackId = packIdForSourceModel(selectedSourceModel);
+  const selectedModel =
+    sourceModelPickerOptions.find((option) => option.value === requestedModel) ??
+    sourceModelPickerOptions[0] ??
+    null;
+  const manualRequested =
+    requestedModel === NONE_SOURCE_MODEL || requestedModel === "manual";
+  const selectedSourceModel = manualRequested
+    ? "manual"
+    : selectedModel?.sourceModel ?? "manual";
+  const selectedModelValue = manualRequested
+    ? "manual"
+    : selectedModel?.value ?? "manual";
+  const selectedPackId = selectedModel?.packId ?? packIdForSourceModel(selectedSourceModel);
   const selectedPack = selectedPackId
     ? modelCatalogue?.packs.find((candidate) => candidate.id === selectedPackId) ?? null
     : null;
-  const runTargetLabel = resolveSourceModelLabel(
-    selectedSourceModel,
-    sourceModelOptions
-  );
+  const runTargetLabel =
+    selectedModel?.label ?? resolveSourceModelLabel(selectedSourceModel, sourceModelOptions);
   const displayedObjects = describeDisplayedObjects({
     segmentation: currentSegmentation,
     sourceModelOptions,
@@ -190,7 +219,7 @@ export function SegmentationHeader({
             className="header-back-button"
             onClick={onBackToHome}
           >
-            ← Back to Library
+            ← Back to Home
           </button>
           <button
             type="button"
@@ -232,11 +261,13 @@ export function SegmentationHeader({
               <select
                 id="source-model-select"
                 aria-label="Model"
-                value={selectedSourceModel}
-                onChange={(event) => onSourceModelChange?.(event.target.value)}
+                value={selectedModelValue}
+                onChange={(event) =>
+                  (onModelChange ?? onSourceModelChange)?.(event.target.value)
+                }
               >
                 {sourceModelPickerOptions.map((option) => {
-                  const packId = packIdForSourceModel(option.value);
+                  const packId = option.packId;
                   const pack = packId
                     ? modelCatalogue?.packs.find(
                         (candidate) => candidate.id === packId
@@ -244,19 +275,13 @@ export function SegmentationHeader({
                     : null;
                   const blocked =
                     pack?.installed === true && pack.runnable === false;
-                  const adapted = Boolean(
-                    appliedAdapter && appliedAdapter.adapter.base === option.value
-                  );
                   return (
                     <option
                       key={option.value}
                       value={option.value}
                       disabled={blocked}
                     >
-                      {option.value === "manual"
-                        ? "Manual segmentation"
-                        : option.label}
-                      {adapted ? " (adapted)" : ""}
+                      {option.label}
                     </option>
                   );
                 })}
@@ -290,6 +315,8 @@ export function SegmentationHeader({
           image={image}
           currentSegmentation={currentSegmentation}
           fineTuneEligibilityRevision={fineTuneEligibilityRevision}
+          activeBaseModel={selectedPackId}
+          onFineTuneImageCompleted={onFineTuneImageCompleted}
         />
         <button
           className="segmentation-complete-button"

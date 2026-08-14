@@ -481,6 +481,38 @@ class TheRouteTests(IncludeLevelDialTestCase):
         assert body["preview_url"].endswith("/include-level/map")
         assert body["preview_bounds"] == [0, 0, SIZE, SIZE]
 
+    def test_an_adapted_map_uses_its_calculated_threshold(self):
+        from quantem.finetune.models import STATUS_SUCCESS, Adapter
+
+        adapter = Adapter.objects.create(
+            base_model=SOURCE_MODEL,
+            name="TESTFT",
+            status=STATUS_SUCCESS,
+            mode="head",
+            segmentation_type=self.segmentation.segmentation_type,
+            calibrated_threshold=0.25,
+        )
+        adapter.scope_assets.add(self.segmentation.asset)
+        self.segmentation.include_level = 0.5
+        self.segmentation.save(update_fields=["include_level", "updated_at"])
+        self.run_the_model(0.25)
+        record = ProbabilityMap.objects.filter(segmentation=self.segmentation).latest("updated_at")
+        record.metadata = {**record.metadata, "adapter_id": str(adapter.id)}
+        record.save(update_fields=["metadata", "updated_at"])
+
+        response = self.client.get(
+            self.url,
+            {"source_model": SOURCE_MODEL, "adapter_id": str(adapter.id)},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["default_include_level"] == 0.25
+        assert response.json()["include_level"] is None
+        assert response.json()["can_move"] is True
+        base = self.client.get(self.url, {"source_model": SOURCE_MODEL}).json()
+        assert base["can_move"] is False
+        assert "different model" in base["detail"]
+
     def test_the_preview_route_serves_the_saved_map_without_caching_it(self):
         self.run_the_model(0.5)
         response = self.client.get(

@@ -95,6 +95,35 @@ def _invalid_source_model_response(
     )
 
 
+def _validated_adapter(
+    segmentation: ImageSegmentation,
+    source_model: str,
+    raw_adapter_id,
+) -> tuple[str | None, Response | None]:
+    adapter_id = str(raw_adapter_id or "").strip()
+    if not adapter_id:
+        return None, None
+    from quantem.finetune.models import active_adapter_for
+
+    adapter = active_adapter_for(segmentation, adapter_id=adapter_id)
+    if adapter is None:
+        return None, Response(
+            {"detail": "That fine-tuned model is not available for this image."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if source_model and adapter.base_model != source_model:
+        return None, Response(
+            {
+                "detail": (
+                    "That fine-tuned model belongs to a different base model. "
+                    f"Choose {adapter.base_model}."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return adapter_id, None
+
+
 def _invalidate_segment_tiles(segmentation_id: str) -> None:
     del segmentation_id
     return None
@@ -196,6 +225,13 @@ class OrganelleRerunRoiView(APIView):
         invalid = _invalid_source_model_response(segmentation, source_model)
         if invalid is not None:
             return invalid
+        adapter_id, invalid_adapter = _validated_adapter(
+            segmentation,
+            source_model,
+            request.data.get("adapter_id"),
+        )
+        if invalid_adapter is not None:
+            return invalid_adapter
         explicit_roi_id = request.data.get("roi_id") if request.data else None
         if explicit_roi_id:
             roi = ImageROI.objects.filter(asset=segmentation.asset, id=explicit_roi_id).first()
@@ -220,6 +256,8 @@ class OrganelleRerunRoiView(APIView):
         }
         if source_model:
             payload["source_model"] = source_model
+        if adapter_id:
+            payload["adapter_id"] = adapter_id
 
         job = Job.enqueue(
             job_type=JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -250,6 +288,13 @@ class OrganelleApplyFullImageView(APIView):
         invalid = _invalid_source_model_response(segmentation, source_model)
         if invalid is not None:
             return invalid
+        adapter_id, invalid_adapter = _validated_adapter(
+            segmentation,
+            source_model,
+            request.data.get("adapter_id"),
+        )
+        if invalid_adapter is not None:
+            return invalid_adapter
 
         if not SegmentationConfig.objects.filter(segmentation=segmentation).exists():
             return Response(
@@ -278,6 +323,8 @@ class OrganelleApplyFullImageView(APIView):
         }
         if source_model:
             payload["source_model"] = source_model
+        if adapter_id:
+            payload["adapter_id"] = adapter_id
 
         job = Job.enqueue(
             job_type=JOB_TYPE_RUN_SEGMENTATION_FULL,

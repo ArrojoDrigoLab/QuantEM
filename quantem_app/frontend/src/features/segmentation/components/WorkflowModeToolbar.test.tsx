@@ -16,7 +16,7 @@ function renderToolbar(extra: Partial<Parameters<typeof WorkflowModeToolbar>[0]>
   return render(
     <WorkflowModeToolbar
       workflowMode="review"
-      reviewPhase="model"
+      reviewPhase="correction"
       correctionTool="draw"
       hoverActionMode="confirm"
       drawBrushSize={24}
@@ -47,14 +47,14 @@ describe("WorkflowModeToolbar slots", () => {
     expect(onDraftOperationChange).toHaveBeenCalledWith("exclude");
   });
 
-  it("renders an extra mode as a Correct sub-tool, not beside Review and Correct", () => {
+  it("renders an extra correction sub-tool without a phase toggle", () => {
     renderToolbar({
       reviewPhase: "correction",
       extraModes: <button type="button">Focus queue</button>,
     });
 
-    const topLevelGroup = screen.getByRole("button", { name: "Review" }).parentElement;
-    expect(topLevelGroup?.textContent).not.toContain("Focus queue");
+    expect(screen.queryByRole("button", { name: "Review" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Correct" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Focus queue" })).toBeInTheDocument();
   });
 
@@ -68,6 +68,41 @@ describe("WorkflowModeToolbar slots", () => {
     const { container } = renderToolbar();
 
     expect(container.textContent).not.toContain("undefined");
-    expect(screen.getByRole("button", { name: "Review" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Review" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Correct" })).not.toBeInTheDocument();
+  });
+
+  it("shows brush and polygon icon tools for non-ER object segmentations", async () => {
+    const onCorrectionToolChange = vi.fn();
+    renderToolbar({
+      reviewPhase: "correction",
+      correctionTool: "draw",
+      isErSegmentation: false,
+      onCorrectionToolChange,
+    });
+
+    const brush = screen.getByRole("button", { name: "Brush" });
+    const polygon = screen.getByRole("button", { name: "Polygon" });
+    expect(brush.querySelector("svg")).not.toBeNull();
+    expect(polygon.querySelector("svg")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Draw" })).toBeNull();
+
+    await userEvent.click(polygon);
+    expect(onCorrectionToolChange).toHaveBeenCalledWith("polygon");
+  });
+
+  it("offers a close action for a non-ER polygon draft", async () => {
+    const onClosePolygon = vi.fn();
+    renderToolbar({
+      reviewPhase: "correction",
+      correctionTool: "polygon",
+      isErSegmentation: false,
+      polygonHasDraft: true,
+      polygonCanClose: true,
+      onClosePolygon,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Close polygon (R)" }));
+    expect(onClosePolygon).toHaveBeenCalledTimes(1);
   });
 });

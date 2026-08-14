@@ -125,6 +125,7 @@ export function generateRoiStrokeOverlays(roiStrokes: RoiStroke[]): SegmentOverl
         strokeColor,
         strokeOpacity: 0.65,
         strokeWidth: Math.max(stroke.size, 2),
+        strokeWidthUnits: "image",
       },
     ];
   });

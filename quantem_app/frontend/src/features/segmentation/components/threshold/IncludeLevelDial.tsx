@@ -73,6 +73,7 @@ function choosePack(
 export interface IncludeLevelDialProps {
   segmentationId: string;
   sourceModel?: string | null;
+  adapterId?: string | null;
   segmentationInternalName?: string | null;
   statusStage?: string | null;
   /** Scope the model preview and Preview action to the ROI most recently tested. */
@@ -91,6 +92,7 @@ export interface IncludeLevelDialProps {
 export function IncludeLevelDial({
   segmentationId,
   sourceModel = null,
+  adapterId = null,
   segmentationInternalName = null,
   statusStage = null,
   roiId = null,
@@ -119,7 +121,12 @@ export function IncludeLevelDial({
 
   const load = useCallback(async () => {
     try {
-      const next = await getIncludeLevel(segmentationId, sourceModel, roiId);
+      const next = await getIncludeLevel(
+        segmentationId,
+        sourceModel,
+        roiId,
+        adapterId
+      );
       setState(next);
       setLoadError(null);
       return next;
@@ -127,7 +134,7 @@ export function IncludeLevelDial({
       setLoadError(extractApiErrorMessage(error, "The threshold could not be read."));
       return null;
     }
-  }, [roiId, segmentationId, sourceModel]);
+  }, [adapterId, roiId, segmentationId, sourceModel]);
 
   useEffect(() => {
     setDraft(null);
@@ -223,14 +230,14 @@ export function IncludeLevelDial({
 
   const startRun = useCallback(
     async (packId: string) => {
-      onSourceModelChange?.(packId);
+      if (!adapterId) onSourceModelChange?.(packId);
       const queued = roiId
-        ? await rerunSegmentationRoi(segmentationId, roiId, packId)
-        : await runFullSegmentation(segmentationId, packId);
+        ? await rerunSegmentationRoi(segmentationId, roiId, packId, adapterId)
+        : await runFullSegmentation(segmentationId, packId, adapterId);
       setModelAction({ kind: "run", jobId: queued.job_id, packId });
       onRunQueued?.();
     },
-    [onRunQueued, onSourceModelChange, roiId, segmentationId]
+    [adapterId, onRunQueued, onSourceModelChange, roiId, segmentationId]
   );
 
   const { job: modelJob } = useJobProgress(modelAction?.jobId ?? null);
@@ -312,7 +319,8 @@ export function IncludeLevelDial({
         segmentationId,
         position,
         sourceModel,
-        roiId
+        roiId,
+        adapterId
       );
       setApplyJobId(queued.job_id);
     } catch (error) {
@@ -320,7 +328,7 @@ export function IncludeLevelDial({
     } finally {
       setSubmitting(false);
     }
-  }, [position, roiId, segmentationId, sourceModel, working]);
+  }, [adapterId, position, roiId, segmentationId, sourceModel, working]);
 
   const confirm = useCallback(async () => {
     if (working || !sourceModel || roiId) return;

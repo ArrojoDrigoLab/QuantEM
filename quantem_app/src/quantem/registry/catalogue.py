@@ -436,6 +436,59 @@ def packs() -> list[dict[str, Any]]:
     return [pack_entry(pack_id) for pack_id in sorted(MODEL_SPECS)]
 
 
+def _adapter_last_runs(adapter_ids: set[str]) -> dict[str, dict[str, object]]:
+    """Latest successful inference time, keyed by adapter then segmentation.
+
+    The model picker needs a per-image answer. ``Adapter.applied_at`` is global
+    to the fine-tune and says when a batch was requested, so it cannot answer
+    which fine-tune most recently finished on one particular image.
+    """
+    if not adapter_ids:
+        return {}
+    try:
+        from quantem.jobs.constants import (
+            JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
+            JOB_TYPE_RUN_SEGMENTATION_FULL,
+            JOB_TYPE_RUN_SEGMENTATION_ROI,
+        )
+        from quantem.jobs.models import Job
+
+        jobs = Job.objects.filter(
+            status="SUCCESS",
+            type__in=(
+                JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
+                JOB_TYPE_RUN_SEGMENTATION_FULL,
+                JOB_TYPE_RUN_SEGMENTATION_ROI,
+            ),
+        ).order_by("-finished_at", "-updated_at")
+    except Exception:
+        logger.debug("Job history unavailable while listing adapted models", exc_info=True)
+        return {}
+
+    found: dict[str, dict[str, object]] = {}
+    try:
+        for job in jobs:
+            payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+            raw_legs = payload.get("legs")
+            legs = raw_legs if isinstance(raw_legs, list) else [payload]
+            completed_at = job.finished_at or job.updated_at
+            for leg in legs:
+                if not isinstance(leg, dict):
+                    continue
+                adapter_id = str(leg.get("adapter_id") or "").strip()
+                segmentation_id = str(leg.get("segmentation_id") or "").strip()
+                if (
+                    adapter_id not in adapter_ids
+                    or not segmentation_id
+                    or segmentation_id in found.setdefault(adapter_id, {})
+                ):
+                    continue
+                found[adapter_id][segmentation_id] = completed_at
+    except Exception:
+        logger.debug("Could not read adapted-model run history", exc_info=True)
+    return found
+
+
 def adapted_entries() -> list[dict[str, Any]]:
     """The user's own adapters, in the contract's ``adapted[]`` shape.
 
@@ -460,6 +513,8 @@ def adapted_entries() -> list[dict[str, Any]]:
         logger.debug("Adapter table unavailable", exc_info=True)
         return []
 
+    last_runs = _adapter_last_runs({str(adapter.id) for adapter in rows})
+
     try:
         from quantem.segmentation.models import ImageSegmentation
     except Exception:
@@ -467,23 +522,34 @@ def adapted_entries() -> list[dict[str, Any]]:
 
     entries = []
     for adapter in rows:
-        segmentation_ids = [str(adapter.segmentation_id)] if adapter.segmentation_id else []
-        if (
-            ImageSegmentation is not None
-            and adapter.applied_at is not None
-            and adapter.segmentation_type_id is not None
-        ):
+        direct_ids = [str(adapter.segmentation_id)] if adapter.segmentation_id else []
+        scope_segmentation_ids = list(direct_ids)
+        applied_segmentation_ids = list(direct_ids) if adapter.applied_at is not None else []
+        if ImageSegmentation is not None and adapter.segmentation_type_id is not None:
+            scope_asset_ids = list(adapter.scope_assets.values_list("id", flat=True))
             applied_asset_ids = list(adapter.applied_assets.values_list("id", flat=True))
-            if not applied_asset_ids:
-                # Read compatibility for fine-tunes applied before the explicit
-                # target relation was added. This is the same fallback used by
-                # ``active_adapter_for`` during inference.
-                applied_asset_ids = list(adapter.scope_assets.values_list("id", flat=True))
-            target_ids = ImageSegmentation.objects.filter(
-                asset_id__in=applied_asset_ids,
-                segmentation_type_id=adapter.segmentation_type_id,
-            ).values_list("id", flat=True)
-            segmentation_ids.extend(str(value) for value in target_ids)
+            scope_segmentation_ids.extend(
+                str(value)
+                for value in ImageSegmentation.objects.filter(
+                    asset_id__in=scope_asset_ids,
+                    segmentation_type_id=adapter.segmentation_type_id,
+                ).values_list("id", flat=True)
+            )
+            if adapter.applied_at is not None:
+                # Fine-tunes created before ``applied_assets`` used their scope
+                # as the apply target. Keep that read compatibility here.
+                if not applied_asset_ids:
+                    applied_asset_ids = scope_asset_ids
+                applied_segmentation_ids.extend(
+                    str(value)
+                    for value in ImageSegmentation.objects.filter(
+                        asset_id__in=applied_asset_ids,
+                        segmentation_type_id=adapter.segmentation_type_id,
+                    ).values_list("id", flat=True)
+                )
+
+        scope_segmentation_ids = sorted(set(scope_segmentation_ids))
+        applied_segmentation_ids = sorted(set(applied_segmentation_ids))
 
         entries.append(
             {
@@ -498,8 +564,14 @@ def adapted_entries() -> list[dict[str, Any]]:
                 "segmentation_id": (
                     str(adapter.segmentation_id) if adapter.segmentation_id else None
                 ),
-                "segmentation_ids": sorted(set(segmentation_ids)),
+                # ``segmentation_ids`` is retained for older clients and means
+                # applied targets. New clients keep applicability and actual
+                # application separate.
+                "segmentation_ids": applied_segmentation_ids,
+                "scope_segmentation_ids": scope_segmentation_ids,
+                "applied_segmentation_ids": applied_segmentation_ids,
                 "applied_at": adapter.applied_at,
+                "last_run_at_by_segmentation": last_runs.get(str(adapter.id), {}),
             }
         )
     return entries

@@ -1,10 +1,16 @@
 import numpy as np
 from django.test import TestCase
 from rest_framework.test import APIClient
+from shapely.geometry import box
 
 from quantem.assets.utils import create_roi_image_from_image
 from quantem.seg_core.db.prob_maps import get_prob_map_file_path, save_probability_map
-from quantem.segmentation.models import ImageSegmentation, ProbabilityMap, RoiSegmentationStatus
+from quantem.segmentation.models import (
+    ImageSegmentation,
+    ProbabilityMap,
+    RoiSegmentationStatus,
+    SegmentObject,
+)
 from quantem.segmentation.type_service import (
     get_or_create_er_type,
     get_or_create_mitochondria_type,
@@ -48,6 +54,53 @@ class RoiSegmentationCompleteViewTests(TestCase):
         )
         self.assertTrue(status_row.is_complete)
         self.assertIsNotNone(status_row.completed_at)
+
+    def test_done_deletes_whole_candidates_on_any_roi_overlap_for_only_this_segmentation(self):
+        touching_candidate = SegmentObject.objects.create(
+            segmentation=self.segmentation,
+            label_state="CANDIDATE",
+            geometry=box(self.roi.width - 4, 20, self.roi.width + 40, 60),
+            centroid=box(self.roi.width - 4, 20, self.roi.width + 40, 60).centroid,
+            bbox=box(self.roi.width - 4, 20, self.roi.width + 40, 60).envelope,
+        )
+        outside_geometry = box(self.roi.width + 20, 80, self.roi.width + 60, 120)
+        outside_candidate = SegmentObject.objects.create(
+            segmentation=self.segmentation,
+            label_state="CANDIDATE",
+            geometry=outside_geometry,
+            centroid=outside_geometry.centroid,
+            bbox=outside_geometry.envelope,
+        )
+        confirmed_geometry = box(self.roi.width - 4, 65, self.roi.width + 40, 75)
+        confirmed = SegmentObject.objects.create(
+            segmentation=self.segmentation,
+            label_state="CONFIRMED",
+            geometry=confirmed_geometry,
+            centroid=confirmed_geometry.centroid,
+            bbox=confirmed_geometry.envelope,
+        )
+        other_segmentation = ImageSegmentation.objects.create(
+            asset=self.image.asset,
+            segmentation_type=get_or_create_mitochondria_type(),
+        )
+        other_geometry = box(self.roi.width - 4, 20, self.roi.width + 40, 60)
+        other_candidate = SegmentObject.objects.create(
+            segmentation=other_segmentation,
+            label_state="CANDIDATE",
+            geometry=other_geometry,
+            centroid=other_geometry.centroid,
+            bbox=other_geometry.envelope,
+        )
+
+        response = self.client.post(self._url(), {}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(SegmentObject.objects.filter(id=touching_candidate.id).exists())
+        self.assertTrue(SegmentObject.objects.filter(id=outside_candidate.id).exists())
+        self.assertTrue(SegmentObject.objects.filter(id=confirmed.id).exists())
+        self.assertTrue(SegmentObject.objects.filter(id=other_candidate.id).exists())
+        self.assertEqual(response.data["candidate_cleanup"]["deleted"], 1)
+        self.assertIsNotNone(response.data["overlay"])
 
     def test_marking_an_roi_done_reclaims_only_that_rois_probability_maps(self):
         full_map = save_probability_map(

@@ -31,8 +31,8 @@ from .geometry import (
     safe_union,
 )
 from .overlap import (
-    delete_manual_overlap_candidates,
     overlap_qualifies_for_union,
+    reconcile_manual_overlap_candidates,
     resolve_overlap_between_families,
 )
 from .persistence import (
@@ -258,12 +258,14 @@ def _confirm_manual_segments(
 
             confirmed_families.append(manual_family)
 
-        deleted_candidates, deleted_candidate_geometries = delete_manual_overlap_candidates(
+        candidate_cleanup = reconcile_manual_overlap_candidates(
             segmentation=segmentation,
             manual_families=manual_families,
         )
-        deleted += deleted_candidates
-        affected_geometries.extend(deleted_candidate_geometries)
+        deleted += len(candidate_cleanup.deleted_ids)
+        feature_refresh_ids.extend(candidate_cleanup.updated_ids)
+        feature_refresh_ids.extend(candidate_cleanup.created_ids)
+        affected_geometries.extend(candidate_cleanup.affected_geometries)
 
         for family in confirmed_families:
             if family.segment is not None and not family.dirty:
@@ -306,6 +308,7 @@ def _confirm_manual_segments(
         "confirmed_ids": confirmed_ids,
         "dirty_bbox": dirty_bbox.as_dict() if dirty_bbox is not None else None,
         "measurement": measurement,
+        "candidate_cleanup": candidate_cleanup.as_payload(),
     }
 
 
@@ -366,8 +369,9 @@ def confirm_segment_geometries(
         )
 
     # Manual draw WITH merge (ER "Confirm Drawn Area") falls through to the union
-    # branch below but forces source_model="manual" on the resulting objects so a
-    # drawn correction that absorbs model candidates is recorded as manual GT.
+    # branch below but only confirmed objects are merge targets. Model candidates
+    # are reconciled separately: mostly covered candidates are deleted, while a
+    # smaller overlap is clipped out and its edge remainder stays a candidate.
     forced_source_model = SOURCE_MODEL_MANUAL if manual_creation else None
 
     created = 0
@@ -376,6 +380,26 @@ def confirm_segment_geometries(
     confirmed_ids: list[str] = []
     feature_refresh_ids: list[str] = []
     affected_geometries: list[BaseGeometry] = []
+    manual_candidate_families = (
+        [
+            _ConfirmedFamily(
+                segment=None,
+                polygons=filter_supported_confirmed_polygons(
+                    extract_polygons(
+                        item.get("geometry")
+                        if isinstance(item.get("geometry"), BaseGeometry)
+                        else None
+                    )
+                ),
+                features={},
+                is_manual_new=True,
+            )
+            for item in incoming
+        ]
+        if manual_creation
+        else []
+    )
+    candidate_cleanup = None
 
     with transaction.atomic():
         if not merge_overlaps:
@@ -406,7 +430,7 @@ def confirm_segment_geometries(
             eligible_segments = list(
                 SegmentObject.objects.filter(
                     segmentation=segmentation,
-                    label_state__in=MERGE_ELIGIBLE_STATES,
+                    label_state__in=(("CONFIRMED",) if manual_creation else MERGE_ELIGIBLE_STATES),
                 )
             )
             eligible_geometries = {
@@ -569,6 +593,16 @@ def confirm_segment_geometries(
                         if str(segment.id) not in delete_ids
                     ]
 
+            if manual_creation:
+                candidate_cleanup = reconcile_manual_overlap_candidates(
+                    segmentation=segmentation,
+                    manual_families=manual_candidate_families,
+                )
+                deleted += len(candidate_cleanup.deleted_ids)
+                feature_refresh_ids.extend(candidate_cleanup.updated_ids)
+                feature_refresh_ids.extend(candidate_cleanup.created_ids)
+                affected_geometries.extend(candidate_cleanup.affected_geometries)
+
     measurement = _measure_changed_segments(segmentation, feature_refresh_ids)
 
     if enqueue_feature_refresh:
@@ -594,4 +628,9 @@ def confirm_segment_geometries(
         "confirmed_ids": confirmed_ids,
         "dirty_bbox": dirty_bbox.as_dict() if dirty_bbox is not None else None,
         "measurement": measurement,
+        "candidate_cleanup": (
+            candidate_cleanup.as_payload()
+            if candidate_cleanup is not None
+            else {"deleted": 0, "updated": 0, "created": 0}
+        ),
     }

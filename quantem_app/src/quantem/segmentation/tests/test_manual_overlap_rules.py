@@ -117,6 +117,96 @@ class ManualOverlapPersistenceTests(TestCase):
             features={"area": float(polygon.area)},
         )
 
+    def _candidate(self, polygon):
+        return SegmentObject.objects.create(
+            segmentation=self.segmentation,
+            label_state="CANDIDATE",
+            source_model="quantem:mito",
+            confidence_score=0.8,
+            geometry=polygon,
+            centroid=polygon.centroid,
+            bbox=polygon.envelope,
+            features={"area": float(polygon.area), "mean_prob": 0.8},
+        )
+
+    def _draw_manual_box(self, x0, y0, x1, y1, *, merge_overlaps=False):
+        return self.client.post(
+            f"/api/segmentations/{self.segmentation.id}/segments/confirm-batch/",
+            {
+                "manual_creation": True,
+                "merge_overlaps": merge_overlaps,
+                "segments": [
+                    {
+                        "geometry_coords": [
+                            [x0, y0],
+                            [x1, y0],
+                            [x1, y1],
+                            [x0, y1],
+                            [x0, y0],
+                        ]
+                    }
+                ],
+            },
+            format="json",
+        )
+
+    def test_manual_shape_deletes_a_candidate_at_seventy_percent_overlap(self):
+        candidate = self._candidate(box(10, 10, 110, 90))
+
+        response = self._draw_manual_box(10, 10, 80, 90)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(SegmentObject.objects.filter(id=candidate.id).exists())
+        self.assertEqual(response.data["candidate_cleanup"]["deleted"], 1)
+
+    def test_manual_shape_subtracts_a_smaller_overlap_from_the_candidate(self):
+        candidate = self._candidate(box(10, 10, 110, 90))
+
+        response = self._draw_manual_box(10, 10, 70, 90)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        candidate.refresh_from_db()
+        self.assertEqual(candidate.label_state, "CANDIDATE")
+        self.assertLess(candidate.geometry.symmetric_difference(box(70, 10, 110, 90)).area, 1e-6)
+        self.assertEqual(response.data["candidate_cleanup"]["updated"], 1)
+        self.assertEqual(response.data["candidate_cleanup"]["deleted"], 0)
+
+    def test_manual_shape_keeps_every_disconnected_candidate_remainder(self):
+        self._candidate(box(10, 10, 110, 90))
+        manual = box(40, 10, 80, 90)
+
+        response = self._draw_manual_box(40, 10, 80, 90)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        candidates = list(
+            SegmentObject.objects.filter(
+                segmentation=self.segmentation,
+                label_state="CANDIDATE",
+            )
+        )
+        self.assertEqual(len(candidates), 2)
+        remainder = unary_union([candidate.geometry for candidate in candidates])
+        self.assertAlmostEqual(remainder.area, 4800.0)
+        self.assertLess(remainder.intersection(manual).area, 1e-6)
+        self.assertEqual(response.data["candidate_cleanup"]["created"], 1)
+
+    def test_manual_merge_path_clips_candidates_instead_of_confirming_them(self):
+        candidate = self._candidate(box(10, 10, 110, 90))
+
+        response = self._draw_manual_box(10, 10, 70, 90, merge_overlaps=True)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        candidate.refresh_from_db()
+        self.assertEqual(candidate.label_state, "CANDIDATE")
+        self.assertLess(candidate.geometry.symmetric_difference(box(70, 10, 110, 90)).area, 1e-6)
+        self.assertEqual(
+            SegmentObject.objects.filter(
+                segmentation=self.segmentation,
+                label_state="CONFIRMED",
+            ).count(),
+            1,
+        )
+
     def test_one_manual_shape_unions_every_qualifying_confirmed_row(self):
         first = self._confirmed(box(10, 20, 45, 55))
         second = self._confirmed(box(65, 20, 100, 55))

@@ -141,7 +141,7 @@ export function AppliedAdapterNotice({
   state: AppliedAdapterState;
   selectedLabel: string;
 }) {
-  const { adapter, active, publishedThreshold, trainedHead } = state;
+  const { adapter, active, publishedThreshold } = state;
   const calibrated = formatThreshold(adapter.calibrated_threshold);
   const published = formatThreshold(publishedThreshold);
   const name = adapter.name || adapter.base;
@@ -159,13 +159,10 @@ export function AppliedAdapterNotice({
 
   return (
     <span className="header-adapter-notice" role="status">
-      <strong>Adapted model: {name}.</strong> Run model will use{" "}
-      {trainedHead ? "your fine-tuned head" : "your calibration"}
-      {calibrated ? ` at threshold ${calibrated}` : ""}
-      {published && calibrated && published !== calibrated
-        ? `, not the published ${published}`
-        : ""}
-      .
+      <strong>Adapted model: {name}.</strong>{" "}
+      {calibrated
+        ? `Run model will use the calculated threshold of ${calibrated} for this image.`
+        : "Run model will use this fine-tuned model for this image."}
     </span>
   );
 }

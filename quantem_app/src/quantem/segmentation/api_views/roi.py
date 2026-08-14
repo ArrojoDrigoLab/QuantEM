@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.response import Response
@@ -36,6 +37,10 @@ from quantem.assets.utils import create_roi_image_from_image
 from quantem.core.config import ROIS_DIR
 from quantem.seg_core.db.prob_maps import delete_probability_maps_for_roi
 from quantem.segmentation.models import ImageSegmentation, RoiSegmentationStatus, SegmentObject
+from quantem.segmentation.overlay_ngff import (
+    merge_dirty_bboxes,
+    register_overlay_mutation_all_bundles,
+)
 from quantem.segmentation.roi_selection import select_roi_for_image
 from quantem.segmentation.serializers import (
     CompletedRoiCreateSerializer,
@@ -47,6 +52,9 @@ from quantem.segmentation.services.completed_rois import (
     list_completed_rois,
     save_completed_roi,
     subtract_completed_roi,
+)
+from quantem.segmentation.services.confirm_batch.overlap import (
+    delete_candidates_intersecting_geometry,
 )
 from quantem.segmentation.services.spatial_lookup import bbox_intersects_filter, make_bbox
 from quantem.segmentation.source_models import normalize_source_model, source_model_queryset_filter
@@ -60,6 +68,31 @@ from .shared import (
 
 class SegmentationRoiActivateSerializer(serializers.Serializer):
     roi_id = serializers.UUIDField()
+
+
+def _delete_candidates_for_completed_roi(segmentation, roi_image):
+    """Apply the ROI Done any-overlap rule."""
+    roi_geometry = make_bbox(
+        roi_image.x,
+        roi_image.y,
+        roi_image.x + roi_image.width,
+        roi_image.y + roi_image.height,
+    )
+    return delete_candidates_intersecting_geometry(
+        segmentation=segmentation,
+        region=roi_geometry,
+    )
+
+
+def _register_candidate_cleanup_overlay(segmentation, cleanup):
+    """Queue the candidate raster update after the deletion transaction commits."""
+    if cleanup.deleted_ids:
+        return register_overlay_mutation_all_bundles(
+            segmentation,
+            dirty_bbox=merge_dirty_bboxes(segmentation, cleanup.affected_geometries),
+            allow_sync_partial=False,
+        )
+    return None
 
 
 class CompletedRoiListCreateView(APIView):
@@ -257,8 +290,14 @@ class SegmentationRoiCompleteView(APIView):
                 {"error": "No active ROI found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        roi_image.is_complete = True
-        roi_image.save(update_fields=["is_complete", "updated_at"])
+        with transaction.atomic():
+            roi_image.is_complete = True
+            roi_image.save(update_fields=["is_complete", "updated_at"])
+            candidate_cleanup = _delete_candidates_for_completed_roi(
+                segmentation,
+                roi_image,
+            )
+        overlay = _register_candidate_cleanup_overlay(segmentation, candidate_cleanup)
         removed = delete_probability_maps_for_roi(segmentation, roi_image)
         logging.getLogger(__name__).info(
             "Reclaimed %d probability map(s) for completed active ROI %s on segmentation %s.",
@@ -270,7 +309,14 @@ class SegmentationRoiCompleteView(APIView):
             roi_image,
             context={"segmentation": segmentation},
         )
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                **serializer.data,
+                "candidate_cleanup": candidate_cleanup.as_payload(),
+                "overlay": overlay,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class SegmentationRoiSegmentationCompleteView(APIView):
@@ -299,14 +345,24 @@ class SegmentationRoiSegmentationCompleteView(APIView):
             _roi_queryset_for_segmentation(segmentation),
             id=roi_id,
         )
-        # Keep the ROI <-> segmentation association in sync with the status row.
-        roi_image.segmentations.add(segmentation)
-        status_row, _ = RoiSegmentationStatus.objects.get_or_create(
-            image_roi=roi_image,
-            segmentation=segmentation,
-        )
-        status_row.set_complete(is_complete)
-        status_row.save(update_fields=["is_complete", "completed_at", "updated_at"])
+        candidate_cleanup = None
+        overlay = None
+        with transaction.atomic():
+            # Keep the ROI <-> segmentation association in sync with the status row.
+            roi_image.segmentations.add(segmentation)
+            status_row, _ = RoiSegmentationStatus.objects.get_or_create(
+                image_roi=roi_image,
+                segmentation=segmentation,
+            )
+            status_row.set_complete(is_complete)
+            status_row.save(update_fields=["is_complete", "completed_at", "updated_at"])
+            if is_complete:
+                candidate_cleanup = _delete_candidates_for_completed_roi(
+                    segmentation,
+                    roi_image,
+                )
+        if candidate_cleanup is not None:
+            overlay = _register_candidate_cleanup_overlay(segmentation, candidate_cleanup)
         if is_complete:
             removed = delete_probability_maps_for_roi(segmentation, roi_image)
             logging.getLogger(__name__).info(
@@ -319,7 +375,18 @@ class SegmentationRoiSegmentationCompleteView(APIView):
             roi_image,
             context={"segmentation": segmentation},
         )
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                **serializer.data,
+                "candidate_cleanup": (
+                    candidate_cleanup.as_payload()
+                    if candidate_cleanup is not None
+                    else {"deleted": 0, "updated": 0, "created": 0}
+                ),
+                "overlay": overlay,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class SegmentationRoiDetailView(APIView):

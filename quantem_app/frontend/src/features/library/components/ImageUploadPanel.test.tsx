@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageUploadPanel } from "@/features/library/components/ImageUploadPanel";
@@ -263,5 +263,30 @@ describe("ImageUploadPanel", () => {
     await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(1));
     expect(await screen.findByTestId("import-drop-zone")).toBeInTheDocument();
     expect(screen.getByText("Drop your images here")).toBeInTheDocument();
+  });
+
+  it("hides the drop target while upload bytes are still in flight", async () => {
+    const user = userEvent.setup();
+    let finishUpload: ((asset: AssetDetail) => void) | undefined;
+    vi.mocked(uploadAsset).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = resolve;
+        })
+    );
+    render(<ImageUploadPanel />);
+
+    await user.upload(await openPanelWithServerFormats(), pngFile());
+    expect(screen.getByTestId("import-add-more-drop-zone")).toBeInTheDocument();
+    submitUploadForm();
+
+    expect(
+      await screen.findByRole("button", { name: "Uploading..." })
+    ).toBeDisabled();
+    expect(screen.queryByTestId("import-add-more-drop-zone")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("import-drop-zone")).not.toBeInTheDocument();
+
+    await act(async () => finishUpload?.(makeAsset()));
+    expect(await screen.findByTestId("import-drop-zone")).toBeInTheDocument();
   });
 });

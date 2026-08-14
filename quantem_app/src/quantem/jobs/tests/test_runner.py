@@ -229,6 +229,32 @@ class JobRunnerFailureHandlingTests(TestCase):
 class JobRunnerConcurrencyTests(TestCase):
     @patch.dict(
         os.environ,
+        {"JOB_CPU_WORKERS": "", "JOB_UPLOAD_PIPELINE_WORKERS": ""},
+        clear=False,
+    )
+    @patch("quantem.jobs.runner._detect_accelerator_devices", return_value=[])
+    @patch("quantem.jobs.runner.get_machine_profile")
+    def test_defaults_reserve_capacity_for_the_interactive_app(
+        self,
+        machine_profile,
+        _detect_accelerators,
+    ):
+        machine_profile.return_value.heavy_slots = 4
+
+        runner = JobRunner()
+
+        self.assertEqual(runner.cpu_slots, 4)
+        self.assertEqual(runner.upload_pipeline_slots, 1)
+        runner.running["upload"] = RunningJob(
+            _AliveProcess(),
+            "cpu",
+            JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
+        )
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_UPLOAD_IMAGE_PIPELINE))
+        self.assertTrue(runner.can_dispatch("cpu", JOB_TYPE_REFRESH_SEGMENT_FEATURES))
+
+    @patch.dict(
+        os.environ,
         {"JOB_CPU_WORKERS": "24", "JOB_UPLOAD_PIPELINE_WORKERS": "5"},
         clear=False,
     )

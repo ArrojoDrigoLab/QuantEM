@@ -170,6 +170,22 @@ def test_release_workflow_does_not_publish_build_only_manifests() -> None:
     assert "—" not in publish_step
 
 
+def test_release_workflow_captures_created_release_without_a_list_race() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/quantem-app-desktop-release.yml").read_text(
+        encoding="utf-8"
+    )
+    publish_step = workflow.split("- name: Publish only after every platform", 1)[1].split(
+        "- name: Delete temporary workflow artifacts", 1
+    )[0]
+
+    assert 'releases/tags/${RELEASE_TAG}' in publish_step
+    assert '--method POST "repos/${GITHUB_REPOSITORY}/releases"' in publish_step
+    assert '> "$release_record"' in publish_step
+    assert "releases?per_page=100" not in publish_step
+    assert 'gh release create "$RELEASE_TAG"' not in publish_step
+    assert 'gh release view "$RELEASE_TAG"' not in publish_step
+
+
 def test_package_numpy_floor_supports_the_intel_macos_torch_build() -> None:
     pyproject = (REPO_ROOT / "quantem_app/pyproject.toml").read_text(encoding="utf-8")
     assert '"numpy>=1.26"' in pyproject

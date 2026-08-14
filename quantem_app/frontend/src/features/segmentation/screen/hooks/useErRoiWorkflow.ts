@@ -37,6 +37,9 @@ interface UseErRoiWorkflowArgs {
   image: { width: number; height: number } | null;
   isPointInsideImageBounds: (point: Point) => boolean;
   refetchSegmentationRois: () => Promise<unknown> | void;
+  refreshSegmentViews?: (options?: {
+    deferOverlayRefresh?: boolean;
+  }) => Promise<void>;
   registerAnnotationActivity?: () => void;
   /** Called after an ROI is created or area-edited (to enter Correct mode). */
   onRoiConfirmed?: () => void;
@@ -62,6 +65,7 @@ export function useErRoiWorkflow({
   image,
   isPointInsideImageBounds,
   refetchSegmentationRois,
+  refreshSegmentViews,
   registerAnnotationActivity,
   onRoiConfirmed,
   showErrorToast,
@@ -71,6 +75,7 @@ export function useErRoiWorkflow({
   const [relocatingRoiId, setRelocatingRoiId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [markingRoiId, setMarkingRoiId] = useState<string | null>(null);
+  const [markingRoiDone, setMarkingRoiDone] = useState<boolean | null>(null);
   const [deletingRoiId, setDeletingRoiId] = useState<string | null>(null);
   const [activatingRoiId, setActivatingRoiId] = useState<string | null>(null);
   const editGestureRef = useRef<{
@@ -222,18 +227,35 @@ export function useErRoiWorkflow({
 
   const markRoiDone = useCallback(
     async (roiId: string, done: boolean) => {
-      if (!currentSegmentationId) return;
+      if (!currentSegmentationId || markingRoiId) return;
       setMarkingRoiId(roiId);
+      setMarkingRoiDone(done);
       try {
-        await setRoiCompleteForSegmentation(currentSegmentationId, roiId, done);
-        await refetchSegmentationRois();
+        const response = await setRoiCompleteForSegmentation(
+          currentSegmentationId,
+          roiId,
+          done
+        );
+        await Promise.all([
+          Promise.resolve(refetchSegmentationRois()),
+          refreshSegmentViews?.({
+            deferOverlayRefresh: Boolean(response.overlay),
+          }) ?? Promise.resolve(),
+        ]);
       } catch (error) {
         showErrorToast(errorMessage(error, "Failed to update ROI status."));
       } finally {
         setMarkingRoiId(null);
+        setMarkingRoiDone(null);
       }
     },
-    [currentSegmentationId, refetchSegmentationRois, showErrorToast]
+    [
+      currentSegmentationId,
+      markingRoiId,
+      refetchSegmentationRois,
+      refreshSegmentViews,
+      showErrorToast,
+    ]
   );
 
   const activateRoi = useCallback(
@@ -301,6 +323,7 @@ export function useErRoiWorkflow({
     relocatingRoiId,
     confirming,
     markingRoiId,
+    markingRoiDone,
     deletingRoiId,
     activatingRoiId,
     startPlacement,

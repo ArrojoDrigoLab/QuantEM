@@ -22,7 +22,7 @@ from .asset_openable import get_asset_openable
 from .border_trim import should_trim_initial_import, trim_black_or_white_border
 from .canonical_decode import decode_canonical_plane
 from .models import Asset, ImageROI, Rendition
-from .ngff import PyramidBuildRefused, build_and_publish
+from .ngff import PyramidBuildRefused, bounded_ngff_build_resources, build_and_publish
 from .preprocess_status import set_stage
 from .pyramid_authority import (
     begin_attempt,
@@ -71,7 +71,11 @@ def _is_canonical_image_file(path: Path) -> bool:
 
 
 def prepare_asset_renditions_task(asset_id: str) -> None:
-    prepare_asset_renditions(asset_id)
+    # This entry point is run by the upload worker. Keep Zarr/Blosc's nested
+    # thread pools inside the machine budget so the request server and viewer
+    # remain interactive during a large encode.
+    with bounded_ngff_build_resources():
+        prepare_asset_renditions(asset_id)
 
 
 def _canonical_png_target(asset: Asset) -> Path:
@@ -392,19 +396,20 @@ def ensure_ngff_for_asset_task(asset_id: str) -> dict:
     logger.info("Asset %s: NGFF stage started", asset_id)
     openable = get_asset_openable(asset)
     try:
-        if openable.has_stored_z_stack:
-            generation_root = build_and_publish(openable, volume_source=openable.path)
-        else:
-            canonical = decode_canonical_plane(
-                openable.path,
-                declared={
-                    "width": int(openable.width),
-                    "height": int(openable.height),
-                    "channels": int(openable.channels),
-                    "bit_depth": int(openable.bit_depth),
-                },
-            )
-            generation_root = build_and_publish(openable, canonical)
+        with bounded_ngff_build_resources():
+            if openable.has_stored_z_stack:
+                generation_root = build_and_publish(openable, volume_source=openable.path)
+            else:
+                canonical = decode_canonical_plane(
+                    openable.path,
+                    declared={
+                        "width": int(openable.width),
+                        "height": int(openable.height),
+                        "channels": int(openable.channels),
+                        "bit_depth": int(openable.bit_depth),
+                    },
+                )
+                generation_root = build_and_publish(openable, canonical)
     except PyramidBuildRefused as refused:
         logger.info(
             "Asset %s: NGFF build declined (%s); nothing was published and nothing failed.",

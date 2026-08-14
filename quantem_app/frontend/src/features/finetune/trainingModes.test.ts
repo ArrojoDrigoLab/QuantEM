@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FINE_TUNE_MODE_OPTIONS,
+  modeChoiceIsAvailable,
   TRAINING_MODE_HELP,
   USE_ALL_TILE_CEILING,
   modeChoiceFromDefault,
@@ -46,6 +47,14 @@ describe("features/finetune/trainingModes", () => {
   it("reads the server's default without inventing a third value", () => {
     expect(modeChoiceFromDefault("use_all")).toBe("use_all");
     expect(modeChoiceFromDefault("holdout_1")).toBe("holdout_1");
+  });
+
+  it("requires two annotations for a hold-out and three for CV", () => {
+    expect(modeChoiceIsAvailable("use_all", 0)).toBe(true);
+    expect(modeChoiceIsAvailable("holdout_1", 1)).toBe(false);
+    expect(modeChoiceIsAvailable("holdout_1", 2)).toBe(true);
+    expect(modeChoiceIsAvailable("holdout_1_cv", 2)).toBe(false);
+    expect(modeChoiceIsAvailable("holdout_1_cv", 3)).toBe(true);
   });
 
   it("explains the tile threshold the default is decided on", () => {

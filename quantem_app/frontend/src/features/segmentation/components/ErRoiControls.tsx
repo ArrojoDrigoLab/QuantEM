@@ -13,6 +13,7 @@ export interface ErRoiSection {
   rois: SegmentationRoi[];
   activeRoiId: string | null;
   markingRoiId: string | null;
+  markingRoiDone: boolean | null;
   deletingRoiId: string | null;
   activatingRoiId: string | null;
   testingRoiId: string | null;
@@ -40,6 +41,7 @@ export function ErRoiControls({
   rois,
   activeRoiId,
   markingRoiId,
+  markingRoiDone,
   deletingRoiId,
   activatingRoiId,
   testingRoiId,
@@ -105,7 +107,11 @@ export function ErRoiControls({
       {orderedRois.length > 0 && (
         <ul className="er-roi-list" aria-label="ROIs">
           {orderedRois.map((roi, index) => {
-            const done = Boolean(roi.completed_for_segmentation);
+            const isMarking = markingRoiId === roi.id;
+            const done =
+              isMarking && markingRoiDone !== null
+                ? markingRoiDone
+                : Boolean(roi.completed_for_segmentation);
             const isActive = roi.id === activeRoiId;
             const title = `ROI ${index + 1}: ${roi.width}x${roi.height} px`;
             const details = roiDetails(roi);
@@ -159,11 +165,17 @@ export function ErRoiControls({
                       aria-label={`Mark ${title} done`}
                       type="checkbox"
                       checked={done}
-                      disabled={markingRoiId === roi.id}
+                      disabled={isMarking}
                       onChange={(event) => onMarkRoiDone(roi.id, event.target.checked)}
                     />
                     {ROI_REVIEWED_LABEL}
                   </label>
+                  {isMarking && (
+                    <span className="er-roi-downstream-status" role="status">
+                      <span className="er-roi-spinner" aria-hidden="true" />
+                      {markingRoiDone ? "Finishing..." : "Reopening..."}
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="er-roi-delete-button"

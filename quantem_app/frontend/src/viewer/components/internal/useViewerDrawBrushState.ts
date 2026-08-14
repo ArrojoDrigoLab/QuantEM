@@ -65,6 +65,7 @@ export function useViewerDrawBrushState(config: {
       strokeColor: brushColor,
       strokeOpacity: 0.6,
       strokeWidth: Math.max(brushSize, 1),
+      strokeWidthUnits: "image" as const,
     } satisfies SegmentOverlay;
   }, [brushMode, brushColor, brushPoints, brushPreviewPoint, brushSize]);
 
@@ -108,4 +109,3 @@ export function useViewerDrawBrushState(config: {
     },
   };
 }
-

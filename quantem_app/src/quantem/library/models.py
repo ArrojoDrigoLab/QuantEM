@@ -22,6 +22,7 @@ from quantem.assets.models import TimeStampedModel
 __all__ = [
     "Experiment",
     "Dataset",
+    "create_default_dataset",
     "create_image_experiment",
     "validate_asset_grouping",
 ]
@@ -62,6 +63,30 @@ class Dataset(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.experiment.name} / {self.name}"
+
+
+def create_default_dataset(experiment: Experiment) -> Dataset:
+    """Create the next available ``Dataset N`` inside ``experiment``.
+
+    Default names are local to an experiment. Existing names are compared
+    case-insensitively so a user-created ``dataset 1`` is not followed by an
+    almost indistinguishable ``Dataset 1``. Each create attempt uses a
+    savepoint so simultaneous imports can retry after the database uniqueness
+    constraint chooses a winner.
+    """
+    for number in range(1, 100_000):
+        candidate = f"Dataset {number}"
+        if Dataset.objects.filter(
+            experiment=experiment,
+            name__iexact=candidate,
+        ).exists():
+            continue
+        try:
+            with transaction.atomic():
+                return Dataset.objects.create(experiment=experiment, name=candidate)
+        except IntegrityError:
+            continue
+    raise RuntimeError("Could not allocate a default dataset name for this experiment.")
 
 
 def create_image_experiment(display_name: str) -> Experiment:

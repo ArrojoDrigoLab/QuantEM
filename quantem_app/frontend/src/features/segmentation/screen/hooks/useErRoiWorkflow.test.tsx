@@ -1,11 +1,22 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/shared/api/segmentations/rois", () => ({
+  activateSegmentationRoi: vi.fn(),
+  createSegmentationRoi: vi.fn(),
+  deleteSegmentationRoi: vi.fn(),
+  setRoiCompleteForSegmentation: vi.fn(),
+}));
 
 import {
   LABELING_ROI_SIZE,
   useErRoiWorkflow,
 } from "@/features/segmentation/screen/hooks/useErRoiWorkflow";
-import type { SegmentationRoi } from "@/shared/types/segmentation";
+import { setRoiCompleteForSegmentation } from "@/shared/api/segmentations/rois";
+import type {
+  RoiCompletionResponse,
+  SegmentationRoi,
+} from "@/shared/types/segmentation";
 
 function makeRoi(): SegmentationRoi {
   return {
@@ -25,6 +36,10 @@ function makeRoi(): SegmentationRoi {
 }
 
 describe("useErRoiWorkflow", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("places new ROIs at 1024 square pixels by default", () => {
     const { result } = renderHook(() =>
       useErRoiWorkflow({
@@ -138,5 +153,57 @@ describe("useErRoiWorkflow", () => {
       width: 512,
       height: 512,
     });
+  });
+
+  it("marks Done optimistically while candidate and overlay refreshes finish", async () => {
+    let resolveRequest: ((value: RoiCompletionResponse) => void) | undefined;
+    vi.mocked(setRoiCompleteForSegmentation).mockReturnValue(
+      new Promise<RoiCompletionResponse>((resolve) => {
+        resolveRequest = resolve;
+      })
+    );
+    const refetchSegmentationRois = vi.fn(async () => undefined);
+    const refreshSegmentViews = vi.fn(async () => undefined);
+    const { result } = renderHook(() =>
+      useErRoiWorkflow({
+        currentSegmentationId: "seg-1",
+        enabled: true,
+        image: { width: 2048, height: 1536 },
+        isPointInsideImageBounds: () => true,
+        refetchSegmentationRois,
+        refreshSegmentViews,
+        showErrorToast: vi.fn(),
+      })
+    );
+
+    let request: Promise<void> | undefined;
+    act(() => {
+      request = result.current.markRoiDone("roi-1", true);
+    });
+
+    expect(result.current.markingRoiId).toBe("roi-1");
+    expect(result.current.markingRoiDone).toBe(true);
+
+    await act(async () => {
+      resolveRequest?.({
+        ...makeRoi(),
+        completed_for_segmentation: true,
+        candidate_cleanup: { deleted: 2, updated: 0, created: 0 },
+        overlay: {
+          desired_revision: 2,
+          applied_revision: 1,
+          sync_applied: false,
+          rebuild_mode: "async_partial",
+        },
+      });
+      await request;
+    });
+
+    expect(refetchSegmentationRois).toHaveBeenCalledOnce();
+    expect(refreshSegmentViews).toHaveBeenCalledWith({
+      deferOverlayRefresh: true,
+    });
+    expect(result.current.markingRoiId).toBeNull();
+    expect(result.current.markingRoiDone).toBeNull();
   });
 });

@@ -561,7 +561,7 @@ describe("ImageViewer", () => {
     expect(labels).toEqual(["Fit", "1:1", "Reset"]);
   });
 
-  it("draws a scale bar when the image is calibrated, and none when it is not", async () => {
+  it("keeps zoom controls visible, but draws the scale bar only for calibrated images", async () => {
     loadOmeZarrMock.mockResolvedValue(makeVivResult());
 
     const calibrated = render(
@@ -575,6 +575,7 @@ describe("ImageViewer", () => {
     expect(
       calibrated.container.querySelector(".viewer-scale-bar-label")?.textContent
     ).toMatch(/(nm|µm|mm)$/);
+    expect(calibrated.container.querySelector(".viewer-zoom-controls")).not.toBeNull();
     calibrated.unmount();
 
     const uncalibrated = render(
@@ -584,6 +585,125 @@ describe("ImageViewer", () => {
       expect(getLayerIds()).toContain("viv-multiscale-image");
     });
     expect(uncalibrated.container.querySelector(".viewer-scale-bar")).toBeNull();
+    expect(uncalibrated.container.querySelector(".viewer-zoom-controls")).not.toBeNull();
+  });
+
+  it("zooms in and out from the fixed buttons", async () => {
+    loadOmeZarrMock.mockResolvedValue(makeVivResult());
+    const onViewportChange = vi.fn();
+
+    const { container } = render(
+      <ImageViewer
+        image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }}
+        viewport={{
+          initialState: {
+            centerX: 0.5,
+            centerY: 0.5,
+            zoom: 1,
+            containerWidth: 400,
+            containerHeight: 400,
+          },
+          onChange: onViewportChange,
+        }}
+      />
+    );
+    await waitFor(() => {
+      expect(getLayerIds()).toContain("viv-multiscale-image");
+    });
+
+    const zoomIn = container.querySelector<HTMLButtonElement>(
+      '.viewer-zoom-controls button[aria-label="Zoom in"]'
+    );
+    const zoomOut = container.querySelector<HTMLButtonElement>(
+      '.viewer-zoom-controls button[aria-label="Zoom out"]'
+    );
+    expect(zoomIn).not.toBeNull();
+    expect(zoomOut).not.toBeNull();
+
+    fireEvent.click(zoomIn!);
+    await waitFor(() => {
+      expect(onViewportChange.mock.calls.at(-1)?.[0].zoom).toBeCloseTo(1.25);
+    });
+
+    fireEvent.click(zoomOut!);
+    await waitFor(() => {
+      expect(onViewportChange.mock.calls.at(-1)?.[0].zoom).toBeCloseTo(1);
+    });
+  });
+
+  it("makes Navigate exclusive and shows the hand cursor over armed tools", async () => {
+    loadOmeZarrMock.mockResolvedValue(makeVivResult());
+    const onViewportChange = vi.fn();
+    const onImageClick = vi.fn();
+    const onImagePress = vi.fn();
+    const onImageDrag = vi.fn();
+    const onImageRelease = vi.fn();
+    const onImageMouseMove = vi.fn();
+    const onDrawComplete = vi.fn();
+    const onBrushStroke = vi.fn();
+
+    const { container } = render(
+      <ImageViewer
+        image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }}
+        viewport={{
+          disablePan: true,
+          initialState: {
+            centerX: 0.5,
+            centerY: 0.5,
+            zoom: 1,
+            containerWidth: 400,
+            containerHeight: 400,
+          },
+          onChange: onViewportChange,
+        }}
+        interactions={{
+          mode: "navigate",
+          onImageClick,
+          onImagePress,
+          onImageDrag,
+          onImageRelease,
+          onImageMouseMove,
+          draw: { enabled: true, onComplete: onDrawComplete },
+          brush: { enabled: true, onStroke: onBrushStroke },
+        }}
+        highlighting={{ hoverCursor: true, cursorMode: "target" }}
+      />
+    );
+    await waitFor(() => {
+      expect(getLayerIds()).toContain("viv-multiscale-image");
+    });
+
+    const viewer = container.querySelector<HTMLElement>(".image-viewer");
+    expect(viewer?.style.cursor).toBe("grab");
+    expect(viewer).not.toHaveClass("brush-active");
+
+    onViewportChange.mockClear();
+    const eventTarget = getViewerEventTarget(container);
+    firePointerEvent(eventTarget, "pointerDown", {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+    });
+    firePointerEvent(eventTarget, "pointerMove", {
+      clientX: 120,
+      clientY: 100,
+      pointerId: 1,
+    });
+    firePointerEvent(eventTarget, "pointerUp", {
+      clientX: 120,
+      clientY: 100,
+      pointerId: 1,
+    });
+    fireMouseEvent(eventTarget, "click", { clientX: 120, clientY: 100 });
+
+    expect(onViewportChange).toHaveBeenCalled();
+    expect(onImageClick).not.toHaveBeenCalled();
+    expect(onImagePress).not.toHaveBeenCalled();
+    expect(onImageDrag).not.toHaveBeenCalled();
+    expect(onImageRelease).not.toHaveBeenCalled();
+    expect(onImageMouseMove).not.toHaveBeenCalled();
+    expect(onDrawComplete).not.toHaveBeenCalled();
+    expect(onBrushStroke).not.toHaveBeenCalled();
   });
 
   it("says how to pan only once a tool has taken the left button", async () => {

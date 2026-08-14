@@ -31,6 +31,13 @@ import type {
 } from "@/shared/types/images";
 import type { JobQueueItem } from "@/shared/types/jobs";
 
+export interface SegmentationModelRunSelection {
+  jobId: string;
+  status: JobQueueItem["status"];
+  sourceModel: string;
+  adapterId: string | null;
+}
+
 /**
  * How long a run that stopped stays on the run panel after it concludes.
  *
@@ -49,6 +56,7 @@ const STOPPED_RUN_LINGER_MS = 5 * 60 * 1000;
 interface UseSegmentationProcessingStateArgs {
   currentSegmentation: ImageSegmentation | null;
   activeSourceModel: string | null;
+  activeAdapterId?: string | null;
   supportsPointFeedback: boolean;
   supportsInstanceParams: boolean;
   currentInstanceParams: SegmentationInstanceParams | null;
@@ -61,6 +69,7 @@ interface UseSegmentationProcessingStateArgs {
 export function useSegmentationProcessingState({
   currentSegmentation,
   activeSourceModel,
+  activeAdapterId = null,
   supportsPointFeedback,
   supportsInstanceParams,
   currentInstanceParams,
@@ -114,6 +123,30 @@ export function useSegmentationProcessingState({
     if (!jobQueueStatus) return [];
     return [...jobQueueStatus.running, ...queuePendingJobs];
   }, [jobQueueStatus, queuePendingJobs]);
+
+  const modelRunSegmentationId = currentSegmentation?.id ?? null;
+  const currentModelRun: SegmentationModelRunSelection | null = (() => {
+    if (!modelRunSegmentationId || !jobQueueStatus) return null;
+    const jobs = [
+      ...jobQueueStatus.running,
+      ...queuePendingJobs,
+      ...jobQueueStatus.completed,
+      ...jobQueueStatus.failed,
+    ].sort((left, right) => right.created_at.localeCompare(left.created_at));
+    for (const job of jobs) {
+      const run = job.model_runs?.find(
+        (candidate) => candidate.segmentation_id === modelRunSegmentationId
+      );
+      if (!run) continue;
+      return {
+        jobId: job.id,
+        status: job.status,
+        sourceModel: run.source_model,
+        adapterId: run.adapter_id,
+      };
+    }
+    return null;
+  })();
 
   /**
    * Everything worth watching while this image is being segmented.
@@ -358,7 +391,8 @@ export function useSegmentationProcessingState({
       await rerunSegmentationRoi(
         currentSegmentation.id,
         targetRoi.id,
-        activeSourceModel
+        activeSourceModel,
+        activeAdapterId
       );
       await Promise.all([refetchJobs(), refetchSegmentations()]);
     } catch (error) {
@@ -372,6 +406,7 @@ export function useSegmentationProcessingState({
   }, [
     activeRoi,
     activeSourceModel,
+    activeAdapterId,
     currentSegmentation,
     hasQueuedOrRunningOrganelleTask,
     isRerunningRoi,
@@ -402,7 +437,11 @@ export function useSegmentationProcessingState({
         onDownloadQueued: () => refetchJobs(),
         onInstalled: onModelInstalled,
       });
-      await runFullSegmentation(currentSegmentation.id, activeSourceModel);
+      await runFullSegmentation(
+        currentSegmentation.id,
+        activeSourceModel,
+        activeAdapterId
+      );
       await Promise.all([refetchJobs(), refetchSegmentations()]);
     } catch (error) {
       console.error("Failed to start full segmentation run:", error);
@@ -415,6 +454,7 @@ export function useSegmentationProcessingState({
   }, [
     currentSegmentation,
     activeSourceModel,
+    activeAdapterId,
     hasQueuedOrRunningOrganelleTask,
     isApplyingFull,
     isRerunningRoi,
@@ -478,7 +518,7 @@ export function useSegmentationProcessingState({
       (prev === "RUNNING_INFERENCE" ||
         prev === "EXTRACTING_CANDIDATES" ||
         prev === "UPDATING") &&
-      stage === "CANDIDATES_READY"
+      (stage === "CANDIDATES_READY" || stage === "THRESHOLD_READY")
     ) {
       void refreshSegmentViews();
     }
@@ -489,6 +529,7 @@ export function useSegmentationProcessingState({
     segmentationRoisLoading,
     refetchSegmentationRois,
     activeRoi,
+    currentModelRun,
     shouldShowProcessingStatus,
     processingJobs,
     fullImageProgress,

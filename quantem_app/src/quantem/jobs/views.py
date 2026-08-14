@@ -10,6 +10,9 @@ from quantem.jobs.apps import scheduler_is_running
 from quantem.jobs.constants import (
     JOB_TYPE_INSTALL_MODEL_PACK,
     JOB_TYPE_LABELS,
+    JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
+    JOB_TYPE_RUN_SEGMENTATION_FULL,
+    JOB_TYPE_RUN_SEGMENTATION_ROI,
     QUEUE_DISPLAY_NAMES,
     QUEUE_PRIORITY_ORDER,
 )
@@ -27,6 +30,10 @@ from quantem.jobs.update_maintenance import (
     try_acquire_update_apply_lock,
 )
 from quantem.segmentation.models import ImageSegmentation
+from quantem.segmentation.source_models import (
+    SOURCE_MODEL_UNKNOWN,
+    default_source_model_for_organelle,
+)
 
 DONE_JOB_STATUSES = ("SUCCESS", "FAILED", "CANCELLED")
 FAILED_JOB_STATUSES = ("FAILED", "CANCELLED")
@@ -97,6 +104,54 @@ def _model_pack_payload(job: Job) -> dict | None:
     return {"id": pack_id, "title": title}
 
 
+MODEL_RUN_JOB_TYPES = frozenset(
+    {
+        JOB_TYPE_RUN_SEGMENTATION_ROI,
+        JOB_TYPE_RUN_SEGMENTATION_FULL,
+        JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
+    }
+)
+
+
+def _model_run_payloads(job: Job) -> list[dict] | None:
+    """The model selection carried by each segmentation inference run.
+
+    A single-organelle job keeps the selection at the payload root. The
+    one-image/many-organelle job keeps one selection on each leg. Queue status
+    used to discard both shapes, so a labeling screen could watch the correct
+    model tile the image while its picker remained on Manual and then hide the
+    completed overlay. Keep this deliberately narrower than ``payload_json``:
+    the UI needs model identity, not arbitrary worker input.
+    """
+    if job.type not in MODEL_RUN_JOB_TYPES:
+        return None
+    payload = job.payload_json or {}
+    raw_runs = payload.get("legs") if job.type == JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE else [payload]
+    if not isinstance(raw_runs, list):
+        return None
+
+    runs = []
+    for raw in raw_runs:
+        if not isinstance(raw, dict):
+            continue
+        segmentation_id = str(raw.get("segmentation_id") or "").strip()
+        source_model = str(raw.get("source_model") or "").strip() or (
+            default_source_model_for_organelle(
+                str(raw.get("segmentation_type") or "").strip() or None
+            )
+        )
+        if not segmentation_id or not source_model or source_model == SOURCE_MODEL_UNKNOWN:
+            continue
+        runs.append(
+            {
+                "segmentation_id": segmentation_id,
+                "source_model": source_model,
+                "adapter_id": str(raw.get("adapter_id") or "").strip() or None,
+            }
+        )
+    return runs or None
+
+
 def _serialize_job_status(
     job: Job,
     assets_by_id: dict[str, Asset],
@@ -144,6 +199,7 @@ def _serialize_job_status(
         "image": image_payload,
         "segmentation": segmentation_payload,
         "model_pack": _model_pack_payload(job),
+        "model_runs": _model_run_payloads(job),
         # `progress`, tiles, bytes and the whole-image rollup. This endpoint is
         # the one the Tasks drawer and the labeling screen actually poll; while
         # it dropped these, tile progress existed on `GET /api/jobs/<id>/` and

@@ -584,6 +584,12 @@ def _run_segmentation(
             run_id=_run_id(reporter),
             run_finished_at=utc_timestamp(),
         )
+        # A new probability field has no user-selected include level yet. The
+        # dial must fall back to this run's own default (including a calibrated
+        # fine-tune threshold), not retain the level chosen for the map that was
+        # just replaced.
+        segmentation.include_level = None
+        segmentation.save(update_fields=["include_level", "updated_at"])
         stored_count = len(written)
         if not stored_count and not bool(getattr(segmenter, "persist_probability_maps", True)):
             raise RuntimeError(
@@ -621,6 +627,7 @@ def run_segmentation_roi_task(
     source_model: str | None = None,
     force_recompute_prob_maps: bool = False,
     reporter=None,
+    adapter_id: str | None = None,
 ) -> int:
     """Run inference scoped to an ROI. Returns the stored-output count."""
     return _run_segmentation(
@@ -630,6 +637,7 @@ def run_segmentation_roi_task(
         source_model=source_model,
         force_recompute_prob_maps=force_recompute_prob_maps,
         reporter=reporter,
+        adapter_id=adapter_id,
     )
 
 

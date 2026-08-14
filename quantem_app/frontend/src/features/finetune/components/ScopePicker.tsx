@@ -11,10 +11,11 @@
 
 import { useState } from "react";
 import {
-  isDatasetSelected,
+  isDatasetFullySelected,
   isGroupFullySelected,
   isImageSelected,
   setDatasetSelected,
+  setDatasetImageSelected,
   setGroupSelected,
   setImageSelected,
   type ScopeDatasetNode,
@@ -73,7 +74,7 @@ function DatasetRow({
   onChange: (next: ScopeSelection) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const selected = isDatasetSelected(selection, dataset.id);
+  const selected = isDatasetFullySelected(selection, dataset);
   return (
     <li className="py-0.5">
       <div className="flex items-center gap-2">
@@ -111,11 +112,12 @@ function DatasetRow({
                 key={image.id}
                 image={image}
                 checked={isImageSelected(selection, image.id, dataset.id)}
-                // Ticking the dataset already includes every image in it. The
-                // children go read-only rather than clickable-but-ignored so
-                // the state on screen is the state that will be sent.
-                disabled={selected}
-                onToggle={(on) => onChange(setImageSelected(selection, image.id, on))}
+                disabled={false}
+                onToggle={(on) =>
+                  onChange(
+                    setDatasetImageSelected(selection, dataset, image.id, on)
+                  )
+                }
               />
             ))}
           </ul>

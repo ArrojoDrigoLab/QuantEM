@@ -92,6 +92,33 @@ class OrganelleApplyFullImageViewTests(TestCase):
             queued = Job.objects.get(id=response.data["job_id"])
             self.assertEqual(queued.payload_json["source_model"], source_model)
 
+    def test_apply_full_image_routes_an_explicit_scoped_fine_tune(self):
+        from quantem.finetune.models import STATUS_SUCCESS, Adapter
+
+        adapter = Adapter.objects.create(
+            base_model="omniem:mito",
+            name="TESTFT",
+            status=STATUS_SUCCESS,
+            mode="head",
+            segmentation_type=self.seg_type,
+            calibrated_threshold=0.25,
+        )
+        adapter.scope_assets.add(self.segmentation.asset)
+
+        response = self.client.post(
+            f"/api/segmentations/{self.segmentation.id}/apply-full-image/",
+            {
+                "source_model": "omniem:mito",
+                "adapter_id": str(adapter.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        queued = Job.objects.get(id=response.data["job_id"])
+        self.assertEqual(queued.payload_json["source_model"], "omniem:mito")
+        self.assertEqual(queued.payload_json["adapter_id"], str(adapter.id))
+
     def test_rerun_roi_refuses_an_unknown_source_model_up_front(self):
         response = self.client.post(
             f"/api/segmentations/{self.segmentation.id}/rerun-roi/",

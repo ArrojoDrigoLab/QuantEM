@@ -27,7 +27,10 @@ import type { SegmentObject } from "@/shared/types";
 import type { Runnability } from "@/features/models/runnable";
 import { packIdForSourceModel } from "@/features/models/runnable";
 import type { AppliedAdapterState } from "@/features/models/appliedAdapter";
-import type { ModelCatalogue } from "@/shared/types/finetune";
+import type {
+  FineTuneAppliedImageEvent,
+  ModelCatalogue,
+} from "@/shared/types/finetune";
 import type { ReviewSamBoxController } from "@/features/segmentation/screen/hooks/review/useReviewSamBoxController";
 
 interface UseSegmentationScreenViewModelsArgs {
@@ -52,6 +55,7 @@ interface UseSegmentationScreenViewModelsArgs {
   modelCatalogue: ModelCatalogue | null;
   /** The adapter applied to this segmentation, and whether it is in force. */
   appliedAdapter: AppliedAdapterState | null;
+  onFineTuneImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
   /**
    * Delete every reviewed object and queue a fresh run — the recovery for a
    * pixel size typed in after the objects were made. The header renders the
@@ -91,6 +95,7 @@ export function useSegmentationScreenViewModels({
   modelRunnability,
   modelCatalogue,
   appliedAdapter,
+  onFineTuneImageCompleted,
   onClearMislabeledObjects,
   leftSegments,
   tooManyLeft,
@@ -153,6 +158,8 @@ export function useSegmentationScreenViewModels({
       image: route.image,
       currentSegmentation: route.currentSegmentation,
       sourceModelOptions: route.sourceModelOptions,
+      modelOptions: route.modelOptions,
+      activeModelValue: route.activeModelValue,
       activeSourceModel: route.activeSourceModel,
       // What the raster on screen was actually built from, straight off the
       // manifest -- not the selector, which is a request rather than a fact.
@@ -169,6 +176,8 @@ export function useSegmentationScreenViewModels({
       onBackToExperiment: route.handleBackToExperiment,
       onBackToViewer: route.handleOpenViewer,
       onSourceModelChange: route.handleSourceModelChange,
+      onModelChange: route.handleModelChange,
+      onFineTuneImageCompleted,
       onToggleSegmentationComplete: processing.handleToggleSegmentationComplete,
       isApplyingFull: processing.isApplyingFull,
       isApplyingActiveRoi: processing.isRerunningRoi,
@@ -488,6 +497,7 @@ export function useSegmentationScreenViewModels({
               rois: processing.segmentationRois ?? [],
               activeRoiId: processing.activeRoi?.id ?? null,
               markingRoiId: erRoi.markingRoiId,
+              markingRoiDone: erRoi.markingRoiDone,
               deletingRoiId: erRoi.deletingRoiId,
               activatingRoiId: erRoi.activatingRoiId,
               testingRoiId: processing.rerunningRoiId,
@@ -543,6 +553,7 @@ export function useSegmentationScreenViewModels({
     handleLeftViewportChange,
     handleRightViewportChange,
     onClearMislabeledObjects,
+    onFineTuneImageCompleted,
     interactions,
     samBox,
     leftSegments,

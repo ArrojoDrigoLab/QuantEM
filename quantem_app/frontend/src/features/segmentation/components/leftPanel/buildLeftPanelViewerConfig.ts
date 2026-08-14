@@ -36,9 +36,8 @@ export function buildLeftPanelViewerConfig({
     workflow.mode === "review" &&
     workflow.reviewPhase === "correction" &&
     workflow.correctionTool === "add";
-  // While placing an ROI, the click must reach the placement handler: keep
-  // clicks live (even in navigate mode), force brush/draw off, and disable pan
-  // so a placement click is never swallowed as a brush stroke or a pan gesture.
+  // Placement remains armed behind Navigate, but Navigate always owns the
+  // canvas until the user turns it off.
   const roiPlacementActive = workflow.roiPlacementActive;
   // Box-to-object owns the entire drag. In particular, the normal draw brush
   // must be off or it consumes pointer-up before the box tool can submit.
@@ -65,7 +64,9 @@ export function buildLeftPanelViewerConfig({
     viewport: {
       state: viewer.viewport ?? undefined,
       onChange: viewer.onViewportChange,
-      disablePan: Boolean(disablePanForGroup || roiPlacementActive || samBoxActive),
+      disablePan:
+        !workflow.navigateMode &&
+        Boolean(disablePanForGroup || roiPlacementActive || samBoxActive),
       fitBounds,
       fitBoundsKey,
       // Doubling both ROI dimensions makes the square occupy about half of
@@ -80,18 +81,14 @@ export function buildLeftPanelViewerConfig({
       onRasterRevisionDisplayed: viewer.onOverlayRevisionDisplayed,
     },
     interactions: {
+      mode: workflow.navigateMode ? "navigate" : undefined,
       onImageClick:
-        (workflow.navigateMode && !roiPlacementActive) || samBoxActive
-          ? undefined
-          : segments.onClick,
+        workflow.navigateMode || samBoxActive ? undefined : segments.onClick,
       onImageMouseMove: workflow.navigateMode ? undefined : segments.onMouseMove,
       onImageMouseLeave: workflow.navigateMode ? undefined : segments.onMouseLeave,
-      onImagePress:
-        workflow.navigateMode && !roiPlacementActive ? undefined : segments.onPress,
-      onImageDrag:
-        workflow.navigateMode && !roiPlacementActive ? undefined : segments.onDrag,
-      onImageRelease:
-        workflow.navigateMode && !roiPlacementActive ? undefined : segments.onRelease,
+      onImagePress: workflow.navigateMode ? undefined : segments.onPress,
+      onImageDrag: workflow.navigateMode ? undefined : segments.onDrag,
+      onImageRelease: workflow.navigateMode ? undefined : segments.onRelease,
       draw: {
         enabled:
           !roiPlacementActive &&

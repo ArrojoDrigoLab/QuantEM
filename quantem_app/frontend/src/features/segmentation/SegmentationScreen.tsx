@@ -12,6 +12,7 @@ import { useSegmentationRouteState } from "@/features/segmentation/screen/hooks/
 import { useSegmentationOverlayState } from "@/features/segmentation/screen/hooks/useSegmentationOverlayState";
 import { useSegmentationHoverQuery } from "@/features/segmentation/screen/hooks/useSegmentationHoverQuery";
 import { useSegmentationProcessingState } from "@/features/segmentation/screen/hooks/useSegmentationProcessingState";
+import { useFollowModelRunSelection } from "@/features/segmentation/screen/hooks/useFollowModelRunSelection";
 import { useSegmentationFeedback } from "@/features/segmentation/screen/hooks/useSegmentationFeedback";
 import {
   isBackgroundCountWarning,
@@ -43,7 +44,12 @@ import type { SegmentationOverlayMutationState } from "@/shared/types/segmentati
 import "./SegmentationScreen.css";
 
 export function SegmentationScreen() {
-  const route = useSegmentationRouteState();
+  const {
+    catalogue: modelCatalogue,
+    catalogueLoading: modelCatalogueLoading,
+    refetchCatalogue,
+  } = useModelCatalogue();
+  const route = useSegmentationRouteState(modelCatalogue, modelCatalogueLoading);
   const ui = useSegmentationScreenUiState({
     currentSegmentationId: route.currentSegmentationId,
   });
@@ -52,10 +58,6 @@ export function SegmentationScreen() {
   // Whether the model the run button would use can be loaded here. Without
   // this the button cheerfully queued a run that died on a missing encoder,
   // and the queue banner then replaced the error that explained it.
-  const {
-    catalogue: modelCatalogue,
-    refetchCatalogue,
-  } = useModelCatalogue();
   const modelRunnability = useMemo(
     () =>
       runnabilityForPackId(
@@ -73,9 +75,15 @@ export function SegmentationScreen() {
       appliedAdapterState(
         modelCatalogue,
         route.currentSegmentation?.id ?? null,
-        route.activeSourceModel
+        route.activeSourceModel,
+        route.activeAdapterId
       ),
-    [modelCatalogue, route.currentSegmentation?.id, route.activeSourceModel]
+    [
+      modelCatalogue,
+      route.activeAdapterId,
+      route.activeSourceModel,
+      route.currentSegmentation?.id,
+    ]
   );
 
   const isPointInsideImageBounds = useCallback(
@@ -226,6 +234,7 @@ export function SegmentationScreen() {
   const processing = useSegmentationProcessingState({
     currentSegmentation: route.currentSegmentation,
     activeSourceModel: route.activeSourceModel,
+    activeAdapterId: route.activeAdapterId,
     supportsPointFeedback: route.supportsPointFeedback,
     supportsInstanceParams: route.supportsInstanceParams,
     currentInstanceParams: route.currentInstanceParams,
@@ -234,25 +243,74 @@ export function SegmentationScreen() {
     onModelInstalled: refetchCatalogue,
     onRunError: ui.showErrorToast,
   });
+  const {
+    activeModelValue,
+    activeSourceModel,
+    autoRunRequested,
+    consumeAutoRunRequest,
+    currentSegmentationId,
+    handleAdapterSelection,
+    refetchSegmentations,
+    selectedAssetId,
+  } = route;
+  const { handleApplyFullImage, refetchJobs } = processing;
+  useFollowModelRunSelection({
+    segmentationId: currentSegmentationId,
+    run: processing.currentModelRun,
+    onBaseModelSelected: route.handleSourceModelChange,
+    onAdaptedModelSelected: route.handleAdapterSelection,
+  });
+  const handleFineTuneImageCompleted = useCallback(
+    (result: {
+      adapterId: string;
+      baseModel: string;
+      assetId: string;
+      segmentationId: string;
+    }) => {
+      if (
+        result.assetId !== selectedAssetId ||
+        result.segmentationId !== currentSegmentationId
+      ) {
+        return;
+      }
+      handleAdapterSelection(result.adapterId, result.baseModel);
+      void Promise.all([
+        refetchCatalogue(),
+        refetchJobs(),
+        refetchSegmentations(),
+        overlayRefresh.refreshSegmentViews(),
+      ]);
+    },
+    [
+      currentSegmentationId,
+      handleAdapterSelection,
+      overlayRefresh,
+      refetchCatalogue,
+      refetchJobs,
+      refetchSegmentations,
+      selectedAssetId,
+    ]
+  );
 
   // The viewer's model dialog creates the manual workspace first, then lands
   // here with an explicit one-shot request. Running from this mounted screen
   // lets a missing pack appear as its own download job before inference starts.
   const consumedAutoRunRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!route.autoRunRequested || !route.currentSegmentationId) return;
-    if (!packIdForSourceModel(route.activeSourceModel)) return;
-    const key = `${route.currentSegmentationId}:${route.activeSourceModel}`;
+    if (!autoRunRequested || !currentSegmentationId) return;
+    if (!packIdForSourceModel(activeSourceModel)) return;
+    const key = `${currentSegmentationId}:${activeModelValue}`;
     if (consumedAutoRunRef.current === key) return;
     consumedAutoRunRef.current = key;
-    route.consumeAutoRunRequest();
-    void processing.handleApplyFullImage();
+    consumeAutoRunRequest();
+    void handleApplyFullImage();
   }, [
-    processing.handleApplyFullImage,
-    route.activeSourceModel,
-    route.autoRunRequested,
-    route.consumeAutoRunRequest,
-    route.currentSegmentationId,
+    activeModelValue,
+    activeSourceModel,
+    autoRunRequested,
+    consumeAutoRunRequest,
+    currentSegmentationId,
+    handleApplyFullImage,
   ]);
 
   const feedback = useSegmentationFeedback({
@@ -280,6 +338,7 @@ export function SegmentationScreen() {
     image: route.image,
     isPointInsideImageBounds,
     refetchSegmentationRois: processing.refetchSegmentationRois,
+    refreshSegmentViews: overlayRefresh.refreshSegmentViews,
     registerAnnotationActivity: overlayRefresh.registerAnnotationActivity,
     onRoiConfirmed: useCallback(() => {
       // After creating the ROI, hand off to Correct mode (the new ROI is the
@@ -289,15 +348,15 @@ export function SegmentationScreen() {
     showErrorToast: ui.showErrorToast,
   });
 
-  const erPolygonActive =
-    route.isErSegmentation &&
+  const objectPolygonActive =
     reviewMode.workflowMode === "review" &&
     reviewMode.correctionMode.reviewPhase === "correction" &&
     reviewMode.correctionMode.correctionTool === "polygon";
 
   const erPolygon = useErPolygonWorkflow({
     currentSegmentation: route.currentSegmentation,
-    active: erPolygonActive,
+    active: objectPolygonActive,
+    mergeOverlaps: route.isErSegmentation,
     isPointInsideImageBounds,
     registerAnnotationActivity: overlayRefresh.registerAnnotationActivity,
     showErrorToast: ui.showErrorToast,
@@ -590,6 +649,7 @@ export function SegmentationScreen() {
     modelRunnability,
     modelCatalogue,
     appliedAdapter,
+    onFineTuneImageCompleted: handleFineTuneImageCompleted,
     onClearMislabeledObjects: handleClearMislabeledObjects,
     leftSegments,
     tooManyLeft,
@@ -691,6 +751,7 @@ export function SegmentationScreen() {
               ? {
                   segmentationId: route.currentSegmentation.id,
                   sourceModel: route.activeSourceModel,
+                  adapterId: route.activeAdapterId,
                   segmentationInternalName: route.segmentationInternalName,
                   statusStage: route.currentSegmentation.status_stage,
                   roiId: processing.previewRoiId,

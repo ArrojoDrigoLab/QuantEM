@@ -48,6 +48,10 @@ from quantem.finetune.adapt import (
     torch_available,
 )
 from quantem.finetune.models import (
+    HOLDOUT_CV_MIN_ANNOTATIONS,
+    HOLDOUT_MIN_ANNOTATIONS,
+    TRAINING_MODE_HOLDOUT_1,
+    TRAINING_MODE_USE_ALL,
     TRAINING_MODES,
     Adapter,
 )
@@ -321,7 +325,11 @@ def _preview(
             "done_rois": crop_set.done_rois,
             "tile_count": tile_count,
             "per_image": per_image,
-            "default_mode": default_training_mode(tile_count),
+            "default_mode": (
+                default_training_mode(tile_count)
+                if crop_set.annotation_count >= HOLDOUT_MIN_ANNOTATIONS
+                else TRAINING_MODE_USE_ALL
+            ),
             "eligible": not blockers,
             "blockers": blockers,
         }
@@ -393,6 +401,13 @@ class FineTuneRunsView(APIView):
                 else "This selection cannot be fine-tuned yet."
             )
         training_mode = training_mode or preview["default_mode"]
+        annotation_count = crop_set.annotation_count
+        if cv_benchmark and training_mode != TRAINING_MODE_HOLDOUT_1:
+            return _detail("Cross-validation requires the hold-out-one training mode.")
+        if cv_benchmark and annotation_count < HOLDOUT_CV_MIN_ANNOTATIONS:
+            return _detail("Hold-out-one cross-validation requires at least 3 annotations.")
+        if training_mode == TRAINING_MODE_HOLDOUT_1 and annotation_count < HOLDOUT_MIN_ANNOTATIONS:
+            return _detail("Hold out one requires at least 2 annotations.")
 
         overwrite_id = str(data.get("overwrite_adapter_id") or "").strip()
         existing = (
@@ -945,14 +960,20 @@ class FineTuneAdaptersView(APIView):
     """
 
     def get(self, request):
-        adapters = Adapter.objects.select_related("experiment").exclude(name="")
+        adapters = (
+            Adapter.objects.select_related("experiment")
+            .prefetch_related("scope_assets")
+            .exclude(name="")
+        )
         segmentation_type = _segmentation_type(request)
         if segmentation_type is not None:
             adapters = adapters.filter(segmentation_type=segmentation_type)
         else:
             adapters = adapters.filter(segmentation_type__isnull=False)
-        return Response(
-            [
+        rows = []
+        for adapter in adapters.order_by("-created_at"):
+            scope_assets = list(adapter.scope_assets.all())
+            rows.append(
                 {
                     "id": str(adapter.id),
                     "name": adapter.name,
@@ -967,9 +988,8 @@ class FineTuneAdaptersView(APIView):
                         if adapter.experiment_id
                         else None
                     ),
-                    "asset_count": adapter.scope_assets.count(),
+                    "asset_count": len(scope_assets),
+                    "asset_ids": [str(asset.id) for asset in scope_assets],
                 }
-                for adapter in adapters.order_by("-created_at")
-            ],
-            status=status.HTTP_200_OK,
-        )
+            )
+        return Response(rows, status=status.HTTP_200_OK)

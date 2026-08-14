@@ -615,16 +615,10 @@ def test_the_cli_pins_threads_when_it_prepares_the_process():
         assert "_prepare_env" in inner, f"{name} does not call _prepare_env"
 
 
-#: The single place allowed to ask how big the machine is (ruling R2), plus the
-#: one caller that has not been moved onto the profile yet. That caller is a
-#: real loose end and is named here rather than left to be discovered:
-#: ``JobRunner.__init__`` sizes its CPU worker pool from ``os.cpu_count() - 1``,
-#: which on the workstation profile is 27 concurrent heavy jobs against a
-#: designed 4. Moving it is a scheduler change, not an S0 change.
+#: The single place allowed to ask how big the machine is (ruling R2).
 CAPABILITY_PROBE_ALLOWLIST = {
     ("quantem/core/machine.py", "cpu_count"),
     ("quantem/core/machine.py", "virtual_memory"),
-    ("quantem/jobs/runner.py", "cpu_count"),
 }
 
 

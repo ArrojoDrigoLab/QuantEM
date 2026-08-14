@@ -1042,7 +1042,6 @@ def _save_roi_png_from_ngff(
     return True
 
 
-@transaction.atomic
 def create_roi_image_from_image(
     image: object,
     *,
@@ -1055,8 +1054,18 @@ def create_roi_image_from_image(
     is_active: bool = True,
     is_complete: bool = False,
 ) -> ImageROI:
-    """
-    Create an ROI image from an asset-backed openable and save its PNG.
+    """Create an ROI image from an asset-backed openable and save its PNG.
+
+    Cropping and encoding deliberately happen before the transaction. QuantEM
+    uses ``BEGIN IMMEDIATE`` for explicit SQLite transactions, so entering an
+    atomic block takes the one database writer lock even before the first
+    query. A fallback crop can decode a very large source image and take longer
+    than SQLite's busy timeout; holding the lock across that work made an
+    unrelated upload fail with ``database is locked`` and stalled job-status
+    writes for the same interval.
+
+    Only the row count, active-ROI handoff, and row insert need to be atomic.
+    If that short commit fails, remove the PNG that no row can reference.
     """
 
     ROIS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1129,23 +1138,31 @@ def create_roi_image_from_image(
         roi.save(roi_path)
 
     asset = getattr(image, "asset", None)
-    if display_name is None:
-        current_roi_count = ImageROI.objects.filter(asset=asset).count()
-        display_name = f"{image.display_name} ROI {current_roi_count + 1}"
+    try:
+        with transaction.atomic():
+            resolved_display_name = display_name
+            if resolved_display_name is None:
+                current_roi_count = ImageROI.objects.filter(asset=asset).count()
+                resolved_display_name = f"{image.display_name} ROI {current_roi_count + 1}"
 
-    if is_active and asset is not None:
-        ImageROI.objects.filter(asset=asset).update(is_active=False)
+            if is_active and asset is not None:
+                ImageROI.objects.filter(asset=asset).update(is_active=False)
 
-    roi_image = ImageROI.objects.create(
-        id=roi_id,
-        asset=asset,
-        display_name=display_name,
-        x=x,
-        y=y,
-        width=width,
-        height=height,
-        source=source,
-        is_active=is_active,
-        is_complete=is_complete,
-    )
-    return roi_image
+            return ImageROI.objects.create(
+                id=roi_id,
+                asset=asset,
+                display_name=resolved_display_name,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                source=source,
+                is_active=is_active,
+                is_complete=is_complete,
+            )
+    except BaseException:
+        try:
+            roi_path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Could not remove unreferenced ROI image %s", roi_path)
+        raise

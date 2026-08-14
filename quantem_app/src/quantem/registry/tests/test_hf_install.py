@@ -420,6 +420,21 @@ class TestPromoteRetry:
         assert held.wait(timeout=5), "the holder thread never opened the file"
         return thread
 
+    def _hold_open_until_released(self, path: Path) -> tuple[threading.Thread, threading.Event]:
+        held = threading.Event()
+        release = threading.Event()
+
+        def hold() -> None:
+            with open(path, "rb") as fh:
+                fh.read(1)
+                held.set()
+                release.wait()
+
+        thread = threading.Thread(target=hold, daemon=True)
+        thread.start()
+        assert held.wait(timeout=5), "the holder thread never opened the file"
+        return thread, release
+
     def test_a_transient_handle_is_absorbed_by_the_retry(self, tmp_path, monkeypatch):
         staging = self._staged(tmp_path, monkeypatch)
         # A fast schedule with the same total patience shape: the handle is
@@ -439,11 +454,12 @@ class TestPromoteRetry:
         must fail under the very condition the retry test succeeds in."""
         staging = self._staged(tmp_path, monkeypatch)
         monkeypatch.setattr(hf_install, "_PROMOTE_RETRY_DELAYS", ())
-        holder = self._hold_open(staging / cache.HEAD_NAME, 2.0)
+        holder, release = self._hold_open_until_released(staging / cache.HEAD_NAME)
         try:
             with pytest.raises(InstallError) as excinfo:
                 hf_install._promote("quantem:mito", staging, force=False)
         finally:
+            release.set()
             holder.join(timeout=10)
         message = str(excinfo.value)
         assert "antivirus" in message
@@ -455,11 +471,12 @@ class TestPromoteRetry:
         forever -- and the error says how long it tried."""
         staging = self._staged(tmp_path, monkeypatch)
         monkeypatch.setattr(hf_install, "_PROMOTE_RETRY_DELAYS", (0.05, 0.05))
-        holder = self._hold_open(staging / cache.HEAD_NAME, 2.0)
+        holder, release = self._hold_open_until_released(staging / cache.HEAD_NAME)
         try:
             with pytest.raises(InstallError) as excinfo:
                 hf_install._promote("quantem:mito", staging, force=False)
         finally:
+            release.set()
             holder.join(timeout=10)
         assert "Tried 3 times" in str(excinfo.value)
 

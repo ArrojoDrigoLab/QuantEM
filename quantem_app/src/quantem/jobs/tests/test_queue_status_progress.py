@@ -19,6 +19,7 @@ from rest_framework.test import APIClient
 
 from quantem.jobs.constants import (
     JOB_TYPE_INSTALL_MODEL_PACK,
+    JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
     JOB_TYPE_RUN_SEGMENTATION_FULL,
     QUEUE_P2_UPLOAD,
     QUEUE_P4_FULL,
@@ -176,6 +177,88 @@ class QueueStatusProgressTests(TestCase):
         Job.objects.filter(id=job.id).update(status="RUNNING")
         (payload,) = self._running()
         self.assertEqual(payload["model_pack"], {"id": "someone-elses:organelle", "title": ""})
+
+    def test_queue_status_carries_the_model_picker_identity_for_inference(self):
+        segmentation_id = str(uuid.uuid4())
+        adapter_id = str(uuid.uuid4())
+        job = Job.enqueue(
+            job_type=JOB_TYPE_RUN_SEGMENTATION_FULL,
+            payload={
+                "asset_id": ASSET_ID,
+                "segmentation_id": segmentation_id,
+                "source_model": "omniem:mito",
+                "adapter_id": adapter_id,
+            },
+            queue_name=QUEUE_P4_FULL,
+            resource_class="gpu",
+        )
+        Job.objects.filter(id=job.id).update(status="RUNNING")
+
+        (payload,) = self._running()
+
+        self.assertEqual(
+            payload["model_runs"],
+            [
+                {
+                    "segmentation_id": segmentation_id,
+                    "source_model": "omniem:mito",
+                    "adapter_id": adapter_id,
+                }
+            ],
+        )
+
+    def test_queue_status_resolves_an_implicit_default_model(self):
+        segmentation_id = str(uuid.uuid4())
+        job = Job.enqueue(
+            job_type=JOB_TYPE_RUN_SEGMENTATION_FULL,
+            payload={
+                "asset_id": ASSET_ID,
+                "segmentation_id": segmentation_id,
+                "segmentation_type": "quantem_internal_mito",
+            },
+            queue_name=QUEUE_P4_FULL,
+            resource_class="gpu",
+        )
+        Job.objects.filter(id=job.id).update(status="RUNNING")
+
+        (payload,) = self._running()
+
+        self.assertEqual(payload["model_runs"][0]["source_model"], "quantem:mito")
+
+    def test_queue_status_carries_each_model_in_an_image_wide_run(self):
+        mito_id = str(uuid.uuid4())
+        er_id = str(uuid.uuid4())
+        job = Job.enqueue(
+            job_type=JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
+            payload={
+                "asset_id": ASSET_ID,
+                "legs": [
+                    {"segmentation_id": mito_id, "source_model": "quantem:mito"},
+                    {"segmentation_id": er_id, "source_model": "omniem:er"},
+                ],
+            },
+            queue_name=QUEUE_P4_FULL,
+            resource_class="gpu",
+        )
+        Job.objects.filter(id=job.id).update(status="RUNNING")
+
+        (payload,) = self._running()
+
+        self.assertEqual(
+            payload["model_runs"],
+            [
+                {
+                    "segmentation_id": mito_id,
+                    "source_model": "quantem:mito",
+                    "adapter_id": None,
+                },
+                {
+                    "segmentation_id": er_id,
+                    "source_model": "omniem:er",
+                    "adapter_id": None,
+                },
+            ],
+        )
 
     def test_the_rollup_costs_one_query_however_many_runs_share_a_wave(self):
         """Polled every three seconds: a query per run would be a real cost."""

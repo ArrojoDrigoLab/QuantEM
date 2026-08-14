@@ -19,6 +19,7 @@ import { FineTuneOrganelleButton } from "@/features/finetune/FineTuneOrganelleBu
 import type { DisplayedObjectsDescription } from "@/features/segmentation/components/segmentationHeaderProvenance";
 import type { ObjectsPixelSizeWarning } from "@/shared/objectsPixelSize";
 import type { AssetDetail, ImageSegmentation } from "@/shared/types";
+import type { FineTuneAppliedImageEvent } from "@/shared/types/finetune";
 
 /**
  * The provenance chips and the way out of the state the warning chip describes.
@@ -133,10 +134,14 @@ export function HeaderRouteLinks({
   image,
   currentSegmentation,
   fineTuneEligibilityRevision,
+  activeBaseModel,
+  onFineTuneImageCompleted,
 }: {
   image: AssetDetail;
   currentSegmentation: ImageSegmentation | null;
   fineTuneEligibilityRevision?: string;
+  activeBaseModel?: string | null;
+  onFineTuneImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
 }) {
   return (
     <>
@@ -152,6 +157,8 @@ export function HeaderRouteLinks({
         image={image}
         currentSegmentation={currentSegmentation}
         eligibilityRevision={fineTuneEligibilityRevision}
+        initialBaseModel={activeBaseModel}
+        onAppliedImageCompleted={onFineTuneImageCompleted}
       />
     </>
   );

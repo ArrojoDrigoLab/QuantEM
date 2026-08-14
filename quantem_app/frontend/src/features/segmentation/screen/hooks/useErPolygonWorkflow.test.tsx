@@ -11,6 +11,7 @@ function makeArgs(
   return {
     currentSegmentation: makeSegmentation(),
     active: true,
+    mergeOverlaps: true,
     isPointInsideImageBounds: () => true,
     registerAnnotationActivity: vi.fn(),
     showErrorToast: vi.fn(),
@@ -116,5 +117,31 @@ describe("useErPolygonWorkflow: what the response says happened", () => {
 
     expect(showNoticeToast).not.toHaveBeenCalled();
     expect(showErrorToast).not.toHaveBeenCalled();
+  });
+
+  it("creates a separate object for non-ER polygon outlines", async () => {
+    const submitConfirmedGeometriesOptimistically = vi.fn(async () => ({
+      created: 1,
+      updated: 0,
+      deleted: 0,
+      confirmed_ids: ["seg-obj-1"],
+    }));
+    const { result } = renderHook(() =>
+      useErPolygonWorkflow(
+        makeArgs({
+          mergeOverlaps: false,
+          submitConfirmedGeometriesOptimistically,
+        })
+      )
+    );
+
+    await traceAndClose(result.current);
+
+    expect(submitConfirmedGeometriesOptimistically).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mergeOverlaps: false,
+        manualCreation: true,
+      })
+    );
   });
 });

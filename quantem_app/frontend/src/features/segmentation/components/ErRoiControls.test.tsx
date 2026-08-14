@@ -35,6 +35,7 @@ function renderControls(overrides: Partial<ErRoiSection> = {}) {
     rois: [makeRoi()],
     activeRoiId: "roi-1",
     markingRoiId: null,
+    markingRoiDone: null,
     deletingRoiId: null,
     activatingRoiId: null,
     testingRoiId: null,
@@ -91,6 +92,14 @@ describe("ErRoiControls", () => {
     expect(screen.getByRole("button", { name: "Edit Area" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Open" })).toBeEnabled();
     expect(screen.getByRole("checkbox", { name: /mark roi 1.*done/i })).toBeChecked();
+  });
+
+  it("optimistically marks Done and shows downstream cleanup progress", () => {
+    renderControls({ markingRoiId: "roi-1", markingRoiDone: true });
+
+    expect(screen.getByRole("checkbox", { name: /mark roi 1.*done/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /mark roi 1.*done/i })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Finishing...");
   });
 
   it("keeps ROI numbers in creation order when the active ROI changes", () => {

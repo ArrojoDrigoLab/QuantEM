@@ -23,6 +23,7 @@ generation is sealed:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
@@ -35,7 +36,10 @@ from typing import Any
 import numpy as np
 import zarr
 from numcodecs import Blosc
+from numcodecs import blosc as blosc_runtime
 from PIL import Image
+
+from quantem.core.machine import get_machine_profile
 
 from .canonical_decode import DECODER_VERSION, CanonicalPlane
 from .pyramid_authority import (
@@ -82,6 +86,35 @@ NGFF_THUMBNAIL_TARGET_MAX_SIDE = 256
 #: genuinely blank tile has no chunk file, which makes the strict store raise on
 #: correct data and makes the chunk-count invariant unsound.
 NGFF_ARRAY_CONFIG = {"write_empty_chunks": True}
+
+
+@contextlib.contextmanager
+def bounded_ngff_build_resources() -> Iterator[None]:
+    """Bound one pyramid build's nested codec fan-out, then restore it.
+
+    Zarr 3 runs ten chunk codecs concurrently by default and this numcodecs
+    build gives each Blosc codec eight threads. That is up to eighty runnable
+    compression threads for one image; the job scheduler previously allowed
+    five such upload pipelines. The work already runs in a spawned job process,
+    but process isolation does not reserve CPU or disk bandwidth for the viewer.
+
+    Use the machine profile's raster width as the outer chunk concurrency and
+    one thread inside each codec. This preserves useful parallelism without
+    nesting two thread pools. Both knobs are process-global, so restore them for
+    direct callers and tests; a production upload worker handles one job at a
+    time, making the scoped change unambiguous there.
+    """
+
+    previous_concurrency = zarr.config.get("async.concurrency")
+    previous_blosc_threads = blosc_runtime.get_nthreads()
+    chunk_concurrency = max(1, int(get_machine_profile().raster_workers))
+    zarr.config.set({"async.concurrency": chunk_concurrency})
+    blosc_runtime.set_nthreads(1)
+    try:
+        yield
+    finally:
+        zarr.config.set({"async.concurrency": previous_concurrency})
+        blosc_runtime.set_nthreads(previous_blosc_threads)
 
 
 def get_ngff_root_path(image) -> Path:

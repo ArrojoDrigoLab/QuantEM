@@ -91,16 +91,13 @@ export function useSegmentationInteractionRouter({
   const onLeftClick = useCallback(
     (point: Point) => {
       if (!currentSegmentationId) return;
+      if (leftNavigateMode) return;
 
-      // ROI placement is exclusive and wins over navigate/pan: a placement click
-      // must always land, regardless of the underlying tool or navigate mode.
       if (roiPlacementActive) {
         if (!isPointInsideImageBounds(point)) return;
         onRoiPlacementClick(point);
         return;
       }
-
-      if (leftNavigateMode) return;
 
       if (erPolygon.isActive) {
         if (!isPointInsideImageBounds(point)) return;
@@ -151,11 +148,11 @@ export function useSegmentationInteractionRouter({
 
   const onLeftImagePress = useCallback(
     (imagePoint: Point, screenPoint: Point) => {
+      if (leftNavigateMode) return;
       if (roiPlacementActive) {
         onRoiEditPress(imagePoint);
         return;
       }
-      if (leftNavigateMode) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
       // Before the group-selection check: both are box drags, and whichever is
       // switched on owns the gesture.
@@ -180,11 +177,11 @@ export function useSegmentationInteractionRouter({
 
   const onLeftImageDrag = useCallback(
     (imagePoint: Point, screenPoint: Point) => {
+      if (leftNavigateMode) return;
       if (roiPlacementActive) {
         onRoiEditDrag(imagePoint);
         return;
       }
-      if (leftNavigateMode) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
       if (samBox?.isActive) {
         samBox.handleImageDrag(imagePoint, screenPoint);
@@ -207,11 +204,11 @@ export function useSegmentationInteractionRouter({
 
   const onLeftImageRelease = useCallback(
     (imagePoint: Point, screenPoint: Point) => {
+      if (leftNavigateMode) return;
       if (roiPlacementActive) {
         onRoiEditRelease(imagePoint);
         return;
       }
-      if (leftNavigateMode) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
       if (samBox?.isActive) {
         samBox.handleImageRelease(imagePoint, screenPoint);

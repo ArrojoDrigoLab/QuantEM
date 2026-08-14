@@ -15,6 +15,7 @@ from datetime import timedelta
 from django.apps import apps
 from django.utils import timezone
 
+from quantem.core.machine import get_machine_profile
 from quantem.jobs.artifact_registry import lease_paths_for_job
 from quantem.jobs.constants import (
     JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
@@ -462,11 +463,21 @@ class JobRunner:
             "yes",
             "on",
         }
-        cpu_default = max(1, (os.cpu_count() or 2) - 1)
+        # One capability decision for the whole app. ``os.cpu_count() - 1``
+        # made this 27 processes on the development workstation while the
+        # machine profile's measured safe budget is four heavy jobs. Those
+        # workers are separate from the request server, but enough of them can
+        # still saturate CPU, memory bandwidth and disk until even client-side
+        # viewer zoom feels frozen.
+        cpu_default = get_machine_profile().heavy_slots
         self.cpu_slots = _parse_worker_count(os.environ.get("JOB_CPU_WORKERS"), cpu_default)
         self.upload_pipeline_slots = _parse_worker_count(
             os.environ.get("JOB_UPLOAD_PIPELINE_WORKERS"),
-            5,
+            # Pyramid creation already compresses several chunks in parallel.
+            # Running several pyramids at once only multiplies that fan-out and
+            # turns sequential disk throughput into contention. Further
+            # uploads remain accepted and visible in this queue.
+            1,
         )
         self.gpu_devices = _detect_accelerator_devices()
         # One worker per accelerator, and the default has to come from how many

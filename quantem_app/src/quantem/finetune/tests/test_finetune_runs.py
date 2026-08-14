@@ -171,6 +171,51 @@ class NamedRunTests(TestCase):
         assert body["experiment"]["name"] == "Fasted cohort"
         assert len(body["per_image"]) == 2
 
+    def test_one_annotation_defaults_to_use_all_and_cannot_be_held_out(self):
+        segmentation = annotated_segmentation("one_annotation.tif", with_roi=False)
+        segmentation.asset.experiment = self.experiment
+        segmentation.asset.save(update_fields=["experiment"])
+        CompletedROI.objects.create(
+            segmentation=segmentation,
+            geometry=square(*AREAS[0]),
+        )
+        asset_ids = [str(segmentation.asset_id)]
+
+        preview = _post(
+            self.client,
+            "/api/finetune/preview/",
+            {"segmentation_type": str(_mito().id), "asset_ids": asset_ids},
+        ).json()
+        response = self._start(
+            name="Too little to hold out",
+            asset_ids=asset_ids,
+            mode=TRAINING_MODE_HOLDOUT_1,
+        )
+
+        assert preview["annotation_count"] == 1
+        assert preview["default_mode"] == TRAINING_MODE_USE_ALL
+        assert response.status_code == 400
+        assert "at least 2 annotations" in response.json()["detail"]
+
+    def test_cross_validation_requires_three_annotations(self):
+        two_annotation_asset = [str(self.segmentations[0].asset_id)]
+
+        holdout = self._start(
+            name="Two annotation holdout",
+            asset_ids=two_annotation_asset,
+            mode=TRAINING_MODE_HOLDOUT_1,
+        )
+        cross_validation = self._start(
+            name="Two annotation CV",
+            asset_ids=two_annotation_asset,
+            mode=TRAINING_MODE_HOLDOUT_1,
+            cv_benchmark=True,
+        )
+
+        assert holdout.status_code == 202, holdout.content
+        assert cross_validation.status_code == 400
+        assert "at least 3 annotations" in cross_validation.json()["detail"]
+
     def test_a_model_that_cannot_run_here_is_a_blocker_not_a_surprise(self):
         """The refusal happens at the door, with the registry's own sentence.
 
@@ -396,6 +441,7 @@ class NamedRunTests(TestCase):
         names = [row["name"] for row in response.json()]
         assert names == ["Mito one"]
         assert response.json()[0]["asset_count"] == 2
+        assert sorted(response.json()[0]["asset_ids"]) == sorted(self.asset_ids)
 
 
 class ProgressEndpointTests(TestCase):

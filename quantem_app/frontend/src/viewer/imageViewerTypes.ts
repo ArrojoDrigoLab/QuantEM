@@ -58,6 +58,12 @@ export interface ImageViewerOverlayConfig {
 }
 
 export interface ImageViewerInteractionConfig {
+  /**
+   * Navigate is an exclusive canvas mode. It disables every labeling callback
+   * and drawing tool, keeps panning enabled, and shows the hand cursor even if
+   * a caller still has a labeling tool armed behind it.
+   */
+  mode?: "navigate";
   onImageClick?: (point: Point) => void;
   onImagePress?: (point: Point, screenPoint: Point) => void;
   onImageDrag?: (point: Point, screenPoint: Point) => void;

@@ -60,7 +60,9 @@ const OverlaySvgLayer = memo(function OverlaySvgLayer(config: {
               strokeDasharray={style.strokeDasharray}
               strokeLinecap="round"
               strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
+              vectorEffect={
+                overlay.strokeWidthUnits === "image" ? undefined : "non-scaling-stroke"
+              }
             />
           );
         }

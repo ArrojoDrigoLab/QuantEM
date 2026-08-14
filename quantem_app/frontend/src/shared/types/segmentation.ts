@@ -35,6 +35,12 @@ export interface SegmentationRoi {
   updated_at: string;
 }
 
+export interface CandidateCleanupSummary {
+  deleted: number;
+  updated: number;
+  created: number;
+}
+
 export interface CompletedRoi {
   id: string;
   segmentation: string;
@@ -94,6 +100,11 @@ export interface SegmentationOverlayMutationState {
   sync_applied: boolean;
   rebuild_mode: "sync_partial" | "async_partial" | "async_full" | "metadata_only";
   source_model?: string | null;
+}
+
+export interface RoiCompletionResponse extends SegmentationRoi {
+  candidate_cleanup: CandidateCleanupSummary;
+  overlay?: SegmentationOverlayMutationState | null;
 }
 
 /**
@@ -332,6 +343,7 @@ export interface ConfirmBatchResponse {
   overlay?: SegmentationOverlayMutationState | null;
   outlines?: ConfirmBatchOutlinesNotice | null;
   measurement?: SegmentMeasurementNotice | null;
+  candidate_cleanup?: CandidateCleanupSummary;
 }
 
 export interface RemoveAreaPolygonPayload {
@@ -418,7 +430,7 @@ export type CreateUserFeedbackResponse = UserFeedback & { job_id?: string };
 
 export type ActivateSegmentationRoiResponse = SegmentationRoi;
 
-export type MarkRoiCompleteResponse = SegmentationRoi;
+export type MarkRoiCompleteResponse = RoiCompletionResponse;
 
 /**
  * `GET /api/segmentations/<id>/complete` — what marking done would destroy.

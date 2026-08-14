@@ -36,10 +36,11 @@ PIXEL_SIZE_FIELDS = ("pixel_size_nm", "pixel_size_nm_z")
 # Where this import goes in the library
 # ---------------------------------------------------------------------------
 #
-# Both form fields are optional, but an active image's experiment is not. An
-# importer that names no experiment gets a new one named after the image. This
-# keeps the simple one-file import simple while giving every image a stable
-# library home from the moment its row exists.
+# Both form fields are optional, but an imported image's experiment and dataset
+# are not. An importer that names no experiment gets a new one named after the
+# image. An importer that names no dataset gets the next ``Dataset N`` inside
+# that experiment. This keeps the simple one-file import simple while giving
+# every image a stable library home from the moment its row exists.
 #
 # The *shape* is checked here, before a byte is claimed, because "you named a
 # dataset but no experiment" is the user's to fix and needs no file on disk to
@@ -96,7 +97,7 @@ def _resolve_import_grouping(
     *,
     display_name: str,
 ):
-    """Resolve the experiment and optional dataset for a new image.
+    """Resolve the experiment and dataset for a new image.
 
     Called before the asset row is inserted, inside that row's transaction.
     This avoids creating a temporary per-image experiment and then replacing
@@ -105,7 +106,7 @@ def _resolve_import_grouping(
     from django.core.exceptions import ValidationError as DjangoValidationError
 
     from quantem.library.grouping import resolve_dataset, resolve_experiment
-    from quantem.library.models import create_image_experiment
+    from quantem.library.models import create_default_dataset, create_image_experiment
 
     grouping = grouping or ImportGrouping("", "", "", "")
 
@@ -121,6 +122,8 @@ def _resolve_import_grouping(
         )
         if experiment is None:
             experiment = create_image_experiment(display_name)
+        if dataset is None:
+            dataset = create_default_dataset(experiment)
         return experiment, dataset
     except DjangoValidationError as exc:
         # The import view turns a ValueError into a 400 carrying the sentence;
@@ -657,8 +660,7 @@ def _record_uploaded_asset(
                 "source_metadata": _json_safe_metadata(metadata),
             },
         )
-        if dataset is not None:
-            asset.datasets.add(dataset)
+        asset.datasets.add(dataset)
 
     if not defer_processing:
         try:

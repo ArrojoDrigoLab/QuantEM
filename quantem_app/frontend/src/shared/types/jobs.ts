@@ -104,6 +104,13 @@ export interface JobBatchProgress {
   runs: JobBatchRun[];
 }
 
+/** The exact picker value used by one segmentation inference run. */
+export interface JobModelRun {
+  segmentation_id: string;
+  source_model: string;
+  adapter_id: string | null;
+}
+
 /** The three kinds of progress, as every job-bearing endpoint reports them. */
 export interface JobProgressFields {
   progress_stage?: JobProgressStage | string;
@@ -173,6 +180,14 @@ export interface JobQueueItem extends JobProgressFields {
    * download indicator be a visibly different kind of row.
    */
   model_pack?: { id: string; title: string } | null;
+  /**
+   * Model identity for each segmentation this inference job carries.
+   *
+   * Single-organelle jobs contain one entry; an image-wide batch contains one
+   * per organelle. This stays separate from `run_legs`, which is progress and
+   * may not exist yet while a run is queued.
+   */
+  model_runs?: JobModelRun[] | null;
 }
 
 export interface JobQueueStatus {

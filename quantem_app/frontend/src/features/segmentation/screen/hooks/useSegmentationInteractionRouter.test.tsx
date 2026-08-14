@@ -81,16 +81,16 @@ describe("useSegmentationInteractionRouter", () => {
     expect(args.onRoiPlacementClick).toHaveBeenCalledWith({ x: 100, y: 120 });
   });
 
-  it("routes ROI placement clicks even while navigate mode is active", () => {
+  it("keeps ROI placement armed but ignores its click while navigate mode is active", () => {
     const args = makeArgs({ roiPlacementActive: true, leftNavigateMode: true });
     const { result } = renderHook(() => useSegmentationInteractionRouter(args));
 
     result.current.onLeftClick({ x: 100, y: 120 });
 
-    expect(args.onRoiPlacementClick).toHaveBeenCalledWith({ x: 100, y: 120 });
+    expect(args.onRoiPlacementClick).not.toHaveBeenCalled();
   });
 
-  it("routes ROI area-edit drags even while navigate mode is active", () => {
+  it("ignores ROI area-edit drags while navigate mode is active", () => {
     const args = makeArgs({ roiPlacementActive: true, leftNavigateMode: true });
     const { result } = renderHook(() => useSegmentationInteractionRouter(args));
 
@@ -98,9 +98,9 @@ describe("useSegmentationInteractionRouter", () => {
     result.current.onLeftImageDrag({ x: 20, y: 24 }, { x: 110, y: 132 });
     result.current.onLeftImageRelease({ x: 30, y: 36 }, { x: 120, y: 144 });
 
-    expect(args.onRoiEditPress).toHaveBeenCalledWith({ x: 10, y: 12 });
-    expect(args.onRoiEditDrag).toHaveBeenCalledWith({ x: 20, y: 24 });
-    expect(args.onRoiEditRelease).toHaveBeenCalledWith({ x: 30, y: 36 });
+    expect(args.onRoiEditPress).not.toHaveBeenCalled();
+    expect(args.onRoiEditDrag).not.toHaveBeenCalled();
+    expect(args.onRoiEditRelease).not.toHaveBeenCalled();
   });
 
   it("routes ER polygon clicks through the polygon handler", () => {

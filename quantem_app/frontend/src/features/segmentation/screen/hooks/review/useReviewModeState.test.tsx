@@ -57,7 +57,7 @@ describe("useReviewModeState", () => {
     rerender("seg-2");
 
     await waitFor(() => {
-      expect(result.current.correctionMode.reviewPhase).toBe("model");
+      expect(result.current.correctionMode.reviewPhase).toBe("correction");
       expect(result.current.correctionMode.correctionTool).toBe("draw");
     });
   });

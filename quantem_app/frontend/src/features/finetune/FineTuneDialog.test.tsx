@@ -17,12 +17,15 @@ import { describe, expect, it, vi } from "vitest";
 import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
 import { server } from "@/test/msw/server";
 import type {
+  FineTuneAdapterSummary,
   FineTunePreviewResponse,
   FineTuneApplyProgress,
   FineTuneProgress,
+  FineTuneRunPayload,
   FineTuneRunDetail,
   FineTuneScopeSelectionPayload,
   FineTuneScopeResponse,
+  ModelPack,
 } from "@/shared/types/finetune";
 import type { SegmentationType } from "@/shared/types/images";
 
@@ -38,6 +41,43 @@ const MITO: SegmentationType = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
+
+function modelPack(
+  id: "quantem:mito" | "omniem:mito",
+  installed = true
+): ModelPack {
+  const family = id.startsWith("quantem:") ? "quantem" : "omniem";
+  return {
+    id,
+    family,
+    organelle: "mito",
+    title: `${family === "quantem" ? "QuantEM" : "OmniEM"} — Mitochondria`,
+    installed,
+    download_bytes: 1,
+    canonical_nm: 8,
+    tile_size: 512,
+    default_threshold: 0.5,
+    decoder: "affinity",
+    neck: "naive",
+    adapt: "head",
+    licence: "test",
+    notes: "",
+    runnable: true,
+  };
+}
+
+const DEFAULT_ADAPTERS: FineTuneAdapterSummary[] = [
+  {
+    id: "ad-old",
+    name: "First attempt",
+    base_model: "quantem:mito",
+    status: "SUCCESS",
+    created_at: "2026-01-01T00:00:00Z",
+    experiment: { id: "exp-fasted", name: "Fasted cohort" },
+    asset_count: 4,
+    asset_ids: ["img-1", "img-2", "img-3", "img-empty-0"],
+  },
+];
 
 function image(id: string, name: string, confirmed: number, done: number) {
   return {
@@ -127,10 +167,12 @@ interface Stubs {
   progress?: Partial<FineTuneProgress>;
   onApply?: (assetIds: string[]) => void;
   onApplySelection?: (assetIds: string[], datasetIds: string[]) => void;
-  onStart?: () => void;
+  onStart?: (payload: FineTuneRunPayload) => void;
   onPreview?: (payload: FineTuneScopeSelectionPayload) => void;
   applyProgress?: Partial<FineTuneApplyProgress>;
   runDetail?: Partial<FineTuneRunDetail>;
+  adapters?: FineTuneAdapterSummary[];
+  modelPacks?: ModelPack[];
 }
 
 function stubApi({
@@ -142,28 +184,23 @@ function stubApi({
   onPreview,
   applyProgress,
   runDetail,
+  adapters = DEFAULT_ADAPTERS,
+  modelPacks = [modelPack("quantem:mito"), modelPack("omniem:mito")],
 }: Stubs = {}) {
   server.use(
+    http.get(`${API}/api/models/`, () =>
+      HttpResponse.json({ packs: modelPacks, adapted: [], device: null })
+    ),
     http.get(`${API}/api/finetune/scope/`, () => HttpResponse.json(SCOPE)),
     http.get(`${API}/api/finetune/adapters/`, () =>
-      HttpResponse.json([
-        {
-          id: "ad-old",
-          name: "First attempt",
-          base_model: "quantem:mito",
-          status: "SUCCESS",
-          created_at: "2026-01-01T00:00:00Z",
-          experiment: { id: "exp-fasted", name: "Fasted cohort" },
-          asset_count: 4,
-        },
-      ])
+      HttpResponse.json(adapters)
     ),
     http.post(`${API}/api/finetune/preview/`, async ({ request }) => {
       onPreview?.((await request.json()) as FineTuneScopeSelectionPayload);
       return HttpResponse.json(preview(previewBody));
     }),
-    http.post(`${API}/api/finetune/runs/`, () => {
-      onStart?.();
+    http.post(`${API}/api/finetune/runs/`, async ({ request }) => {
+      onStart?.((await request.json()) as FineTuneRunPayload);
       return HttpResponse.json(
         { adapter_id: "ad-new", job_id: "job-1" },
         { status: 202 }
@@ -267,9 +304,17 @@ function stubApi({
   );
 }
 
-function openDialog(onClose: () => void = () => {}) {
+function openDialog(
+  onClose: () => void = () => {},
+  props: Partial<React.ComponentProps<typeof FineTuneDialog>> = {}
+) {
   return render(
-    <FineTuneDialog open onClose={onClose} segmentationType={MITO} />
+    <FineTuneDialog
+      open
+      onClose={onClose}
+      segmentationType={MITO}
+      {...props}
+    />
   );
 }
 
@@ -285,6 +330,44 @@ async function selectTheDataset(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("FineTuneDialog", () => {
+  it("keeps the Name input focused across ordinary parent rerenders", async () => {
+    const user = userEvent.setup();
+    const firstClose = vi.fn();
+    const latestClose = vi.fn();
+    const opener = document.createElement("button");
+    document.body.appendChild(opener);
+    opener.focus();
+    stubApi();
+
+    try {
+      const rendered = render(
+        <FineTuneDialog
+          open
+          onClose={() => firstClose()}
+          segmentationType={MITO}
+        />
+      );
+      const nameInput = screen.getByRole("textbox", { name: "Name" });
+      await user.click(nameInput);
+      await user.type(nameInput, "Fa");
+      expect(nameInput).toHaveFocus();
+
+      rendered.rerender(
+        <FineTuneDialog
+          open
+          onClose={() => latestClose()}
+          segmentationType={MITO}
+        />
+      );
+
+      expect(nameInput).toHaveFocus();
+      await user.type(nameInput, "sted liver");
+      expect(nameInput).toHaveValue("Fasted liver");
+    } finally {
+      opener.remove();
+    }
+  });
+
   it("opens from the library with the paginated organelle response", async () => {
     const user = userEvent.setup();
     stubApi();
@@ -343,6 +426,18 @@ describe("FineTuneDialog", () => {
     await waitFor(() => expect(previewModels).toContain("omniem:mito"));
   });
 
+  it("does not show model packs that have not been downloaded", async () => {
+    stubApi({
+      modelPacks: [modelPack("quantem:mito"), modelPack("omniem:mito", false)],
+    });
+    openDialog();
+
+    const picker = await screen.findByLabelText("Starting from");
+    expect(within(picker).getAllByRole("option")).toHaveLength(1);
+    expect(within(picker).getByRole("option", { name: /QuantEM/ })).toBeInTheDocument();
+    expect(within(picker).queryByRole("option", { name: /OmniEM/ })).toBeNull();
+  });
+
   it("expands a dataset to sub-select individual images, and re-totals", async () => {
     const user = userEvent.setup();
     stubApi({ previewBody: { annotation_count: 5, asset_count: 2, tile_count: 8 } });
@@ -359,6 +454,28 @@ describe("FineTuneDialog", () => {
         "5 annotations across 2 images"
       )
     );
+  });
+
+  it("can exclude one image after selecting its whole dataset", async () => {
+    const user = userEvent.setup();
+    const previews: FineTuneScopeSelectionPayload[] = [];
+    stubApi({ onPreview: (payload) => previews.push(payload) });
+    openDialog();
+
+    await selectTheDataset(user);
+    await user.click(screen.getByRole("button", { name: "Expand Liver 24h" }));
+    const firstImage = screen.getByRole("checkbox", { name: "liver_01.tif" });
+    expect(firstImage).toBeEnabled();
+    expect(firstImage).toBeChecked();
+
+    await user.click(firstImage);
+
+    await waitFor(() => {
+      const latest = previews.at(-1);
+      expect(latest?.dataset_ids).toEqual([]);
+      expect(latest?.asset_ids).toHaveLength(9);
+      expect(latest?.asset_ids).not.toContain("img-1");
+    });
   });
 
   it("searches the tree", async () => {
@@ -413,6 +530,19 @@ describe("FineTuneDialog", () => {
     await user.click(cv);
     expect(cv).toBeChecked();
     expect(holdOut).not.toBeChecked();
+  });
+
+  it("requires two annotations for hold-out and three for cross-validation", async () => {
+    const user = userEvent.setup();
+    stubApi({ previewBody: { annotation_count: 2 } });
+    openDialog();
+    await selectTheDataset(user);
+
+    expect(screen.getByRole("radio", { name: /^Hold out one Keep one/ })).toBeEnabled();
+    expect(
+      screen.getByRole("radio", { name: /cross-validation benchmarking/ })
+    ).toBeDisabled();
+    expect(screen.getByText("Requires at least 3 annotations.")).toBeInTheDocument();
   });
 
   it("keeps the mode the user chose when the selection changes", async () => {
@@ -496,11 +626,12 @@ describe("FineTuneDialog", () => {
   it("offers to run the new model on success, and queues nothing until asked", async () => {
     const user = userEvent.setup();
     const applied = vi.fn();
+    const completed = vi.fn();
     stubApi({
       progress: { status: "SUCCESS", step: 600, percent: 100, eta_seconds: 0 },
       onApply: applied,
     });
-    openDialog();
+    openDialog(() => {}, { onAppliedImageCompleted: completed });
     await selectTheDataset(user);
     await user.type(screen.getByLabelText("Name"), "Fasted liver mitochondria");
     await user.click(screen.getByRole("button", { name: "Fine-tune" }));
@@ -526,6 +657,15 @@ describe("FineTuneDialog", () => {
     const applyStatus = await screen.findByTestId("finetune-apply-progress");
     expect(applyStatus).toHaveTextContent("2 of 2 complete; 1 failed");
     expect(applyStatus).toHaveTextContent("model could not be loaded");
+    await waitFor(() =>
+      expect(completed).toHaveBeenCalledWith({
+        adapterId: "ad-new",
+        baseModel: "quantem:mito",
+        assetId: "img-1",
+        segmentationId: "seg-img-1",
+      })
+    );
+    expect(completed).toHaveBeenCalledTimes(1);
   });
 
   it("can apply the result to an existing Dataset in the Experiment", async () => {
@@ -703,6 +843,56 @@ describe("FineTuneDialog", () => {
     expect(
       screen.getByText(/old weights stay in place until this run succeeds/)
     ).toBeInTheDocument();
+  });
+
+  it("hides overwrite controls when this organelle has no fine-tunes", async () => {
+    stubApi({ adapters: [] });
+    openDialog();
+
+    await screen.findByTestId("scope-tree");
+    await screen.findByLabelText("Starting from");
+    expect(
+      screen.queryByLabelText("Overwrite an existing fine-tune")
+    ).not.toBeInTheDocument();
+  });
+
+  it("inherits labeling model and defaults to a fine-tune scoped to this image", async () => {
+    const user = userEvent.setup();
+    const started = vi.fn<(payload: FineTuneRunPayload) => void>();
+    stubApi({ onStart: started });
+    render(
+      <FineTuneDialog
+        open
+        onClose={() => {}}
+        segmentationType={MITO}
+        initialAssetIds={["img-2"]}
+        initialBaseModel="omniem:mito"
+        segmentationId="seg-img-2"
+      />
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Starting from")).toHaveValue("omniem:mito")
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Overwrite an existing fine-tune")
+      ).toHaveValue("ad-old")
+    );
+    expect(screen.getByLabelText("Name")).toHaveValue("First attempt");
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Fine-tune" })).toBeEnabled()
+    );
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+
+    await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
+    expect(started.mock.calls[0][0]).toMatchObject({
+      overwrite_adapter_id: "ad-old",
+      base_model: "omniem:mito",
+      asset_ids: ["img-2"],
+      segmentation_id: "seg-img-2",
+    });
   });
 
   it("warns before the server has to, when a new name is already taken", async () => {

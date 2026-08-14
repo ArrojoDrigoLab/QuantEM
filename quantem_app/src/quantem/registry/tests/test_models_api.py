@@ -20,6 +20,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from quantem.inference.specs import MODEL_SPECS
+from quantem.jobs.constants import JOB_TYPE_RUN_SEGMENTATION_FULL
 from quantem.jobs.models import Job
 from quantem.registry import cache
 from quantem.registry.install import InstalledPack
@@ -133,11 +134,27 @@ class ModelListTests(TestCase):
             applied_at=timezone.now(),
         )
         adapter.applied_assets.add(asset)
+        adapter.scope_assets.add(asset)
+        finished_at = timezone.now()
+        Job.objects.create(
+            type=JOB_TYPE_RUN_SEGMENTATION_FULL,
+            status="SUCCESS",
+            payload_json={
+                "segmentation_id": str(segmentation.id),
+                "adapter_id": str(adapter.id),
+            },
+            finished_at=finished_at,
+        )
 
         entry = self.client.get("/api/models/").json()["adapted"][0]
 
         assert entry["segmentation_id"] is None
         assert entry["segmentation_ids"] == [str(segmentation.id)]
+        assert entry["scope_segmentation_ids"] == [str(segmentation.id)]
+        assert entry["applied_segmentation_ids"] == [str(segmentation.id)]
+        assert entry["last_run_at_by_segmentation"][str(segmentation.id)].startswith(
+            finished_at.isoformat()[:19]
+        )
 
     def test_the_device_block_is_present_and_concrete(self):
         device = self.client.get("/api/models/").json()["device"]

@@ -49,6 +49,15 @@ function downloadableMitoPack(): ModelPack {
   };
 }
 
+function installedQuantemMitoPack(): ModelPack {
+  return {
+    ...downloadableMitoPack(),
+    installed: true,
+    runnable: true,
+    reason: null,
+  };
+}
+
 function useCatalogue(packs: ModelPack[]) {
   server.use(
     http.get("http://127.0.0.1:8000/api/models/", () =>
@@ -96,8 +105,8 @@ describe("SegmentationCreatePanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Mitochondria" }));
     expect(await screen.findByRole("dialog", { name: "Start mitochondria segmentation" })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /^QuantEM\b/ })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /^OmniEM\b/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^QuantEM \(basic model\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^OmniEM \(large model\)/ })).toBeChecked();
     await user.click(screen.getByRole("radio", { name: "Manual segmentation" }));
     expect(screen.queryByText(/cannot run on this machine/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/The run will use/i)).not.toBeInTheDocument();
@@ -123,11 +132,38 @@ describe("SegmentationCreatePanel", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Mitochondria" }));
-    expect(await screen.findByRole("radio", { name: /^OmniEM\b/ })).toBeChecked();
+    expect(await screen.findByRole("radio", { name: /^OmniEM \(large model\)/ })).toBeChecked();
+    const guidance = screen.getByText(
+      "The selected model will run on all tiles. Larger models may be more accurate, but take longer to run."
+    );
+    const largeImageNote = screen.getByText(
+      "This image is larger than 200 MB, so inference may take several minutes."
+    );
+    expect(guidance.tagName).toBe("P");
+    expect(largeImageNote.tagName).toBe("P");
+    expect(guidance).not.toBe(largeImageNote);
+  });
+
+  it("preselects QuantEM when it is the only downloaded model", async () => {
+    useCatalogue([installedQuantemMitoPack(), { ...installedMitoPack(), installed: false }]);
+    const user = userEvent.setup();
+    render(<SegmentationCreatePanel imageId="img-1" />);
+
+    await user.click(screen.getByRole("button", { name: "Mitochondria" }));
     expect(
-      screen.getByText(/selected model will run on all tiles/i)
-    ).toBeInTheDocument();
-    expect(screen.getByText(/larger than 200 MB/i)).toBeInTheDocument();
+      await screen.findByRole("radio", { name: /^QuantEM \(basic model\)/ })
+    ).toBeChecked();
+  });
+
+  it("preselects OmniEM when both models are downloaded", async () => {
+    useCatalogue([installedQuantemMitoPack(), installedMitoPack()]);
+    const user = userEvent.setup();
+    render(<SegmentationCreatePanel imageId="img-1" />);
+
+    await user.click(screen.getByRole("button", { name: "Mitochondria" }));
+    expect(
+      await screen.findByRole("radio", { name: /^OmniEM \(large model\)/ })
+    ).toBeChecked();
   });
 
   it("shows missing models and launches an automatic first-run download", async () => {
@@ -139,7 +175,8 @@ describe("SegmentationCreatePanel", () => {
     render(<SegmentationCreatePanel imageId="img-1" onCreated={onCreated} />);
 
     await user.click(screen.getByRole("button", { name: "Mitochondria" }));
-    expect(await screen.findByRole("radio", { name: /^QuantEM\b/ })).toBeChecked();
+    expect(await screen.findByRole("radio", { name: /^OmniEM \(large model\)/ })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: /^QuantEM \(basic model\)/ }));
     expect(
       screen.getByRole("img", {
         name: "Model is not downloaded. Will automatically download (1.2GB) on first run",

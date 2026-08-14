@@ -107,8 +107,8 @@ describe("useSegmentationRouteState", () => {
    * object came from an OmniEM run — 34 fresh candidates invisible behind
    * "No objects from QuantEM yet".
    */
-  describe("family toggle default", () => {
-    it("defaults to the family that owns the objects, not is_default", async () => {
+  describe("model picker default", () => {
+    it("defaults to OmniEM when download state is unavailable", async () => {
       vi.mocked(getAsset).mockResolvedValue(makeImage());
       vi.mocked(getAssetSegmentations).mockResolvedValue([
         makeSegmentation({ source_models: SOURCE_MODEL_OPTIONS }),
@@ -140,7 +140,7 @@ describe("useSegmentationRouteState", () => {
       });
     });
 
-    it("uses the family the user last chose for this segmentation when both own objects", async () => {
+    it("does not let stale picker history override the deterministic default", async () => {
       window.localStorage.setItem(
         "quantem.labeling.source-model.seg-1",
         "omniem:mito"
@@ -164,7 +164,7 @@ describe("useSegmentationRouteState", () => {
       });
     });
 
-    it("remembers an explicit toggle change per segmentation", async () => {
+    it("stores an explicit picker change in the route", async () => {
       vi.mocked(getAsset).mockResolvedValue(makeImage());
       vi.mocked(getAssetSegmentations).mockResolvedValue([
         makeSegmentation({ source_models: SOURCE_MODEL_OPTIONS }),
@@ -181,9 +181,10 @@ describe("useSegmentationRouteState", () => {
         result.current.handleSourceModelChange("manual");
       });
 
-      expect(
-        window.localStorage.getItem("quantem.labeling.source-model.seg-1")
-      ).toBe("manual");
+      await waitFor(() => {
+        expect(result.current.activeSourceModel).toBe("manual");
+      });
+      expect(window.localStorage.getItem("quantem.labeling.source-model.seg-1")).toBeNull();
     });
   });
 });

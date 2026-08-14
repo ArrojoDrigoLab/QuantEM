@@ -16,6 +16,7 @@ from quantem.segmentation.services.spatial_lookup import bbox_intersects_filter
 
 from .geometry import (
     extract_polygons,
+    filter_supported_confirmed_polygons,
     geometries_overlap,
     geometry_area,
     merge_polygons,
@@ -27,6 +28,7 @@ from .types import (
     MANUAL_CANDIDATE_OVERLAP_THRESHOLD,
     MANUAL_DELETE_ELIGIBLE_STATES,
     MIN_OVERLAP_AREA,
+    CandidateCleanupResult,
     _ConfirmedFamily,
 )
 
@@ -425,11 +427,19 @@ def resolve_overlap_between_families(
     return True
 
 
-def delete_manual_overlap_candidates(
+def reconcile_manual_overlap_candidates(
     *,
     segmentation: ImageSegmentation,
     manual_families: list[_ConfirmedFamily],
-) -> tuple[int, list[BaseGeometry]]:
+) -> CandidateCleanupResult:
+    """Remove manual pixels from candidates, deleting candidates covered >=70%.
+
+    The overlap fraction is measured against the candidate. A smaller overlap
+    preserves the candidate's edge remainder instead of leaving model pixels
+    underneath a hand-confirmed object. If subtraction separates that remainder,
+    every supported polygon remains a candidate in the same object family.
+    """
+    result = CandidateCleanupResult()
     manual_geometries = [
         geometry
         for family in manual_families
@@ -437,44 +447,118 @@ def delete_manual_overlap_candidates(
         if geometry is not None
     ]
     if not manual_geometries:
-        return 0, []
+        return result
 
-    manual_bounds = merge_polygons([geometry.envelope for geometry in manual_geometries])
+    manual_union = merge_polygons(
+        [polygon for geometry in manual_geometries for polygon in extract_polygons(geometry)]
+    )
+    if manual_union is None:
+        return result
+
+    manual_bounds = manual_union.envelope
     candidate_qs = SegmentObject.objects.filter(
         segmentation=segmentation,
         label_state__in=MANUAL_DELETE_ELIGIBLE_STATES,
+        superseded_at__isnull=True,
     )
     bounds_filter = bbox_intersects_filter(manual_bounds)
     if bounds_filter is not None:
         candidate_qs = candidate_qs.filter(bounds_filter)
     candidates = list(candidate_qs)
 
-    delete_ids: list[str] = []
-    affected_geometries: list[BaseGeometry] = []
     for segment in candidates:
         segment_geometry = segment.geometry
         candidate_area = geometry_area(segment_geometry)
         if candidate_area <= MIN_OVERLAP_AREA:
             continue
-        for manual_geometry in manual_geometries:
-            if not geometries_overlap(segment_geometry, manual_geometry):
-                continue
-            overlap = safe_intersection(segment_geometry, manual_geometry)
-            overlap_ratio = geometry_area(overlap) / candidate_area
-            if overlap_ratio > MANUAL_CANDIDATE_OVERLAP_THRESHOLD:
-                delete_ids.append(str(segment.id))
-                affected_geometries.append(segment_geometry)
-                break
+        if not geometries_overlap(segment_geometry, manual_union):
+            continue
+        overlap = safe_intersection(segment_geometry, manual_union)
+        overlap_area = geometry_area(overlap)
+        if overlap_area <= MIN_OVERLAP_AREA:
+            continue
 
-    if not delete_ids:
-        return 0, []
-    SegmentObject.objects.filter(segmentation=segmentation, id__in=delete_ids).delete()
-    return len(delete_ids), affected_geometries
+        segment_id = str(segment.id)
+        result.affected_geometries.append(segment_geometry)
+        overlap_ratio = overlap_area / candidate_area
+        if overlap_ratio >= MANUAL_CANDIDATE_OVERLAP_THRESHOLD:
+            segment.delete()
+            result.deleted_ids.append(segment_id)
+            continue
+
+        remainder = safe_difference(segment_geometry, manual_union)
+        pieces = filter_supported_confirmed_polygons(extract_polygons(remainder))
+        pieces.sort(key=lambda polygon: float(polygon.area), reverse=True)
+        if not pieces:
+            segment.delete()
+            result.deleted_ids.append(segment_id)
+            continue
+
+        family_root = segment.resolve_base_segment_or_self()
+        primary = pieces[0]
+        segment.geometry = primary
+        segment.centroid = primary.centroid
+        segment.bbox = primary.envelope
+        segment.save(update_fields=["geometry", "centroid", "bbox"])
+        result.updated_ids.append(segment_id)
+        result.affected_geometries.append(primary)
+
+        for piece in pieces[1:]:
+            created = SegmentObject.objects.create(
+                segmentation=segmentation,
+                label_state=segment.label_state,
+                refined=segment.refined,
+                status=segment.status,
+                source_model=segment.source_model,
+                confidence_score=segment.confidence_score,
+                features=dict(segment.features) if isinstance(segment.features, dict) else {},
+                base_segment=family_root,
+                run_version=segment.run_version,
+                geometry=piece,
+                centroid=piece.centroid,
+                bbox=piece.envelope,
+            )
+            result.created_ids.append(str(created.id))
+            result.affected_geometries.append(piece)
+
+    return result
+
+
+def delete_candidates_intersecting_geometry(
+    *,
+    segmentation: ImageSegmentation,
+    region: BaseGeometry,
+) -> CandidateCleanupResult:
+    """Delete whole candidate objects on any geometric contact with a region."""
+    result = CandidateCleanupResult()
+    candidate_qs = SegmentObject.objects.filter(
+        segmentation=segmentation,
+        label_state__in=MANUAL_DELETE_ELIGIBLE_STATES,
+        superseded_at__isnull=True,
+    )
+    bounds_filter = bbox_intersects_filter(region)
+    if bounds_filter is not None:
+        candidate_qs = candidate_qs.filter(bounds_filter)
+
+    for segment in candidate_qs:
+        geometry = segment.geometry
+        if geometry is None or not geometries_overlap(geometry, region):
+            continue
+        result.deleted_ids.append(str(segment.id))
+        result.affected_geometries.append(geometry)
+
+    if result.deleted_ids:
+        SegmentObject.objects.filter(
+            segmentation=segmentation,
+            id__in=result.deleted_ids,
+        ).delete()
+    return result
 
 
 __all__ = [
     "OverlapResolutionError",
-    "delete_manual_overlap_candidates",
+    "delete_candidates_intersecting_geometry",
     "overlap_qualifies_for_union",
+    "reconcile_manual_overlap_candidates",
     "resolve_overlap_between_families",
 ]
