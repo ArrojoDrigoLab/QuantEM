@@ -140,8 +140,8 @@ describe("CompositionPanel (honesty rule 6)", () => {
       />
     );
     expect(
-      screen.getByRole("link", { name: "Download Composition Metrics" })
-    ).toHaveAttribute("href", "/composition.csv");
+      screen.getByRole("button", { name: "Download Composition Metrics" })
+    ).toBeInTheDocument();
   });
 
   it("explains a derived cytoplasm rather than letting fractions look additive", () => {

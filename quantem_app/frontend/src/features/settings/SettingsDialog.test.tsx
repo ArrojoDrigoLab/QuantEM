@@ -85,7 +85,7 @@ describe("SettingsDialog application upgrades", () => {
     await waitFor(() => expect(install).toHaveBeenCalledOnce());
   });
 
-  it("reports when the installed version is current", async () => {
+  it("reports when the installed version is current and allows another check", async () => {
     updater.check.mockResolvedValue(null);
     const user = userEvent.setup();
     renderSettings();
@@ -94,6 +94,8 @@ describe("SettingsDialog application upgrades", () => {
 
     expect(await screen.findByText("Latest version")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Check for upgrades" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(updater.check).toHaveBeenCalledTimes(2));
   });
 
   it("describes CPU and CUDA acceleration using the requested labels", () => {

@@ -58,6 +58,35 @@ describe("WorkflowModeToolbar slots", () => {
     expect(screen.getByRole("button", { name: "Focus queue" })).toBeInTheDocument();
   });
 
+  it("keeps an injected bbox tool in the same row as polygon and brush", () => {
+    renderToolbar({
+      extraModes: (
+        <div className="sam-box-tool">
+          <button type="button" aria-label="Box to object">
+            Box
+          </button>
+        </div>
+      ),
+    });
+
+    const toolRow = screen.getByRole("button", { name: "Polygon" }).parentElement;
+    expect(toolRow).toHaveClass("mode-tool-icons");
+    expect(screen.getByRole("button", { name: "Brush" }).parentElement).toBe(toolRow);
+    expect(screen.getByRole("button", { name: "Box to object" }).closest(".mode-tool-icons"))
+      .toBe(toolRow);
+  });
+
+  it.each([false, true])(
+    "does not expose the legacy confirmed-area tool (ER: %s)",
+    (isErSegmentation) => {
+      renderToolbar({ isErSegmentation });
+
+      expect(
+        screen.queryByRole("button", { name: "Confirmed area" })
+      ).not.toBeInTheDocument();
+    }
+  );
+
   it("renders extra tools at the end of the toolbar", () => {
     renderToolbar({ extraTools: <button type="button">Mark checked area</button> });
 

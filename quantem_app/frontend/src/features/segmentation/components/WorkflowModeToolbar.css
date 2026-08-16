@@ -1,13 +1,9 @@
 /* Toolbar styles are already in SegmentationScreen.css */
 
-.confirmed-area-group {
-  align-items: flex-start;
-}
-
-/* A sub-tool belongs to Correct, not to the top-level Review/Correct switch. */
-.mode-toolbar-subtools {
-  margin-left: 0.4rem;
-  inline-size: calc(100% - 0.4rem);
+/* Keep built-in and injected correction tools on one row. A selected injected
+   tool may add a full-width detail row underneath through its own styles. */
+.mode-tool-icons {
+  inline-size: 100%;
   min-inline-size: 0;
-  align-items: stretch;
+  flex-wrap: wrap;
 }

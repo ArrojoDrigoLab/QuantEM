@@ -14,7 +14,7 @@
 
 import { Button, Panel } from "@/shared/ui/design";
 import { formatInteger, formatNumber, NOT_MEASURED } from "@/shared/ui/format";
-import { downloadCsv } from "@/utils/downloadText";
+import { downloadCsv, downloadUrl } from "@/utils/downloadText";
 import type { AnalysisObjects } from "@/shared/types/analysis";
 import { metricNote } from "@/features/analysis/components/objectsPanelUtils";
 
@@ -89,13 +89,12 @@ export function ObjectsPanel({
             Download Summary Table
           </Button>
           {objectsCsvUrl ? (
-            <a
-              className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-800 shadow-sm hover:bg-slate-50"
-              href={objectsCsvUrl}
-              download
+            <Button
+              size="sm"
+              onClick={() => downloadUrl("objects.csv", objectsCsvUrl, "text/csv")}
             >
               Download All Objects
-            </a>
+            </Button>
           ) : null}
         </div>
       </div>

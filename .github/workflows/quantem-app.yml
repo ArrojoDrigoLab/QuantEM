@@ -139,9 +139,11 @@ jobs:
           New-Item -ItemType Directory -Force $assets,$cpu,$cuda | Out-Null
           [IO.File]::WriteAllBytes((Join-Path $cpu "quantem-server.exe"), [byte[]](77,90,0,0))
           [IO.File]::WriteAllBytes((Join-Path $cuda "quantem-server.exe"), [byte[]](77,90,0,0))
+          [IO.File]::WriteAllBytes((Join-Path $cpu "python313.dll"), [byte[]](77,90,0,0))
+          [IO.File]::WriteAllBytes((Join-Path $cuda "python313.dll"), [byte[]](77,90,0,0))
           [IO.File]::WriteAllBytes((Join-Path $cuda "torch_cuda.dll"), [byte[]](77,90,0,0))
-          python packaging/installer/build_windows_payload.py --source $cpu --output "$assets/quantem-server_$version`_windows-x64-cpu.zip" --manifest-output "$assets/cpu.payload-manifest.json" --version $version --variant cpu --torch-version 2.13.0
-          python packaging/installer/build_windows_payload.py --source $cuda --output "$assets/quantem-server_$version`_windows-x64-cuda.zip" --manifest-output "$assets/cuda.payload-manifest.json" --version $version --variant cuda --torch-version 2.13.0 --cuda-runtime cu126 --cuda-driver-api 12060
+          python packaging/installer/build_windows_payload.py --source $cpu --output "$assets/quantem-runtime_$version`_windows-x64-cpu.zip" --application-output "$assets/quantem-application_$version`_windows-x64-cpu.zip" --manifest-output "$assets/cpu.payload-manifest.json" --version $version --variant cpu --torch-version 2.13.0
+          python packaging/installer/build_windows_payload.py --source $cuda --output "$assets/quantem-runtime_$version`_windows-x64-cuda.zip" --application-output "$assets/quantem-application_$version`_windows-x64-cuda.zip" --manifest-output "$assets/cuda.payload-manifest.json" --version $version --variant cuda --torch-version 2.13.0 --cuda-runtime cu126 --cuda-driver-api 12060
           python packaging/installer/build_payload_manifest.py --manifest "$assets/cpu.payload-manifest.json" --manifest "$assets/cuda.payload-manifest.json" --tag "v$version" --base-url http://127.0.0.1:8765 --allow-unsigned --nsis-output desktop/src-tauri/nsis/payload-manifest.nsh --json-output "$assets/public.json"
 
       - name: Build NSIS installer
@@ -191,6 +193,13 @@ jobs:
             $info = Join-Path $installDir "quantem-server/build-info.json"
             if (-not (Test-Path $info -PathType Leaf)) { throw "Runtime payload was not installed" }
             if ((Get-Content -Raw $info | ConvertFrom-Json).variant -ne "cpu") { throw "Wrong runtime installed" }
+            $runtimeIdPath = Join-Path $installDir ".quantem-runtime-id"
+            if (-not (Test-Path $runtimeIdPath -PathType Leaf)) { throw "Runtime ID marker was not written" }
+            $runtimeId = Get-Content -Raw $runtimeIdPath
+            Get-ChildItem $tagDir -File | Remove-Item -Force
+            $update = Start-Process $installer -ArgumentList @("/S", "/UPDATE", "/D=$installDir") -Wait -PassThru
+            if ($update.ExitCode -ne 0) { throw "Compatible-runtime update exited $($update.ExitCode)" }
+            if ((Get-Content -Raw $runtimeIdPath) -ne $runtimeId) { throw "Update replaced a compatible runtime" }
           } finally {
             Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
           }

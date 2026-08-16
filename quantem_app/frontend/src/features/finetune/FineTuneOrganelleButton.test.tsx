@@ -39,7 +39,7 @@ describe("FineTuneOrganelleButton", () => {
     await waitFor(() => expect(button).toBeDisabled());
     expect(button).toHaveAttribute(
       "title",
-      "Mark an ROI as Done or outline a Confirmed area you have annotated to enable fine-tuning"
+      "Mark an ROI as Done to enable fine-tuning"
     );
 
     eligible = true;

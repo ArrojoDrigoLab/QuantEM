@@ -8,6 +8,7 @@ import { segmentationDisplayName } from "@/shared/segmentationNames";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import { Button } from "@/shared/ui/design";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
+import { saveUrlFile } from "@/utils/downloadText";
 
 const ANALYSIS_MASK_INTERNAL_NAME = "quantem_internal_analysis_mask";
 
@@ -24,6 +25,8 @@ export function ExportDialog({
   const [selection, setSelection] = useState<AssetRasterExportSelection>({
     source: "original",
   });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const { data: segmentations, loading, error } = useApiQuery(
     () => getAssetSegmentations(asset.id),
     [asset.id]
@@ -53,15 +56,46 @@ export function ExportDialog({
     )
   );
 
-  const startDownload = () => {
-    const anchor = document.createElement("a");
-    anchor.href = getAssetRasterExportUrl(asset.id, selection);
-    anchor.download = "";
-    anchor.hidden = true;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    onClose();
+  const exportFilename = () => {
+    const filenamePart = (value: string, fallback: string) =>
+      value
+        .trim()
+        .replace(/[^A-Za-z0-9._-]+/g, "_")
+        .replace(/^[._]+|[._]+$/g, "")
+        .slice(0, 120) || fallback;
+    const imageName = filenamePart(asset.displayName, "image");
+    if (selection.source === "original") return `${imageName}_EM_8bit.png`;
+    const segmentation = segmentations?.find(
+      (candidate) => candidate.id === selection.segmentationId
+    );
+    const segmentationName = filenamePart(
+      segmentation?.display_name ||
+        segmentation?.segmentation_type.long_name ||
+        "segmentation",
+      "segmentation"
+    );
+    return `${imageName}_${segmentationName}_8bit.png`;
+  };
+
+  const startDownload = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const result = await saveUrlFile(
+        exportFilename(),
+        getAssetRasterExportUrl(asset.id, selection),
+        "image/png"
+      );
+      if (result !== "cancelled") onClose();
+    } catch (cause) {
+      setSaveError(
+        cause instanceof Error
+          ? cause.message
+          : "The selected image could not be saved."
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -152,6 +186,12 @@ export function ExportDialog({
           </p>
         ) : null}
 
+        {saveError ? (
+          <p className="mt-3 text-sm text-red-700" role="alert">
+            {saveError}
+          </p>
+        ) : null}
+
         <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
           Background is 0. Object labels count from 1 through 255, then restart at 1.
           {hasAnalysisMasks ? (
@@ -164,8 +204,8 @@ export function ExportDialog({
 
         <div className="mt-6 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={startDownload}>
-            Export
+          <Button variant="primary" disabled={saving} onClick={() => void startDownload()}>
+            {saving ? "Saving…" : "Export"}
           </Button>
         </div>
       </section>

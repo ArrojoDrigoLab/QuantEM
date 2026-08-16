@@ -1,8 +1,16 @@
-"""Build a deterministic, signed-release-ready Windows server payload.
+"""Build deterministic Windows runtime and application layers.
 
-The user-facing installer is deliberately runtime-agnostic.  CI builds one CPU
-and one CUDA server directory, archives each beneath a ``quantem-server`` root,
-and gives this script's JSON manifest to the installer-manifest generator.
+PyInstaller's onedir layout mixes a small, frequently-changing application
+surface with a very large, rarely-changing native runtime.  This module splits
+the tree without changing the layout seen by ``quantem-server.exe``:
+
+* the runtime archive contains Python, PyTorch, CUDA, and third-party files;
+* the application archive contains the executable plus QuantEM-owned data.
+
+The installer overlays the application archive on the runtime directory.  A
+content-derived runtime ID lets routine upgrades retain an already-installed
+runtime while still forcing a full replacement whenever any runtime file
+changes.
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ _CUDA_DLL_NAMES = (
     "cudnn64",
 )
 _ZIP_TIMESTAMP = (2020, 1, 1, 0, 0, 0)
+_APPLICATION_INTERNAL_DIRS = {"quantem", "quantem_frontend"}
 
 
 def _sha256(path: Path) -> str:
@@ -53,10 +62,72 @@ def _zip_info(name: str, *, executable: bool = False) -> zipfile.ZipInfo:
     return info
 
 
+def _is_application_path(relative: Path) -> bool:
+    """Return whether *relative* belongs to the replaceable application layer."""
+
+    parts = relative.parts
+    if parts == ("quantem-server.exe",):
+        return True
+    if len(parts) < 2 or parts[0] != "_internal":
+        return False
+    package = parts[1]
+    return package in _APPLICATION_INTERNAL_DIRS or (
+        package.startswith("quantem_app-") and package.endswith(".dist-info")
+    )
+
+
+def _file_manifest(
+    source: Path, paths: list[Path], contract: dict[str, object]
+) -> tuple[str, list[dict[str, object]]]:
+    """Hash runtime files and return a stable compatibility ID plus manifest."""
+
+    identity = hashlib.sha256()
+    identity.update(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    identity.update(b"\0")
+    entries: list[dict[str, object]] = []
+    for path in paths:
+        relative = path.relative_to(source).as_posix()
+        digest = _sha256(path)
+        size = path.stat().st_size
+        entries.append({"path": relative, "size": size, "sha256": digest})
+        identity.update(relative.encode("utf-8"))
+        identity.update(b"\0")
+        identity.update(str(size).encode("ascii"))
+        identity.update(b"\0")
+        identity.update(digest.encode("ascii"))
+        identity.update(b"\0")
+    return identity.hexdigest(), entries
+
+
+def _write_archive(
+    *,
+    source: Path,
+    paths: list[Path],
+    output: Path,
+    extras: dict[str, bytes],
+) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(output, "w", allowZip64=True, compresslevel=6) as archive:
+        for path in paths:
+            relative = path.relative_to(source)
+            archive_name = str(PurePosixPath("quantem-server", *relative.parts))
+            info = _zip_info(
+                archive_name, executable=path.suffix.lower() in {".exe", ".dll", ".pyd"}
+            )
+            with (
+                path.open("rb") as source_stream,
+                archive.open(info, "w", force_zip64=True) as target,
+            ):
+                shutil.copyfileobj(source_stream, target, length=1024 * 1024)
+        for archive_name, content in sorted(extras.items()):
+            archive.writestr(_zip_info(archive_name), content)
+
+
 def build_payload(
     *,
     source: Path,
     output: Path,
+    application_output: Path,
     manifest_output: Path,
     version: str,
     variant: str,
@@ -84,11 +155,9 @@ def build_payload(
     if variant == "cpu" and (cuda_runtime or cuda_driver_api):
         raise ValueError("CPU payloads must not declare a CUDA runtime")
 
-    output.parent.mkdir(parents=True, exist_ok=True)
     manifest_output.parent.mkdir(parents=True, exist_ok=True)
-    build_info = {
+    contract = {
         "schema": 1,
-        "version": version,
         "variant": variant,
         "torch_version": torch_version,
         "cuda_runtime": cuda_runtime,
@@ -98,25 +167,58 @@ def build_payload(
     paths = sorted(
         (path for path in source.rglob("*") if path.is_file()), key=lambda p: p.as_posix()
     )
-    with zipfile.ZipFile(output, "w", allowZip64=True, compresslevel=6) as archive:
-        for path in paths:
-            relative = path.relative_to(source)
-            archive_name = str(PurePosixPath("quantem-server", *relative.parts))
-            info = _zip_info(
-                archive_name, executable=path.suffix.lower() in {".exe", ".dll", ".pyd"}
-            )
-            with (
-                path.open("rb") as source_stream,
-                archive.open(info, "w", force_zip64=True) as target,
-            ):
-                shutil.copyfileobj(source_stream, target, length=1024 * 1024)
-        build_info_bytes = (json.dumps(build_info, indent=2, sort_keys=True) + "\n").encode("utf-8")
-        archive.writestr(_zip_info("quantem-server/build-info.json"), build_info_bytes)
+    application_paths = [path for path in paths if _is_application_path(path.relative_to(source))]
+    runtime_paths = [path for path in paths if path not in application_paths]
+    if not application_paths or not runtime_paths:
+        raise ValueError("server tree must contain both application and runtime files")
+
+    runtime_id, runtime_files = _file_manifest(source, runtime_paths, contract)
+    runtime_info = {**contract, "runtime_id": runtime_id}
+    build_info = {
+        **runtime_info,
+        "schema": 2,
+        # Keep ``version`` for the installed diagnostics contract.
+        "version": version,
+        "application_version": version,
+    }
+    runtime_manifest = {
+        "schema": 1,
+        "runtime_id": runtime_id,
+        "files": runtime_files,
+    }
+
+    _write_archive(
+        source=source,
+        paths=runtime_paths,
+        output=output,
+        extras={
+            "quantem-server/runtime-info.json": (
+                json.dumps(runtime_info, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8")
+        },
+    )
+    _write_archive(
+        source=source,
+        paths=application_paths,
+        output=application_output,
+        extras={
+            "quantem-server/build-info.json": (
+                json.dumps(build_info, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8"),
+            "quantem-layer/runtime-files.json": (
+                json.dumps(runtime_manifest, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8"),
+            "quantem-layer/runtime-info.json": (
+                json.dumps(runtime_info, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8"),
+        },
+    )
 
     payload: dict[str, object] = {
-        "schema": 1,
+        "schema": 2,
         "version": version,
         "variant": variant,
+        "runtime_id": runtime_id,
         "filename": output.name,
         "signature_filename": f"{output.name}.sig",
         "sha256": _sha256(output),
@@ -126,6 +228,9 @@ def build_payload(
         "cuda_runtime": cuda_runtime,
         "cuda_driver_api": cuda_driver_api,
         "cuda_files": cuda_files,
+        "application_filename": application_output.name,
+        "application_sha256": _sha256(application_output),
+        "application_size": application_output.stat().st_size,
         "parts": [
             {
                 "filename": output.name,
@@ -144,6 +249,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--application-output", type=Path, required=True)
     parser.add_argument("--manifest-output", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--variant", choices=("cpu", "cuda"), required=True)
@@ -154,6 +260,7 @@ def main() -> int:
     build_payload(
         source=args.source,
         output=args.output,
+        application_output=args.application_output,
         manifest_output=args.manifest_output,
         version=args.version,
         variant=args.variant,

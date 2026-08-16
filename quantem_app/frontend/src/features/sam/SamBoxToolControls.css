@@ -1,16 +1,12 @@
 .sam-box-tool {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1 1 100%;
-  inline-size: 100%;
-  min-inline-size: 0;
+  display: contents;
 }
 
 .sam-box-tool-detail {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1 0 100%;
   inline-size: 100%;
   min-inline-size: 0;
 }

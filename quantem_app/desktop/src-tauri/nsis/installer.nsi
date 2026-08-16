@@ -682,8 +682,9 @@ Section Install
 
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
-  ; QuantEM downloads and transactionally replaces its frozen server only
-  ; after the running-app check, so no open runtime files can be disturbed.
+  ; QuantEM stages its application layer and, only when required, downloads
+  ; and transactionally replaces its runtime after the running-app check, so
+  ; no open server files can be disturbed.
   !ifmacrodef NSIS_HOOK_PREINSTALL
     !insertmacro NSIS_HOOK_PREINSTALL
   !endif

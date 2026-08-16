@@ -95,15 +95,18 @@ export function SettingsDialog({
                     ? "Unavailable"
                     : "Loading…"}
               </span>
-              {desktopUpdate.phase === "up-to-date" ? (
-                <span>Latest version</span>
-              ) : desktopUpdate.enabled ? (
+              {desktopUpdate.phase === "up-to-date" ? <span>Latest version</span> : null}
+              {desktopUpdate.enabled ? (
                 <Button
                   size="sm"
                   disabled={desktopUpdate.phase === "checking" || desktopUpdate.update !== null}
                   onClick={() => void desktopUpdate.checkNow()}
                 >
-                  {desktopUpdate.phase === "checking" ? "Checking…" : "Check for upgrades"}
+                  {desktopUpdate.phase === "checking"
+                    ? "Checking…"
+                    : desktopUpdate.phase === "up-to-date"
+                      ? "Check again"
+                      : "Check for upgrades"}
                 </Button>
               ) : null}
             </dd>

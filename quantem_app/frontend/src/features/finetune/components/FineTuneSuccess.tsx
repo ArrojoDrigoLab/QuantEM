@@ -14,6 +14,7 @@ import type {
   FineTunePreviewImage,
   FineTuneRunDetail,
 } from "@/shared/types/finetune";
+import { downloadText } from "@/utils/downloadText";
 
 function score(value: number | null | undefined): string {
   return value === null || value === undefined ? "-" : value.toFixed(3);
@@ -110,17 +111,11 @@ function safeFileName(name: string): string {
 }
 
 function downloadCvCsv(name: string, rows: CvTableRow[], cv: FineTuneCvResults) {
-  const blob = new Blob([fineTuneCvCsv(rows, cv.mean)], {
-    type: "text/csv;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${safeFileName(name)}-cross-validation.csv`;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  downloadText(
+    `${safeFileName(name)}-cross-validation.csv`,
+    fineTuneCvCsv(rows, cv.mean),
+    "text/csv"
+  );
 }
 
 function applyStatusTone(

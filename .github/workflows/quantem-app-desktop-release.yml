@@ -1,8 +1,8 @@
 name: quantem-app desktop release
 
-# A tag builds two Windows server payloads but only one user-facing installer.
-# The installer detects CUDA, lets the user override it, and downloads the
-# selected signed/hash-pinned payload directly into the chosen install drive.
+# A tag builds two Windows runtime/application layer pairs but only one
+# user-facing installer. The installer embeds both application layers and only
+# downloads a signed/hash-pinned runtime when a compatible one is not installed.
 on:
   push:
     tags: ["v*"]
@@ -105,19 +105,21 @@ jobs:
           if ('${{ matrix.variant }}' -eq 'cpu' -and $reportedCuda) { throw "CPU payload contains CUDA torch $reportedCuda" }
           if ('${{ matrix.variant }}' -eq 'cuda' -and $reportedCuda -ne '12.6') { throw "Expected CUDA 12.6 torch, got '$reportedCuda'" }
 
-      - name: Archive, sign, and split the runtime payload
+      - name: Build the application layer and signed runtime payload
         shell: pwsh
         working-directory: quantem_app
         run: |
           $ErrorActionPreference = "Stop"
           $out = Join-Path $env:RUNNER_TEMP "payload-assets"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $archive = Join-Path $out "quantem-server_$env:QUANTEM_VERSION`_windows-x64-${{ matrix.variant }}.zip"
+          $archive = Join-Path $out "quantem-runtime_$env:QUANTEM_VERSION`_windows-x64-${{ matrix.variant }}.zip"
+          $applicationArchive = Join-Path $out "quantem-application_$env:QUANTEM_VERSION`_windows-x64-${{ matrix.variant }}.zip"
           $manifest = Join-Path $out "${{ matrix.variant }}.payload-manifest.json"
           $args = @(
             "packaging/installer/build_windows_payload.py",
             "--source", "packaging/pyinstaller/dist/quantem-server",
             "--output", $archive,
+            "--application-output", $applicationArchive,
             "--manifest-output", $manifest,
             "--version", $env:QUANTEM_VERSION,
             "--variant", "${{ matrix.variant }}",
@@ -386,6 +388,18 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Installed server does not start" }
             $variant = (Get-Content -Raw (Join-Path $installDir "quantem-server/build-info.json") | ConvertFrom-Json).variant
             if ($variant -ne "cpu") { throw "Expected CPU runtime, got $variant" }
+            $runtimeIdPath = Join-Path $installDir ".quantem-runtime-id"
+            if (-not (Test-Path $runtimeIdPath -PathType Leaf)) { throw "Runtime ID marker was not written" }
+            $runtimeId = Get-Content -Raw $runtimeIdPath
+            Get-ChildItem $mirror -File | Remove-Item -Force
+            $update = Start-Process $installer -ArgumentList @("/S", "/UPDATE", "/D=$installDir") -Wait -PassThru
+            if ($update.ExitCode -ne 0) {
+              Get-Content (Join-Path $installDir ".quantem-install/failure.log") -ErrorAction SilentlyContinue
+              throw "Layered update exited $($update.ExitCode); it may have attempted a runtime download"
+            }
+            if ((Get-Content -Raw $runtimeIdPath) -ne $runtimeId) { throw "Layered update changed a compatible runtime" }
+            & $sidecar --help | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Server does not start after the layered update" }
           } finally {
             Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
           }
@@ -447,7 +461,7 @@ jobs:
           python desktop/scripts/build_update_metadata.py --version "$version" --tag "$RELEASE_TAG" --assets-dir ../release-assets --notes-file "$RUNNER_TEMP/release-notes.md" --output ../release-assets/quantem-app-latest.json
           python desktop/scripts/build_release_notes.py --version "$version" --tag "$RELEASE_TAG" --generated-notes "$RUNNER_TEMP/release-notes.md" --output "$RUNNER_TEMP/public-release-notes.md"
           python -m json.tool ../release-assets/quantem-app-latest.json > /dev/null
-          rm -f ../release-assets/*.update-manifest.json ../release-assets/quantem-app-windows-payloads.json
+          rm -f ../release-assets/*.update-manifest.json ../release-assets/quantem-app-windows-payloads.json ../release-assets/quantem-application_*.zip
           find ../release-assets -type f -size 0 -print -quit | (! read)
           gh release upload "$RELEASE_TAG" ../release-assets/* --clobber
           label_asset() {

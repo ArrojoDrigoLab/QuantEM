@@ -86,10 +86,11 @@ Var QMdlStQemLd
 ; clobber a selection.
 Var QMdlConfigured
 
-; ---- CPU/CUDA runtime selection and web payload installation --------------
-; The signed installer carries only the Tauri shell. CI publishes the frozen
-; server as immutable, hash-pinned release assets. This keeps one installer
-; while allowing it to choose the right PyTorch runtime on the user's machine.
+; ---- CPU/CUDA runtime selection and layered installation -------------------
+; The signed installer carries the small application layers for both runtime
+; variants. CI publishes the large, immutable Python/PyTorch runtimes as
+; hash-pinned release assets. Routine upgrades retain a content-identical
+; runtime and replace only the embedded application layer.
 Var QRuntimeDialog
 Var QRuntimeCpuRadio
 Var QRuntimeCudaRadio
@@ -111,6 +112,13 @@ Var QRuntimeArchiveHash
 Var QRuntimeArchive
 Var QRuntimeStage
 Var QRuntimeBackup
+Var QRuntimeRequiredId
+Var QRuntimeCurrent
+Var QRuntimeChanged
+Var QApplicationArchiveHash
+Var QApplicationArchive
+Var QApplicationStage
+Var QApplicationBackup
 Var QDownloadUrl
 Var QDownloadHash
 Var QDownloadPath
@@ -255,6 +263,8 @@ Function QuantemSelectPayload
   StrCpy $QRuntimeHash3 ""
   StrCpy $QRuntimeHash4 ""
   ${If} $QRuntimeVariant == "cuda"
+    StrCpy $QRuntimeRequiredId "${QPAYLOAD_CUDA_RUNTIME_ID}"
+    StrCpy $QApplicationArchiveHash "${QPAYLOAD_CUDA_APPLICATION_SHA256}"
     StrCpy $QRuntimePartCount ${QPAYLOAD_CUDA_PART_COUNT}
     StrCpy $QRuntimeArchiveHash "${QPAYLOAD_CUDA_SHA256}"
     StrCpy $QRuntimeUrl1 "${QPAYLOAD_CUDA_PART1_URL}"
@@ -272,6 +282,8 @@ Function QuantemSelectPayload
       StrCpy $QRuntimeHash4 "${QPAYLOAD_CUDA_PART4_SHA256}"
     !endif
   ${Else}
+    StrCpy $QRuntimeRequiredId "${QPAYLOAD_CPU_RUNTIME_ID}"
+    StrCpy $QApplicationArchiveHash "${QPAYLOAD_CPU_APPLICATION_SHA256}"
     StrCpy $QRuntimePartCount ${QPAYLOAD_CPU_PART_COUNT}
     StrCpy $QRuntimeArchiveHash "${QPAYLOAD_CPU_SHA256}"
     StrCpy $QRuntimeUrl1 "${QPAYLOAD_CPU_PART1_URL}"
@@ -349,14 +361,180 @@ Function QuantemDownloadPart
   ${EndIf}
 FunctionEnd
 
+Function QuantemStageApplication
+  StrCpy $QApplicationArchive "$INSTDIR\.quantem-install\application.zip"
+  StrCpy $QApplicationStage "$INSTDIR\.quantem-install\application"
+  StrCpy $QApplicationBackup "$INSTDIR\.quantem-install\old-application"
+  CreateDirectory "$QApplicationStage"
+  SetOutPath "$INSTDIR\.quantem-install"
+  ${If} $QRuntimeVariant == "cuda"
+    File /oname=application.zip "${QPAYLOAD_CUDA_APPLICATION_PATH}"
+  ${Else}
+    File /oname=application.zip "${QPAYLOAD_CPU_APPLICATION_PATH}"
+  ${EndIf}
+  File /oname=verify-existing-runtime.ps1 "${QPAYLOAD_RUNTIME_VERIFIER_PATH}"
+  SetOutPath "$INSTDIR"
+
+  StrCpy $QVerifyPath "$QApplicationArchive"
+  StrCpy $QVerifyHash "$QApplicationArchiveHash"
+  Call QuantemVerifyFile
+  ${If} $QVerifyOk <> 1
+    Abort "The embedded QuantEM application layer failed its security check."
+  ${EndIf}
+  nsExec::ExecToStack '"$SYSDIR\tar.exe" -xf "$QApplicationArchive" -C "$QApplicationStage"'
+  Pop $0
+  Pop $1
+  ${If} $0 <> 0
+    Abort "The QuantEM application layer could not be extracted."
+  ${EndIf}
+  IfFileExists "$QApplicationStage\quantem-server\quantem-server.exe" 0 application_incomplete
+  IfFileExists "$QApplicationStage\quantem-server\build-info.json" 0 application_incomplete
+  IfFileExists "$QApplicationStage\quantem-layer\runtime-files.json" 0 application_incomplete
+  IfFileExists "$QApplicationStage\quantem-layer\runtime-info.json" 0 application_incomplete
+  Return
+  application_incomplete:
+    Abort "The verified QuantEM application layer is incomplete."
+FunctionEnd
+
+Function QuantemCheckInstalledRuntime
+  StrCpy $QRuntimeCurrent 0
+  StrCpy $0 ""
+  ClearErrors
+  FileOpen $1 "$INSTDIR\.quantem-runtime-id" r
+  ${IfNot} ${Errors}
+    FileRead $1 $0
+    FileClose $1
+  ${EndIf}
+  ${If} $0 == $QRuntimeRequiredId
+    IfFileExists "$INSTDIR\quantem-server\runtime-info.json" 0 runtime_check_done
+    StrCpy $QRuntimeCurrent 1
+    DetailPrint "Retaining compatible $QRuntimeVariant runtime $QRuntimeRequiredId."
+    Return
+  ${EndIf}
+
+  ; First layered upgrade: an older monolithic installation has no runtime-ID
+  ; marker. Hash only the required runtime files against the embedded manifest;
+  ; if every byte matches, adopt it without downloading PyTorch again.
+  IfFileExists "$INSTDIR\quantem-server\_internal\*.*" 0 runtime_check_done
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\.quantem-install\verify-existing-runtime.ps1" -Root "$INSTDIR\quantem-server" -Manifest "$QApplicationStage\quantem-layer\runtime-files.json"'
+  Pop $0
+  Pop $1
+  ${If} $0 = 0
+    ClearErrors
+    CopyFiles /SILENT "$QApplicationStage\quantem-layer\runtime-info.json" "$INSTDIR\quantem-server"
+    ${If} ${Errors}
+      DetailPrint "The existing runtime matched, but its compatibility marker could not be installed."
+    ${Else}
+      StrCpy $QRuntimeCurrent 1
+      DetailPrint "Adopted the existing verified $QRuntimeVariant runtime; no runtime download is needed."
+    ${EndIf}
+  ${Else}
+    DetailPrint "Installed runtime is not byte-compatible with $QRuntimeRequiredId; a replacement is required."
+  ${EndIf}
+  runtime_check_done:
+FunctionEnd
+
+Function QuantemBackupApplication
+  CreateDirectory "$QApplicationBackup\_internal"
+  Rename "$INSTDIR\quantem-server\quantem-server.exe" "$QApplicationBackup\quantem-server.exe"
+  Rename "$INSTDIR\quantem-server\build-info.json" "$QApplicationBackup\build-info.json"
+  Rename "$INSTDIR\quantem-server\_internal\quantem" "$QApplicationBackup\_internal\quantem"
+  Rename "$INSTDIR\quantem-server\_internal\quantem_frontend" "$QApplicationBackup\_internal\quantem_frontend"
+  FindFirst $0 $1 "$INSTDIR\quantem-server\_internal\quantem_app-*.dist-info"
+  application_backup_dist_info:
+    StrCmp $1 "" application_backup_done
+    Rename "$INSTDIR\quantem-server\_internal\$1" "$QApplicationBackup\_internal\$1"
+    FindNext $0 $1
+    Goto application_backup_dist_info
+  application_backup_done:
+  FindClose $0
+FunctionEnd
+
+Function QuantemRemoveApplication
+  Delete "$INSTDIR\quantem-server\quantem-server.exe"
+  Delete "$INSTDIR\quantem-server\build-info.json"
+  RMDir /r "$INSTDIR\quantem-server\_internal\quantem"
+  RMDir /r "$INSTDIR\quantem-server\_internal\quantem_frontend"
+  FindFirst $0 $1 "$INSTDIR\quantem-server\_internal\quantem_app-*.dist-info"
+  application_remove_dist_info:
+    StrCmp $1 "" application_remove_done
+    RMDir /r "$INSTDIR\quantem-server\_internal\$1"
+    FindNext $0 $1
+    Goto application_remove_dist_info
+  application_remove_done:
+  FindClose $0
+FunctionEnd
+
+Function QuantemRestoreApplication
+  Call QuantemRemoveApplication
+  Rename "$QApplicationBackup\quantem-server.exe" "$INSTDIR\quantem-server\quantem-server.exe"
+  Rename "$QApplicationBackup\build-info.json" "$INSTDIR\quantem-server\build-info.json"
+  Rename "$QApplicationBackup\_internal\quantem" "$INSTDIR\quantem-server\_internal\quantem"
+  Rename "$QApplicationBackup\_internal\quantem_frontend" "$INSTDIR\quantem-server\_internal\quantem_frontend"
+  FindFirst $0 $1 "$QApplicationBackup\_internal\quantem_app-*.dist-info"
+  application_restore_dist_info:
+    StrCmp $1 "" application_restore_done
+    Rename "$QApplicationBackup\_internal\$1" "$INSTDIR\quantem-server\_internal\$1"
+    FindNext $0 $1
+    Goto application_restore_dist_info
+  application_restore_done:
+  FindClose $0
+FunctionEnd
+
+Function QuantemPromoteApplication
+  StrCpy $R7 0
+  ClearErrors
+  Rename "$QApplicationStage\quantem-server\quantem-server.exe" "$INSTDIR\quantem-server\quantem-server.exe"
+  ${If} ${Errors}
+    StrCpy $R7 1
+  ${EndIf}
+  ClearErrors
+  Rename "$QApplicationStage\quantem-server\build-info.json" "$INSTDIR\quantem-server\build-info.json"
+  ${If} ${Errors}
+    StrCpy $R7 1
+  ${EndIf}
+  IfFileExists "$QApplicationStage\quantem-server\_internal\quantem\*.*" 0 application_promote_frontend
+    ClearErrors
+    Rename "$QApplicationStage\quantem-server\_internal\quantem" "$INSTDIR\quantem-server\_internal\quantem"
+    ${If} ${Errors}
+      StrCpy $R7 1
+    ${EndIf}
+  application_promote_frontend:
+  IfFileExists "$QApplicationStage\quantem-server\_internal\quantem_frontend\*.*" 0 application_promote_dist_info_start
+    ClearErrors
+    Rename "$QApplicationStage\quantem-server\_internal\quantem_frontend" "$INSTDIR\quantem-server\_internal\quantem_frontend"
+    ${If} ${Errors}
+      StrCpy $R7 1
+    ${EndIf}
+  application_promote_dist_info_start:
+  FindFirst $0 $1 "$QApplicationStage\quantem-server\_internal\quantem_app-*.dist-info"
+  application_promote_dist_info:
+    StrCmp $1 "" application_promote_done
+    ClearErrors
+    Rename "$QApplicationStage\quantem-server\_internal\$1" "$INSTDIR\quantem-server\_internal\$1"
+    ${If} ${Errors}
+      StrCpy $R7 1
+    ${EndIf}
+    FindNext $0 $1
+    Goto application_promote_dist_info
+  application_promote_done:
+  FindClose $0
+FunctionEnd
+
 Function QuantemInstallRuntime
   Call QuantemInitializeRuntimeChoice
   Call QuantemSelectPayload
-  StrCpy $QRuntimeArchive "$INSTDIR\.quantem-install\payload.zip"
-  StrCpy $QRuntimeStage "$INSTDIR\.quantem-install\new"
-  StrCpy $QRuntimeBackup "$INSTDIR\.quantem-install\old"
+  StrCpy $QRuntimeArchive "$INSTDIR\.quantem-install\runtime.zip"
+  StrCpy $QRuntimeStage "$INSTDIR\.quantem-install\new-runtime"
+  StrCpy $QRuntimeBackup "$INSTDIR\.quantem-install\old-runtime"
+  StrCpy $QRuntimeChanged 0
   RMDir /r "$INSTDIR\.quantem-install"
   CreateDirectory "$QRuntimeStage"
+  Call QuantemStageApplication
+  Call QuantemCheckInstalledRuntime
+  ${If} $QRuntimeCurrent = 1
+    Goto runtime_ready
+  ${EndIf}
 
   StrCpy $QDownloadUrl $QRuntimeUrl1
   StrCpy $QDownloadHash $QRuntimeHash1
@@ -403,19 +581,14 @@ Function QuantemInstallRuntime
   ${If} $QVerifyOk <> 1
     Abort "The assembled QuantEM runtime failed its security check."
   ${EndIf}
-
   DetailPrint "Extracting the verified $QRuntimeVariant runtime..."
   nsExec::ExecToStack '"$SYSDIR\tar.exe" -xf "$QRuntimeArchive" -C "$QRuntimeStage"'
   Pop $0
   Pop $1
   ${If} $0 <> 0
-    DetailPrint "Runtime extraction failed: $1"
     Abort "The QuantEM runtime could not be extracted."
   ${EndIf}
-  IfFileExists "$QRuntimeStage\quantem-server\quantem-server.exe" runtime_ready 0
-    Abort "The verified runtime archive is incomplete."
-
-  runtime_ready:
+  IfFileExists "$QRuntimeStage\quantem-server\runtime-info.json" 0 runtime_incomplete
   IfFileExists "$INSTDIR\quantem-server\*.*" 0 runtime_promote
     ClearErrors
     Rename "$INSTDIR\quantem-server" "$QRuntimeBackup"
@@ -429,9 +602,30 @@ Function QuantemInstallRuntime
     Rename "$QRuntimeBackup" "$INSTDIR\quantem-server"
     Abort "The new QuantEM runtime could not be activated; the previous runtime was restored."
   ${EndIf}
+  StrCpy $QRuntimeChanged 1
+  DetailPrint "Installed new $QRuntimeVariant runtime $QRuntimeRequiredId."
+  Goto runtime_ready
+  runtime_incomplete:
+    Abort "The verified runtime archive is incomplete."
+
+  runtime_ready:
+  ${If} $QRuntimeChanged <> 1
+    Call QuantemBackupApplication
+  ${EndIf}
+  Call QuantemPromoteApplication
+  ${If} $R7 <> 0
+    ${If} $QRuntimeChanged = 1
+      RMDir /r "$INSTDIR\quantem-server"
+      Rename "$QRuntimeBackup" "$INSTDIR\quantem-server"
+    ${Else}
+      Call QuantemRestoreApplication
+    ${EndIf}
+    Abort "The QuantEM application update failed; the previous version was restored."
+  ${EndIf}
+  RMDir /r "$QApplicationBackup"
   RMDir /r "$QRuntimeBackup"
   RMDir /r "$INSTDIR\.quantem-install"
-  DetailPrint "Installed QuantEM $QRuntimeVariant runtime ${QPAYLOAD_VERSION}."
+  DetailPrint "Installed QuantEM application ${QPAYLOAD_VERSION}."
 FunctionEnd
 
 !macroend
@@ -656,11 +850,17 @@ FunctionEnd
 !macro NSIS_HOOK_POSTINSTALL
   WriteRegStr SHCTX "${MANUPRODUCTKEY}" "RuntimeVariant" "$QRuntimeVariant"
   WriteRegStr SHCTX "${MANUPRODUCTKEY}" "RuntimeVersion" "${QPAYLOAD_VERSION}"
+  WriteRegStr SHCTX "${MANUPRODUCTKEY}" "RuntimeId" "$QRuntimeRequiredId"
   FileOpen $0 "$INSTDIR\.quantem-runtime-variant.tmp" w
   FileWrite $0 "$QRuntimeVariant"
   FileClose $0
   Delete "$INSTDIR\.quantem-runtime-variant"
   Rename "$INSTDIR\.quantem-runtime-variant.tmp" "$INSTDIR\.quantem-runtime-variant"
+  FileOpen $0 "$INSTDIR\.quantem-runtime-id.tmp" w
+  FileWrite $0 "$QRuntimeRequiredId"
+  FileClose $0
+  Delete "$INSTDIR\.quantem-runtime-id"
+  Rename "$INSTDIR\.quantem-runtime-id.tmp" "$INSTDIR\.quantem-runtime-id"
   Call QuantemWritePendingInstalls
 !macroend
 
@@ -675,6 +875,7 @@ FunctionEnd
 !macro NSIS_HOOK_POSTUNINSTALL
   ${If} $UpdateMode <> 1
     Delete "$INSTDIR\.quantem-runtime-variant"
+    Delete "$INSTDIR\.quantem-runtime-id"
     RMDir /r "$INSTDIR\quantem-server"
     RMDir /r "$INSTDIR\.quantem-install"
     ; The pending file is installer metadata, not user data.

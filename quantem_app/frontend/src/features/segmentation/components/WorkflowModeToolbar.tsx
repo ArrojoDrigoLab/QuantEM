@@ -10,7 +10,6 @@
  */
 
 import type { ReactNode } from "react";
-import { CONFIRMED_AREA_LABEL } from "@/shared/constants/confirmedArea";
 import type { WorkflowMode } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import type {
   GroupHoverActionMode,
@@ -87,7 +86,7 @@ interface WorkflowModeToolbarProps {
   polygonCanClose?: boolean;
   /** Close the draft and commit it as a filled object. */
   onClosePolygon?: () => void;
-  /** Extra correction sub-tools, rendered beneath the drawing tools. */
+  /** Extra correction sub-tools, rendered alongside the drawing tools. */
   extraModes?: ReactNode;
   /**
    * Extra tool controls, rendered at the end of the toolbar.
@@ -250,18 +249,7 @@ export function WorkflowModeToolbar({
             >
               <EraseIcon />
             </button>
-          </div>
-          {extraModes && <div className="mode-toolbar-group mode-toolbar-subtools">{extraModes}</div>}
-
-          {/* Confirmed area is a separate, distinct control (training mask). */}
-          <div className="mode-toolbar-group confirmed-area-group">
-            <button
-              className={correctionTool === "completed_roi" ? "active" : ""}
-              onClick={() => onCorrectionToolChange("completed_roi")}
-              aria-pressed={correctionTool === "completed_roi"}
-            >
-              {CONFIRMED_AREA_LABEL}
-            </button>
+            {extraModes}
           </div>
 
           {(correctionTool === "draw" || correctionTool === "erase") && (
@@ -334,17 +322,7 @@ export function WorkflowModeToolbar({
             >
               <BrushIcon />
             </button>
-          </div>
-          {extraModes && <div className="mode-toolbar-group mode-toolbar-subtools">{extraModes}</div>}
-
-          <div className="mode-toolbar-group confirmed-area-group">
-            <button
-              className={correctionTool === "completed_roi" ? "active" : ""}
-              onClick={() => onCorrectionToolChange("completed_roi")}
-              aria-pressed={correctionTool === "completed_roi"}
-            >
-              {CONFIRMED_AREA_LABEL}
-            </button>
+            {extraModes}
           </div>
 
           {correctionTool === "draw" && (

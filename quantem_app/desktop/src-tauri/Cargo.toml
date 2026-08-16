@@ -1,6 +1,6 @@
 [package]
 name = "quantem-desktop"
-version = "0.1.4"
+version = "0.1.5"
 description = "QuantEM desktop shell: spawns the quantem-server sidecar and hosts its UI"
 authors = ["Arrojo e Drigo Lab, Vanderbilt University"]
 license = "BSD-3-Clause"
@@ -21,10 +21,15 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["blocking"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
+tempfile = "3"
 
 [target."cfg(windows)".dependencies.windows-sys]
 version = "0.59"

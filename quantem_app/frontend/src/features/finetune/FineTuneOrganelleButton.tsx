@@ -70,7 +70,7 @@ export function FineTuneOrganelleButton({
   const enabled = (annotationCount ?? 0) > 0;
   const tooltip = enabled
     ? `Train a ${organelle.toLowerCase()} model on your own annotations.`
-    : "Mark an ROI as Done or outline a Confirmed area you have annotated to enable fine-tuning";
+    : "Mark an ROI as Done to enable fine-tuning";
 
   return (
     <>

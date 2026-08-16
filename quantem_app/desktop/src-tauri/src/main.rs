@@ -42,14 +42,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::env;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use tauri::{Manager, RunEvent, WebviewWindowBuilder};
+use serde::Deserialize;
+use tauri::{Manager, RunEvent, WebviewWindow, WebviewWindowBuilder};
+use tauri_plugin_dialog::DialogExt;
 
 /// How long the first launch may take before we give up. Cold start pays for
 /// the frozen torch import plus the initial database migration.
@@ -221,8 +223,8 @@ fn resolve_data_dir() -> Result<(PathBuf, bool), String> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        let exe = env::current_exe()
-            .map_err(|e| format!("cannot locate the QuantEM executable: {e}"))?;
+        let exe =
+            env::current_exe().map_err(|e| format!("cannot locate the QuantEM executable: {e}"))?;
         let dir = exe
             .parent()
             .ok_or_else(|| "the QuantEM executable has no parent directory".to_string())?
@@ -261,7 +263,11 @@ fn log_line(line: &str) {
         Some(dir) => dir.join("quantem-desktop.log"),
         None => env::temp_dir().join("quantem-desktop.log"),
     };
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(f, "{line}");
     }
 }
@@ -312,12 +318,226 @@ fn serde_json_escape(s: &str) -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// Native saves: both WKWebView and WebView2 use the OS dialog, then Rust owns
+// the write. This avoids browser download behavior entirely in packaged apps.
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveTextRequest {
+    suggested_name: String,
+    mime_type: String,
+    contents: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveUrlRequest {
+    suggested_name: String,
+    mime_type: String,
+    url: String,
+}
+
+fn safe_suggested_name(value: &str) -> String {
+    let basename = value
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or("export");
+    let cleaned: String = basename
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(180)
+        .collect();
+    if cleaned.trim().is_empty() {
+        "export".to_owned()
+    } else {
+        cleaned
+    }
+}
+
+fn file_filter(suggested_name: &str, mime_type: &str) -> Option<(String, String)> {
+    let extension = Path::new(suggested_name)
+        .extension()?
+        .to_str()?
+        .trim()
+        .to_ascii_lowercase();
+    if extension.is_empty()
+        || extension.len() > 15
+        || !extension.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '_' || character == '-'
+        })
+    {
+        return None;
+    }
+    let label = match mime_type.split(';').next().unwrap_or("").trim() {
+        "text/csv" => "CSV file".to_owned(),
+        "image/png" => "PNG image".to_owned(),
+        "application/json" => "JSON file".to_owned(),
+        _ => format!("{} file", extension.to_ascii_uppercase()),
+    };
+    Some((label, extension))
+}
+
+fn choose_save_destination(
+    window: &WebviewWindow,
+    suggested_name: &str,
+    mime_type: &str,
+) -> Result<Option<PathBuf>, String> {
+    let suggested_name = safe_suggested_name(suggested_name);
+    let mut dialog = window
+        .dialog()
+        .file()
+        .set_parent(window)
+        .set_title("Save QuantEM export")
+        .set_file_name(&suggested_name);
+    if let Some((label, extension)) = file_filter(&suggested_name, mime_type) {
+        dialog = dialog.add_filter(label, &[&extension]);
+    }
+    dialog
+        .blocking_save_file()
+        .map(|selection| {
+            selection
+                .into_path()
+                .map_err(|error| format!("the selected destination is not a local file: {error}"))
+        })
+        .transpose()
+}
+
+fn stream_to_file_atomically(destination: &Path, source: &mut impl Read) -> Result<(), String> {
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .ok_or_else(|| "the selected file has no parent directory".to_owned())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
+        format!(
+            "could not create a temporary file beside {}: {error}",
+            destination.display()
+        )
+    })?;
+    std::io::copy(source, temporary.as_file_mut())
+        .map_err(|error| format!("could not write {}: {error}", destination.display()))?;
+    temporary
+        .as_file_mut()
+        .flush()
+        .and_then(|()| temporary.as_file().sync_all())
+        .map_err(|error| {
+            format!(
+                "could not finish writing {}: {error}",
+                destination.display()
+            )
+        })?;
+    temporary.persist(destination).map_err(|error| {
+        format!(
+            "could not replace {} with the completed export: {}",
+            destination.display(),
+            error.error
+        )
+    })?;
+    Ok(())
+}
+
+fn validated_export_url(value: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(value).map_err(|_| "the export URL is invalid".to_owned())?;
+    if url.scheme() != "http" {
+        return Err("desktop exports must use the local HTTP server".to_owned());
+    }
+    if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
+        return Err("the export URL contains unsupported credentials or a fragment".to_owned());
+    }
+    if !matches!(
+        url.host_str(),
+        Some("127.0.0.1" | "localhost" | "::1" | "[::1]")
+    ) {
+        return Err("desktop exports are restricted to the QuantEM loopback server".to_owned());
+    }
+
+    let segments: Vec<&str> = url.path().trim_matches('/').split('/').collect();
+    let asset_export = matches!(
+        segments.as_slice(),
+        ["api", "assets", asset_id, "export-png"] if !asset_id.is_empty()
+    );
+    let analysis_export = matches!(
+        segments.as_slice(),
+        ["api", "analysis", run_id, "export", name]
+            if !run_id.is_empty()
+                && matches!(
+                    *name,
+                    "objects.csv" | "image_summary.csv" | "composition.csv" | "manifest.json"
+                )
+    );
+    if !asset_export && !analysis_export {
+        return Err("the URL is not a supported QuantEM export endpoint".to_owned());
+    }
+    Ok(url)
+}
+
+fn download_export(destination: &Path, url: reqwest::Url) -> Result<(), String> {
+    // The updater deliberately enables reqwest's provider-neutral Rustls
+    // feature. A reqwest Client still constructs its TLS connector for plain
+    // loopback HTTP, so select the already-linked Ring provider explicitly.
+    // If another plugin selected a provider first, keeping it is also valid.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(60 * 60))
+        .build()
+        .map_err(|error| format!("could not prepare the export request: {error}"))?;
+    let mut response = client
+        .get(url)
+        .send()
+        .map_err(|error| format!("the export request failed: {error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        let mut detail = String::new();
+        let _ = response.take(500).read_to_string(&mut detail);
+        let detail = detail.trim();
+        return Err(if detail.is_empty() {
+            format!("the export request failed ({status})")
+        } else {
+            format!("the export request failed ({status}): {detail}")
+        });
+    }
+    stream_to_file_atomically(destination, &mut response)
+}
+
+#[tauri::command]
+async fn save_text_file(window: WebviewWindow, request: SaveTextRequest) -> Result<bool, String> {
+    let Some(destination) =
+        choose_save_destination(&window, &request.suggested_name, &request.mime_type)?
+    else {
+        return Ok(false);
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut contents = request.contents.as_bytes();
+        stream_to_file_atomically(&destination, &mut contents)
+    })
+    .await
+    .map_err(|error| format!("the save worker stopped unexpectedly: {error}"))??;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn save_url_file(window: WebviewWindow, request: SaveUrlRequest) -> Result<bool, String> {
+    let url = validated_export_url(&request.url)?;
+    let Some(destination) =
+        choose_save_destination(&window, &request.suggested_name, &request.mime_type)?
+    else {
+        return Ok(false);
+    };
+    tauri::async_runtime::spawn_blocking(move || download_export(&destination, url))
+        .await
+        .map_err(|error| format!("the export worker stopped unexpectedly: {error}"))??;
+    Ok(true)
+}
+
 fn main() {
     // Resolve storage before anything else: the WebView2 profile location must
     // be decided before the webview exists, and the sidecar inherits the same
     // choice through the environment.
-    let storage: Result<PathBuf, String> = resolve_data_dir().and_then(|(dir, explicit)| {
-        match ensure_writable(&dir) {
+    let storage: Result<PathBuf, String> =
+        resolve_data_dir().and_then(|(dir, explicit)| match ensure_writable(&dir) {
             Ok(()) => Ok(dir),
             Err(e) if explicit => Err(format!(
                 "the data directory set by the QUANTEM_DATA_DIR environment \
@@ -329,8 +549,7 @@ fn main() {
                  installation to a writable folder, or set the QUANTEM_DATA_DIR \
                  environment variable to a writable location."
             )),
-        }
-    });
+        });
 
     let webview_profile: Option<PathBuf> = match &storage {
         Ok(dir) => {
@@ -391,7 +610,9 @@ fn main() {
         // Its webview permissions are restricted to the main window in
         // capabilities/default.json.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![save_text_file, save_url_file])
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -578,4 +799,100 @@ fn main() {
                 sidecar_for_exit.lock().unwrap().kill();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn export_urls_are_limited_to_supported_loopback_endpoints() {
+        assert!(validated_export_url(
+            "http://127.0.0.1:8722/api/assets/asset-1/export-png/?source=original"
+        )
+        .is_ok());
+        assert!(validated_export_url(
+            "http://localhost:45174/api/analysis/run-1/export/objects.csv"
+        )
+        .is_ok());
+        assert!(validated_export_url(
+            "http://127.0.0.1:8722/api/analysis/run-1/export/image_summary.csv"
+        )
+        .is_ok());
+
+        for invalid in [
+            "https://127.0.0.1:8722/api/analysis/run-1/export/objects.csv",
+            "http://example.com/api/analysis/run-1/export/objects.csv",
+            "http://127.0.0.1:8722/api/analysis/run-1/",
+            "http://127.0.0.1:8722/api/analysis/run-1/export/unknown.zip",
+            "http://user@127.0.0.1:8722/api/analysis/run-1/export/objects.csv",
+        ] {
+            assert!(validated_export_url(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn completed_save_atomically_replaces_an_existing_file() {
+        let directory = tempfile::tempdir().expect("test directory");
+        let destination = directory.path().join("objects.csv");
+        std::fs::write(&destination, b"old contents").expect("seed destination");
+        let mut source = Cursor::new(b"object_id,area\n1,42\n".to_vec());
+
+        stream_to_file_atomically(&destination, &mut source).expect("atomic save");
+
+        assert_eq!(
+            std::fs::read(&destination).expect("saved file"),
+            b"object_id,area\n1,42\n"
+        );
+        assert_eq!(
+            std::fs::read_dir(directory.path())
+                .expect("directory listing")
+                .count(),
+            1,
+            "the temporary file should be consumed"
+        );
+    }
+
+    #[test]
+    fn server_export_is_streamed_into_the_destination() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("loopback listener");
+        let port = listener.local_addr().expect("listener address").port();
+        let body = b"object_id,area\n1,42\n";
+        let server = std::thread::spawn(move || {
+            let (mut connection, _) = listener.accept().expect("export request");
+            let mut request = [0_u8; 2048];
+            let _ = connection.read(&mut request);
+            write!(
+                connection,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/csv\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .expect("response headers");
+            connection.write_all(body).expect("response body");
+        });
+
+        let directory = tempfile::tempdir().expect("test directory");
+        let destination = directory.path().join("objects.csv");
+        let url = validated_export_url(&format!(
+            "http://127.0.0.1:{port}/api/analysis/run-1/export/objects.csv"
+        ))
+        .expect("valid export URL");
+        download_export(&destination, url).expect("streamed export");
+        server.join().expect("server thread");
+
+        assert_eq!(std::fs::read(destination).expect("saved export"), body);
+    }
+
+    #[test]
+    fn suggested_name_cannot_escape_the_dialog_default() {
+        assert_eq!(
+            safe_suggested_name("../../exports/objects.csv"),
+            "objects.csv"
+        );
+        assert_eq!(
+            safe_suggested_name(r"C:\\exports\\composition.csv"),
+            "composition.csv"
+        );
+    }
 }

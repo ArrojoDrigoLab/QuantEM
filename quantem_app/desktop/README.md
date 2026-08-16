@@ -19,8 +19,10 @@ workflow are documented in [BUNDLING.md](BUNDLING.md).
 
 Windows has one installer, not separate CPU and CUDA installers. It detects a
 compatible NVIDIA driver, preselects CUDA when appropriate, allows an explicit
-choice, and downloads the matching frozen server payload during installation.
-That runtime choice is retained by later automatic updates.
+choice, and downloads the matching frozen runtime during installation. Later
+automatic updates replace the embedded application layer while retaining a
+byte-compatible Python/PyTorch/CUDA runtime. A large runtime download happens
+again only when that layer actually changes or cannot be verified.
 
 ## Architecture
 
@@ -85,9 +87,10 @@ Tauri's `externalBin` copies a *single file* next to the shell executable.
 The server is a PyInstaller **onedir** build — an exe plus an `_internal/`
 tree — because onefile would unpack multi-GB of torch to temp on every
 launch. On macOS the whole directory ships via the platform-specific
-`bundle.resources` mapping. On Windows, the bootstrap installer extracts the
-selected CPU/CUDA payload to the same `quantem-server/` layout; the portable
-builder stages it there directly. The shell resolves the sidecar itself, in
+`bundle.resources` mapping. On Windows, the bootstrap installer composes the
+selected CPU/CUDA runtime and application layers into the same
+`quantem-server/` layout; the portable builder stages it there directly. The
+shell resolves the sidecar itself, in
 order:
 
 1. `QUANTEM_SERVER_EXE` (env override, used in dev),

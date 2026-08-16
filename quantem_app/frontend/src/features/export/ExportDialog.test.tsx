@@ -6,6 +6,7 @@ import {
   getAssetSegmentations,
 } from "@/shared/api/assets";
 import type { ImageSegmentation } from "@/shared/types/images";
+import { saveUrlFile } from "@/utils/downloadText";
 import { ExportDialog } from "./ExportDialog";
 
 vi.mock("@/shared/api/assets", async () => {
@@ -18,6 +19,10 @@ vi.mock("@/shared/api/assets", async () => {
     getAssetSegmentations: vi.fn(),
   };
 });
+
+vi.mock("@/utils/downloadText", () => ({
+  saveUrlFile: vi.fn(),
+}));
 
 function segmentation(
   id: string,
@@ -58,6 +63,7 @@ describe("ExportDialog", () => {
       ),
     ]);
     vi.mocked(getAssetRasterExportUrl).mockReturnValue("/download/export.png");
+    vi.mocked(saveUrlFile).mockResolvedValue("saved");
   });
 
   it("offers the original image, every segmentation, and the overlap note", async () => {
@@ -76,12 +82,9 @@ describe("ExportDialog", () => {
     expect(screen.getByText(/later in the list replaces the earlier object/i)).toBeInTheDocument();
   });
 
-  it("downloads the selected segmentation through the shared endpoint", async () => {
+  it("opens the save flow with the selected segmentation and its default filename", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
-    const click = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => undefined);
     render(
       <ExportDialog
         asset={{ id: "asset-1", displayName: "Portal field" }}
@@ -96,8 +99,28 @@ describe("ExportDialog", () => {
       source: "segmentation",
       segmentationId: "mask",
     });
-    expect(click).toHaveBeenCalledTimes(1);
+    expect(saveUrlFile).toHaveBeenCalledWith(
+      "Portal_field_Cell_compartments_8bit.png",
+      "/download/export.png",
+      "image/png"
+    );
     await waitFor(() => expect(onClose).toHaveBeenCalled());
-    click.mockRestore();
+  });
+
+  it("keeps the export dialog open when the native Save dialog is cancelled", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    vi.mocked(saveUrlFile).mockResolvedValue("cancelled");
+    render(
+      <ExportDialog
+        asset={{ id: "asset-1", displayName: "Portal field" }}
+        onClose={onClose}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    await waitFor(() => expect(saveUrlFile).toHaveBeenCalled());
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

@@ -1,9 +1,10 @@
 /** Composition measured within each named Analysis Mask object. */
 
-import { Panel } from "@/shared/ui/design";
+import { Button, Panel } from "@/shared/ui/design";
 import { formatInteger, formatNumber, formatPercent } from "@/shared/ui/format";
 import { PixelSizeTag } from "@/shared/ui/PixelSize";
 import type { AnalysisComposition } from "@/shared/types/analysis";
+import { downloadUrl } from "@/utils/downloadText";
 
 export interface CompositionPanelProps {
   composition: AnalysisComposition;
@@ -46,13 +47,14 @@ export function CompositionPanel({
         <div className="flex flex-wrap items-center gap-2">
           <PixelSizeTag valueNm={calibrated ? pixelSizeNm : null} />
           {compositionCsvUrl ? (
-            <a
-              className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-800 shadow-sm hover:bg-slate-50"
-              href={compositionCsvUrl}
-              download
+            <Button
+              size="sm"
+              onClick={() =>
+                downloadUrl("composition.csv", compositionCsvUrl, "text/csv")
+              }
             >
               Download Composition Metrics
-            </a>
+            </Button>
           ) : null}
         </div>
       </div>

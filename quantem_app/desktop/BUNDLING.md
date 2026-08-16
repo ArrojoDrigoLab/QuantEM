@@ -1,10 +1,12 @@
 # Release and self-update procedure
 
 QuantEM desktop updates are signed application packages. On macOS they carry
-the frozen server. Windows ships one small bootstrap installer plus CPU and
-CUDA runtime payloads; the installer downloads the selected payload itself and
-does not launch a second installer. No package contains model weights or user
-data. The existing data root remains in place:
+the frozen server. Windows separates the frequently-changing application from
+the large Python/PyTorch runtime. The signed installer embeds small CPU and
+CUDA application layers; compatible installed runtimes are retained, and a
+runtime payload downloads only on a fresh install or when its content-derived
+runtime ID changes. No package contains model weights or user data. The
+existing data root remains in place:
 
 - Windows: the installer-selected `<install>/data` directory, unless
   `QUANTEM_DATA_DIR` explicitly selects another absolute directory.
@@ -66,39 +68,60 @@ The private updater key is never committed or written to an application asset.
 The public key is injected into a temporary Tauri configuration by the release
 workflow. This avoids shipping a placeholder or a disposable development key.
 
-## One Windows installer, two runtimes
+## One Windows installer, two layered runtimes
 
 The release workflow freezes PyTorch 2.13 independently from the `cpu` and
-`cu126` indexes. Each validated `quantem-server/` directory is placed in a
-deterministic ZIP, signed with the Tauri release key, and described by a JSON
-manifest. GitHub limits each release asset to 2 GiB, so an oversized archive is
-split into sub-2-GB parts automatically; the full archive signature and digest
-still cover the reconstructed byte stream.
+`cu126` indexes. Each validated `quantem-server/` directory is split into:
 
-The signed NSIS bootstrap embeds the exact part URLs and SHA-256 digests. It:
+- a **runtime layer** containing Python, PyTorch/CUDA, and third-party native
+  dependencies; and
+- an **application layer** containing `quantem-server.exe`, QuantEM package
+  data and migrations, distribution metadata, and the built frontend.
+
+The runtime ID is a SHA-256 identity over the runtime contract and every
+runtime file path, size, and digest. Application versions are deliberately not
+part of it. Each runtime ZIP is signed with the Tauri release key and described
+by a JSON manifest. GitHub limits each release asset to 2 GiB, so an oversized
+runtime archive is split into sub-2-GB parts automatically. Application layers
+are embedded into the signed installer and are not separate release downloads.
+
+The signed NSIS installer embeds both application layers plus the exact runtime
+part URLs and SHA-256 digests. It:
 
 1. checks the installed NVIDIA CUDA driver API and preselects CUDA 12.6 when
    compatible, while retaining a visible CPU/CUDA choice;
-2. downloads every part under `<install>/.quantem-install`, so temporary space
-   is consumed on the drive the user selected;
-3. verifies each part and the reconstructed archive, extracts to a staging
-   directory, and transactionally replaces `<install>/quantem-server`; and
-4. records the choice in both installer metadata and
-   `<install>/.quantem-runtime-variant`.
+2. compares the required runtime ID with `<install>/.quantem-runtime-id` and
+   retains the existing runtime when they match;
+3. on the first layered upgrade, hashes the existing monolithic runtime against
+   the embedded file manifest and adopts it when every required file matches;
+4. only when necessary, downloads runtime parts under
+   `<install>/.quantem-install`, verifies them, and transactionally replaces
+   the runtime; and
+5. transactionally overlays the embedded application layer, recording the
+   flavor and runtime ID beside the installation.
 
-Automatic updates read that marker and install the same flavor. Existing
-installations from before this scheme have no marker and migrate safely to CPU.
-The release always exposes one `QuantEM_<version>_x64-setup.exe` to users; the
-runtime ZIP parts are implementation assets consumed by that installer.
+Automatic updates preserve the installed flavor. Existing installations from
+before this scheme have no runtime-ID marker, but migrate without a large
+download whenever their runtime files match the new release. The release
+always exposes one `QuantEM_<version>_x64-setup.exe` to users; runtime ZIP parts
+are implementation assets consumed only when required.
+
+The Tauri updater downloads the complete installer through QuantEM's top update
+bar, so routine-update progress covers the whole application payload. Windows
+then applies it in `quiet` mode. After the user chooses **Update**, QuantEM waits
+for active work, installs without another prompt or installer window, and
+restarts automatically. A rare runtime-changing release can take longer during
+the quiet apply phase because the installer must fetch the new runtime.
 
 ## Publishing a release
 
 1. Update all five version sources and push a matching `v<version>` tag.
-2. The `quantem-app-desktop-release` workflow builds both Windows runtime
-   payloads, the single Windows x64 installer, and native macOS x64/Apple
-   Silicon bundles. It signs updater and runtime archives, ad-hoc signs the
-   macOS applications, exercises a real local-mirror Windows install, and
-   creates a draft GitHub release.
+2. The `quantem-app-desktop-release` workflow builds both Windows runtime and
+   application layers, embeds the application layers into the single Windows
+   x64 installer, and builds native macOS x64/Apple Silicon bundles. It signs
+   updater and runtime archives, ad-hoc signs the macOS applications, exercises
+   real fresh-install and retained-runtime Windows paths, and creates a draft
+   GitHub release.
 3. The workflow uploads the installers, hashes, signed updater packages, and
    `quantem-app-latest.json` before publishing the release. Apps check that
    JSON file, so they never see a partially populated release.

@@ -17,4 +17,4 @@ the gate, not good intentions, is what keeps them equal.
 from __future__ import annotations
 
 #: Must equal ``[project].version`` in ``quantem_app/pyproject.toml``.
-FALLBACK_VERSION = "0.1.4"
+FALLBACK_VERSION = "0.1.5"

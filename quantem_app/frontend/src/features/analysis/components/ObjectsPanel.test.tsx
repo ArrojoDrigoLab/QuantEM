@@ -99,10 +99,7 @@ describe("ObjectsPanel metric coverage indicators", () => {
   it("places the renamed downloads in the Objects header", () => {
     renderPanel("/objects.csv");
     expect(screen.getByRole("button", { name: "Download Summary Table" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download All Objects" })).toHaveAttribute(
-      "href",
-      "/objects.csv"
-    );
+    expect(screen.getByRole("button", { name: "Download All Objects" })).toBeInTheDocument();
     expect(screen.queryByText("Confirmed objects only")).not.toBeInTheDocument();
   });
 });

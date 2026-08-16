@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -48,10 +49,13 @@ def test_windows_workflows_retry_transient_tauri_tool_downloads() -> None:
         REPO_ROOT / ".github/workflows/quantem-app.yml",
         REPO_ROOT / ".github/workflows/quantem-app-desktop-release.yml",
     )
-    assert sum(
-        workflow.read_text(encoding="utf-8").count("scripts/invoke_tauri_build.ps1")
-        for workflow in workflows
-    ) == 3
+    assert (
+        sum(
+            workflow.read_text(encoding="utf-8").count("scripts/invoke_tauri_build.ps1")
+            for workflow in workflows
+        )
+        == 3
+    )
 
     retry_script = (REPO_ROOT / "quantem_app/desktop/scripts/invoke_tauri_build.ps1").read_text(
         encoding="utf-8"
@@ -70,7 +74,7 @@ def test_release_uses_tauris_signed_installer_as_the_windows_update() -> None:
         "- name: Smoke-test a silent CPU install", 1
     )[0]
     assert 'Test-Path "$($installer.FullName).sig"' in collect_step
-    assert 'update_filename = $installerName' in collect_step
+    assert "update_filename = $installerName" in collect_step
     assert 'signature_filename = "$installerName.sig"' in collect_step
     assert "*.nsis.zip" not in collect_step
 
@@ -107,12 +111,10 @@ def test_intel_macos_dmg_avoids_interactive_finder_automation() -> None:
 
 
 def test_release_artifacts_are_short_lived_and_deleted_after_publication() -> None:
-    release_workflow = (
-        REPO_ROOT / ".github/workflows/quantem-app-desktop-release.yml"
-    ).read_text(encoding="utf-8")
-    routine_workflow = (REPO_ROOT / ".github/workflows/quantem-app.yml").read_text(
+    release_workflow = (REPO_ROOT / ".github/workflows/quantem-app-desktop-release.yml").read_text(
         encoding="utf-8"
     )
+    routine_workflow = (REPO_ROOT / ".github/workflows/quantem-app.yml").read_text(encoding="utf-8")
 
     assert release_workflow.count("retention-days: 1") == 3
     assert "retention-days: 7" not in release_workflow
@@ -161,7 +163,7 @@ def test_release_workflow_does_not_publish_build_only_manifests() -> None:
     )[0]
 
     assert "build_release_notes.py" in publish_step
-    assert "--notes-file \"$RUNNER_TEMP/public-release-notes.md\"" in publish_step
+    assert '--notes-file "$RUNNER_TEMP/public-release-notes.md"' in publish_step
     assert "rm -f ../release-assets/*.update-manifest.json" in publish_step
     assert "../release-assets/quantem-app-windows-payloads.json" in publish_step
     assert 'label_asset "QuantEM_${version}_x64-setup.exe" "Windows installer"' in publish_step
@@ -178,7 +180,7 @@ def test_release_workflow_captures_created_release_without_a_list_race() -> None
         "- name: Delete temporary workflow artifacts", 1
     )[0]
 
-    assert 'releases/tags/${RELEASE_TAG}' in publish_step
+    assert "releases/tags/${RELEASE_TAG}" in publish_step
     assert '--method POST "repos/${GITHUB_REPOSITORY}/releases"' in publish_step
     assert '> "$release_record"' in publish_step
     assert "releases?per_page=100" not in publish_step
@@ -198,22 +200,53 @@ def test_installer_hash_verification_uses_the_base_windows_dotnet_api() -> None:
     assert "Get-FileHash -LiteralPath" not in hooks
 
 
+def test_windows_updates_are_layered_and_quiet() -> None:
+    release_config = json.loads(
+        (REPO_ROOT / "quantem_app/desktop/src-tauri/tauri.release.conf.template.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert release_config["plugins"]["updater"]["windows"]["installMode"] == "quiet"
+
+    workflows = (
+        REPO_ROOT / ".github/workflows/quantem-app.yml",
+        REPO_ROOT / ".github/workflows/quantem-app-desktop-release.yml",
+    )
+    for workflow in workflows:
+        text = workflow.read_text(encoding="utf-8")
+        assert "--application-output" in text
+        assert ".quantem-runtime-id" in text
+        assert 'Start-Process $installer -ArgumentList @("/S", "/UPDATE"' in text
+
+    release_workflow = workflows[1].read_text(encoding="utf-8")
+    assert "../release-assets/quantem-application_*.zip" in release_workflow
+
+
 def _server_tree(root: Path, *, cuda: bool) -> Path:
     source = root / ("cuda" if cuda else "cpu") / "quantem-server"
-    source.mkdir(parents=True)
+    (source / "_internal" / "quantem").mkdir(parents=True)
+    (source / "_internal" / "quantem_frontend").mkdir(parents=True)
+    (source / "_internal" / "quantem_app-0.2.0.dist-info").mkdir(parents=True)
     (source / "quantem-server.exe").write_bytes(b"MZ-fake-server")
-    (source / "library.zip").write_bytes(b"python")
+    (source / "_internal" / "library.zip").write_bytes(b"python")
+    (source / "_internal" / "quantem" / "migrations.json").write_bytes(b"app-data")
+    (source / "_internal" / "quantem_frontend" / "index.html").write_bytes(b"frontend")
+    (source / "_internal" / "quantem_app-0.2.0.dist-info" / "METADATA").write_bytes(
+        b"Version: 0.2.0"
+    )
     if cuda:
-        (source / "torch_cuda.dll").write_bytes(b"cuda")
+        (source / "_internal" / "torch_cuda.dll").write_bytes(b"cuda")
     return source
 
 
 def _make_payload(tmp_path: Path, variant: str) -> Path:
-    output = tmp_path / f"quantem-server_0.2.0_windows-x64-{variant}.zip"
     manifest = tmp_path / variant / "payload-manifest.json"
+    output = manifest.parent / f"quantem-runtime_0.2.0_windows-x64-{variant}.zip"
+    application = manifest.parent / f"quantem-application_0.2.0_windows-x64-{variant}.zip"
     build_payload(
         source=_server_tree(tmp_path / "sources", cuda=variant == "cuda"),
         output=output,
+        application_output=application,
         manifest_output=manifest,
         version="0.2.0",
         variant=variant,
@@ -225,16 +258,86 @@ def _make_payload(tmp_path: Path, variant: str) -> Path:
     return manifest
 
 
-def test_payload_archive_has_one_stable_root_and_build_info(tmp_path: Path) -> None:
+def test_payload_archives_separate_runtime_and_application(tmp_path: Path) -> None:
     manifest_path = _make_payload(tmp_path, "cuda")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    archive_path = tmp_path / manifest["filename"]
-    with zipfile.ZipFile(archive_path) as archive:
+    runtime_path = manifest_path.parent / manifest["filename"]
+    application_path = manifest_path.parent / manifest["application_filename"]
+    with zipfile.ZipFile(runtime_path) as archive:
+        assert "quantem-server/_internal/torch_cuda.dll" in archive.namelist()
+        assert "quantem-server/quantem-server.exe" not in archive.namelist()
+        runtime_info = json.loads(archive.read("quantem-server/runtime-info.json"))
+    with zipfile.ZipFile(application_path) as archive:
         assert "quantem-server/quantem-server.exe" in archive.namelist()
+        assert "quantem-server/_internal/quantem_frontend/index.html" in archive.namelist()
+        assert "quantem-server/_internal/torch_cuda.dll" not in archive.namelist()
         info = json.loads(archive.read("quantem-server/build-info.json"))
+        files = json.loads(archive.read("quantem-layer/runtime-files.json"))
     assert info["variant"] == "cuda"
     assert info["cuda_driver_api"] == 12060
+    assert info["runtime_id"] == runtime_info["runtime_id"] == manifest["runtime_id"]
+    assert files["runtime_id"] == manifest["runtime_id"]
     assert len(manifest["sha256"]) == 64
+
+
+def test_runtime_id_does_not_change_with_application_version(tmp_path: Path) -> None:
+    source = _server_tree(tmp_path / "sources", cuda=False)
+    runtime_ids = []
+    for version in ("0.2.0", "0.2.1"):
+        manifest = tmp_path / version / "payload.json"
+        build_payload(
+            source=source,
+            output=manifest.parent / "runtime.zip",
+            application_output=manifest.parent / "application.zip",
+            manifest_output=manifest,
+            version=version,
+            variant="cpu",
+            torch_version="2.13.0",
+            cuda_runtime=None,
+            cuda_driver_api=None,
+        )
+        runtime_ids.append(json.loads(manifest.read_text(encoding="utf-8"))["runtime_id"])
+    assert runtime_ids[0] == runtime_ids[1]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows installer helper")
+def test_existing_runtime_verifier_accepts_exact_files_and_rejects_changes(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _make_payload(tmp_path, "cpu")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    application = manifest_path.parent / payload["application_filename"]
+    metadata = tmp_path / "metadata"
+    with zipfile.ZipFile(application) as archive:
+        archive.extract("quantem-layer/runtime-files.json", metadata)
+    runtime_manifest = metadata / "quantem-layer/runtime-files.json"
+    root = tmp_path / "sources/cpu/quantem-server"
+    script = INSTALLER_SCRIPTS / "verify_existing_runtime.ps1"
+
+    def verify() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "powershell.exe",
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+                "-Root",
+                str(root),
+                "-Manifest",
+                str(runtime_manifest),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    assert verify().returncode == 0
+    (root / "_internal/library.zip").write_bytes(b"changed")
+    assert verify().returncode == 1
 
 
 def test_cpu_payload_rejects_cuda_libraries(tmp_path: Path) -> None:
@@ -242,6 +345,7 @@ def test_cpu_payload_rejects_cuda_libraries(tmp_path: Path) -> None:
         build_payload(
             source=_server_tree(tmp_path, cuda=True),
             output=tmp_path / "bad.zip",
+            application_output=tmp_path / "bad-application.zip",
             manifest_output=tmp_path / "bad.json",
             version="0.2.0",
             variant="cpu",
@@ -264,14 +368,17 @@ def test_combined_manifest_pins_urls_hashes_and_cuda_driver_floor(tmp_path: Path
     text = nsis.read_text(encoding="utf-8")
     assert '!define QPAYLOAD_VERSION "0.2.0"' in text
     assert '!define QPAYLOAD_CUDA_MIN_DRIVER_API "12060"' in text
-    assert "windows-x64-cpu.zip" in text
+    assert "quantem-runtime_0.2.0_windows-x64-cpu.zip" in text
+    assert "QPAYLOAD_CPU_RUNTIME_ID" in text
+    assert "QPAYLOAD_CPU_APPLICATION_PATH" in text
+    assert "QPAYLOAD_RUNTIME_VERIFIER_PATH" in text
     assert result["variants"]["cuda"]["signature"] == "signed-cuda"
 
 
 def test_oversized_payload_is_split_below_the_release_asset_limit(tmp_path: Path) -> None:
     manifest_path = _make_payload(tmp_path, "cpu")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    archive = tmp_path / manifest["filename"]
+    archive = manifest_path.parent / manifest["filename"]
     part_size = (archive.stat().st_size + 2) // 3
     parts = split_payload(
         archive=archive,
@@ -281,4 +388,6 @@ def test_oversized_payload_is_split_below_the_release_asset_limit(tmp_path: Path
     )
     assert len(parts) > 1
     assert not archive.exists()
-    assert all((tmp_path / str(part["filename"])).stat().st_size <= part_size for part in parts)
+    assert all(
+        (manifest_path.parent / str(part["filename"])).stat().st_size <= part_size for part in parts
+    )
