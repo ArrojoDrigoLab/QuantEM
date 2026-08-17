@@ -41,7 +41,14 @@ const harness = vi.hoisted(() => ({
   overlayManifestState: {
     manifest: null as SegmentationOverlayManifest | null,
   },
-  overlayManifestRefetchMock: vi.fn(),
+  // One spy per manifest bundle, not one shared spy. `useOverlayManifestState`
+  // mounts this hook twice -- once scoped to the active model, once to the
+  // confirmed display -- and fans `refetchOverlayManifest` out to both. A single
+  // shared spy can only count the fan-out, so it cannot tell "each bundle was
+  // refreshed once" from "one bundle was refreshed twice", which is exactly the
+  // regression a deferred-refresh scheduler is prone to.
+  overlayManifestModelRefetchMock: vi.fn(),
+  overlayManifestConfirmedRefetchMock: vi.fn(),
   thresholdState: {
     threshold: 0.99,
     setThreshold: vi.fn(),
@@ -91,7 +98,8 @@ const harness = vi.hoisted(() => ({
 export const {
   overlayManifestHookSpy,
   overlayManifestState,
-  overlayManifestRefetchMock,
+  overlayManifestModelRefetchMock,
+  overlayManifestConfirmedRefetchMock,
   thresholdState,
   viewportSyncState,
   segmentsState,
@@ -167,9 +175,15 @@ vi.mock("@/shared/api/segmentations/completedRois", async () => {
 vi.mock("@/hooks/useSegmentationOverlayManifest", () => ({
   useSegmentationOverlayManifest: vi.fn((...args: unknown[]) => {
     overlayManifestHookSpy(...args);
+    // The fourth argument is `sourceModel`: a model name for the model-preview
+    // bundle, null for the source-less confirmed-display bundle. Handing each
+    // instance its own refetch spy is what lets a test say *which* bundle was
+    // refreshed rather than only how many refreshes happened in total.
     return {
       manifest: overlayManifestState.manifest,
-      refetch: overlayManifestRefetchMock,
+      refetch: args[3]
+        ? overlayManifestModelRefetchMock
+        : overlayManifestConfirmedRefetchMock,
     };
   }),
 }));
@@ -340,6 +354,8 @@ export function setupSegmentationScreenTest() {
   vi.clearAllMocks();
   vi.mocked(useHoverSelection).mockImplementation(() => hoverSelectionState);
   overlayManifestState.manifest = null;
+  overlayManifestModelRefetchMock.mockResolvedValue(undefined);
+  overlayManifestConfirmedRefetchMock.mockResolvedValue(undefined);
   thresholdState.threshold = 0.99;
   viewportSyncState.viewport = null;
   useSelectionStore.getState().clearSelection();

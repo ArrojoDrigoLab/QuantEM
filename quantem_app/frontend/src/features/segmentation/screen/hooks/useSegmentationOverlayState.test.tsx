@@ -2,8 +2,9 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   makeSegment,
+  overlayManifestConfirmedRefetchMock,
   overlayManifestHookSpy,
-  overlayManifestRefetchMock,
+  overlayManifestModelRefetchMock,
   overlayManifestState,
   setupSegmentationScreenTest,
 } from "@/features/segmentation/SegmentationScreen.testUtils";
@@ -37,7 +38,10 @@ function makeArgs(
 ): Parameters<typeof useSegmentationOverlayState>[0] {
   return {
     currentSegmentationId: "seg-1",
-    activeSourceModel: null,
+    // A real model name, not null: with null the model-preview manifest hook
+    // mounts disabled, and a refresh that only ever exercised the confirmed
+    // bundle would look correct while the model bundle silently went stale.
+    activeSourceModel: "quantem:mito",
     segmentationInternalName: "quantem_internal_mito",
     refetchSegmentations: vi.fn().mockResolvedValue(undefined),
     refetchLeftSegments: vi.fn().mockResolvedValue(undefined),
@@ -50,19 +54,27 @@ describe("useSegmentationOverlayState", () => {
   beforeEach(() => {
     setupSegmentationScreenTest();
     overlayManifestState.manifest = makeOverlayManifest();
-    overlayManifestRefetchMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("enables manifest polling", async () => {
+  it("enables manifest polling for the model and confirmed bundles alike", async () => {
     renderHook(() => useSegmentationOverlayState(makeArgs()));
 
     await waitFor(() => {
       expect(overlayManifestHookSpy).toHaveBeenLastCalledWith("seg-1", true, true, null);
     });
+    // v0.1.6 stopped building one aggregate overlay: the model preview and the
+    // source-less confirmed display are separate bundles now, so both have to
+    // be watched or one of the two panes shows a raster nobody is refreshing.
+    expect(overlayManifestHookSpy).toHaveBeenCalledWith(
+      "seg-1",
+      true,
+      true,
+      "quantem:mito"
+    );
   });
 
   it("defers overlay manifest refresh after annotation activity and cleans up on unmount", () => {
@@ -88,7 +100,10 @@ describe("useSegmentationOverlayState", () => {
     act(() => {
       vi.advanceTimersByTime(OVERLAY_REFRESH_IDLE_DELAY_MS);
     });
-    expect(overlayManifestRefetchMock).toHaveBeenCalledTimes(1);
+    // Exactly once *per bundle*. Counting the two together would not tell this
+    // apart from one bundle being refetched twice while the other was skipped.
+    expect(overlayManifestModelRefetchMock).toHaveBeenCalledTimes(1);
+    expect(overlayManifestConfirmedRefetchMock).toHaveBeenCalledTimes(1);
 
     act(() => {
       result.current.refresh.registerAnnotationActivity();
@@ -98,7 +113,8 @@ describe("useSegmentationOverlayState", () => {
       vi.advanceTimersByTime(OVERLAY_REFRESH_IDLE_DELAY_MS);
     });
 
-    expect(overlayManifestRefetchMock).toHaveBeenCalledTimes(1);
+    expect(overlayManifestModelRefetchMock).toHaveBeenCalledTimes(1);
+    expect(overlayManifestConfirmedRefetchMock).toHaveBeenCalledTimes(1);
     expect(refetchSegmentations).not.toHaveBeenCalled();
     expect(refetchLeftSegments).not.toHaveBeenCalled();
   });
@@ -116,12 +132,14 @@ describe("useSegmentationOverlayState", () => {
       result.current.refresh.registerAnnotationActivity();
       vi.advanceTimersByTime(OVERLAY_REFRESH_IDLE_DELAY_MS - 1);
     });
-    expect(overlayManifestRefetchMock).not.toHaveBeenCalled();
+    expect(overlayManifestModelRefetchMock).not.toHaveBeenCalled();
+    expect(overlayManifestConfirmedRefetchMock).not.toHaveBeenCalled();
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(overlayManifestRefetchMock).toHaveBeenCalledTimes(1);
+    expect(overlayManifestModelRefetchMock).toHaveBeenCalledTimes(1);
+    expect(overlayManifestConfirmedRefetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("applies, rolls back, and settles optimistic label overrides", async () => {

@@ -157,6 +157,7 @@ export interface JobQueueItem extends JobProgressFields {
   id: string;
   type: string;
   task_label: string;
+  task_category?: "analysis" | "display" | "processing";
   status: JobStatus;
   progress: number;
   message?: string;

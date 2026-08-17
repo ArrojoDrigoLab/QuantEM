@@ -39,7 +39,11 @@ the boundary pixels and so describes the region inset by half a pixel -- see
 :mod:`quantem.segmentation.features.geometry` for what that means when it is
 combined with ``area``.
 
-No Django imports. No DB dependencies.
+No Django imports. No DB dependencies. The one import out of this package is
+:func:`quantem.inference.resample.dequantize_probability`, which is pure numpy
+and is the single definition of what a stored probability level means; see
+:func:`_as_probability` for why re-spelling ``/255`` here instead would be a
+second decision procedure.
 """
 
 from __future__ import annotations
@@ -48,6 +52,8 @@ import logging
 
 import numpy as np
 from skimage.measure import find_contours
+
+from quantem.inference.resample import dequantize_probability
 
 from .types import ExtractedSegment
 
@@ -125,6 +131,7 @@ def build_segment_from_region(
     dx: float,
     dy: float,
     image: np.ndarray | None = None,
+    measure_features: bool = True,
 ) -> ExtractedSegment | None:
     """Build an ExtractedSegment from a regionprops region.
 
@@ -140,6 +147,12 @@ def build_segment_from_region(
         dx: X coordinate offset (for ROI-to-parent mapping).
         dy: Y coordinate offset.
         image: Intensity image, used when the region carries none of its own.
+        measure_features: False for the geometry-first Preview path, which
+            publishes outlines before the source image has been loaded. The
+            probability means and ``confidence_score`` are still written -- they
+            read ``prob``, not the image, and nothing downstream can recreate
+            them -- but the intensity and regionprops measurements are left to
+            the background job that measures the objects afterwards.
 
     Returns:
         ExtractedSegment or None if contour extraction fails.
@@ -188,15 +201,58 @@ def build_segment_from_region(
     # Under the object's own mask, read out of the bbox crop rather than by
     # fancy-indexing the full frame with region.coords: same value, a third of
     # the time, no per-object coordinate array.
+    #
+    # This block runs *before* the geometry-first return below, and has to. The
+    # mean probability is the one measurement here that needs no source image --
+    # ``prob`` is the array the threshold was just applied to and is already in
+    # memory -- and it is the only one nothing downstream can recreate:
+    # :data:`quantem.segmentation.features.measure.MEASUREMENT_KEYS` does not
+    # contain ``mean_prob``, and that module is documented as *preserving* an
+    # existing value across a re-measure rather than computing one, because the
+    # run's probability array is gone by then. Deferring it would therefore have
+    # blanked it permanently -- the ``mean_prob`` column of ``objects.csv``, the
+    # ``confidence_score`` written from it below, and with it the Uncertain
+    # review mode, which selects on ``confidence_score__isnull=False``.
     for name, pmap in prob_maps.items():
         values = _masked_values(pmap, region, minr, minc, maxr, maxc)
         if values is not None:
-            features[f"mean_prob_{name.lower()}"] = float(values.mean())
+            features[f"mean_prob_{name.lower()}"] = float(_as_probability(values).mean())
 
     prob_values = _masked_values(prob, region, minr, minc, maxr, maxc)
-    mean_prob = float(prob_values.mean()) if prob_values is not None else None
+    mean_prob = float(_as_probability(prob_values).mean()) if prob_values is not None else None
     if mean_prob is not None:
         features["mean_prob"] = mean_prob
+
+    # The mean probability under the whole object, not the probability of the
+    # single centroid pixel: a ring-shaped or concave object can have background
+    # at its centroid, which would report a confident detection as a doubtful
+    # one. The centroid reading is kept only for the case where the probability
+    # map could not be sampled at all.
+    if mean_prob is not None:
+        confidence_score = mean_prob
+    else:
+        cy = int(np.clip(round(centroid_y), 0, prob.shape[0] - 1))
+        cx = int(np.clip(round(centroid_x), 0, prob.shape[1] - 1))
+        confidence_score = float(_as_probability(np.asarray(prob)[cy : cy + 1, cx : cx + 1])[0, 0])
+
+    # Geometry-first Preview deliberately stops here after the outline and the
+    # probability above. The expensive intensity and regionprops measurements --
+    # the ones that need the source image loaded, which is the cost this path
+    # exists to avoid -- are filled by a coalesced background job after the
+    # candidates are visible. ``area`` is deliberately not written:
+    # :data:`quantem.segmentation.features.measure.MEASURED_MARKER_KEY` is
+    # ``area``, so its absence is what tells that job the object is unmeasured.
+    if not measure_features:
+        features[generated_flag] = True
+        return ExtractedSegment(
+            polygon_coords=coords,
+            centroid_xy=centroid_xy,
+            bbox_xyxy=bbox_xyxy,
+            area=int(region.area),
+            features=features,
+            confidence_score=confidence_score,
+            region_mask=None,
+        )
 
     # --- Intensity ---------------------------------------------------------
     intensity_values = _region_intensity(region, image, minr, minc, maxr, maxc)
@@ -251,18 +307,6 @@ def build_segment_from_region(
 
     features[generated_flag] = True
 
-    # The mean probability under the whole object, not the probability of the
-    # single centroid pixel: a ring-shaped or concave object can have background
-    # at its centroid, which would report a confident detection as a doubtful
-    # one. The centroid reading is kept only for the case where the probability
-    # map could not be sampled at all.
-    if mean_prob is not None:
-        confidence_score = mean_prob
-    else:
-        cy = int(np.clip(round(centroid_y), 0, prob.shape[0] - 1))
-        cx = int(np.clip(round(centroid_x), 0, prob.shape[1] - 1))
-        confidence_score = float(prob[cy, cx])
-
     return ExtractedSegment(
         polygon_coords=coords,
         centroid_xy=centroid_xy,
@@ -294,6 +338,32 @@ def _masked_values(
         return None
     values = array[minr:maxr, minc:maxc][region.image]
     return values if values.size else None
+
+
+def _as_probability(values: np.ndarray) -> np.ndarray:
+    """Probabilities in ``[0, 1]``, whichever form of the map was handed in.
+
+    A model run hands in the float field
+    (:meth:`~quantem.inference.segmenter.DinoOrganelleSegmenter.run_dl_inference`
+    returns ``NativeProbabilityMap.as_float()``), which passes through. The
+    geometry-first replay path hands in the **stored uint8 levels** instead --
+    :func:`quantem.seg_core.db.inference.replay_stored_probability_map` with
+    ``geometry_only=True`` skips the two image-sized float32 allocations and
+    passes ``NativeProbabilityMap.data`` straight through -- and those are
+    levels, not probabilities: a mean of 204 would be written into a column that
+    means "the model was 0.8 sure", and the same object would export a different
+    number depending on which path made it.
+
+    Dequantising here, on the handful of values under one object's mask rather
+    than on the whole frame, is what lets the geometry-first path keep this
+    measurement without the allocation it exists to avoid. It uses the canonical
+    :func:`~quantem.inference.resample.dequantize_probability` -- the same
+    operation, in the same float32 precision, that ``as_float()`` applies to the
+    whole map -- so the two paths agree bit for bit rather than approximately,
+    and a v0.1.6 ``mean_prob`` is comparable with a v0.1.5 one in one
+    ``objects.csv``.
+    """
+    return dequantize_probability(values) if values.dtype == np.uint8 else values
 
 
 def _region_intensity(

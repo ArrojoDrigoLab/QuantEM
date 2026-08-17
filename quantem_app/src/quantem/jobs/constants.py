@@ -133,8 +133,8 @@ JOB_TYPE_LABELS = {
     # user-visible copy and the Tasks drawer prints them verbatim.
     JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE: "Segment this image",
     JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL: "Redo objects at a new include level",
-    JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY: "Rebuild segmentation overlay",
-    JOB_TYPE_REFRESH_SEGMENT_FEATURES: "Refresh segment features",
+    JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY: "Update segmentation display",
+    JOB_TYPE_REFRESH_SEGMENT_FEATURES: "Measure object details",
     JOB_TYPE_TRAIN_ORGANELLE_ADAPTER: "Adapt model to your data",
     JOB_TYPE_RUN_ANALYSIS: "Run analysis",
     JOB_TYPE_INSTALL_MODEL_PACK: "Download model pack",
@@ -179,14 +179,19 @@ JOB_DEFAULTS = {
         "queue_name": QUEUE_P1_INTERACTIVE,
     },
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY: {
-        "priority": "high",
+        # A rebuild maintains a display cache. Confirmed objects are already
+        # committed and analysis-ready before it starts, so it must yield queue
+        # order to explicitly requested scientific work.
+        "priority": "default",
         "resource_class": "cpu",
-        "queue_name": QUEUE_P1_INTERACTIVE,
+        "queue_name": QUEUE_P4_FULL,
     },
     JOB_TYPE_REFRESH_SEGMENT_FEATURES: {
-        "priority": "high",
+        # Deferred measurements enrich geometry that is already visible. They
+        # are deliberately background work and are coalesced per segmentation.
+        "priority": "default",
         "resource_class": "cpu",
-        "queue_name": QUEUE_P1_INTERACTIVE,
+        "queue_name": QUEUE_P4_FULL,
     },
     # Guided fine-tuning. ``resource_class="gpu"`` routes it through the
     # persistent worker pool, which is what we want even with no CUDA device:
@@ -198,13 +203,13 @@ JOB_DEFAULTS = {
         "resource_class": "gpu",
         "queue_name": QUEUE_P4_FULL,
     },
-    # Quantitative analysis is pure CPU numerics over segments already in the
-    # database, so it belongs on the background queue and never blocks the
-    # interactive one.
+    # Quantitative analysis is explicit user-requested work over already saved
+    # objects. It outranks display-cache and deferred-measurement maintenance;
+    # the heavy-CPU dispatch gate prevents those jobs competing for cores.
     JOB_TYPE_RUN_ANALYSIS: {
-        "priority": "default",
+        "priority": "high",
         "resource_class": "cpu",
-        "queue_name": QUEUE_P4_FULL,
+        "queue_name": QUEUE_P1_INTERACTIVE,
     },
     # Downloading a model pack from Hugging Face. Network- and disk-bound, so
     # ``cpu``; on the upload queue rather than P4 because the user who clicked
@@ -216,6 +221,53 @@ JOB_DEFAULTS = {
         "queue_name": QUEUE_P2_UPLOAD,
     },
 }
+
+# CPU jobs whose implementations fan out internally or saturate memory/disk
+# bandwidth.  Top-level CPU slot counting alone is not enough for these: one
+# overlay job can own a raster process pool of ``raster_process_pool_size()``
+# workers, while analysis drives NumPy/BLAS across every thread the profile
+# allows.  Ordinary request-adjacent CPU work is unaffected and can still use
+# the remaining top-level slots.
+#
+# The gate over these is DIRECTIONAL, not symmetric, and the difference is the
+# whole point of the split below.  A symmetric "only one heavy CPU job at a
+# time" rule regressed the exact interaction this release exists to fix: after
+# a preview the handler leaves a whole-segmentation feature sweep running, and
+# the user who then nudges the include-level dial or presses Run analysis sat
+# PENDING for minutes behind it.  Nothing in the scheduler preempts, and
+# priority ordering only decides which PENDING row is claimed next -- it never
+# displaces a row that is already RUNNING -- so "analysis outranks display
+# maintenance" was only true while the maintenance job had not yet started.
+
+#: Background cache and deferred-measurement maintenance.  Nobody is watching
+#: these, so they wait for anything heavy: two at a time would put two raster
+#: process pools on the machine, and starting one alongside work the user is
+#: waiting on steals cores from the thing being waited on.  With no preemption
+#: anywhere in the runner, "yield to interactive work" can only mean "do not
+#: start while interactive heavy work is running".
+HEAVY_BACKGROUND_JOB_TYPES = frozenset(
+    {
+        JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
+        JOB_TYPE_REFRESH_SEGMENT_FEATURES,
+    }
+)
+
+#: Heavy CPU work a user is actively waiting on.  Still one at a time -- two
+#: BLAS-saturating runs on one box finish later than the same two in sequence
+#: -- but deliberately blind to maintenance, so a display rebuild can never be
+#: the reason the dial or Run analysis appears to hang.  These jobs still pay a
+#: top-level CPU slot, which is what stops a single-heavy-slot laptop from
+#: running one next to an already-started rebuild.
+HEAVY_INTERACTIVE_JOB_TYPES = frozenset(
+    {
+        JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
+        JOB_TYPE_RUN_ANALYSIS,
+    }
+)
+
+#: Everything the heavy gate knows about; read it for "is anything heavy
+#: running", never as the set to compare a candidate job against.
+HEAVY_CPU_JOB_TYPES = HEAVY_BACKGROUND_JOB_TYPES | HEAVY_INTERACTIVE_JOB_TYPES
 
 #: Job types that hold a segmentation while they run. Membership wires a type
 #: into the failure/retry reconcilers in :mod:`quantem.jobs.failure_reconcile`,

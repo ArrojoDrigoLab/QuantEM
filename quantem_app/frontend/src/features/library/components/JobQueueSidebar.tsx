@@ -104,6 +104,12 @@ function getImageLabel(job: JobQueueItem): string {
   return "No image context";
 }
 
+function taskCategoryLabel(job: JobQueueItem): string {
+  if (job.task_category === "analysis") return "Analysis";
+  if (job.task_category === "display") return "Display update";
+  return "Processing";
+}
+
 function createInitialVisibleCounts(): Record<ExpandableSectionKey, number> {
   return {
     queued: SECTION_BATCH_SIZE,
@@ -413,7 +419,12 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
                 {runningJobs.map((job) => (
                   <div key={job.id} className="job-queue-item">
                     <div className="job-queue-item-row">
-                      <div className="job-queue-task">{job.task_label}</div>
+                      <div className="job-queue-task">
+                        <span className={`job-queue-category ${job.task_category ?? "processing"}`}>
+                          {taskCategoryLabel(job)}
+                        </span>
+                        {job.task_label}
+                      </div>
                       <div className={`job-queue-status ${formatStatus(job.status)}`}>
                         {job.status}
                       </div>
@@ -503,7 +514,12 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
                       queue.pending.map((job) => (
                         <div key={job.id} className="job-queue-item compact">
                           <div className="job-queue-item-row">
-                            <div className="job-queue-task">{job.task_label}</div>
+                            <div className="job-queue-task">
+                              <span className={`job-queue-category ${job.task_category ?? "processing"}`}>
+                                {taskCategoryLabel(job)}
+                              </span>
+                              {job.task_label}
+                            </div>
                             <div className={`job-queue-status ${formatStatus(job.status)}`}>
                               {job.status}
                             </div>

@@ -346,6 +346,24 @@ class TestDistancesReadTheSamePointsAsTheAssignment:
 
 
 class TestMonteCarlo:
+    def test_each_replicate_is_cancellable_and_reports_progress(self):
+        checks: list[int] = []
+        updates: list[tuple[int, int]] = []
+        comp = _comp()
+        pts = np.array([[1.0, 1.0], [2.0, 3.0]])
+
+        csr_null(
+            pts,
+            comp,
+            image_key="progress",
+            replicates=4,
+            cancel_check=lambda: checks.append(1),
+            on_progress=lambda done, total: updates.append((done, total)),
+        )
+
+        assert len(checks) == 4
+        assert updates == [(1, 4), (2, 4), (3, 4), (4, 4)]
+
     def test_seed_is_independent_of_processing_order(self):
         """The defect this port fixes: the reference shared one global RNG, so a
         result depended on how many images were processed before it."""

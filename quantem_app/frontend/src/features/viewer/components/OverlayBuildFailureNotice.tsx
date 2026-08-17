@@ -11,6 +11,18 @@ interface OverlayBuildFailureNoticeProps {
   manifest: SegmentationOverlayManifest;
   segmentationId: string;
   /**
+   * Which display this card is about ("confirmed display", "model preview
+   * display"), for callers that mount it bare. The viewer renders it inside a
+   * per-layer row that already says which layer it belongs to, so it leaves
+   * this unset and keeps the generic title.
+   *
+   * Pass the label the *caller* knows from the slot the manifest came out of,
+   * not one derived from `manifest.display_role`: the server can answer a
+   * model-scoped manifest request with the confirmed state's payload, so that
+   * field is not a reliable name for the bundle that failed.
+   */
+  displayLabel?: string;
+  /**
    * Refetch the manifest after a successful retry so the card leaves the
    * failed state (and polling restarts) without waiting for anything else.
    */
@@ -54,6 +66,7 @@ interface OverlayBuildFailureNoticeProps {
 export function OverlayBuildFailureNotice({
   manifest,
   segmentationId,
+  displayLabel,
   onRetried,
   className,
 }: OverlayBuildFailureNoticeProps) {
@@ -95,7 +108,9 @@ export function OverlayBuildFailureNotice({
       role="alert"
     >
       <div className="overlay-build-failure-title">
-        Overlay could not be rebuilt
+        {displayLabel
+          ? `The ${displayLabel} could not be rebuilt`
+          : "Overlay could not be rebuilt"}
       </div>
       <p className="overlay-build-failure-body">
         Your objects are safe. This only affects the picture the viewer draws

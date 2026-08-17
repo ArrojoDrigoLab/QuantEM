@@ -43,6 +43,25 @@ function failedManifest(
   };
 }
 
+/** The named-model preview bundle failed; the confirmed bundle is fine. */
+function modelFailure(
+  overrides: Partial<SegmentationOverlayManifest> = {}
+): SidebarProps["layers"]["failedOverlays"] {
+  return [{ role: "model", manifest: failedManifest(overrides) }];
+}
+
+/** The source-less confirmed-display bundle failed. */
+function confirmedFailure(
+  overrides: Partial<SegmentationOverlayManifest> = {}
+): SidebarProps["layers"]["failedOverlays"] {
+  return [
+    {
+      role: "confirmed",
+      manifest: failedManifest({ source_model: null, ...overrides }),
+    },
+  ];
+}
+
 function makeProps(layers: Partial<SidebarProps["layers"]> = {}): SidebarProps {
   return {
     tissue: {
@@ -80,9 +99,9 @@ function makeProps(layers: Partial<SidebarProps["layers"]> = {}): SidebarProps {
       onApplyGroupAction: vi.fn(),
     },
     layers: {
-      overlayUpdating: false,
-      overlayBuildFailed: false,
-      overlayManifest: null,
+      modelOverlayUpdating: false,
+      confirmedOverlayUpdating: false,
+      failedOverlays: [],
       overlaySegmentationId: "seg-1",
       onOverlayBuildRetried: vi.fn(),
       ...layers,
@@ -111,23 +130,17 @@ describe("SegmentationSidebar, when the overlay build has failed", () => {
     vi.clearAllMocks();
   });
 
-  it("says the build failed instead of saying nothing", () => {
-    render(
-      <SegmentationSidebar
-        {...makeProps({ overlayBuildFailed: true, overlayManifest: failedManifest() })}
-      />
-    );
+  it("says the build failed instead of saying nothing, and says which display", () => {
+    render(<SegmentationSidebar {...makeProps({ failedOverlays: modelFailure() })} />);
 
-    expect(screen.getByText("Overlay could not be rebuilt")).toBeInTheDocument();
+    expect(
+      screen.getByText("The model preview display could not be rebuilt")
+    ).toBeInTheDocument();
     expect(screen.getByText(/Your objects are safe/)).toBeInTheDocument();
   });
 
   it("shows the reason with a path a user can read", () => {
-    render(
-      <SegmentationSidebar
-        {...makeProps({ overlayBuildFailed: true, overlayManifest: failedManifest() })}
-      />
-    );
+    render(<SegmentationSidebar {...makeProps({ failedOverlays: modelFailure() })} />);
 
     const reason = screen.getByText(/Cannot create a file/);
     expect(reason).toHaveTextContent(
@@ -138,29 +151,33 @@ describe("SegmentationSidebar, when the overlay build has failed", () => {
   });
 
   it("warns that the picture on the canvas is out of date", () => {
-    render(
-      <SegmentationSidebar
-        {...makeProps({ overlayBuildFailed: true, overlayManifest: failedManifest() })}
-      />
-    );
+    render(<SegmentationSidebar {...makeProps({ failedOverlays: modelFailure() })} />);
 
     expect(
       screen.getByText(/anything changed since then is missing from it/)
     ).toBeInTheDocument();
   });
 
-  it("never claims the overlay is updating at the same time", () => {
+  /**
+   * The guard this replaces queried the exact string "Overlay updating.", which
+   * stopped being rendered when the copy was split per display -- so it passed
+   * for every possible state, including the regression it was written to catch.
+   * The pattern has to cover all three sentences, plural "displays are" too.
+   */
+  it("never claims a failing display is updating at the same time", () => {
     render(
       <SegmentationSidebar
         {...makeProps({
-          overlayBuildFailed: true,
-          overlayManifest: failedManifest(),
-          overlayUpdating: false,
+          failedOverlays: modelFailure(),
+          modelOverlayUpdating: false,
+          confirmedOverlayUpdating: false,
         })}
       />
     );
 
-    expect(screen.queryByText("Overlay updating.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/displays? (is|are) updating/i)
+    ).not.toBeInTheDocument();
   });
 
   it("asks for the build again, for the bundle actually on screen", async () => {
@@ -171,8 +188,7 @@ describe("SegmentationSidebar, when the overlay build has failed", () => {
     render(
       <SegmentationSidebar
         {...makeProps({
-          overlayBuildFailed: true,
-          overlayManifest: failedManifest(),
+          failedOverlays: modelFailure(),
           onOverlayBuildRetried,
         })}
       />
@@ -193,11 +209,7 @@ describe("SegmentationSidebar, when the overlay build has failed", () => {
       })
     );
 
-    render(
-      <SegmentationSidebar
-        {...makeProps({ overlayBuildFailed: true, overlayManifest: failedManifest() })}
-      />
-    );
+    render(<SegmentationSidebar {...makeProps({ failedOverlays: modelFailure() })} />);
 
     await user.click(screen.getByRole("button", { name: /Retry overlay build/i }));
 
@@ -210,8 +222,7 @@ describe("SegmentationSidebar, when the overlay build has failed", () => {
     render(
       <SegmentationSidebar
         {...makeProps({
-          overlayBuildFailed: true,
-          overlayManifest: failedManifest({ ngff_url: null, bundle_version: 0 }),
+          failedOverlays: modelFailure({ ngff_url: null, bundle_version: 0 }),
         })}
       />
     );
@@ -222,28 +233,136 @@ describe("SegmentationSidebar, when the overlay build has failed", () => {
   });
 
   it("stays out of the way while the build is healthy", () => {
-    render(<SegmentationSidebar {...makeProps({ overlayUpdating: true })} />);
+    render(
+      <SegmentationSidebar {...makeProps({ modelOverlayUpdating: true })} />
+    );
 
-    expect(screen.getByText("Overlay updating.")).toBeInTheDocument();
-    expect(screen.queryByText("Layers")).not.toBeInTheDocument();
     expect(
-      screen.queryByText("Overlay could not be rebuilt")
-    ).not.toBeInTheDocument();
+      screen.getByText("Model preview display is updating.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Layers")).not.toBeInTheDocument();
+    expect(screen.queryByText(/could not be rebuilt/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The reachable states, spelled out. `useOverlayManifestState` derives these
+   * two flags from two separate manifests, so "confirmed alone" and "both" are
+   * ordinary outcomes of a confirm -- which dirties both bundles and gets one
+   * rebuild job each -- and neither had any coverage before.
+   */
+  it("says the confirmed display is rebuilding without blocking analysis", () => {
+    render(
+      <SegmentationSidebar {...makeProps({ confirmedOverlayUpdating: true })} />
+    );
+
+    expect(
+      screen.getByText(
+        "Confirmed display is updating. Saved objects remain ready for analysis."
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("names both displays when both are rebuilding", () => {
+    render(
+      <SegmentationSidebar
+        {...makeProps({
+          modelOverlayUpdating: true,
+          confirmedOverlayUpdating: true,
+        })}
+      />
+    );
+
+    expect(
+      screen.getByText(
+        "Model preview and confirmed displays are updating. " +
+          "Saved objects remain ready for analysis."
+      )
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * Finding 9. The server rebuilds the two bundles one at a time, so a model
+   * rebuild that fails while the confirmed one is still queued puts both of
+   * these on screen at once. Unnamed, they read as two contradictory claims
+   * about a single overlay; named, they are two true statements.
+   */
+  it("names the failing display apart from the one still rebuilding", () => {
+    render(
+      <SegmentationSidebar
+        {...makeProps({
+          confirmedOverlayUpdating: true,
+          failedOverlays: modelFailure(),
+        })}
+      />
+    );
+
+    expect(
+      screen.getByText(
+        "Confirmed display is updating. Saved objects remain ready for analysis."
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("The model preview display could not be rebuilt")
+    ).toBeInTheDocument();
+  });
+
+  it("surfaces a confirmed-display failure on its own, with its own retry", async () => {
+    const user = userEvent.setup();
+    rebuildMock.mockResolvedValue(failedManifest({ status: "BUILDING" }));
+
+    render(
+      <SegmentationSidebar {...makeProps({ failedOverlays: confirmedFailure() })} />
+    );
+
+    expect(
+      screen.getByText("The confirmed display could not be rebuilt")
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Retry overlay build/i }));
+
+    // The confirmed bundle is the source-less one: retrying it with the model
+    // name would re-queue the wrong bundle and leave this card up for ever.
+    expect(rebuildMock).toHaveBeenCalledWith("seg-1", "full", null);
+  });
+
+  it("shows a card per failed bundle rather than only the first", async () => {
+    const user = userEvent.setup();
+    rebuildMock.mockResolvedValue(failedManifest({ status: "BUILDING" }));
+
+    render(
+      <SegmentationSidebar
+        {...makeProps({
+          failedOverlays: [...modelFailure(), ...confirmedFailure()],
+        })}
+      />
+    );
+
+    expect(
+      screen.getByText("The model preview display could not be rebuilt")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("The confirmed display could not be rebuilt")
+    ).toBeInTheDocument();
+
+    // Two cards, two retries, each aimed at its own bundle. Collapsing them
+    // left the second display broken while the user believed both were fixed.
+    const retries = screen.getAllByRole("button", { name: /Retry overlay build/i });
+    expect(retries).toHaveLength(2);
+    await user.click(retries[0]);
+    await user.click(retries[1]);
+    expect(rebuildMock).toHaveBeenCalledWith("seg-1", "full", "quantem:mito");
+    expect(rebuildMock).toHaveBeenCalledWith("seg-1", "full", null);
   });
 
   it("does not offer a retry it cannot address", () => {
     render(
       <SegmentationSidebar
         {...makeProps({
-          overlayBuildFailed: true,
-          overlayManifest: failedManifest(),
+          failedOverlays: modelFailure(),
           overlaySegmentationId: null,
         })}
       />
     );
 
-    expect(
-      screen.queryByText("Overlay could not be rebuilt")
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/could not be rebuilt/)).not.toBeInTheDocument();
   });
 });

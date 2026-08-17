@@ -115,10 +115,11 @@ export function SegmentationScreen() {
   const { refresh: overlayRefresh } = overlay;
   const [confirmingObjectsOverlay, setConfirmingObjectsOverlay] = useState<{
     targetRevision: number | null;
+    committed: boolean;
   } | null>(null);
 
   const handleConfirmStarted = useCallback(() => {
-    setConfirmingObjectsOverlay({ targetRevision: null });
+    setConfirmingObjectsOverlay({ targetRevision: null, committed: false });
   }, []);
 
   const handleConfirmCommitted = useCallback(
@@ -128,8 +129,18 @@ export function SegmentationScreen() {
         return;
       }
       overlayRefresh.handleOverlayMutationRefresh(overlayMutation);
+      if (
+        overlayMutation.rebuild_mode === "metadata_only" ||
+        overlayMutation.sync_applied
+      ) {
+        setConfirmingObjectsOverlay(null);
+        return;
+      }
       setConfirmingObjectsOverlay({
-        targetRevision: overlayMutation.desired_revision,
+        targetRevision:
+          overlayMutation.confirmed_display_desired_revision ??
+          overlayMutation.desired_revision,
+        committed: true,
       });
     },
     [overlayRefresh]
@@ -147,9 +158,10 @@ export function SegmentationScreen() {
     const targetRevision = confirmingObjectsOverlay?.targetRevision;
     if (targetRevision == null) return;
     const displayedRevision = overlay.manifest.rightDisplayedOverlayRevision;
-    const failedRevision = overlay.manifest.overlayManifest?.desired_revision;
+    const failedRevision =
+      overlay.manifest.confirmedOverlayManifest?.desired_revision;
     if (
-      (overlay.manifest.overlayBuildFailed &&
+      (overlay.manifest.confirmedOverlayBuildFailed &&
         failedRevision !== undefined &&
         failedRevision >= targetRevision) ||
       (displayedRevision !== null && displayedRevision >= targetRevision)
@@ -158,8 +170,8 @@ export function SegmentationScreen() {
     }
   }, [
     confirmingObjectsOverlay?.targetRevision,
-    overlay.manifest.overlayBuildFailed,
-    overlay.manifest.overlayManifest?.desired_revision,
+    overlay.manifest.confirmedOverlayBuildFailed,
+    overlay.manifest.confirmedOverlayManifest?.desired_revision,
     overlay.manifest.rightDisplayedOverlayRevision,
   ]);
 
@@ -778,6 +790,7 @@ export function SegmentationScreen() {
           <SegmentationRightPanel
             {...viewModels.rightPanelProps}
             confirmingObjects={confirmingObjectsOverlay !== null}
+            confirmationCommitted={Boolean(confirmingObjectsOverlay?.committed)}
           />
         )}
         {ui.toast && (

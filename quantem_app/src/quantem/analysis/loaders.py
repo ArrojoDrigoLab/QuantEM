@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from django.db.models import Count, QuerySet
 
+from quantem.segmentation.features.measure import MEASURED_MARKER_KEY
 from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.instance_params import (
     INSTANCE_PARAM_KEYS,
@@ -45,6 +46,8 @@ from quantem.segmentation.models import (
     AnalysisMaskObject,
     GlobalMask,
     ImageSegmentation,
+    SegmentationOverlayLabel,
+    SegmentationOverlayState,
     SegmentObject,
 )
 from quantem.segmentation.overlay_ngff.render import geometry_to_rings, rasterize_region
@@ -231,7 +234,149 @@ def object_centroids(segmentation: ImageSegmentation) -> np.ndarray:
     return np.asarray(rows, dtype=float)
 
 
-def segmentation_mask(segmentation: ImageSegmentation, shape: tuple[int, int]) -> np.ndarray:
+def ensure_confirmed_object_measurements(
+    segmentation: ImageSegmentation,
+    *,
+    cancel_check=None,
+    on_progress=None,
+) -> int:
+    """Measure confirmed geometry-first objects needed by this Analysis.
+
+    Preview normally leaves this work to a background sweep. Analysis is a
+    higher-priority job and may overtake that sweep, so it fills only missing
+    confirmed rows itself rather than waiting or exporting blank morphometrics.
+
+    This is on the critical path of the job the user is watching, and after a
+    deferred Preview the missing set is *every* confirmed object -- so it is
+    handed to the batched measurement routine, which the background sweep also
+    uses. Measuring one object at a time cost three SQL statements each, which
+    on a large image put tens of thousands of round trips in front of the first
+    mask.
+    """
+    rows = confirmed_objects(segmentation).values_list("id", "features")
+    missing = [
+        str(segment_id)
+        for segment_id, features in rows.iterator(chunk_size=1000)
+        if not isinstance(features, dict) or MEASURED_MARKER_KEY not in features
+    ]
+    if not missing:
+        return 0
+
+    from quantem.segmentation.tasks import measure_segments_batched
+
+    def report(done: int, total: int) -> None:
+        if on_progress is not None:
+            on_progress(done, total, "measuring newly confirmed objects")
+
+    measure_segments_batched(
+        missing,
+        cancel_check=cancel_check,
+        on_progress=report,
+    )
+    return len(missing)
+
+
+def _settled_overlay_mask(
+    segmentation: ImageSegmentation,
+    shape: tuple[int, int],
+    *,
+    cancel_check=None,
+    on_progress=None,
+) -> np.ndarray | None:
+    """Reuse a settled display raster as a confirmed mask when possible.
+
+    Confirmation normally changes only the LUT, so the integer raster Preview
+    already built contains exactly the pixels Analysis needs.  Reading it in
+    chunks avoids decoding WKB and rasterising every polygon again. A stale or
+    missing display is only a cache miss: callers fall back to canonical DB
+    geometry and never wait for a display job.
+    """
+    sources = source_counts(segmentation)
+    source_model = ""
+    if len(sources) == 1:
+        only_source = next(iter(sources))
+        if only_source not in {SOURCE_MODEL_MANUAL, SOURCE_MODEL_UNKNOWN}:
+            source_model = only_source
+
+    candidates = [source_model, ""] if source_model else [""]
+    state = None
+    for candidate in dict.fromkeys(candidates):
+        possible = SegmentationOverlayState.objects.filter(
+            segmentation=segmentation,
+            candidate_source_model=candidate,
+            status=SegmentationOverlayState.STATUS_READY,
+            pending_full_rebuild=False,
+        ).first()
+        if (
+            possible is not None
+            and possible.bundle_version > 0
+            and possible.applied_revision == possible.desired_revision
+        ):
+            state = possible
+            break
+    if state is None:
+        return None
+
+    from quantem.segmentation.overlay_ngff import get_overlay_active_bundle_path
+
+    try:
+        import zarr
+
+        labels = zarr.open_array(
+            str(get_overlay_active_bundle_path(state) / "labels" / "0"),
+            mode="r",
+        )
+    except Exception:
+        return None
+    if tuple(labels.shape) != tuple(shape):
+        return None
+
+    confirmed_ids = confirmed_objects(segmentation).values_list("id", flat=True)
+    visible_labels = list(
+        SegmentationOverlayLabel.objects.filter(
+            overlay_state=state,
+            object_uuid__in=confirmed_ids,
+        ).values_list("label", flat=True)
+    )
+    max_label = int(
+        SegmentationOverlayLabel.objects.filter(overlay_state=state)
+        .order_by("-label")
+        .values_list("label", flat=True)
+        .first()
+        or 0
+    )
+    visible = np.zeros(max_label + 1, dtype=bool)
+    if visible_labels:
+        visible[np.asarray(visible_labels, dtype=np.int64)] = True
+
+    height, width = shape
+    chunk_h, chunk_w = (int(labels.chunks[0]), int(labels.chunks[1]))
+    total = max(1, math.ceil(height / chunk_h) * math.ceil(width / chunk_w))
+    done = 0
+    mask = np.zeros(shape, dtype=bool)
+    for y0 in range(0, height, chunk_h):
+        for x0 in range(0, width, chunk_w):
+            if cancel_check is not None:
+                cancel_check()
+            y1, x1 = min(height, y0 + chunk_h), min(width, x0 + chunk_w)
+            block = np.asarray(labels[y0:y1, x0:x1], dtype=np.uint32)
+            in_range = block <= max_label
+            output = np.zeros(block.shape, dtype=bool)
+            output[in_range] = visible[block[in_range]]
+            mask[y0:y1, x0:x1] = output
+            done += 1
+            if on_progress is not None:
+                on_progress(done, total, "reading the saved segmentation display")
+    return mask
+
+
+def segmentation_mask(
+    segmentation: ImageSegmentation,
+    shape: tuple[int, int],
+    *,
+    cancel_check=None,
+    on_progress=None,
+) -> np.ndarray:
     """A segmentation's authoritative boolean mask.
 
     Global segmentations, including Analysis Masks, are stored as one
@@ -246,6 +391,15 @@ def segmentation_mask(segmentation: ImageSegmentation, shape: tuple[int, int]) -
             )
         return mask.astype(bool, copy=False)
 
+    cached_mask = _settled_overlay_mask(
+        segmentation,
+        shape,
+        cancel_check=cancel_check,
+        on_progress=on_progress,
+    )
+    if cached_mask is not None:
+        return cached_mask
+
     height, width = shape
     mask = np.zeros((height, width), dtype=bool)
 
@@ -256,7 +410,11 @@ def segmentation_mask(segmentation: ImageSegmentation, shape: tuple[int, int]) -
         "bbox_maxx",
         "bbox_maxy",
     )
-    for obj in confirmed_objects(segmentation).only("id", *fields).iterator():
+    objects = confirmed_objects(segmentation).only("id", *fields)
+    total = objects.count()
+    for index, obj in enumerate(objects.iterator(), start=1):
+        if cancel_check is not None:
+            cancel_check()
         rings = geometry_to_rings(obj.geometry)
         if not rings:
             continue
@@ -275,6 +433,8 @@ def segmentation_mask(segmentation: ImageSegmentation, shape: tuple[int, int]) -
             border_width=1,
         )
         mask[y0:y1, x0:x1] |= labels != 0
+        if on_progress is not None:
+            on_progress(index, total, "rasterising confirmed objects")
     return mask
 
 
@@ -350,12 +510,73 @@ def build_compartment_set(
     *,
     tissue: ImageSegmentation | None,
     shape: tuple[int, int],
+    cancel_check=None,
+    on_progress=None,
 ) -> CompartmentSet:
-    """Rasterise several segmentations of one image into a ``CompartmentSet``."""
-    masks = {
-        name: segmentation_mask(segmentation, shape) for name, segmentation in compartments.items()
-    }
-    tissue_mask = segmentation_mask(tissue, shape) if tissue is not None else None
+    """Rasterise several segmentations of one image into a ``CompartmentSet``.
+
+    The tissue mask is rasterised in the same loop as the compartments so one
+    progress bar covers all of it, but which entry *is* the tissue is decided by
+    position in the list, never by its name. ``"tissue"`` is a name a caller can
+    legitimately give a compartment -- it is the builtin analysis name for a
+    Tissue-type segmentation, and ``normalise_params`` defaults a run with no
+    named compartments to ``{compartment_name(segmentation): id}`` -- so a run
+    that analyses a Tissue segmentation and also selects it as the tissue mask
+    produced two identical entries. Matching on ``(name, id)`` consumed both as
+    the tissue: the compartment vanished from the results, ``composition.csv``
+    lost the ``area_fraction_tissue`` column the manifest still advertised, and
+    ``distance_target="tissue"`` passed validation and then found no mask.
+    """
+    entries: list[tuple[str, ImageSegmentation, bool]] = [
+        (name, segmentation, False) for name, segmentation in compartments.items()
+    ]
+    if tissue is not None:
+        entries.append(("tissue", tissue, True))
+    total_masks = max(len(entries), 1)
+    masks: dict[str, np.ndarray] = {}
+    tissue_mask = None
+    # A compartment and the tissue mask can resolve to the same segmentation --
+    # that is exactly the collision above -- and rasterising a 20k x 20k mask
+    # twice to get the same array back is the one part of that configuration
+    # worth avoiding. The arrays are only ever read (``CompartmentSet.restricted``
+    # and ``tissue_mask`` both build new arrays), so sharing one is safe.
+    loaded_by_segmentation: dict[str, np.ndarray] = {}
+    for mask_index, (name, segmentation, is_tissue) in enumerate(entries):
+
+        def report_mask(
+            done: int,
+            total: int,
+            message: str,
+            *,
+            _mask_index: int = mask_index,
+            _name: str = name,
+        ) -> None:
+            if on_progress is None:
+                return
+            local = float(done) / float(total) if total else 1.0
+            on_progress(
+                (_mask_index + local) / total_masks,
+                f"{message}: {_name}",
+            )
+
+        cache_key = str(segmentation.id)
+        loaded_mask = loaded_by_segmentation.get(cache_key)
+        if loaded_mask is None:
+            loaded_mask = segmentation_mask(
+                segmentation,
+                shape,
+                cancel_check=cancel_check,
+                on_progress=report_mask,
+            )
+            loaded_by_segmentation[cache_key] = loaded_mask
+        else:
+            # Nothing was rasterised, so nothing reported; close this entry's
+            # share of the bar rather than leaving it to jump at the next one.
+            report_mask(1, 1, "reusing rasterised mask")
+        if is_tissue:
+            tissue_mask = loaded_mask
+        else:
+            masks[name] = loaded_mask
     return CompartmentSet(
         masks=masks,
         tissue=tissue_mask,
@@ -2259,7 +2480,13 @@ def _masks_in_run(
     return list(by_id.values())
 
 
-def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
+def load_inputs(
+    run: AnalysisRun,
+    *,
+    cancel_check=None,
+    on_mask_progress=None,
+    on_feature_progress=None,
+) -> LoadedAnalysis:
     """Assemble one :class:`AnalysisInputs` from an :class:`AnalysisRun` row."""
     from .service import AnalysisInputs  # local: keeps service.py Django-free
 
@@ -2280,7 +2507,13 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
             role="the tissue mask",
         )
 
-    comp = build_compartment_set(compartment_segmentations, tissue=tissue, shape=shape)
+    comp = build_compartment_set(
+        compartment_segmentations,
+        tissue=tissue,
+        shape=shape,
+        cancel_check=cancel_check,
+        on_progress=on_mask_progress,
+    )
     regions = analysis_mask_regions(tissue, shape)
 
     points_xy: np.ndarray | None = None
@@ -2297,6 +2530,11 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
         points_xy = parsed_points.xy
         points_caveat = parsed_points.caveat()
 
+    ensure_confirmed_object_measurements(
+        segmentation,
+        cancel_check=cancel_check,
+        on_progress=on_feature_progress,
+    )
     features = object_features(segmentation)
     sources = object_sources(segmentation)
 
@@ -2340,10 +2578,12 @@ def load_inputs(run: AnalysisRun) -> LoadedAnalysis:
 
     loaded_provenance = {
         "mask_source": (
-            "Confirmed segment objects are rasterised from their stored polygons "
-            "for object-mode compartments. Global-mode segmentations, including "
-            "Analysis Masks, use their saved global mask; named Analysis Mask "
-            "objects are also measured independently."
+            "Confirmed segment objects define every object-mode compartment. A "
+            "settled segmentation ID overlay may be read as a cache, with its "
+            "labels filtered to the current confirmed object IDs; otherwise the "
+            "same objects are rasterised from their stored polygons. Global-mode "
+            "segmentations, including Analysis Masks, use their saved global mask; "
+            "named Analysis Mask objects are also measured independently."
         ),
         "image": image_identity(asset, produced_pixel_size_nm=produced_pixel_size_nm),
         "image_id": str(asset.id),

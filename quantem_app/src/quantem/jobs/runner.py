@@ -18,6 +18,9 @@ from django.utils import timezone
 from quantem.core.machine import get_machine_profile
 from quantem.jobs.artifact_registry import lease_paths_for_job
 from quantem.jobs.constants import (
+    HEAVY_BACKGROUND_JOB_TYPES,
+    HEAVY_CPU_JOB_TYPES,
+    HEAVY_INTERACTIVE_JOB_TYPES,
     JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
     NO_RETRY_JOB_TYPES,
 )
@@ -535,6 +538,34 @@ class JobRunner:
         return self.gpu_devices[assigned_workers % len(self.gpu_devices)]
 
     def _available_slots(self, resource_class: str, job_type: str = "") -> int:
+        if resource_class == "cpu" and job_type in HEAVY_CPU_JOB_TYPES:
+            # The gate is directional. Background maintenance stands aside for
+            # every heavy job: a second one would put two raster process pools
+            # on the machine, and an interactive one means a user is waiting,
+            # which outranks refreshing a cache that is already stale. Nothing
+            # in this runner preempts a RUNNING job, so "yield" can only be
+            # spelled "do not start".
+            #
+            # Interactive heavy work looks only at other interactive heavy work
+            # and is deliberately blind to maintenance. When this was symmetric
+            # a dial drag or Run analysis sat PENDING for the several minutes a
+            # post-preview feature sweep took, because the scheduler skips a job
+            # it cannot dispatch and never displaces the running one -- so the
+            # release's "analysis outranks display maintenance" only held while
+            # the maintenance job had not started yet.
+            blocked_by = (
+                HEAVY_CPU_JOB_TYPES
+                if job_type in HEAVY_BACKGROUND_JOB_TYPES
+                else HEAVY_INTERACTIVE_JOB_TYPES
+            )
+            if any(job.job_type in blocked_by for job in self.running.values()):
+                return 0
+            # An interactive job that got past that still falls through to the
+            # ordinary CPU accounting below, and that is what keeps the
+            # asymmetry safe on small machines: ``cpu_slots`` defaults to the
+            # profile's ``heavy_slots``, so a one-heavy-slot laptop still
+            # refuses to start this alongside a running rebuild, while the
+            # workstation profile's four slots absorb it.
         if job_type == JOB_TYPE_UPLOAD_IMAGE_PIPELINE:
             active_cpu = sum(1 for job in self.running.values() if job.resource_class == "cpu")
             active_upload = sum(

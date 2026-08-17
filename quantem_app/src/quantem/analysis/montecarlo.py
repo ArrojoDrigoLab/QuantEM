@@ -163,6 +163,8 @@ def csr_null(
     areas: AreaFractions | None = None,
     replicates: int = DEFAULT_REPLICATES,
     seed: int = DEFAULT_SEED,
+    on_progress: Callable[[int, int], None] | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> NullResult:
     """Compare observed point statistics against complete spatial randomness.
 
@@ -199,10 +201,14 @@ def csr_null(
     tissue = comp.tissue_mask()
     samples: dict[str, list[float]] = {k: [] for k in observed}
     for r in range(replicates):
+        if cancel_check is not None:
+            cancel_check()
         rng = np.random.default_rng(_derive_seed(seed, image_key, r))
         drawn = sample_uniform_in_mask(tissue, n, rng)
         for key, value in metric(drawn.astype(float)).items():
             samples.setdefault(key, []).append(float(value))
+        if on_progress is not None:
+            on_progress(r + 1, replicates)
 
     null_mean: dict[str, float | None] = {}
     null_sd: dict[str, float | None] = {}
@@ -230,7 +236,12 @@ def csr_null(
     )
 
 
-def self_check(comp: CompartmentSet, *, image_key: str = "selfcheck") -> dict[str, Any]:
+def self_check(
+    comp: CompartmentSet,
+    *,
+    image_key: str = "selfcheck",
+    cancel_check: Callable[[], None] | None = None,
+) -> dict[str, Any]:
     """Randomised input must give enrichment ~1.0 in every compartment.
 
     This is the manuscript's stated internal control ("compartment enrichment on
@@ -241,6 +252,8 @@ def self_check(comp: CompartmentSet, *, image_key: str = "selfcheck") -> dict[st
     Returns ``skipped_reason`` rather than raising when there is nothing to
     sample: a control that cannot run must not take the analysis down with it.
     """
+    if cancel_check is not None:
+        cancel_check()
     tissue = comp.tissue_mask()
     tissue_px = int(tissue.sum())
     if tissue_px == 0:
@@ -277,6 +290,8 @@ def self_check(comp: CompartmentSet, *, image_key: str = "selfcheck") -> dict[st
 
     rng = np.random.default_rng(_derive_seed(DEFAULT_SEED, image_key, 0))
     pts = sample_uniform_in_mask(tissue, n, rng).astype(float)
+    if cancel_check is not None:
+        cancel_check()
     a = assign_points(pts, comp)
     return {
         "n_points": n,

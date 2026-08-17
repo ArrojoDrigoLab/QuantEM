@@ -138,12 +138,47 @@ class JobCancelledError(Exception):
 
 
 class CancelToken:
+    """Asks the job row whether someone has pressed Cancel, every time.
+
+    **Why there is no rate limit here, despite the cost.** Responsive
+    cancellation put this read inside the hot loops -- once per raster tile,
+    per pyramid block, per 256 px overlay chunk and per object -- and one such
+    SELECT was measured at ~352 us against ~365 us for the numpy body of one
+    256 px chunk, so the bookkeeping costs about as much as the work it guards.
+    A quarter-second floor was tried and reverted: the analysis service reaches
+    this token through its *progress* callback, which is also what its coarse
+    phase boundaries use, so throttling the loops necessarily throttles the
+    boundary check that decides whether a run stops. A cancellation raised while
+    the last phase ran was then swallowed whenever the remaining work finished
+    inside the window, and the run recorded success to a user who had pressed
+    Cancel -- caught by ``test_cancelling_mid_run_is_recorded_in_the_user_s_words``.
+
+    Making that safe means giving the analysis and overlay services two separate
+    cancel callables, an exact one for boundaries and a throttled one for loops.
+    That is the right shape and it is worth doing, but it is a wider change than
+    a point release should carry, so the query rate stays as it has always been
+    and the cost is documented here instead of traded for a semantic change.
+
+    **The positive answer is sticky.** Once a cancellation has been observed the
+    token never queries again and every later call raises immediately, so
+    tearing down through several nested loops costs no further queries.
+    """
+
     def __init__(self, job_id: str):
         self.job_id = job_id
+        self._cancelled = False
 
     def check_cancelled(self) -> None:
-        if Job.objects.filter(id=self.job_id, cancel_requested=True).exists():
+        if self._cancelled:
             raise JobCancelledError("Job cancellation requested.")
+        if Job.objects.filter(id=self.job_id, cancel_requested=True).exists():
+            self._cancelled = True
+            raise JobCancelledError("Job cancellation requested.")
+        # Charged from the *end* of the query, as the unit-progress floor is:
+        # a read that took longer than the interval has already spent the next
+        # window's worth of wall clock, and charging it from the start would let
+        # a slow database read continuously.
+        self._last_check = time.monotonic()
 
 
 _ACTIVE = threading.local()

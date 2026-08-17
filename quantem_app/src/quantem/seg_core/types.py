@@ -22,7 +22,7 @@ class ExtractedSegment:
     bbox_xyxy: tuple[float, float, float, float]  # (min_x, min_y, max_x, max_y)
     area: int
     features: dict[str, Any]
-    confidence_score: float
+    confidence_score: float | None
     region_mask: np.ndarray | None = None  # For rasterization; not persisted
 
 

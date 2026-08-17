@@ -5,6 +5,7 @@ from unittest.mock import patch
 import numpy as np
 import zarr
 from django.test import TestCase
+from django.utils import timezone
 from numcodecs import Blosc
 from rest_framework.test import APIClient
 from shapely import wkt as shapely_wkt
@@ -12,6 +13,7 @@ from shapely.geometry import Polygon
 
 from quantem.jobs.constants import JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY
 from quantem.jobs.models import Job
+from quantem.jobs.reporter import JobCancelledError
 from quantem.segmentation import overlay_ngff
 from quantem.segmentation.geometry import extract_polygons
 from quantem.segmentation.models import (
@@ -25,12 +27,19 @@ from quantem.segmentation.overlay_ngff import (
     apply_partial_overlay_update,
     build_label_lut_binary,
     get_overlay_active_bundle_path,
+    overlay_jobs_for_bundle,
+    queue_full_overlay_rebuild,
+    queue_overlay_rebuild,
     rebuild_overlay_full,
+    register_overlay_mutation,
+    run_overlay_rebuild_job,
 )
 from quantem.segmentation.overlay_ngff.constants import (
+    ACTIVE_OVERLAY_JOB_STATUSES,
     COLOR_CONFIRMED,
     COLOR_EXCLUDED,
 )
+from quantem.segmentation.overlay_ngff.manifest import OVERLAY_CANCELLED_MESSAGE
 from quantem.segmentation.type_service import get_or_create_mitochondria_type
 from quantem.testing import create_image_from_test_tiff
 
@@ -91,6 +100,9 @@ class SegmentationOverlayManifestTests(TestCase):
         # replacing the legacy pre-colored channel-index map.
         self.assertEqual(response.data["arrays"], ["labels", "border"])
         self.assertEqual(response.data["label_dtype"], "uint32")
+        self.assertEqual(response.data["display_role"], "confirmed")
+        self.assertTrue(response.data["data_ready"])
+        self.assertEqual(response.data["update_job"]["status"], "PENDING")
         self.assertIsNotNone(response.data["lut_url"])
         self.assertNotIn("channel_indices", response.data)
         self.assertTrue(Job.objects.filter(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY).exists())
@@ -137,17 +149,17 @@ class SegmentationOverlayManifestTests(TestCase):
         self.assertEqual(
             len(jobs),
             2,
-            "expected exactly one rebuild per bundle: the aggregate and quantem:nucleus",
+            "expected exactly one rebuild per bundle: confirmed display and quantem:nucleus",
         )
         self.assertEqual(
             sorted(job.payload_json.get("source_model", "") for job in jobs),
             ["", "quantem:nucleus"],
         )
 
-    def test_the_aggregate_and_a_per_source_bundle_are_separate_builds(self):
+    def test_the_confirmed_display_and_a_per_source_bundle_are_separate_builds(self):
         """Reported as duplicate work; it is not. Do not collapse these.
 
-        A segmentation carries an aggregate overlay and one overlay per model
+        A segmentation carries a confirmed-display overlay and one overlay per model
         that produced objects in it, each its own zarr store with its own
         revisions. Opening a nucleus segmentation asks for both, so two jobs is
         the right number -- merging them would leave one bundle stale for good.
@@ -171,7 +183,7 @@ class SegmentationOverlayManifestTests(TestCase):
         self.assertNotIn(
             "source_model:quantem:nucleus",
             jobs[""].tags,
-            "the aggregate build must not be tagged with one model's name",
+            "the confirmed-display build must not be tagged with one model's name",
         )
 
 
@@ -316,6 +328,251 @@ class SegmentationOverlayRebuildStateTests(TestCase):
         self.assertFalse(updated_state.pending_full_rebuild)
         self.assertEqual(updated_state.dirty_chunk_runs, [later_dirty_run])
         self.assertEqual(updated_state.status, SegmentationOverlayState.STATUS_DIRTY)
+
+
+class SegmentationOverlayCancellationTests(TestCase):
+    """What has to survive the user pressing Cancel on an overlay rebuild.
+
+    Two things, and neither was true when responsive cancellation first landed.
+
+    *The cancel has to stick.* The handler recorded a cancelled build as DIRTY,
+    which is indistinguishable from "there is pending work and nobody is
+    building it" -- the exact condition ``ensure_overlay_manifest`` answers by
+    enqueueing a rebuild. The labelling screen polls every 1.5 s, so the job the
+    user had just cancelled was back in the Tasks drawer, from zero, before they
+    could look away, and a long build on a large image could not be stopped at
+    all.
+
+    *A full rebuild owed by someone else has to survive it.* The flag is the
+    only record that one is owed -- the ``async_full`` registration path adds no
+    dirty run to fall back on -- and anything that clears it downgrades the
+    follow-up to a partial, which repaints one bbox and then marks the bundle
+    READY over geometry that was never rasterised. Analysis reuses a settled
+    raster as-is, so that would silently drop objects from exported
+    measurements.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.image = create_image_from_test_tiff("Overlay Cancellation Test Image")
+        self.segmentation = ImageSegmentation.objects.create(
+            asset=self.image.asset,
+            segmentation_type=get_or_create_mitochondria_type(),
+        )
+        polygon = Polygon(((10, 10), (40, 10), (40, 40), (10, 40), (10, 10)))
+        SegmentObject.objects.create(
+            segmentation=self.segmentation,
+            geometry=polygon,
+            centroid=polygon.centroid,
+            bbox=polygon.envelope,
+            label_state="CONFIRMED",
+            confidence_score=None,
+            features={"sam_score": 0.9},
+        )
+        # Build once, so the cancellations under test are the interesting kind:
+        # a usable-but-stale picture stays on screen behind them.
+        rebuild_overlay_full(self.segmentation, desired_revision=1)
+
+    def _mark_partial_work_pending(self) -> SegmentationOverlayState:
+        """Put the bundle where a queued partial rebuild would find it."""
+        state = SegmentationOverlayState.objects.get(segmentation=self.segmentation)
+        state.status = SegmentationOverlayState.STATUS_DIRTY
+        state.applied_revision = 1
+        state.desired_revision = 2
+        state.pending_full_rebuild = False
+        state.dirty_chunk_runs = [
+            {
+                "revision": 2,
+                "bbox": {"x_min": 0, "y_min": 0, "x_max": 64, "y_max": 64},
+                "chunk_x_min": 0,
+                "chunk_x_max": 0,
+                "chunk_y_min": 0,
+                "chunk_y_max": 0,
+            }
+        ]
+        state.save(
+            update_fields=[
+                "status",
+                "applied_revision",
+                "desired_revision",
+                "pending_full_rebuild",
+                "dirty_chunk_runs",
+                "updated_at",
+            ]
+        )
+        return state
+
+    def _active_rebuild_count(self, segmentation: ImageSegmentation) -> int:
+        return (
+            overlay_jobs_for_bundle(str(segmentation.id))
+            .filter(status__in=ACTIVE_OVERLAY_JOB_STATUSES)
+            .count()
+        )
+
+    def test_cancel_keeps_a_full_rebuild_registered_while_the_job_ran(self):
+        """The race the handler must survive, and used to lose.
+
+        A completed extraction (``seg_core.db.extraction``) or the rebuild
+        button asks for a full rebuild while a partial job is mid-flight; the
+        request lands on ``pending_full_rebuild`` and nowhere else, because
+        ``queue_overlay_rebuild`` is a no-op while that job holds the bundle.
+        The handler then recomputed the flag from the ``state`` it had loaded
+        *before* the build began and wrote ``False`` over it.
+        """
+        self._mark_partial_work_pending()
+        registered = False
+
+        def cancel_check():
+            nonlocal registered
+            if not registered:
+                registered = True
+                queue_full_overlay_rebuild(self.segmentation)
+                return
+            raise JobCancelledError("cancelled from the tasks drawer")
+
+        with self.assertRaises(JobCancelledError):
+            run_overlay_rebuild_job(
+                self.segmentation,
+                mode="partial",
+                cancel_check=cancel_check,
+            )
+
+        self.assertTrue(registered, "the mid-build full rebuild was never registered")
+        state = SegmentationOverlayState.objects.get(segmentation=self.segmentation)
+        self.assertTrue(
+            state.pending_full_rebuild,
+            "a full rebuild requested during the build must outlive the cancellation",
+        )
+        self.assertEqual(state.status, SegmentationOverlayState.STATUS_FAILED)
+        self.assertEqual(state.last_error, OVERLAY_CANCELLED_MESSAGE)
+
+    def test_an_incremental_edit_does_not_discharge_an_owed_full_rebuild(self):
+        """The other end of the same flag: an edit must not consume it either.
+
+        ``overlay_rebuild_policy`` answers "async_partial" precisely *because* a
+        full rebuild is already owed, so recomputing the flag from that answer
+        cleared it -- and the partial that followed painted this edit's bbox and
+        called the bundle settled.
+        """
+        state = self._mark_partial_work_pending()
+        state.pending_full_rebuild = True
+        state.save(update_fields=["pending_full_rebuild", "updated_at"])
+
+        register_overlay_mutation(
+            self.segmentation,
+            dirty_bbox=DirtyBBox(x_min=0, y_min=0, x_max=32, y_max=32),
+        )
+
+        state.refresh_from_db()
+        self.assertTrue(state.pending_full_rebuild)
+        queued = overlay_jobs_for_bundle(str(self.segmentation.id)).get()
+        self.assertEqual(
+            queued.payload_json.get("mode"),
+            "full",
+            "the owed full rebuild, not a partial, is what has to be queued",
+        )
+
+    def test_a_cancelled_rebuild_is_not_requeued_by_the_next_manifest_poll(self):
+        self._mark_partial_work_pending()
+        job = queue_overlay_rebuild(self.segmentation, mode="partial")
+
+        def cancel_check():
+            raise JobCancelledError("cancelled from the tasks drawer")
+
+        with self.assertRaises(JobCancelledError):
+            run_overlay_rebuild_job(
+                self.segmentation,
+                mode="partial",
+                cancel_check=cancel_check,
+            )
+        job.status = "CANCELLED"
+        job.finished_at = timezone.now()
+        job.save(update_fields=["status", "finished_at"])
+
+        url = f"/api/segmentations/{self.segmentation.id}/overlay-manifest/"
+        for _ in range(3):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(
+            self._active_rebuild_count(self.segmentation),
+            0,
+            "the poll re-queued the rebuild the user had just cancelled",
+        )
+        self.assertEqual(response.data["status"], "FAILED")
+        self.assertEqual(response.data["last_error"], OVERLAY_CANCELLED_MESSAGE)
+        self.assertIsNotNone(
+            response.data["ngff_url"],
+            "the previously built overlay must keep being served behind the stop",
+        )
+
+    def test_a_cancel_that_killed_the_worker_is_not_requeued_either(self):
+        """The path where the handler above never runs.
+
+        When the runner stops waiting it terminates the worker process, so
+        nothing writes the stop to the state: it is left mid-build, which is the
+        shape the manifest answers by enqueueing another job. The cancelled
+        queue row is the only surviving record, which is why the brake reads it
+        rather than the state.
+        """
+        state = self._mark_partial_work_pending()
+        job = queue_overlay_rebuild(self.segmentation, mode="partial")
+        state.status = SegmentationOverlayState.STATUS_BUILDING
+        state.save(update_fields=["status", "updated_at"])
+        job.status = "CANCELLED"
+        job.finished_at = timezone.now()
+        job.save(update_fields=["status", "finished_at"])
+
+        url = f"/api/segmentations/{self.segmentation.id}/overlay-manifest/"
+        for _ in range(3):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(self._active_rebuild_count(self.segmentation), 0)
+        self.assertEqual(response.data["status"], "FAILED")
+        self.assertEqual(response.data["last_error"], OVERLAY_CANCELLED_MESSAGE)
+
+    def test_a_cancelled_first_build_stops_asking_but_an_edit_resumes_it(self):
+        """No bundle to fall back on, and no failure budget spent by a cancel.
+
+        The first-ever build of a segmentation leaves nothing on disk, so this
+        path re-queued unconditionally: ``_failed_rebuilds_since_last_success``
+        counts ``FAILED`` jobs and a cancellation is not one, so the build the
+        user stopped came back on every poll for as long as the screen was open.
+        The stop still has to be temporary -- the user's next edit clears it.
+        """
+        image = create_image_from_test_tiff("Overlay Cancellation First Build Image")
+        segmentation = ImageSegmentation.objects.create(
+            asset=image.asset,
+            segmentation_type=get_or_create_mitochondria_type(),
+        )
+        url = f"/api/segmentations/{segmentation.id}/overlay-manifest/"
+        self.assertEqual(self.client.get(url).status_code, 200)
+
+        job = overlay_jobs_for_bundle(str(segmentation.id)).get()
+        job.status = "CANCELLED"
+        job.finished_at = timezone.now()
+        job.save(update_fields=["status", "finished_at"])
+
+        for _ in range(3):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(self._active_rebuild_count(segmentation), 0)
+        self.assertEqual(response.data["status"], "FAILED")
+        self.assertEqual(response.data["last_error"], OVERLAY_CANCELLED_MESSAGE)
+        self.assertIsNone(response.data["ngff_url"])
+
+        queue_full_overlay_rebuild(segmentation)
+
+        self.assertEqual(
+            self._active_rebuild_count(segmentation),
+            1,
+            "the user's own retry has to lift the stop the cancellation put in place",
+        )
+        state = SegmentationOverlayState.objects.get(segmentation=segmentation)
+        self.assertNotEqual(state.status, SegmentationOverlayState.STATUS_FAILED)
+        self.assertEqual(state.last_error, "")
 
 
 class SegmentationOverlayQueryTests(TestCase):
@@ -549,10 +806,14 @@ class SegmentationOverlayRasterizationTests(TestCase):
             features={"sam_score": 0.9},
         )
 
-    def test_source_overlay_renders_active_candidates_manual_and_all_confirmed(self):
-        # Membership rule for a per-source bundle: CONFIRMED (any source) OR
-        # manual OR this exact source model. The cross-source candidate must be
-        # excluded from the raster entirely.
+    def test_source_overlay_renders_the_selected_model_and_hand_drawn_work(self):
+        # A model bundle carries this model's objects plus the hand-drawn ones.
+        # Another model's objects -- confirmed or not -- live in the separate
+        # source-less display bundle, which is what keeps a confirmation a
+        # LUT-only update. Hand-drawn objects cannot be moved out with them:
+        # owner ruling R13 forbids hiding what the user annotated, and the
+        # candidate layer that reads this bundle is the only layer that paints
+        # an outline the user drew but has not confirmed.
         active_candidate = self._create_segment(
             Polygon(((10, 10), (22, 10), (22, 22), (10, 22), (10, 10))),
             label_state="CANDIDATE",
@@ -579,8 +840,8 @@ class SegmentationOverlayRasterizationTests(TestCase):
         )
         labels0 = _open_labels_level0(state)
 
-        # Active-source candidate, manual candidate, and confirmed (any source)
-        # all painted; the cross-source candidate is background.
+        # The selected model and the hand-drawn object are painted. The other
+        # model's two objects never receive labels in this bundle.
         self.assertEqual(
             _label_value_at(labels0, 15, 15),
             _label_for_object(state, active_candidate.id),
@@ -590,16 +851,13 @@ class SegmentationOverlayRasterizationTests(TestCase):
             _label_value_at(labels0, 15, 75),
             _label_for_object(state, manual_candidate.id),
         )
-        self.assertEqual(
-            _label_value_at(labels0, 15, 105),
-            _label_for_object(state, confirmed_other_source.id),
-        )
-        # The cross-source candidate never received a label for this bundle.
-        self.assertFalse(
-            SegmentationOverlayLabel.objects.filter(
-                overlay_state=state, object_uuid=other_candidate.id
-            ).exists()
-        )
+        self.assertEqual(_label_value_at(labels0, 15, 105), 0)
+        for omitted in (other_candidate, confirmed_other_source):
+            self.assertFalse(
+                SegmentationOverlayLabel.objects.filter(
+                    overlay_state=state, object_uuid=omitted.id
+                ).exists()
+            )
 
     def test_touching_segments_keep_visible_border_channel(self):
         left = self._create_segment(Polygon(((10, 10), (22, 10), (22, 22), (10, 22), (10, 10))))

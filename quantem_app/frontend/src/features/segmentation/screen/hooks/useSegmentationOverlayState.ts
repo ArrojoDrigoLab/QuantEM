@@ -28,7 +28,8 @@ export function useSegmentationOverlayState({
   const deletion = useOptimisticDeletionState(currentSegmentationId);
   const layers = useOverlayLayerControls({
     segmentationId: currentSegmentationId ?? "",
-    overlayManifest: manifest.overlayManifest,
+    modelManifest: manifest.overlayManifest,
+    confirmedManifest: manifest.confirmedOverlayManifest,
     hiddenSegmentIds: deletion.hiddenSegmentIds,
     hiddenSegmentVisualRevision: deletion.visualRevision,
   });

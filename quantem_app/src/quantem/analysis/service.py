@@ -737,9 +737,22 @@ def _flat_null_caveats(null: NullResult, n_on_tissue: int) -> list[str]:
     ]
 
 
-def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
+def run_analysis(
+    inputs: AnalysisInputs,
+    *,
+    progress: ProgressFn | None = None,
+    cancel_check: Callable[[], None] | None = None,
+) -> dict[str, Any]:
     """Compute every enabled analysis for one image. Pure; writes nothing."""
     caveats: list[str] = []
+
+    def report(percent: float, message: str) -> None:
+        if cancel_check is not None:
+            cancel_check()
+        if progress is not None:
+            progress(percent, message)
+
+    report(0.0, "preparing measurements")
 
     # A recorded pixel size that is not a size is a different problem from an
     # absent one, and used to be reported as one ("Pixel size is not set for
@@ -843,6 +856,7 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
         inputs.analysis_regions,
         pixel_size_nm=pixel_size_nm,
     )
+    report(15.0, "measuring compartment areas")
 
     # A tissue mask that was supplied but is empty makes every fraction below a
     # ratio to zero, and makes the Monte-Carlo null unsamplable -- there is
@@ -870,6 +884,7 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
         )
         for oid, f in inputs.object_features.items()
     ]
+    report(30.0, "summarising object measurements")
     result: dict[str, Any] = {
         "image_key": inputs.image_key,
         "segmentation_id": inputs.segmentation_id,
@@ -941,6 +956,7 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
 
     if inputs.points_xy is not None and len(inputs.points_xy):
         assignment = assign_points(inputs.points_xy, inputs.compartments, areas=areas)
+        report(40.0, "assigning points to compartments")
         result["points"] = {
             "n_total": assignment.n_total,
             "n_on_tissue": assignment.n_on_tissue,
@@ -1037,6 +1053,7 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
                 "n_unreadable": dist.n_unreadable,
                 "n_out_of_image": dist.n_out_of_image,
             }
+            report(50.0, f"measuring distance to {target}")
             if dist.n_unreadable:
                 caveats.append(
                     f"The distance-to-{target} numbers cover {dist.n} of the "
@@ -1079,6 +1096,19 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
             caveats.append(f"Distance-to-{target} was requested but skipped: {reason}")
 
         if not tissue_is_empty and not no_points_on_tissue:
+
+            def report_null(done: int, total: int) -> None:
+                # At most about fifty persisted progress updates even when a
+                # caller requests the 1,000-replicate ceiling. Cancellation is
+                # still checked inside every replicate by ``csr_null``.
+                stride = max(1, total // 50)
+                if done == total or done == 1 or done % stride == 0:
+                    fraction = float(done) / float(total) if total else 1.0
+                    report(
+                        50.0 + 40.0 * fraction,
+                        f"running spatial null ({done}/{total} replicates)",
+                    )
+
             null = csr_null(
                 inputs.points_xy,
                 inputs.compartments,
@@ -1086,6 +1116,8 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
                 areas=areas,
                 replicates=inputs.replicates,
                 seed=inputs.seed,
+                on_progress=report_null,
+                cancel_check=cancel_check,
             )
             result["monte_carlo"] = {
                 "replicates": null.replicates,
@@ -1097,8 +1129,11 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
                 "p_two_sided": null.p_two_sided,
             }
             result["monte_carlo_self_check"] = self_check(
-                inputs.compartments, image_key=inputs.image_key
+                inputs.compartments,
+                image_key=inputs.image_key,
+                cancel_check=cancel_check,
             )
+            report(95.0, "checking spatial-null normalisation")
             caveats.extend(_flat_null_caveats(null, assignment.n_on_tissue))
     elif inputs.distance_target:
         caveats.append(
@@ -1108,6 +1143,7 @@ def run_analysis(inputs: AnalysisInputs) -> dict[str, Any]:
         )
 
     result["_object_metrics"] = metrics
+    report(100.0, "measurements complete")
     return result
 
 
@@ -1575,7 +1611,10 @@ def non_finite_paths(value: Any, path: str = "") -> list[str]:
 
 
 def run_for_segmentation(
-    analysis_run: AnalysisRun, *, progress: ProgressFn | None = None
+    analysis_run: AnalysisRun,
+    *,
+    progress: ProgressFn | None = None,
+    cancel_check=None,
 ) -> dict[str, Any]:
     """Run one :class:`~quantem.analysis.models.AnalysisRun` end to end.
 
@@ -1612,10 +1651,28 @@ def run_for_segmentation(
     written: Path | None = None
     try:
         report(5.0, "loading masks")
-        loaded = load_inputs(analysis_run)
+        loaded = load_inputs(
+            analysis_run,
+            cancel_check=cancel_check,
+            on_mask_progress=lambda fraction, message: report(
+                5.0 + 15.0 * max(0.0, min(float(fraction), 1.0)),
+                message,
+            ),
+            on_feature_progress=lambda done, total, message: report(
+                20.0 + 5.0 * (float(done) / float(total) if total else 1.0),
+                f"{message} ({done}/{total})",
+            ),
+        )
 
         report(25.0, "measuring")
-        result = run_analysis(loaded.inputs)
+        result = run_analysis(
+            loaded.inputs,
+            progress=lambda percent, message: report(
+                25.0 + 0.55 * max(0.0, min(float(percent), 100.0)),
+                message,
+            ),
+            cancel_check=cancel_check,
+        )
 
         # Named, not only described: the caveat says which compartment is
         # circular in a sentence, and image_summary.csv turns that into the

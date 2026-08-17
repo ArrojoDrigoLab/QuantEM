@@ -15,7 +15,8 @@ import type {
 
 interface UseOverlayLayerControlsArgs {
   segmentationId: string;
-  overlayManifest: SegmentationOverlayManifest | null;
+  modelManifest: SegmentationOverlayManifest | null;
+  confirmedManifest: SegmentationOverlayManifest | null;
   hiddenSegmentIds?: ReadonlySet<string>;
   hiddenSegmentVisualRevision?: number;
 }
@@ -84,7 +85,8 @@ function hideSegmentsInLut(
 
 export function useOverlayLayerControls({
   segmentationId,
-  overlayManifest,
+  modelManifest,
+  confirmedManifest,
   hiddenSegmentIds = NO_HIDDEN_SEGMENTS,
   hiddenSegmentVisualRevision = 0,
 }: UseOverlayLayerControlsArgs) {
@@ -101,53 +103,68 @@ export function useOverlayLayerControls({
   // objects need separate state-filtered LUTs for their controls to be real.
   const candidateLut = useOverlayLut({
     segmentationId,
-    sourceModel: overlayManifest?.source_model ?? null,
-    lutRevision: overlayManifest?.lut_revision ?? null,
-    enabled: !!overlayManifest?.ngff_url,
+    sourceModel: modelManifest?.source_model ?? null,
+    lutRevision: modelManifest?.lut_revision ?? null,
+    enabled: !!modelManifest?.ngff_url,
     hiddenStates: CANDIDATE_LAYER_HIDDEN_STATES,
   });
   const confirmedLut = useOverlayLut({
     segmentationId,
-    sourceModel: overlayManifest?.source_model ?? null,
-    lutRevision: overlayManifest?.lut_revision ?? null,
-    enabled: !!overlayManifest?.ngff_url,
+    sourceModel: null,
+    lutRevision: confirmedManifest?.lut_revision ?? null,
+    enabled: !!confirmedManifest?.ngff_url,
     hiddenStates: CONFIRMED_LAYER_HIDDEN_STATES,
   });
 
-  const pickMap = useOverlayPickMap({
+  const candidatePickMap = useOverlayPickMap({
     segmentationId,
-    sourceModel: overlayManifest?.source_model ?? null,
+    sourceModel: modelManifest?.source_model ?? null,
     rasterRevision:
-      overlayManifest != null
-        ? `${overlayManifest.bundle_version}-${overlayManifest.applied_revision}`
+      modelManifest != null
+        ? `${modelManifest.bundle_version}-${modelManifest.applied_revision}`
         : null,
-    enabled: !!overlayManifest?.ngff_url,
+    enabled: !!modelManifest?.ngff_url,
+  });
+  const confirmedPickMap = useOverlayPickMap({
+    segmentationId,
+    sourceModel: null,
+    rasterRevision:
+      confirmedManifest != null
+        ? `${confirmedManifest.bundle_version}-${confirmedManifest.applied_revision}`
+        : null,
+    enabled: !!confirmedManifest?.ngff_url,
   });
   const visibleCandidateLut = useMemo(
-    () => hideSegmentsInLut(candidateLut, pickMap, hiddenSegmentIds),
-    [candidateLut, hiddenSegmentIds, pickMap]
+    () => hideSegmentsInLut(candidateLut, candidatePickMap, hiddenSegmentIds),
+    [candidateLut, candidatePickMap, hiddenSegmentIds]
   );
   const visibleConfirmedLut = useMemo(
-    () => hideSegmentsInLut(confirmedLut, pickMap, hiddenSegmentIds),
-    [confirmedLut, hiddenSegmentIds, pickMap]
+    () => hideSegmentsInLut(confirmedLut, confirmedPickMap, hiddenSegmentIds),
+    [confirmedLut, confirmedPickMap, hiddenSegmentIds]
   );
 
-  const ngffUrl = overlayManifest?.ngff_url
+  const candidateNgffUrl = modelManifest?.ngff_url
     ? withRasterRevision(
-        overlayManifest.ngff_url,
-        overlayManifest.bundle_version,
-        overlayManifest.applied_revision
+        modelManifest.ngff_url,
+        modelManifest.bundle_version,
+        modelManifest.applied_revision
+      )
+    : null;
+  const confirmedNgffUrl = confirmedManifest?.ngff_url
+    ? withRasterRevision(
+        confirmedManifest.ngff_url,
+        confirmedManifest.bundle_version,
+        confirmedManifest.applied_revision
       )
     : null;
 
   const leftIdMapOverlays = useMemo<ViewerIdMapOverlaySpec[]>(() => {
-    if (!ngffUrl) return [];
     const overlays: ViewerIdMapOverlaySpec[] = [];
-    if (visibleCandidateLut) {
+    if (candidateNgffUrl && visibleCandidateLut) {
       overlays.push({
         id: "label-left-candidates-idmap",
-        ngffUrl,
-        revision: overlayManifest?.applied_revision,
+        ngffUrl: candidateNgffUrl,
+        revision: modelManifest?.applied_revision,
         lut: visibleCandidateLut.rgba,
         maxLabel: visibleCandidateLut.maxLabel,
         lutRevision: visibleCandidateLut.lutRevision,
@@ -155,14 +172,14 @@ export function useOverlayLayerControls({
         fillOpacity: leftPanelLayerStyles.candidateFillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,
         showBorders: showCandidateBorders,
-        pickMap: pickMap ?? undefined,
+        pickMap: candidatePickMap ?? undefined,
       });
     }
-    if (visibleConfirmedLut) {
+    if (confirmedNgffUrl && visibleConfirmedLut) {
       overlays.push({
         id: "label-left-confirmed-idmap",
-        ngffUrl,
-        revision: overlayManifest?.applied_revision,
+        ngffUrl: confirmedNgffUrl,
+        revision: confirmedManifest?.applied_revision,
         lut: visibleConfirmedLut.rgba,
         maxLabel: visibleConfirmedLut.maxLabel,
         lutRevision: visibleConfirmedLut.lutRevision,
@@ -170,17 +187,20 @@ export function useOverlayLayerControls({
         fillOpacity: leftPanelLayerStyles.confirmedFillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,
         showBorders: showConfirmedBorders,
-        pickMap: pickMap ?? undefined,
+        pickMap: confirmedPickMap ?? undefined,
       });
     }
     return overlays;
   }, [
-    ngffUrl,
-    overlayManifest?.applied_revision,
+    candidateNgffUrl,
+    confirmedNgffUrl,
+    modelManifest?.applied_revision,
+    confirmedManifest?.applied_revision,
     visibleCandidateLut,
     visibleConfirmedLut,
     hiddenSegmentVisualRevision,
-    pickMap,
+    candidatePickMap,
+    confirmedPickMap,
     leftPanelLayerStyles.candidateFillOpacity,
     leftPanelLayerStyles.confirmedFillOpacity,
     showCandidateBorders,
@@ -188,12 +208,12 @@ export function useOverlayLayerControls({
   ]);
 
   const rightIdMapOverlays = useMemo<ViewerIdMapOverlaySpec[]>(() => {
-    if (!ngffUrl || !visibleConfirmedLut) return [];
+    if (!confirmedNgffUrl || !visibleConfirmedLut) return [];
     return [
       {
         id: "label-right-confirmed-idmap",
-        ngffUrl,
-        revision: overlayManifest?.applied_revision,
+        ngffUrl: confirmedNgffUrl,
+        revision: confirmedManifest?.applied_revision,
         lut: visibleConfirmedLut.rgba,
         maxLabel: visibleConfirmedLut.maxLabel,
         lutRevision: visibleConfirmedLut.lutRevision,
@@ -201,15 +221,15 @@ export function useOverlayLayerControls({
         fillOpacity: rightPanelConfirmedStyle.fillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,
         showBorders: showRightConfirmedBorders,
-        pickMap: pickMap ?? undefined,
+        pickMap: confirmedPickMap ?? undefined,
       },
     ];
   }, [
-    ngffUrl,
-    overlayManifest?.applied_revision,
+    confirmedNgffUrl,
+    confirmedManifest?.applied_revision,
     visibleConfirmedLut,
     hiddenSegmentVisualRevision,
-    pickMap,
+    confirmedPickMap,
     rightPanelConfirmedStyle.fillOpacity,
     showRightConfirmedBorders,
   ]);

@@ -500,5 +500,23 @@ def load_prob_map_from_path(
     ):
         return None
 
-    img = Image.open(file_path)
-    return np.array(img, dtype=np.float32) / 255.0
+    data = load_prob_map_uint8_from_path(segmentation, model_name, prefix, roi_id)
+    return None if data is None else data.astype(np.float32) / 255.0
+
+
+def load_prob_map_uint8_from_path(
+    segmentation: ImageSegmentation,
+    model_name: str,
+    prefix: str,
+    roi_id: str | None = None,
+) -> np.ndarray | None:
+    """Load the stored native bytes without allocating a full float copy."""
+    file_path = get_prob_map_file_path(segmentation, model_name, prefix, roi_id)
+    if not file_path.exists():
+        return None
+    if roi_id is None and _is_stale_composite_full_cache(
+        segmentation, model_name, prefix, file_path
+    ):
+        return None
+    with Image.open(file_path) as img:
+        return np.array(img, dtype=np.uint8)

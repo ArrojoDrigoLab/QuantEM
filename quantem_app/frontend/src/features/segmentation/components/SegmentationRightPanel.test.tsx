@@ -170,14 +170,14 @@ describe("SegmentationRightPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("dims the confirmed viewer while newly confirmed objects are building", () => {
+  it("shows a nonblocking notice while confirmed objects are being saved", () => {
     render(
       <SegmentationRightPanel
         {...makeProps({ confirmingObjects: true })}
       />
     );
 
-    expect(screen.getByText("Confirming these objects...")).toBeInTheDocument();
+    expect(screen.getByText("Saving confirmed objects…")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveClass("confirming-objects-veil");
     expect(screen.getByRole("status").parentElement).toHaveClass("right-viewer-stage");
     expect(screen.getByTestId("image-viewer").closest("section")).toHaveAttribute(

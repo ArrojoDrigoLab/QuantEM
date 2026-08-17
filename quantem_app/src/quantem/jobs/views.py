@@ -10,6 +10,8 @@ from quantem.jobs.apps import scheduler_is_running
 from quantem.jobs.constants import (
     JOB_TYPE_INSTALL_MODEL_PACK,
     JOB_TYPE_LABELS,
+    JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
+    JOB_TYPE_RUN_ANALYSIS,
     JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
     JOB_TYPE_RUN_SEGMENTATION_FULL,
     JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -33,6 +35,7 @@ from quantem.segmentation.models import ImageSegmentation
 from quantem.segmentation.source_models import (
     SOURCE_MODEL_UNKNOWN,
     default_source_model_for_organelle,
+    get_source_model_definition,
 )
 
 DONE_JOB_STATUSES = ("SUCCESS", "FAILED", "CANCELLED")
@@ -42,7 +45,22 @@ TERMINAL_JOBS_LIMIT = 100
 
 
 def _build_task_label(job: Job) -> str:
+    if job.type == JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY:
+        source_model = str((job.payload_json or {}).get("source_model") or "").strip()
+        if not source_model:
+            return "Update confirmed segmentation display"
+        definition = get_source_model_definition(source_model)
+        model_label = definition.label if definition is not None else "Model"
+        return f"Update {model_label} preview display"
     return JOB_TYPE_LABELS.get(job.type, f"Job: {job.type}")
+
+
+def _task_category(job: Job) -> str:
+    if job.type == JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY:
+        return "display"
+    if job.type == JOB_TYPE_RUN_ANALYSIS:
+        return "analysis"
+    return "processing"
 
 
 def _queue_sort_key(queue_name: str) -> tuple[int, str]:
@@ -188,6 +206,7 @@ def _serialize_job_status(
         "id": str(job.id),
         "type": job.type,
         "task_label": _build_task_label(job),
+        "task_category": _task_category(job),
         "status": job.status,
         "message": job.message,
         "cancel_requested": job.cancel_requested,

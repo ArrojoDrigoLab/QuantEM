@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 
 from quantem.jobs.constants import (
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
+    JOB_TYPE_RUN_ANALYSIS,
     JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
     QUEUE_P1_INTERACTIVE,
     QUEUE_P2_UPLOAD,
@@ -73,6 +74,30 @@ class JobQueueStatusViewTests(TestCase):
         worker = response.json()["worker"]
         self.assertIn("scheduler_in_process", worker)
         self.assertIsInstance(worker["scheduler_in_process"], bool)
+
+    def test_queue_status_names_display_work_and_analysis_as_different_tasks(self):
+        Job.objects.create(
+            type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
+            status="RUNNING",
+            payload_json={"source_model": "quantem:mito"},
+            queue_name=QUEUE_P1_INTERACTIVE,
+        )
+        Job.objects.create(
+            type=JOB_TYPE_RUN_ANALYSIS,
+            status="PENDING",
+            payload_json={"analysis_run_id": str(uuid4())},
+            queue_name=QUEUE_P1_INTERACTIVE,
+        )
+
+        payload = self.client.get("/api/jobs/queue-status/").json()
+
+        self.assertEqual(payload["running"][0]["task_category"], "display")
+        self.assertEqual(
+            payload["running"][0]["task_label"],
+            "Update QuantEM preview display",
+        )
+        self.assertEqual(payload["queues"][0]["pending"][0]["task_category"], "analysis")
+        self.assertEqual(payload["queues"][0]["pending"][0]["task_label"], "Run analysis")
 
 
 class JobWorkerRestartEndpointTests(TestCase):

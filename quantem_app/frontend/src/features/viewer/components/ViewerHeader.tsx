@@ -89,7 +89,9 @@ export function ViewerHeader({
           <span className="viewer-loading-indicator">Loading overlays…</span>
         )}
         {overlayUpdating && (
-          <span className="viewer-loading-indicator">Overlay updating…</span>
+          <span className="viewer-loading-indicator">
+            Display updating… Saved objects remain available for analysis.
+          </span>
         )}
         {/* The correction to the indicator above. Somebody who has been
             watching "Overlay updating…" is watching this spot, so the

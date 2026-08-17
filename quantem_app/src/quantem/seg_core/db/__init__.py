@@ -14,6 +14,7 @@ from .prob_maps import (
     get_prob_map_file_path,
     load_prob_map_from_file,
     load_prob_map_from_path,
+    load_prob_map_uint8_from_path,
     prob_map_file_exists,
     save_probability_map,
 )
@@ -25,5 +26,6 @@ __all__ = [
     "prob_map_file_exists",
     "save_probability_map",
     "load_prob_map_from_path",
+    "load_prob_map_uint8_from_path",
     "load_prob_map_from_file",
 ]

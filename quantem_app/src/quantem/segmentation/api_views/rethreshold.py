@@ -35,6 +35,7 @@ that file.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from urllib.parse import urlencode
 
 from django.db import transaction
@@ -67,9 +68,10 @@ from quantem.segmentation.models import (
     SegmentationResultVersion,
     SegmentObject,
 )
-from quantem.segmentation.overlay_ngff.dirty import full_image_dirty_bbox
+from quantem.segmentation.overlay_ngff.dirty import merge_dirty_bboxes
 from quantem.segmentation.overlay_ngff.mutations import (
     register_overlay_mutation_all_bundles,
+    register_state_mutation,
 )
 from quantem.segmentation.prob_maps.persistence import stored_map_readiness
 from quantem.segmentation.prob_maps.preview import (
@@ -217,6 +219,86 @@ def _manual_review_geometries(segmentation: ImageSegmentation) -> list:
     return geometries
 
 
+def _pixel_contender_bboxes(
+    segmentation: ImageSegmentation,
+    source_model: str,
+) -> list[BaseGeometry]:
+    """Bounding boxes of the live objects that can already own a candidate's pixels.
+
+    The overlay raster bakes the pixel-priority ladder into paint order --
+    ``PRIORITY_CANDIDATE`` < ``PRIORITY_EXCLUDED`` < ``PRIORITY_CONFIRMED``,
+    ties broken by descending area (:mod:`quantem.segmentation.overlay_ngff`) --
+    so which object owns a contested pixel is settled when the raster is
+    written, not when it is rendered.  Confirming a candidate lifts it above
+    every rejected object and above the other models' candidates it overlaps,
+    and nothing else re-rasterises those pixels, because a plain CANDIDATE ->
+    CONFIRMED flip is otherwise pure LUT work.  Left alone they stay assigned to
+    an object the confirmed-display LUT hides, so the newly confirmed object is
+    drawn with a bite out of it and -- now that Analysis reuses the settled
+    raster instead of re-rasterising polygons -- measured with the same bite
+    missing.
+
+    The candidates being confirmed are excluded: they all move to the same
+    priority together, so their order among themselves does not change.
+    ``CONFIRMED`` objects are excluded too, because an overlap with one of those
+    is arbitrated geometrically by :func:`_confirm_model_candidates`, which
+    already reports the changed outlines as dirty regions.
+
+    No geometry is decoded: four float columns are all a rectangle test needs.
+    In the ordinary case -- one model, nothing rejected -- the query comes back
+    empty, and Confirm stays the one bulk UPDATE it became this release.
+    """
+
+    return [
+        box(min_x, min_y, max_x, max_y)
+        for min_x, min_y, max_x, max_y in SegmentObject.objects.filter(
+            segmentation=segmentation,
+            superseded_at__isnull=True,
+        )
+        .exclude(source_model=source_model, label_state="CANDIDATE")
+        .exclude(label_state="CONFIRMED")
+        .values_list("bbox_minx", "bbox_miny", "bbox_maxx", "bbox_maxy")
+    ]
+
+
+def _contested_candidate_regions(
+    segmentation: ImageSegmentation,
+    source_model: str,
+) -> list[BaseGeometry]:
+    """The regions a bulk-UPDATE confirmation still has to repaint.
+
+    Deliberately not "does this image hold anything rejected": rejecting a few
+    candidates and then confirming the rest is the ordinary dial workflow, and
+    treating that as a reason to re-rasterise the whole image would hand back
+    the full rebuild this fast path exists to remove.  Only an actual overlap
+    matters, and an overlap is a rectangle test on indexed columns -- no
+    geometry is decoded here.
+
+    Each returned rectangle is the intersection of two bounding boxes, which
+    contains the intersection of the two outlines, so the dirty region can never
+    be smaller than the set of pixels whose owner changed.
+    """
+
+    contenders = _pixel_contender_bboxes(segmentation, source_model)
+    if not contenders:
+        return []
+
+    tree = STRtree(contenders)
+    regions: list[BaseGeometry] = []
+    for min_x, min_y, max_x, max_y in SegmentObject.objects.filter(
+        segmentation=segmentation,
+        source_model=source_model,
+        label_state="CANDIDATE",
+        superseded_at__isnull=True,
+    ).values_list("bbox_minx", "bbox_miny", "bbox_maxx", "bbox_maxy"):
+        candidate_bbox = box(min_x, min_y, max_x, max_y)
+        for position in tree.query(candidate_bbox).tolist():
+            contested = safe_intersection(candidate_bbox, contenders[int(position)])
+            if contested is not None:
+                regions.append(contested)
+    return regions
+
+
 def _partition_model_candidates(
     segmentation: ImageSegmentation,
     source_model: str,
@@ -319,12 +401,47 @@ def _post_exclusion_polygons(
     return [polygon for polygon in polygons if geometry_area(polygon) >= min_area]
 
 
+@dataclass
+class _ModelConfirmation:
+    """The database changes made by one whole-model confirmation.
+
+    ``dirty_geometries`` contains only outlines whose pixels changed or
+    disappeared, plus the small regions where a plain CANDIDATE -> CONFIRMED
+    flip takes ownership of a pixel away from a rejected or other-model object
+    (see :func:`_pixel_contender_bboxes`).  An uncontested plain transition is
+    deliberately absent: object state lives in the overlay LUT and therefore
+    needs no raster work.  Keeping that distinction here, at the operation that
+    knows what happened, prevents the API view from invalidating the whole image
+    for a status-only bulk update.
+    """
+
+    confirmed_count: int = 0
+    merged_candidate_count: int = 0
+    clipped_candidate_count: int = 0
+    filtered_after_overlap_count: int = 0
+    created_fragment_count: int = 0
+    deleted_confirmed_count: int = 0
+    dirty_geometries: list[BaseGeometry] = field(default_factory=list)
+    affected_source_models: set[str] = field(default_factory=set)
+
+    def payload(self) -> dict[str, int]:
+        return {
+            "confirmed_count": self.confirmed_count,
+            "merged_candidate_count": self.merged_candidate_count,
+            "clipped_candidate_count": self.clipped_candidate_count,
+            "filtered_after_overlap_count": self.filtered_after_overlap_count,
+            "created_fragment_count": self.created_fragment_count,
+            "deleted_confirmed_count": self.deleted_confirmed_count,
+        }
+
+
 def _confirm_model_candidates(
     *,
     segmentation: ImageSegmentation,
     candidates: list[SegmentObject],
     min_area: int,
-) -> dict[str, int]:
+    source_model: str,
+) -> _ModelConfirmation:
     """Accept model candidates without ever seam-splitting a confirmed object.
 
     Preview candidates retain the full post-processed model geometry.  At this
@@ -352,6 +469,12 @@ def _confirm_model_candidates(
     )
     confirmed_geometries = [segment.geometry for segment in confirmed]
     tree = STRtree(confirmed_geometries) if confirmed_geometries else None
+    # A second tree, used for nothing but dirtying: rejected objects and other
+    # models' candidates take no part in the merge/clip arithmetic below -- they
+    # must not move a single confirmed boundary -- but they do own raster pixels
+    # that a confirmation takes back.
+    contenders = _pixel_contender_bboxes(segmentation, source_model)
+    contender_tree = STRtree(contenders) if contenders else None
     current_geometry = {
         str(segment.id): geometry
         for segment, geometry in zip(confirmed, confirmed_geometries, strict=True)
@@ -359,12 +482,7 @@ def _confirm_model_candidates(
     deleted_confirmed_ids: set[str] = set()
 
     plain_confirmations: list[SegmentObject] = []
-    accepted_candidates = 0
-    merged_candidates = 0
-    clipped_candidates = 0
-    filtered_candidates = 0
-    created_fragments = 0
-    deleted_confirmed = 0
+    outcome = _ModelConfirmation()
 
     for candidate in candidates:
         candidate_geometry = candidate.geometry
@@ -380,6 +498,17 @@ def _confirm_model_candidates(
                     neighbours.append((existing, geometry))
 
         if not neighbours:
+            if contender_tree is not None:
+                # The outline is untouched, so this costs no geometry work, but
+                # the flip re-arbitrates every pixel the candidate shares with a
+                # contender and only a repaint can settle that.
+                for position in contender_tree.query(candidate_geometry).tolist():
+                    contested = safe_intersection(
+                        candidate_geometry,
+                        contenders[int(position)],
+                    )
+                    if contested is not None:
+                        outcome.dirty_geometries.append(contested)
             candidate.label_state = "CONFIRMED"
             candidate.refined = "UNREFINED"
             candidate.confidence_score = None
@@ -388,7 +517,7 @@ def _confirm_model_candidates(
                 refined=candidate.refined,
             )
             plain_confirmations.append(candidate)
-            accepted_candidates += 1
+            outcome.confirmed_count += 1
             continue
 
         qualifying = [
@@ -397,6 +526,11 @@ def _confirm_model_candidates(
             if overlap_qualifies_for_union(candidate_geometry, geometry)
         ]
         if qualifying:
+            outcome.affected_source_models.update(
+                normalized
+                for segment, _geometry in qualifying
+                if (normalized := normalize_source_model(segment.source_model))
+            )
             qualifying_ids = {str(segment.id) for segment, _geometry in qualifying}
             # Pixels belonging to a distinct, non-qualifying confirmed object
             # are never pulled into the union through the candidate.
@@ -418,7 +552,8 @@ def _confirm_model_candidates(
             if not merged_polygons:
                 # Defensive fallback: every qualifying existing object is real
                 # geometry, so a failed union must preserve them, not delete them.
-                filtered_candidates += 1
+                outcome.filtered_after_overlap_count += 1
+                outcome.dirty_geometries.append(candidate_geometry)
                 candidate.delete()
                 continue
             # Usually this is one connected union. If clipping against a
@@ -454,10 +589,14 @@ def _confirm_model_candidates(
                         features=dict(candidate.features or {}),
                         run_version=candidate.run_version,
                     )
-                    created_fragments += 1
+                    outcome.created_fragment_count += 1
+                    outcome.dirty_geometries.append(polygon)
                     continue
 
                 primary = min(members, key=_confirmed_primary_key)
+                outcome.dirty_geometries.extend(
+                    geometry for segment, geometry in qualifying if segment in members
+                )
                 primary.geometry = polygon
                 primary.centroid = polygon.centroid
                 primary.bbox = polygon.envelope
@@ -470,10 +609,12 @@ def _confirm_model_candidates(
                         id__in=redundant_ids,
                     ).delete()
                     deleted_confirmed_ids.update(redundant_ids)
-                    deleted_confirmed += len(redundant_ids)
+                    outcome.deleted_confirmed_count += len(redundant_ids)
+                outcome.dirty_geometries.append(polygon)
+            outcome.dirty_geometries.append(candidate_geometry)
             candidate.delete()
-            accepted_candidates += 1
-            merged_candidates += 1
+            outcome.confirmed_count += 1
+            outcome.merged_candidate_count += 1
             continue
 
         remainder = _candidate_remainder(
@@ -482,8 +623,9 @@ def _confirm_model_candidates(
         )
         pieces = _post_exclusion_polygons(remainder, min_area=min_area)
         if not pieces:
+            outcome.dirty_geometries.append(candidate_geometry)
             candidate.delete()
-            filtered_candidates += 1
+            outcome.filtered_after_overlap_count += 1
             continue
 
         pieces.sort(key=geometry_area, reverse=True)
@@ -509,6 +651,7 @@ def _confirm_model_candidates(
                 "status",
             ]
         )
+        outcome.dirty_geometries.extend([candidate_geometry, primary_piece])
         for piece in pieces[1:]:
             SegmentObject.objects.create(
                 segmentation=segmentation,
@@ -522,9 +665,10 @@ def _confirm_model_candidates(
                 features=dict(candidate.features or {}),
                 run_version=candidate.run_version,
             )
-        accepted_candidates += 1
-        clipped_candidates += 1
-        created_fragments += max(0, len(pieces) - 1)
+            outcome.dirty_geometries.append(piece)
+        outcome.confirmed_count += 1
+        outcome.clipped_candidate_count += 1
+        outcome.created_fragment_count += max(0, len(pieces) - 1)
 
     if plain_confirmations:
         SegmentObject.objects.bulk_update(
@@ -533,14 +677,7 @@ def _confirm_model_candidates(
             batch_size=500,
         )
 
-    return {
-        "confirmed_count": accepted_candidates,
-        "merged_candidate_count": merged_candidates,
-        "clipped_candidate_count": clipped_candidates,
-        "filtered_after_overlap_count": filtered_candidates,
-        "created_fragment_count": created_fragments,
-        "deleted_confirmed_count": deleted_confirmed,
-    }
+    return outcome
 
 
 def _refusal(detail: str, *, code: ErrorCode | None = None) -> Response:
@@ -955,26 +1092,88 @@ class SegmentationConfirmModelOutputView(APIView):
             )
 
         with transaction.atomic():
-            confirmable, protected, manual_roi_count = _partition_model_candidates(
-                segmentation,
-                source_model,
+            # The overwhelmingly common first confirmation has no previous
+            # confirmed geometry and no manually reviewed area.  It is a pure
+            # lifecycle transition, so make it one SQL UPDATE instead of
+            # decoding every candidate WKB, constructing an STRtree and then
+            # bulk-updating model instances we never otherwise needed.
+            has_manual_review = (
+                CompletedROI.objects.filter(segmentation=segmentation).exists()
+                or RoiSegmentationStatus.objects.filter(
+                    segmentation=segmentation,
+                    is_complete=True,
+                ).exists()
             )
-            confirmation = _confirm_model_candidates(
+            has_confirmed_geometry = SegmentObject.objects.filter(
                 segmentation=segmentation,
-                candidates=confirmable,
-                min_area=min_area,
-            )
+                label_state="CONFIRMED",
+                superseded_at__isnull=True,
+            ).exists()
+            if not has_manual_review and not has_confirmed_geometry:
+                # Measured before the UPDATE, while these rows are still this
+                # model's candidates: afterwards the query below cannot tell the
+                # objects being confirmed from the ones they contest.
+                contested_regions = _contested_candidate_regions(segmentation, source_model)
+                confirmed_count = SegmentObject.objects.filter(
+                    segmentation=segmentation,
+                    source_model=source_model,
+                    label_state="CANDIDATE",
+                    superseded_at__isnull=True,
+                ).update(
+                    label_state="CONFIRMED",
+                    refined="UNREFINED",
+                    confidence_score=None,
+                    status=status_for_segment_lifecycle(
+                        label_state="CONFIRMED",
+                        refined="UNREFINED",
+                    ),
+                )
+                confirmation = _ModelConfirmation(confirmed_count=int(confirmed_count))
+                confirmation.dirty_geometries.extend(contested_regions)
+                lut_only_confirmation = True
+                protected: list[SegmentObject] = []
+                manual_roi_count = 0
+            else:
+                lut_only_confirmation = False
+                confirmable, protected, manual_roi_count = _partition_model_candidates(
+                    segmentation,
+                    source_model,
+                )
+                confirmation = _confirm_model_candidates(
+                    segmentation=segmentation,
+                    candidates=confirmable,
+                    min_area=min_area,
+                    source_model=source_model,
+                )
             changed = bool(
-                confirmation["confirmed_count"]
-                or confirmation["filtered_after_overlap_count"]
-                or confirmation["deleted_confirmed_count"]
+                confirmation.confirmed_count
+                or confirmation.filtered_after_overlap_count
+                or confirmation.deleted_confirmed_count
             )
-            if changed:
+            dirty_bbox = merge_dirty_bboxes(segmentation, confirmation.dirty_geometries)
+            if dirty_bbox is not None:
+                if lut_only_confirmation:
+                    # Nothing here changed an outline; the dirty region is only
+                    # the handful of pixels a rejected or other-model object
+                    # still owns.  Bump the LUT first so the recolour is as
+                    # instant as it is for an uncontested confirmation instead
+                    # of waiting on the queued repaint.
+                    register_state_mutation(segmentation, source_model=source_model)
                 overlay = register_overlay_mutation_all_bundles(
                     segmentation,
-                    dirty_bbox=full_image_dirty_bbox(segmentation),
+                    dirty_bbox=dirty_bbox,
                     source_model=source_model,
+                    source_models={source_model, *confirmation.affected_source_models},
                     allow_sync_partial=False,
+                )
+            elif changed:
+                # CANDIDATE -> CONFIRMED changes only the render-time LUT.  The
+                # object's label and pixels are already present in both the
+                # selected-model and confirmed-display bundles, so there is no
+                # raster or pyramid work to do and no overlay job to queue.
+                overlay = register_state_mutation(
+                    segmentation,
+                    source_model=source_model,
                 )
             else:
                 overlay = None
@@ -990,7 +1189,7 @@ class SegmentationConfirmModelOutputView(APIView):
             {
                 "segmentation_id": str(segmentation.id),
                 "source_model": source_model,
-                **confirmation,
+                **confirmation.payload(),
                 "min_area": min_area,
                 "skipped_manual_roi_count": len(protected),
                 "manual_roi_count": manual_roi_count,

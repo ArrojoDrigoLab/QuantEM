@@ -55,6 +55,7 @@ interface SegmentationRightPanelProps {
   layerControls: PaneOverlayLayerControls;
   onOverlayRevisionDisplayed?: (revision: number | null) => void;
   confirmingObjects?: boolean;
+  confirmationCommitted?: boolean;
 }
 
 export function SegmentationRightPanel({
@@ -82,6 +83,7 @@ export function SegmentationRightPanel({
   layerControls,
   onOverlayRevisionDisplayed,
   confirmingObjects = false,
+  confirmationCommitted = false,
 }: SegmentationRightPanelProps) {
   const [removeObjectHover, setRemoveObjectHover] = useState({
     segmentId: null as string | null,
@@ -291,7 +293,11 @@ export function SegmentationRightPanel({
             aria-live="polite"
           >
             <span className="confirming-objects-spinner" aria-hidden="true" />
-            <span>Confirming these objects...</span>
+            <span>
+              {confirmationCommitted
+                ? "Objects are confirmed and ready for analysis. Updating this display…"
+                : "Saving confirmed objects…"}
+            </span>
           </div>
         ) : null}
       </div>

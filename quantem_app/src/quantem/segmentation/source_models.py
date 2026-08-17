@@ -195,7 +195,66 @@ def infer_source_model_from_features(
     return default_source_model_for_organelle(segmentation_type_internal_name)
 
 
+def overlay_bundle_source_filter(source_model: str | None) -> Q | None:
+    """Objects stored in one model-specific raster bundle.
+
+    The source-less bundle is the shared confirmed-display raster and keeps all
+    objects so a later state-only confirmation can reveal an already-painted
+    label without rebuilding it.  A named bundle keeps that model's objects
+    **and every hand-drawn one**, and the client chooses candidate or confirmed
+    visibility through the LUT.
+
+    Hand-drawn objects are in here because the viewer composites exactly two
+    layers, and no other arrangement can show one.  The candidate layer reads
+    the named bundle with ``confirmed`` and ``excluded`` hidden; the confirmed
+    layer reads the source-less bundle with ``candidate`` and ``excluded``
+    hidden (``useOverlayLayerControls``).  Narrowing this to
+    ``Q(source_model=<this model>)`` alone therefore left an outline the user
+    had drawn but not yet confirmed with nowhere to be painted -- filtered out
+    of the named bundle, and hidden in the source-less one by the confirmed-only
+    LUT -- so it disappeared from the screen as soon as any model bundle
+    existed.  That is precisely what owner ruling R13 forbids ("a run must not
+    overwrite or hide what the user annotated"), and
+    :mod:`~quantem.segmentation.tests.test_annotation_preservation_invariant`
+    pins it.
+
+    Membership is state-independent on purpose: a hand-drawn object belongs to
+    the named bundle whether it is CANDIDATE or CONFIRMED, so an ordinary
+    Confirm still moves no pixels between bundles and stays a LUT-only update.
+
+    What is *not* in here is another model's CONFIRMED objects.  Those already
+    have a home in the confirmed display, and admitting them into every model
+    layer was what made one confirmation dirty every bundle.  Hand-drawn objects
+    do not reintroduce that cost: there are a handful of them per image, and
+    they are created by a deliberate gesture rather than by a run.
+
+    This is *bundle membership*, deliberately narrower than
+    :func:`source_model_queryset_filter`.  The two were briefly the same
+    function; collapsing them made the segment click/hover/region/ROI endpoints
+    stop returning hand-drawn and other-model confirmed objects, so those
+    objects stayed painted by the confirmed display while silently becoming
+    un-hoverable and un-deletable.  Keep them separate.
+    """
+    normalized = normalize_source_model(source_model)
+    if not normalized:
+        return None
+    return Q(source_model=normalized) | Q(source_model=SOURCE_MODEL_MANUAL)
+
+
 def source_model_queryset_filter(source_model: str | None) -> Q | None:
+    """Objects the user can see and act on under one model selection.
+
+    The model picker chooses whose *candidates* are under review, not which
+    objects exist.  Everything already accepted into the segmentation stays
+    addressable regardless of which model produced it, and hand-drawn objects
+    are never hidden by a model selection -- the user drew them, so they must
+    remain hoverable, un-markable, rejectable and deletable under every picker
+    value.  Only another model's still-unreviewed candidates are filtered out.
+
+    This is the *user selection* rule for the segment point/region/ROI query
+    endpoints and inferred-segment selection.  For raster bundle membership use
+    :func:`overlay_bundle_source_filter` instead.
+    """
     normalized = normalize_source_model(source_model)
     if not normalized:
         return None
@@ -240,6 +299,7 @@ __all__ = [
     "get_source_model_definition",
     "infer_source_model_from_features",
     "normalize_source_model",
+    "overlay_bundle_source_filter",
     "resolve_create_segmentation_request",
     "resolve_segmenter_internal_name",
     "source_model_payload",

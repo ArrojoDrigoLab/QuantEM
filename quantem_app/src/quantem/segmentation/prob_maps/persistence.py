@@ -82,12 +82,10 @@ from quantem.core.config import STORAGE_DIR
 from quantem.inference.resample import (
     QUANTIZATION_ID,
     NativeProbabilityMap,
-    quantize_probability,
 )
 from quantem.seg_core.db.inference import StoredMapUnavailable
 from quantem.seg_core.db.prob_maps import (
     get_prob_map_file_path,
-    load_prob_map_from_path,
     prob_map_file_exists,
     save_probability_map,
 )
@@ -551,15 +549,12 @@ def load_stored_native_map(
     the sentence on screen say which of the two happened, and stops a legacy map
     being quietly re-decided under conventions it was never written under.
 
-    **Why the bytes are recovered by requantising, not by a second decoder.**
-    The stored PNG is uint8 and :func:`load_prob_map_from_path` reads it as
-    ``uint8 / 255``; running that back through
-    :func:`~quantem.inference.resample.quantize_probability` returns the
-    original bytes exactly, for all 256 levels (there is a test). Opening the
-    file again here would add a fifth place in the tree that turns a file into
-    pixels, which
-    ``quantem/assets/tests/test_ngff_decode_chokepoint.py`` exists to prevent --
-    and would buy nothing, since the round trip is lossless.
+    **Why the bytes are loaded directly.** The stored PNG is already the uint8
+    authority thresholded by inference. Loading it through
+    :func:`load_prob_map_uint8_from_path` avoids an image-sized float allocation
+    followed by an exactly reversible requantisation. The helper remains the
+    single probability-map decode chokepoint; this function does not open image
+    files itself.
     """
     prefix = str(getattr(segmenter, "prob_map_prefix", "") or "")
     if not prefix:
@@ -606,12 +601,14 @@ def load_stored_native_map(
         )
         raise StoredMapUnavailable(LEGACY_MAP_MESSAGE)
 
-    data = load_prob_map_from_path(segmentation, model_name, prefix, roi_id)
+    from quantem.seg_core.db.prob_maps import load_prob_map_uint8_from_path
+
+    data = load_prob_map_uint8_from_path(segmentation, model_name, prefix, roi_id)
     if data is None:  # deleted between the existence check and the read
         return None
 
     native = NativeProbabilityMap.from_stored(
-        quantize_probability(data),
+        data,
         interpolation=metadata.get("resample_interpolation"),
         back_factor=metadata.get("resample_back_factor"),
         quantization=metadata.get("quantization"),

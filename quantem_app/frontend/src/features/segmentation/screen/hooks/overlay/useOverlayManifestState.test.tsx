@@ -90,6 +90,66 @@ describe("useOverlayManifestState", () => {
     expect(result.current.usesRasterReviewOverlay).toBe(true);
   });
 
+  it("surfaces a failed confirmed display even when the model display is ready", async () => {
+    getManifestMock.mockImplementation((_segmentationId, sourceModel) =>
+      Promise.resolve(
+        sourceModel
+          ? makeManifest({ source_model: sourceModel })
+          : failedManifest({ source_model: null })
+      )
+    );
+    const { result } = renderState();
+
+    await waitFor(() => expect(result.current.overlayBuildFailed).toBe(true));
+    expect(result.current.confirmedOverlayBuildFailed).toBe(true);
+    expect(result.current.failedOverlayManifest?.source_model).toBeNull();
+    expect(result.current.overlayBuildError).toContain("WinError 183");
+    expect(result.current.failedOverlays.map((entry) => entry.role)).toEqual([
+      "confirmed",
+    ]);
+  });
+
+  /**
+   * A confirm dirties the named-model bundle and the confirmed-display bundle
+   * separately and gets a rebuild job for each, so both can be sitting in FAILED
+   * at once. This used to collapse to a single manifest, which meant the second
+   * failure was never shown and the one retry button re-queued only the first
+   * bundle -- the user fixed "the overlay" and one display stayed broken.
+   */
+  it("lists every failed bundle, not just the first one", async () => {
+    getManifestMock.mockImplementation((_segmentationId, sourceModel) =>
+      Promise.resolve(failedManifest({ source_model: sourceModel ?? null }))
+    );
+    const { result } = renderState();
+
+    await waitFor(() => expect(result.current.failedOverlays).toHaveLength(2));
+    expect(result.current.failedOverlays).toEqual([
+      { role: "model", manifest: expect.objectContaining({ source_model: "quantem:mito" }) },
+      { role: "confirmed", manifest: expect.objectContaining({ source_model: null }) },
+    ]);
+  });
+
+  /**
+   * The role has to be carried from the hook slot the manifest came out of, not
+   * read off the payload: `ensure_overlay_manifest` can answer a model-scoped
+   * request with the confirmed state's payload -- `display_role: "confirmed"`,
+   * `source_model: null` -- with only the model's `last_error` grafted on. A
+   * card labelled from the payload would then name the wrong display.
+   */
+  it("labels a failure by the bundle asked for, not the payload's own role", async () => {
+    getManifestMock.mockImplementation((_segmentationId, sourceModel) =>
+      Promise.resolve(
+        sourceModel
+          ? failedManifest({ display_role: "confirmed", source_model: null })
+          : makeManifest({ display_role: "confirmed", source_model: null })
+      )
+    );
+    const { result } = renderState();
+
+    await waitFor(() => expect(result.current.failedOverlays).toHaveLength(1));
+    expect(result.current.failedOverlays[0]?.role).toBe("model");
+  });
+
   it("says 'no reason recorded' apart from 'no failure'", async () => {
     getManifestMock.mockResolvedValue(failedManifest({ last_error: "" }));
     const { result } = renderState();

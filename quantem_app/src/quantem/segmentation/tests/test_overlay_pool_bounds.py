@@ -61,6 +61,7 @@ from django.test import TestCase
 from shapely.geometry import box
 
 from quantem.assets.models import Asset, Rendition
+from quantem.jobs.reporter import JobCancelledError
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
 from quantem.segmentation.overlay_ngff import mutations
 from quantem.segmentation.overlay_ngff.constants import (
@@ -176,17 +177,36 @@ def _stand_in_payloads(count: int) -> list[dict]:
     return [{"interior": (index, index, index + 1, index + 1)} for index in range(count)]
 
 
-def _legacy_rasterize_level0(arrays, payloads, *, use_pool: bool) -> None:
+def _legacy_rasterize_level0(
+    arrays,
+    payloads,
+    *,
+    use_pool: bool,
+    on_progress=None,
+    cancel_check=None,
+) -> None:
     """The body that shipped before stage S2, kept as a negative control.
 
     Copied from ``mutations._rasterize_level0`` as it stood at the start of this
     stage. Its only job here is to prove the recorder above can tell the two
     apart -- a bound that passes for both is not measuring anything.
 
-    One deliberate deviation from what shipped: the worker count is read from
-    the same accessor the fixed code reads, not from the module constant it used
-    to be. Otherwise this control would differ from the real function in *two*
-    ways, and only one of them is under test here.
+    Two deliberate deviations from what shipped, both of the same kind: this
+    control must differ from the real function in *exactly one* way, the
+    submission discipline, because that is the only thing under test.
+
+    * The worker count is read from the same accessor the fixed code reads, not
+      from the module constant it used to be.
+    * ``on_progress`` and ``cancel_check`` did not exist when this body shipped;
+      v0.1.6 added them to ``_rasterize_level0`` so an overlay job can report
+      granular progress and answer a cancel between tiles. They are honoured
+      here rather than accepted and dropped. Dropping them would still satisfy
+      the byte-identity test -- neither one touches a pixel -- but it would make
+      this control silently uncancellable and silently mute, so the day someone
+      drives the legacy arm to show that cancellation or progress reporting is
+      *not* what changed the bytes, they would be reading a difference this file
+      invented. The call sites match the real function's: cancel before writing
+      each tile, report after writing it, counting tiles written.
     """
     if not payloads:
         return
@@ -195,13 +215,23 @@ def _legacy_rasterize_level0(arrays, payloads, *, use_pool: bool) -> None:
             max_workers=mutations.raster_process_pool_size(),
             initializer=mutations.django_pool_initializer,
         ) as executor:
+            completed = 0
             for result in executor.map(mutations.render_module.rasterize_tile_worker, payloads):
+                if cancel_check is not None:
+                    cancel_check()
                 mutations._write_tile_result(arrays, result)
+                completed += 1
+                if on_progress is not None:
+                    on_progress("raster", completed, len(payloads))
     else:
-        for payload in payloads:
+        for index, payload in enumerate(payloads, start=1):
+            if cancel_check is not None:
+                cancel_check()
             mutations._write_tile_result(
                 arrays, mutations.render_module.rasterize_tile_worker(payload)
             )
+            if on_progress is not None:
+                on_progress("raster", index, len(payloads))
 
 
 def _run_rasterizer(function, *, tiles: int, workers: int):
@@ -286,6 +316,104 @@ def test_the_recorder_catches_the_unbounded_submission_it_is_guarding_against():
     assert small.peak_outstanding == 100
     assert large.peak_outstanding == 400
     assert large.peak_held_bytes == 4 * small.peak_held_bytes
+
+
+class _HookProbe:
+    """The two v0.1.6 hooks, instrumented, owned by the caller and not the run.
+
+    Everything the run touches lives on the probe rather than being returned,
+    because the interesting case here is the run that *raises*: a cancelled
+    rasterisation has to be inspected for what it managed to write before it
+    stopped, and tallies returned by value die with the frame.
+    """
+
+    def __init__(self, *, cancel_after: int | None = None) -> None:
+        self.sink = _SinkArray()
+        self.progress: list[tuple[str, int, int]] = []
+        self.checks = 0
+        self._cancel_after = cancel_after
+
+    def on_progress(self, stage, done, total) -> None:
+        self.progress.append((stage, done, total))
+
+    def cancel_check(self) -> None:
+        self.checks += 1
+        if self._cancel_after is not None and self.checks > self._cancel_after:
+            raise JobCancelledError("Job cancellation requested.")
+
+
+def _drive_with_hooks(function, probe: _HookProbe, *, tiles: int, workers: int) -> None:
+    """Run one rasteriser over stand-in tiles with the v0.1.6 hooks attached.
+
+    Separate from :func:`_run_rasterizer` because that helper asserts every tile
+    was written, which is exactly what a cancelled run must *not* do.
+    """
+    _RecordingExecutor.instances.clear()
+    arrays = {"labels": [probe.sink], "border": [probe.sink]}
+    with (
+        patch.object(mutations, "ProcessPoolExecutor", _RecordingExecutor),
+        patch.object(mutations, "raster_process_pool_size", lambda: workers, create=True),
+        patch.object(mutations.render_module, "rasterize_tile_worker", _stand_in_worker),
+    ):
+        function(
+            arrays,
+            _stand_in_payloads(tiles),
+            use_pool=True,
+            on_progress=probe.on_progress,
+            cancel_check=probe.cancel_check,
+        )
+
+
+@pytest.mark.parametrize(
+    "function",
+    [mutations._rasterize_level0, _legacy_rasterize_level0],
+    ids=["windowed", "legacy"],
+)
+def test_both_arms_report_and_check_for_cancellation_once_per_written_tile(function):
+    """The control's *other* fidelity: it differs in submission discipline only.
+
+    v0.1.6 gave ``_rasterize_level0`` an ``on_progress`` reporter and a
+    ``cancel_check``, and the negative control above had to grow the same two
+    parameters to stay callable. Accepting them and quietly dropping them would
+    have passed the byte-identity test just as well -- neither hook touches a
+    pixel -- and would have left a control that is silently uncancellable and
+    silently mute, so anyone later using this file to show that granular
+    progress or responsive cancellation is not what moved the bytes would be
+    reading a difference the test file invented. Pinned here so the two bodies
+    cannot drift apart again.
+    """
+    probe = _HookProbe()
+
+    _drive_with_hooks(function, probe, tiles=20, workers=4)
+
+    assert probe.progress == [("raster", index, 20) for index in range(1, 21)]
+    assert probe.checks == 20, (
+        f"cancellation was asked about {probe.checks} times over 20 tiles: the "
+        "user's Cancel is answered once a tile, not once a run"
+    )
+    assert probe.sink.writes == 40  # a labels crop and a border crop per tile
+
+
+@pytest.mark.parametrize(
+    "function",
+    [mutations._rasterize_level0, _legacy_rasterize_level0],
+    ids=["windowed", "legacy"],
+)
+def test_both_arms_stop_on_the_cancel_instead_of_finishing_the_canvas(function):
+    """Cancel before the third tile: two tiles written, not twenty.
+
+    The windowed loop has already *submitted* a window's worth of tiles by then,
+    which is the point -- responsiveness is decided by where the check sits in
+    the consume loop, not by how much work is in flight.
+    """
+    probe = _HookProbe(cancel_after=2)
+
+    with pytest.raises(JobCancelledError):
+        _drive_with_hooks(function, probe, tiles=20, workers=4)
+
+    assert probe.checks == 3
+    assert probe.progress == [("raster", 1, 20), ("raster", 2, 20)]
+    assert probe.sink.writes == 4
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +671,14 @@ def cap(limit_bytes):
         raise ctypes.WinError(ctypes.get_last_error())
 
 
-def legacy_rasterize_level0(arrays, payloads, *, use_pool):
+def legacy_rasterize_level0(arrays, payloads, *, use_pool, on_progress=None, cancel_check=None):
+    """The pre-S2 body again, in the capped child. Kept in step with the
+    in-process control above on purpose: the two arms of this file must not
+    drift apart, or "unbounded" would mean two different things depending on
+    which test you read. ``on_progress``/``cancel_check`` are honoured for the
+    same reason they are there -- the only difference from the shipped
+    rasteriser must be the submission discipline.
+    """
     from concurrent.futures import ProcessPoolExecutor
 
     from quantem.jobs.pool import django_pool_initializer
@@ -552,8 +687,14 @@ def legacy_rasterize_level0(arrays, payloads, *, use_pool):
         max_workers=mutations.raster_process_pool_size(),
         initializer=django_pool_initializer,
     ) as executor:
+        completed = 0
         for result in executor.map(render_module.rasterize_tile_worker, payloads):
+            if cancel_check is not None:
+                cancel_check()
             mutations._write_tile_result(arrays, result)
+            completed += 1
+            if on_progress is not None:
+                on_progress("raster", completed, len(payloads))
 
 
 def main():

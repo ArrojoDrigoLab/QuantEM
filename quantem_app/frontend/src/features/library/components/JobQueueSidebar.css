@@ -184,6 +184,30 @@
   font-size: 14px;
 }
 
+.job-queue-category {
+  display: block;
+  width: fit-content;
+  margin-bottom: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.14);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.job-queue-category.analysis {
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.job-queue-category.display {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.17);
+}
+
 .job-queue-status {
   font-size: 11px;
   text-transform: uppercase;

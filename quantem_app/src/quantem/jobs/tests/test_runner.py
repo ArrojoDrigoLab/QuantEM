@@ -8,7 +8,9 @@ from django.utils import timezone
 
 from quantem.jobs.constants import (
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
+    JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
     JOB_TYPE_REFRESH_SEGMENT_FEATURES,
+    JOB_TYPE_RUN_ANALYSIS,
     JOB_TYPE_RUN_SEGMENTATION_FULL,
     JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
     JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
@@ -227,6 +229,98 @@ class JobRunnerFailureHandlingTests(TestCase):
 
 
 class JobRunnerConcurrencyTests(TestCase):
+    @patch.dict(os.environ, {"JOB_CPU_WORKERS": "4"}, clear=False)
+    def test_background_maintenance_never_runs_two_at_a_time(self):
+        """Two of these at once means two raster process pools on one box."""
+        runner = JobRunner()
+        runner.running["overlay"] = RunningJob(
+            _AliveProcess(),
+            "cpu",
+            JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
+        )
+
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_REFRESH_SEGMENT_FEATURES))
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY))
+
+    @patch.dict(os.environ, {"JOB_CPU_WORKERS": "4"}, clear=False)
+    def test_background_maintenance_stands_aside_for_work_a_user_is_awaiting(self):
+        """Nothing preempts here, so maintenance yields by not starting."""
+        runner = JobRunner()
+        runner.running["analysis"] = RunningJob(
+            _AliveProcess(),
+            "cpu",
+            JOB_TYPE_RUN_ANALYSIS,
+        )
+
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY))
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_REFRESH_SEGMENT_FEATURES))
+
+    @patch.dict(os.environ, {"JOB_CPU_WORKERS": "4"}, clear=False)
+    def test_the_dial_and_analysis_are_never_queued_behind_display_maintenance(self):
+        """The regression this asymmetry exists for.
+
+        A preview leaves a whole-segmentation feature sweep behind it, and a
+        rebuild of each overlay bundle after that. Under a symmetric heavy gate
+        the user's next dial drag and their Run analysis both sat PENDING for
+        the several minutes the sweep took, because the scheduler skips a job
+        it cannot dispatch and no running job is ever displaced. On a machine
+        with heavy slots to spare they must start immediately instead.
+        """
+        runner = JobRunner()
+        runner.running["sweep"] = RunningJob(
+            _AliveProcess(),
+            "cpu",
+            JOB_TYPE_REFRESH_SEGMENT_FEATURES,
+        )
+
+        self.assertTrue(runner.can_dispatch("cpu", JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL))
+        self.assertTrue(runner.can_dispatch("cpu", JOB_TYPE_RUN_ANALYSIS))
+        # The direction the gate still points: more maintenance stays out.
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY))
+
+    @patch.dict(os.environ, {"JOB_CPU_WORKERS": "4"}, clear=False)
+    def test_interactive_heavy_jobs_still_run_one_at_a_time(self):
+        """Asymmetric towards maintenance, unchanged towards each other."""
+        runner = JobRunner()
+        runner.running["analysis"] = RunningJob(
+            _AliveProcess(),
+            "cpu",
+            JOB_TYPE_RUN_ANALYSIS,
+        )
+
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL))
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_RUN_ANALYSIS))
+
+    @patch("quantem.jobs.runner._detect_accelerator_devices", return_value=[])
+    @patch("quantem.jobs.runner.get_machine_profile")
+    def test_a_one_heavy_slot_laptop_is_still_protected_from_oversubscription(
+        self,
+        machine_profile,
+        _detect_accelerators,
+    ):
+        """The asymmetry must not become a back door onto a small machine.
+
+        Letting an interactive heavy job ignore maintenance is only safe
+        because it still pays an ordinary CPU slot, and ``cpu_slots`` defaults
+        to the profile's ``heavy_slots``. The ``small`` profile has one, so a
+        laptop refuses the second heavy job exactly as before; the workstation
+        profile's four absorb it.
+        """
+        machine_profile.return_value.heavy_slots = 1
+
+        with patch.dict(os.environ, {"JOB_CPU_WORKERS": ""}, clear=False):
+            runner = JobRunner()
+
+        self.assertEqual(runner.cpu_slots, 1)
+        runner.running["overlay"] = RunningJob(
+            _AliveProcess(),
+            "cpu",
+            JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
+        )
+
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_RUN_ANALYSIS))
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL))
+
     @patch.dict(
         os.environ,
         {"JOB_CPU_WORKERS": "", "JOB_UPLOAD_PIPELINE_WORKERS": ""},

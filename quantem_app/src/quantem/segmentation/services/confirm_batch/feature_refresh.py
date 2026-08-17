@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from quantem.jobs.constants import JOB_TYPE_REFRESH_SEGMENT_FEATURES, QUEUE_P1_INTERACTIVE
+from quantem.jobs.constants import JOB_DEFAULTS, JOB_TYPE_REFRESH_SEGMENT_FEATURES
 from quantem.jobs.models import Job
 
 
@@ -38,6 +38,7 @@ def _enqueue_segment_feature_refresh(
     segmentation_id: str,
     segment_ids: list[str],
     recompute_features: bool,
+    force: bool = False,
 ) -> Job | None:
     """Queue a per-object morphometrics refresh.
 
@@ -59,7 +60,7 @@ def _enqueue_segment_feature_refresh(
     queued a job that looped zero times and reported *"segment feature refresh
     complete"* at 100%.
     """
-    if not _segment_feature_refresh_triggers_enabled():
+    if not force and not _segment_feature_refresh_triggers_enabled():
         return None
 
     deduped_ids: list[str] = []
@@ -79,6 +80,7 @@ def _enqueue_segment_feature_refresh(
         if existing is not None:
             return existing
 
+    defaults = JOB_DEFAULTS[JOB_TYPE_REFRESH_SEGMENT_FEATURES]
     return Job.enqueue(
         job_type=JOB_TYPE_REFRESH_SEGMENT_FEATURES,
         payload={
@@ -86,11 +88,11 @@ def _enqueue_segment_feature_refresh(
             "segment_ids": deduped_ids,
             "recompute_features": bool(recompute_features),
         },
-        priority="high",
-        resource_class="cpu",
-        queue_name=QUEUE_P1_INTERACTIVE,
+        priority=defaults["priority"],
+        resource_class=defaults["resource_class"],
+        queue_name=defaults["queue_name"],
         tags=[
             f"segmentation:{segmentation_id}",
-            "interactive:segment-feature-refresh",
+            "background:segment-feature-refresh",
         ],
     )

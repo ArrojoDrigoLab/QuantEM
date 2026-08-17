@@ -10,7 +10,7 @@ import shutil
 import threading
 import time
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from typing import Any
@@ -21,17 +21,19 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from quantem.jobs.constants import (
+    JOB_DEFAULTS,
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
-    QUEUE_P1_INTERACTIVE,
 )
 from quantem.jobs.models import Job
 from quantem.jobs.pool import django_pool_initializer
+from quantem.jobs.reporter import JobCancelledError
 from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.models import ImageSegmentation, SegmentationOverlayState
 from quantem.segmentation.services.spatial_lookup import (
     bbox_intersects_filter,
     make_bbox,
 )
+from quantem.segmentation.source_models import SOURCE_MODEL_MANUAL
 
 from . import labels_lut
 from . import render as render_module
@@ -61,7 +63,7 @@ from .dirty import (
     full_image_dirty_bbox,
 )
 from .failure_text import describe_failure
-from .manifest import _write_debug_manifest
+from .manifest import OVERLAY_CANCELLED_MESSAGE, _write_debug_manifest
 from .paths import (
     OverlayStoreError,
     _close_overlay_arrays,
@@ -256,9 +258,9 @@ def bundle_write_lock(
 def overlay_jobs_for_bundle(segmentation_id: str, source_model: str | None = None):
     """Every rebuild job for one bundle, in no particular order.
 
-    Bundle, not segmentation: a segmentation has an aggregate overlay
-    (``source_model`` unset) and one per-source overlay for each model that
-    produced objects in it, each with its own state row, store and revisions.
+    Bundle, not segmentation: a segmentation has one confirmed-display overlay
+    (``source_model`` unset) and one per-source preview overlay for each model
+    that produced objects in it, each with its own state row, store and revisions.
     See :func:`_overlay_job_exists` for why two jobs in the queue is the correct
     number rather than a duplicate.
     """
@@ -276,12 +278,13 @@ def _overlay_job_exists(segmentation_id: str, source_model: str | None = None) -
     """Is a rebuild already queued or running **for this bundle**?
 
     Per bundle, not per segmentation, and that is the point. A segmentation has
-    an *aggregate* overlay (every object, ``source_model`` unset) and one
-    *per-source* overlay for each model that produced objects in it, each with
+    a *confirmed-display* overlay (an all-object raster rendered through a
+    confirmed-only LUT, ``source_model`` unset) and one *per-source* preview
+    overlay for each model that produced objects in it, each with
     its own :class:`SegmentationOverlayState`, its own zarr store and its own
     revision counters. Opening a nucleus segmentation asks the manifest endpoint
-    for both -- ``ensure_overlay_manifest`` serves the aggregate as the display
-    fallback while the per-source bundle builds -- so two rebuild jobs is the
+    for both -- ``ensure_overlay_manifest`` may serve the confirmed raster as a
+    temporary display fallback while the per-source bundle builds -- so two rebuild jobs is the
     correct number, and collapsing them would leave one of the two bundles
     permanently stale.
 
@@ -323,16 +326,17 @@ def queue_overlay_rebuild(
         payload["source_model"] = normalized_source_model
     tags = [
         f"segmentation:{segmentation.id}",
-        "interactive:overlay-rebuild",
+        "background:overlay-rebuild",
     ]
     if normalized_source_model:
         tags.append(f"source_model:{normalized_source_model}")
+    defaults = JOB_DEFAULTS[JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY]
     return Job.enqueue(
         job_type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
         payload=payload,
-        priority="high",
-        resource_class="cpu",
-        queue_name=QUEUE_P1_INTERACTIVE,
+        priority=defaults["priority"],
+        resource_class=defaults["resource_class"],
+        queue_name=defaults["queue_name"],
         tags=tags,
     )
 
@@ -571,7 +575,14 @@ def _write_tile_result(arrays, result) -> None:
     _retry_on_windows_lock(lambda: border_level0.__setitem__((y_slice, x_slice), border_crop))
 
 
-def _rasterize_level0(arrays, payloads: list[dict[str, Any]], *, use_pool: bool) -> None:
+def _rasterize_level0(
+    arrays,
+    payloads: list[dict[str, Any]],
+    *,
+    use_pool: bool,
+    on_progress=None,
+    cancel_check=None,
+) -> None:
     """Rasterise every macro tile and write it, holding a bounded number at once.
 
     The parent's memory here is not set by how many objects there are but by how
@@ -595,8 +606,12 @@ def _rasterize_level0(arrays, payloads: list[dict[str, Any]], *, use_pool: bool)
     if not payloads:
         return
     if not (use_pool and len(payloads) > 1):
-        for payload in payloads:
+        for index, payload in enumerate(payloads, start=1):
+            if cancel_check is not None:
+                cancel_check()
             _write_tile_result(arrays, render_module.rasterize_tile_worker(payload))
+            if on_progress is not None:
+                on_progress("raster", index, len(payloads))
         return
 
     workers = raster_process_pool_size()
@@ -611,13 +626,24 @@ def _rasterize_level0(arrays, payloads: list[dict[str, Any]], *, use_pool: bool)
         initializer=django_pool_initializer,
     ) as executor:
         outstanding: deque[Future] = deque()
+        completed = 0
         try:
             for payload in payloads:
                 outstanding.append(executor.submit(render_module.rasterize_tile_worker, payload))
                 if len(outstanding) >= window:
+                    if cancel_check is not None:
+                        cancel_check()
                     _write_tile_result(arrays, outstanding.popleft().result())
+                    completed += 1
+                    if on_progress is not None:
+                        on_progress("raster", completed, len(payloads))
             while outstanding:
+                if cancel_check is not None:
+                    cancel_check()
                 _write_tile_result(arrays, outstanding.popleft().result())
+                completed += 1
+                if on_progress is not None:
+                    on_progress("raster", completed, len(payloads))
         except BrokenProcessPool as exc:
             _raise_broken_pool(
                 exc,
@@ -732,6 +758,8 @@ def _build_pyramid(
     width: int,
     height: int,
     content_bboxes: list[tuple[int, int, int, int]] | None = None,
+    on_progress=None,
+    cancel_check=None,
 ) -> None:
     """Build the pyramid in large blocks over the level-0 content region.
 
@@ -764,11 +792,17 @@ def _build_pyramid(
         # open per block. Levels ascend within each array, so a level always
         # reads one that is already finished.
         group = render_module.open_staged_group(str(stage_root))
+        completed = 0
         try:
             for array_key in OVERLAY_ARRAY_KEYS:
                 for level_idx in sorted(blocks_by_level):
                     for block in blocks_by_level[level_idx]:
+                        if cancel_check is not None:
+                            cancel_check()
                         render_module.downsample_block(group, array_key, level_idx, block)
+                        completed += 1
+                        if on_progress is not None:
+                            on_progress("pyramid", completed, total_blocks)
         finally:
             # Before the caller moves the staged bundle, not after.
             render_module.close_staged_group(group)
@@ -789,6 +823,7 @@ def _build_pyramid(
         initializer=django_pool_initializer,
     )
     try:
+        completed = 0
         for array_key in OVERLAY_ARRAY_KEYS:
             for level_idx in sorted(blocks_by_level):
                 tasks: list[tuple[str, str, int, tuple[int, int, int, int]]] = [
@@ -797,7 +832,12 @@ def _build_pyramid(
                 ]
                 if len(tasks) > 1:
                     try:
-                        list(executor.map(render_module.downsample_block_worker, tasks))
+                        for _result in executor.map(render_module.downsample_block_worker, tasks):
+                            if cancel_check is not None:
+                                cancel_check()
+                            completed += 1
+                            if on_progress is not None:
+                                on_progress("pyramid", completed, total_blocks)
                     except BrokenProcessPool as exc:
                         _raise_broken_pool(
                             exc,
@@ -807,7 +847,12 @@ def _build_pyramid(
                         )
                 else:
                     for task in tasks:
+                        if cancel_check is not None:
+                            cancel_check()
                         render_module.downsample_block_worker(task)
+                        completed += 1
+                        if on_progress is not None:
+                            on_progress("pyramid", completed, total_blocks)
     finally:
         executor.shutdown()
 
@@ -817,6 +862,8 @@ def rebuild_overlay_full(
     *,
     source_model: str | None = None,
     desired_revision: int | None = None,
+    on_progress=None,
+    cancel_check=None,
 ) -> SegmentationOverlayState:
     normalized_source_model = normalize_overlay_source_model(source_model)
     state = get_or_create_overlay_state(segmentation, normalized_source_model)
@@ -839,6 +886,8 @@ def rebuild_overlay_full(
     is_global = segmentation.segmentation_type.measurement_mode == "global"
     queryset = labels_lut.bundle_queryset(segmentation, normalized_source_model)
     objects = [] if is_global else list(queryset.only(*_object_only_fields()))
+    if on_progress is not None:
+        on_progress("objects", len(objects), len(objects))
     # Global overlays use label 1 only and intentionally have no label->object
     # assignment. Object overlays retain their compact 1..N identity map.
     assignments = [] if is_global else [(idx + 1, obj.id) for idx, obj in enumerate(objects)]
@@ -879,12 +928,24 @@ def rebuild_overlay_full(
                 arrays,
                 payloads,
                 use_pool=len(objects) >= RASTER_POOL_MIN_OBJECTS,
+                on_progress=on_progress,
+                cancel_check=cancel_check,
             )
     finally:
         # Close level-0 handles before the pyramid: it re-opens the staged store
         # by path, so the parent must not hold the arrays open.
         _close_overlay_arrays(arrays)
-    _build_pyramid(stage_root, width=width, height=height, content_bboxes=content_bboxes)
+    _build_pyramid(
+        stage_root,
+        width=width,
+        height=height,
+        content_bboxes=content_bboxes,
+        on_progress=on_progress,
+        cancel_check=cancel_check,
+    )
+
+    if cancel_check is not None:
+        cancel_check()
 
     if not _is_valid_label_store(stage_root, width=width, height=height):
         raise OverlayStoreError(f"Generated overlay store is invalid at {stage_root}")
@@ -923,6 +984,8 @@ def apply_partial_overlay_update(
     dirty_bbox: DirtyBBox,
     desired_revision: int,
     source_model: str | None = None,
+    on_progress=None,
+    cancel_check=None,
 ) -> SegmentationOverlayState:
     normalized_source_model = normalize_overlay_source_model(source_model)
     state = get_or_create_overlay_state(segmentation, normalized_source_model)
@@ -977,11 +1040,22 @@ def apply_partial_overlay_update(
             )
             _write_tile_result(arrays, result)
 
+            parent_total = 1
+            next_coords = chunk_coords
+            for _level_idx in range(1, len(arrays[LABELS_ARRAY_KEY])):
+                next_coords = {(chunk_x // 2, chunk_y // 2) for chunk_x, chunk_y in next_coords}
+                parent_total += len(next_coords) * len(OVERLAY_ARRAY_KEYS)
+            completed = 1
+            if on_progress is not None:
+                on_progress("partial", completed, parent_total)
+
             child_coords = chunk_coords
             for level_idx in range(1, len(arrays[LABELS_ARRAY_KEY])):
                 parent_coords = {(chunk_x // 2, chunk_y // 2) for chunk_x, chunk_y in child_coords}
                 for array_key in OVERLAY_ARRAY_KEYS:
                     for chunk_x, chunk_y in sorted(parent_coords):
+                        if cancel_check is not None:
+                            cancel_check()
                         render_module.write_parent_chunk(
                             arrays[array_key][level_idx - 1],
                             arrays[array_key][level_idx],
@@ -989,6 +1063,9 @@ def apply_partial_overlay_update(
                             chunk_y=chunk_y,
                             kind=array_key,
                         )
+                        completed += 1
+                        if on_progress is not None:
+                            on_progress("partial", completed, parent_total)
                 child_coords = parent_coords
         finally:
             _close_overlay_arrays(arrays)
@@ -1110,6 +1187,38 @@ def _existing_bundle_source_models(segmentation: ImageSegmentation) -> list[str]
     return source_models
 
 
+def _bundles_containing_source_model(
+    segmentation: ImageSegmentation,
+    normalized_source_model: str,
+) -> list[str]:
+    """Every bundle whose membership rule can admit an object from this source.
+
+    A model's own outline lives in the confirmed display and in that one model's
+    bundle. A **hand-drawn** outline lives in the confirmed display *and in
+    every named bundle*: ``overlay_bundle_source_filter`` keeps manual objects
+    in each model's raster because the candidate layer reads that raster and is
+    the only layer that draws an unconfirmed outline. Dirtying only the
+    source-less bundle for a manual edit would therefore leave the drawn or
+    reshaped outline stale in exactly the layer that has to show it -- the
+    stale-pixels half of the same R13 failure the membership rule fixes.
+
+    An unrecorded source is treated the same way, and that is not caution for
+    its own sake: the drawing endpoint registers a freshly created candidate
+    without naming a source model at all, and the object it just created is
+    hand-drawn. Callers that do know a model name never reach this branch.
+
+    The confirmed display comes first in the returned order so a synchronous
+    partial paints the raster the right pane reads before the model rasters,
+    and the named bundles are sorted so the fan-out is deterministic.
+    """
+    if normalized_source_model and normalized_source_model != SOURCE_MODEL_MANUAL:
+        return ["", normalized_source_model]
+    return [
+        "",
+        *sorted(name for name in _existing_bundle_source_models(segmentation) if name),
+    ]
+
+
 def _register_overlay_mutation_one(
     segmentation: ImageSegmentation,
     *,
@@ -1152,7 +1261,19 @@ def _register_overlay_mutation_one(
     dirty_runs = list(state.dirty_chunk_runs or [])
     if dirty_bbox is not None and rebuild_mode == "async_partial":
         dirty_runs.append(_dirty_run_payload(revision=desired_revision, dirty_bbox=dirty_bbox))
-    pending_full_rebuild = rebuild_mode == "async_full" or force_full_rebuild
+    # A full rebuild that is already owed is not discharged by the next
+    # incremental edit, so the flag is carried forward rather than recomputed
+    # from this edit's mode. `overlay_rebuild_policy` returns "async_partial"
+    # *because* the flag is set, so recomputing would clear it, and the
+    # follow-up job would repaint only this edit's bbox before
+    # `_finalize_overlay_rebuild_state` marked the bundle READY -- over
+    # whatever geometry the full rebuild existed to rasterise (a completed
+    # extraction, or the rebuild button). Analysis's settled-raster reuse
+    # trusts a READY bundle, so that geometry would go missing from exported
+    # measurements with nothing to say so.
+    pending_full_rebuild = (
+        rebuild_mode == "async_full" or force_full_rebuild or bool(state.pending_full_rebuild)
+    )
     status_value = (
         SegmentationOverlayState.STATUS_BUILDING
         if pending_full_rebuild
@@ -1191,38 +1312,36 @@ def register_overlay_mutation(
     source_model: str | None = None,
     allow_sync_partial: bool = True,
 ) -> dict[str, Any]:
-    """Register a geometry edit scoped to one source bundle (+ the aggregate).
+    """Register a geometry edit for the confirmed display and its source.
 
-    Use :func:`register_overlay_mutation_all_bundles` instead when the edited
-    object is confirmed/manual and therefore a member of every bundle.
+    A model-produced outline lives in the source-less confirmed-display raster
+    and its own model raster. A hand-drawn one lives in the confirmed display
+    and in every model raster, because that is where the candidate layer reads
+    an unconfirmed outline from. State controls visibility, so a later
+    confirmation does not move pixels between bundles.
 
     ``allow_sync_partial=False`` defers the raster to the rebuild queue; see
     :func:`overlay_rebuild_policy`.
     """
     normalized_source_model = normalize_overlay_source_model(source_model)
-    if normalized_source_model:
-        _register_overlay_mutation_one(
+    responses: dict[str, dict[str, Any]] = {}
+    for candidate_source_model in _bundles_containing_source_model(
+        segmentation, normalized_source_model
+    ):
+        responses[candidate_source_model] = _register_overlay_mutation_one(
             segmentation,
             dirty_bbox=dirty_bbox,
             force_full_rebuild=force_full_rebuild,
-            source_model="",
+            source_model=candidate_source_model,
             allow_sync_partial=allow_sync_partial,
         )
-        return _register_overlay_mutation_one(
-            segmentation,
-            dirty_bbox=dirty_bbox,
-            force_full_rebuild=force_full_rebuild,
-            source_model=normalized_source_model,
-            allow_sync_partial=allow_sync_partial,
-        )
-
-    return _register_overlay_mutation_one(
-        segmentation,
-        dirty_bbox=dirty_bbox,
-        force_full_rebuild=force_full_rebuild,
-        source_model="",
-        allow_sync_partial=allow_sync_partial,
-    )
+    # The named model's own counters when the caller named one; otherwise the
+    # confirmed display's, which is the bundle every caller of this function has
+    # in common. Never "whichever ran last": for a manual edit that is an
+    # arbitrary model bundle whose revisions the caller cannot interpret.
+    if normalized_source_model and normalized_source_model != SOURCE_MODEL_MANUAL:
+        return responses[normalized_source_model]
+    return responses[""]
 
 
 def register_overlay_mutation_all_bundles(
@@ -1231,12 +1350,17 @@ def register_overlay_mutation_all_bundles(
     dirty_bbox: DirtyBBox | None,
     force_full_rebuild: bool = False,
     source_model: str | None = None,
+    source_models: Iterable[str | None] | None = None,
     allow_sync_partial: bool = True,
 ) -> dict[str, Any]:
-    """Fan a geometry edit to every existing bundle of the segmentation.
+    """Register a geometry edit on every bundle that can actually contain it.
 
-    Confirmed/manual objects belong to all per-source bundles (the membership
-    rule), so an edit to one must dirty them all.
+    When ``source_model`` is a model name this is the confirmed display plus
+    that one model bundle. When it is ``manual`` -- or absent, which the drawing
+    endpoint leaves it -- it is every bundle, because a hand-drawn object is a
+    member of every one of them (see
+    :func:`_bundles_containing_source_model`). ``source_models`` handles the
+    rarer merge that changes an existing object owned by a second model.
 
     ``allow_sync_partial=False`` defers the raster to the rebuild queue; see
     :func:`overlay_rebuild_policy`. It matters most here: this function writes
@@ -1245,9 +1369,24 @@ def register_overlay_mutation_all_bundles(
     per keystroke as one segmented by one.
     """
     normalized_source_model = normalize_overlay_source_model(source_model)
-    target_source_models = _existing_bundle_source_models(segmentation)
-    if normalized_source_model and normalized_source_model not in target_source_models:
-        target_source_models.append(normalized_source_model)
+    if source_models is not None:
+        # The union over the sources involved, not the sources themselves: a
+        # merge that touches a hand-drawn object has to dirty every model
+        # bundle, because that object is in all of them.
+        named_bundles: set[str] = set()
+        for candidate in source_models:
+            named_bundles.update(
+                name
+                for name in _bundles_containing_source_model(
+                    segmentation, normalize_overlay_source_model(candidate)
+                )
+                if name
+            )
+        target_source_models = ["", *sorted(named_bundles)]
+    else:
+        target_source_models = _bundles_containing_source_model(
+            segmentation, normalized_source_model
+        )
     responses: dict[str, dict[str, Any]] = {}
     for candidate_source_model in target_source_models:
         responses[candidate_source_model] = _register_overlay_mutation_one(
@@ -1257,11 +1396,22 @@ def register_overlay_mutation_all_bundles(
             source_model=candidate_source_model,
             allow_sync_partial=allow_sync_partial,
         )
-    return (
+    # ``manual`` is never the reported bundle even when a legacy state row of
+    # that name exists: it is a source, not a display, and its counters mean
+    # nothing to the caller. A hand-drawn edit reports the confirmed display.
+    named_response = (
         responses.get(normalized_source_model)
-        or responses.get("")
-        or next(iter(responses.values()))
+        if normalized_source_model and normalized_source_model != SOURCE_MODEL_MANUAL
+        else None
     )
+    response = named_response or responses.get("") or next(iter(responses.values()))
+    confirmed_response = responses.get("")
+    if confirmed_response is not None:
+        # Named model and confirmed-display bundles have independent counters.
+        # Consumers waiting for the right pane must compare against this one,
+        # not against whichever named response was selected above.
+        response["confirmed_display_desired_revision"] = confirmed_response["desired_revision"]
+    return response
 
 
 def queue_full_overlay_rebuild(
@@ -1282,6 +1432,8 @@ def run_overlay_rebuild_job(
     *,
     mode: str,
     source_model: str | None = None,
+    on_progress=None,
+    cancel_check=None,
 ) -> SegmentationOverlayState:
     normalized_source_model = normalize_overlay_source_model(source_model)
     state = get_or_create_overlay_state(segmentation, normalized_source_model)
@@ -1300,6 +1452,8 @@ def run_overlay_rebuild_job(
                 segmentation,
                 source_model=normalized_source_model,
                 desired_revision=int(state.desired_revision),
+                on_progress=on_progress,
+                cancel_check=cancel_check,
             )
 
         dirty_bbox = _merge_dirty_runs_to_bbox(segmentation, list(state.dirty_chunk_runs or []))
@@ -1321,7 +1475,38 @@ def run_overlay_rebuild_job(
             dirty_bbox=dirty_bbox,
             desired_revision=int(state.desired_revision),
             source_model=normalized_source_model,
+            on_progress=on_progress,
+            cancel_check=cancel_check,
         )
+    except JobCancelledError:
+        # Cancellation is not a corrupt overlay: the old active bundle stays on
+        # disk and the canonical geometry is in the database, so all that is
+        # lost is the repaint. But it does have to be recorded as a *stop*.
+        # Written as DIRTY, as this arm first was, the manifest poll read
+        # "pending work, no live job" 1.5 s later and enqueued the identical
+        # rebuild -- Cancel undid itself, and a long build on a large image
+        # could not be stopped while a labelling screen was open. FAILED plus a
+        # reason is the one state both ends already treat as terminal, and the
+        # user's next edit clears it (see `_register_overlay_mutation_one`), so
+        # the pause self-heals exactly the way a build failure does.
+        _set_overlay_state(
+            state,
+            status_value=SegmentationOverlayState.STATUS_FAILED,
+            # Raise this flag here, never clear it. `state` was read before the
+            # build began, so writing `False` from it would wipe a full rebuild
+            # requested *while* the build ran -- and the `async_full` branch of
+            # `_register_overlay_mutation_one` records that request in this flag
+            # alone, with no dirty run to fall back on. The follow-up would then
+            # silently downgrade to a partial and leave the bundle claiming
+            # READY over geometry that was never rasterised, which Analysis's
+            # settled-raster reuse trusts and under-counts. `_set_overlay_state`
+            # leaves a field alone when it is passed None, so None here means
+            # "whatever the row says now, which is newer than what I hold".
+            pending_full_rebuild=(True if (mode == "full" or state.pending_full_rebuild) else None),
+            last_error=OVERLAY_CANCELLED_MESSAGE,
+        )
+        _write_debug_manifest(segmentation, state)
+        raise
     except Exception as exc:
         logger.error(
             "Overlay rebuild failed for segmentation %s: %s",

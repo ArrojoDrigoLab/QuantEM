@@ -272,13 +272,14 @@ def run_extraction(
     segmenter: BaseSegmenter,
     segmentation: ImageSegmentation,
     result: InferenceResult,
-    image: np.ndarray,
+    image: np.ndarray | None,
     roi: ImageROI | None = None,
     min_area: int | None = None,
     on_status: Callable[[str, float], None] | None = None,
     on_detail: Callable[[str], None] | None = None,
     run_identity: dict[str, object] | None = None,
     include_level: float | None = None,
+    defer_features: bool = False,
 ) -> WriteResult:
     """Extract candidates, replace this model's previous ones, and report.
 
@@ -310,21 +311,34 @@ def run_extraction(
         if on_detail is not None:
             on_detail(f"Using {len(extracted)} direct candidate shapes from the segmenter")
     else:
-        extracted = segmenter.extract_instances(
-            result.prob,
-            image,
-            result.prob_maps,
-            min_area=area_floor,
-            coordinate_offset=coordinate_offset,
-            on_progress=(
-                lambda fraction: on_status(
-                    "EXTRACTING_CANDIDATES",
-                    5.0 + (65.0 * max(0.0, min(float(fraction), 1.0))),
-                )
+
+        def _progress_callback(fraction: float) -> None:
+            assert on_status is not None
+            on_status(
+                "EXTRACTING_CANDIDATES",
+                5.0 + (65.0 * max(0.0, min(float(fraction), 1.0))),
             )
-            if on_status is not None
-            else None,
-        )
+
+        progress_callback = _progress_callback if on_status is not None else None
+        geometry_extractor = getattr(segmenter, "extract_instances_geometry", None)
+        if defer_features and callable(geometry_extractor):
+            extracted = geometry_extractor(
+                result.prob,
+                min_area=area_floor,
+                coordinate_offset=coordinate_offset,
+                on_progress=progress_callback,
+            )
+        else:
+            if image is None:
+                raise ValueError("Feature extraction requires the source image")
+            extracted = segmenter.extract_instances(
+                result.prob,
+                image,
+                result.prob_maps,
+                min_area=area_floor,
+                coordinate_offset=coordinate_offset,
+                on_progress=progress_callback,
+            )
     if on_detail is not None:
         on_detail(f"Shape extraction complete: {len(extracted)} raw candidates")
     if on_status is not None:
@@ -452,13 +466,14 @@ def extract_and_save_segments(
     segmenter: BaseSegmenter,
     segmentation: ImageSegmentation,
     result: InferenceResult,
-    image: np.ndarray,
+    image: np.ndarray | None,
     roi: ImageROI | None = None,
     min_area: int | None = None,
     on_status: Callable[[str, float], None] | None = None,
     on_detail: Callable[[str], None] | None = None,
     run_identity: dict[str, object] | None = None,
     include_level: float | None = None,
+    defer_features: bool = False,
 ) -> int:
     """Extract segments and save as CANDIDATE SegmentObjects.
 
@@ -504,4 +519,5 @@ def extract_and_save_segments(
         on_detail=on_detail,
         run_identity=run_identity,
         include_level=include_level,
+        defer_features=defer_features,
     ).written

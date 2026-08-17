@@ -33,7 +33,7 @@ from quantem.segmentation.services.spatial_lookup import (
     centroid_in_bbox_filter,
     union_geometries,
 )
-from quantem.segmentation.source_models import source_model_queryset_filter
+from quantem.segmentation.source_models import overlay_bundle_source_filter
 
 from .constants import (
     COLOR_CANDIDATE,
@@ -84,12 +84,25 @@ def bundle_queryset(
     segmentation: ImageSegmentation,
     source_model: str | None,
 ) -> QuerySet:
-    """Return the queryset of objects this bundle renders.
+    """Return the queryset of objects this bundle rasterises.
 
-    Membership rule: ``CONFIRMED OR manual OR <this source model>``.
+    The source-less bundle contains every object and is rendered with a
+    confirmed-only LUT.  A named bundle contains that model's objects plus the
+    hand-drawn ones, and is rendered with the candidate LUT.  Both retain
+    objects across a state flip, making ordinary Confirm a LUT-only operation.
+
+    This uses ``overlay_bundle_source_filter``, not the wider
+    ``source_model_queryset_filter`` that the query endpoints use: bundle
+    membership excludes *another model's* confirmed objects, which already have
+    a home in the source-less confirmed display and must not be duplicated into
+    every model comparison layer.  Hand-drawn objects are the exception and are
+    kept, because the candidate layer reads this bundle and it is the only
+    layer that draws an unconfirmed outline at all -- see
+    :func:`~quantem.segmentation.source_models.overlay_bundle_source_filter`
+    for the R13 failure that rule exists to prevent.
     """
     queryset = SegmentObject.objects.filter(segmentation=segmentation)
-    source_filter = source_model_queryset_filter(source_model)
+    source_filter = overlay_bundle_source_filter(source_model)
     if source_filter is not None:
         queryset = queryset.filter(source_filter)
     return queryset

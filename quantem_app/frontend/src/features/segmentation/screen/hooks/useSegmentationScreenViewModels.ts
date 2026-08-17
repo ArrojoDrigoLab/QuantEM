@@ -462,11 +462,13 @@ export function useSegmentationScreenViewModels({
         extraModes: samBox.controls,
       },
       layers: {
-        overlayUpdating: overlayManifest.overlayUpdating,
+        modelOverlayUpdating: overlayManifest.modelOverlayUpdating,
+        confirmedOverlayUpdating: overlayManifest.confirmedOverlayUpdating,
         // Finding V4: the sidebar could say a build was in progress but had no
         // way to say one had failed, so a terminal failure showed as silence.
-        overlayBuildFailed: overlayManifest.overlayBuildFailed,
-        overlayManifest: overlayManifest.overlayManifest,
+        // The per-bundle list rather than one flag plus one manifest: with two
+        // independent bundles, a failure of the second one was being dropped.
+        failedOverlays: overlayManifest.failedOverlays,
         overlaySegmentationId: route.currentSegmentation?.id ?? null,
         onOverlayBuildRetried: overlayManifest.handleOverlayBuildRetried,
       },

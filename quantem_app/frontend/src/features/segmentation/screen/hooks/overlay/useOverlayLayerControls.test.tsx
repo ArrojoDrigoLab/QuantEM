@@ -45,7 +45,8 @@ describe("useOverlayLayerControls", () => {
     const { result } = renderHook(() =>
       useOverlayLayerControls({
         segmentationId: "seg-1",
-        overlayManifest: manifest(),
+        modelManifest: manifest(),
+        confirmedManifest: manifest(),
       })
     );
 
@@ -86,7 +87,8 @@ describe("useOverlayLayerControls", () => {
     const { result } = renderHook(() =>
       useOverlayLayerControls({
         segmentationId: "seg-1",
-        overlayManifest: manifest(),
+        modelManifest: manifest(),
+        confirmedManifest: manifest(),
         hiddenSegmentIds: new Set(["object-1"]),
         hiddenSegmentVisualRevision: 3,
       })

@@ -12,7 +12,18 @@ from __future__ import annotations
 
 import numpy as np
 
-OVERLAY_FORMAT_VERSION = 5
+# v6 changes named-bundle membership from ``confirmed OR manual OR selected
+# model`` to ``the selected model plus the hand-drawn objects``.  Another
+# model's objects now stay out, which is what makes a confirmation a LUT-only
+# update instead of a rebuild of every model's bundle.  Hand-drawn objects stay
+# in because owner ruling R13 forbids hiding what the user annotated: the
+# candidate layer reads this bundle, and it is the only layer that paints an
+# outline the user drew but has not confirmed -- the source-less bundle is
+# rendered through a confirmed-only LUT and would leave it invisible.  Bumping
+# the format makes every v5 bundle fail validation and rebuild under the new
+# contract instead of silently showing cross-model objects from its old label
+# map.
+OVERLAY_FORMAT_VERSION = 6
 OVERLAY_CHUNK_SIZE = 256
 
 # In-memory rasterisation uses int32 (OpenCV's label-image depth, CV_32SC1);

@@ -783,7 +783,8 @@ def replay_stored_probability_map(
     roi: ImageROI | None = None,
     on_detail: Callable[[str], None] | None = None,
     on_stored_metadata: Callable[[dict[str, object]], None] | None = None,
-) -> tuple[InferenceResult, np.ndarray]:
+    geometry_only: bool = False,
+) -> tuple[InferenceResult, np.ndarray | None]:
     """Re-threshold a stored probability map. No model is loaded or run.
 
     This is the backend of the accuracy dial. The map a previous run stored is
@@ -872,19 +873,30 @@ def replay_stored_probability_map(
     if on_stored_metadata is not None:
         on_stored_metadata(dict(stored.metadata))
 
-    target_image = get_asset_openable(segmentation.asset)
-    if roi is not None:
-        img_array = load_image_roi_array(target_image, roi.x, roi.y, roi.width, roi.height)
-    else:
-        img_array, _ = load_image_array(target_image)
+    if geometry_only:
+        if roi is not None:
+            expected_shape = (int(roi.height), int(roi.width))
+        else:
+            from quantem.segmentation.overlay_ngff.dimensions import segmentation_dimensions
 
-    if stored.shape != tuple(img_array.shape[:2]):
+            width, height = segmentation_dimensions(segmentation)
+            expected_shape = (height, width)
+        img_array = None
+    else:
+        target_image = get_asset_openable(segmentation.asset)
+        if roi is not None:
+            img_array = load_image_roi_array(target_image, roi.x, roi.y, roi.width, roi.height)
+        else:
+            img_array, _ = load_image_array(target_image)
+        expected_shape = tuple(img_array.shape[:2])
+
+    if stored.shape != expected_shape:
         # The image was replaced or re-imported under the same segmentation.
         # Stretching the map onto the new grid would be a third resampling and a
         # silently different answer.
         raise StoredMapUnavailable(
             f"The stored result is {stored.shape[1]}x{stored.shape[0]} but this "
-            f"image is {img_array.shape[1]}x{img_array.shape[0]}; the model has "
+            f"image is {expected_shape[1]}x{expected_shape[0]}; the model has "
             "to run again."
         )
 
@@ -898,8 +910,14 @@ def replay_stored_probability_map(
         setter(float(threshold))
 
     adopt(stored.native)
-    prob_maps = {model_name: stored.native.as_float()}
-    prob = segmenter.combine_prob_maps(prob_maps)
+    if geometry_only:
+        # The native bytes are already the threshold authority. Avoid two
+        # image-sized float32 allocations solely to recover geometry.
+        prob_maps = {model_name: stored.native.data}
+        prob = stored.native.data
+    else:
+        prob_maps = {model_name: stored.native.as_float()}
+        prob = segmenter.combine_prob_maps(prob_maps)
     applied = getattr(segmenter, "fg_threshold", None)
     if applied is None:
         applied = threshold

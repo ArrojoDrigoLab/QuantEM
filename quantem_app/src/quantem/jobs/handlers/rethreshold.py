@@ -66,6 +66,9 @@ from quantem.segmentation.run_identity import (
     RUN_SCOPE_PATCH,
     run_identity_from_segmenter,
 )
+from quantem.segmentation.services.confirm_batch.feature_refresh import (
+    _enqueue_segment_feature_refresh,
+)
 from quantem.segmentation.source_models import (
     normalize_source_model,
     resolve_segmenter_internal_name,
@@ -183,6 +186,7 @@ def handle_reextract_at_include_level(
         roi=roi,
         on_detail=lambda message: reporter.log("info", message),
         on_stored_metadata=stored_metadata.update,
+        geometry_only=True,
     )
 
     cancel.check_cancelled()
@@ -269,6 +273,7 @@ def handle_reextract_at_include_level(
         on_detail=lambda message: reporter.log("info", message),
         run_identity=run_identity,
         include_level=include_level,
+        defer_features=True,
     )
 
     # Written after the objects, never before: until the extraction succeeded
@@ -276,6 +281,17 @@ def handle_reextract_at_include_level(
     # claiming otherwise would be read by every screen that shows the dial.
     segmentation.include_level = include_level
     segmentation.save(update_fields=["include_level", "updated_at"])
+
+    # The visible result is complete at this point: thresholding, morphology,
+    # hole filling, component filtering and geometry persistence are done.
+    # Measurements enrich those rows in the background and are deliberately
+    # coalesced into one segmentation sweep.
+    feature_job = _enqueue_segment_feature_refresh(
+        segmentation_id=str(segmentation.id),
+        segment_ids=[],
+        recompute_features=True,
+        force=True,
+    )
 
     if segment_count > 0:
         message = f"completed: {segment_count} objects at this include level"
@@ -302,5 +318,6 @@ def handle_reextract_at_include_level(
         "include_level": include_level,
         "roi_id": str(roi.id) if roi is not None else None,
         "source_model": source_model or None,
+        "feature_job_id": str(feature_job.id) if feature_job is not None else None,
         **outcome,
     }

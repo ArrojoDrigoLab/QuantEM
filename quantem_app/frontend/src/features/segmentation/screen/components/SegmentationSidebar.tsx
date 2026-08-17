@@ -12,10 +12,11 @@ import type {
   WorkflowMode,
 } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import type { HoverActionMode, GroupHoverActionMode } from "@/hooks/useHoverSelection";
-import type {
-  CorrectionTool,
-  SegmentationOverlayManifest,
-} from "@/shared/types/segmentation";
+import type { CorrectionTool } from "@/shared/types/segmentation";
+import {
+  OVERLAY_DISPLAY_LABELS,
+  type FailedOverlayBundle,
+} from "@/features/segmentation/screen/hooks/overlay/useOverlayManifestState";
 // Imported across features on purpose. The viewer and the labeling screen fail
 // the same way for the same reason, and finding V4 was the labeling screen
 // saying *nothing* while the viewer said everything -- two renderers of one
@@ -64,11 +65,18 @@ interface ReviewSection {
 }
 
 interface LayersSection {
-  overlayUpdating: boolean;
-  /** True only for a build the server has given up on. */
-  overlayBuildFailed: boolean;
-  /** The failed manifest, carrying the reason and the two revisions. */
-  overlayManifest: SegmentationOverlayManifest | null;
+  /** The named-model preview bundle is being rebuilt. */
+  modelOverlayUpdating: boolean;
+  /** The source-less confirmed-display bundle is being rebuilt. */
+  confirmedOverlayUpdating: boolean;
+  /**
+   * Every bundle whose build the server has given up on, each tagged with the
+   * display it belongs to. A list rather than a flag plus a manifest: the two
+   * bundles fail independently, and one card per failure is the only way the
+   * second one gets said at all and the only way each retry button points at
+   * the bundle its card describes.
+   */
+  failedOverlays: FailedOverlayBundle[];
   /** Needed to ask for the build again; null before a segmentation is chosen. */
   overlaySegmentationId: string | null;
   /** Restart polling and reread the manifest once a retry is accepted. */
@@ -138,9 +146,9 @@ export function SegmentationSidebar({
     extraTools,
   } = review;
   const {
-    overlayUpdating,
-    overlayBuildFailed,
-    overlayManifest,
+    modelOverlayUpdating,
+    confirmedOverlayUpdating,
+    failedOverlays,
     overlaySegmentationId,
     onOverlayBuildRetried,
   } = layers;
@@ -235,25 +243,42 @@ export function SegmentationSidebar({
           {isGroupActionMode && !leftNavigateMode && groupSelectionCount > 0 && (
             <div className="group-confirm-count">Selected: {groupSelectionCount}</div>
           )}
-          {workflowMode === "review" && overlayUpdating && (
-            <div className="group-confirm-hint">Overlay updating.</div>
-          )}
+          {workflowMode === "review" &&
+            (modelOverlayUpdating || confirmedOverlayUpdating) && (
+              <div className="group-confirm-hint" role="status">
+                {modelOverlayUpdating && confirmedOverlayUpdating
+                  ? "Model preview and confirmed displays are updating. Saved objects remain ready for analysis."
+                  : confirmedOverlayUpdating
+                    ? "Confirmed display is updating. Saved objects remain ready for analysis."
+                    : "Model preview display is updating."}
+              </div>
+            )}
           {/*
-            Finding V4. The line above is mutually exclusive with this block --
-            `overlayUpdating` is false for a build the server has given up on --
-            and until now that meant the labeling screen said nothing at all
-            about a failed overlay while the review canvas quietly went on
-            drawing a raster that no longer matched the objects. It is shown in
-            every workflow mode, unlike "Overlay updating.": a failed build is
-            not a passing state, and leaving review does not make it go away.
+            Finding V4. Until this block existed the labeling screen said
+            nothing at all about a failed overlay while the review canvas
+            quietly went on drawing a raster that no longer matched the objects.
+            It is shown in every workflow mode, unlike the updating line above:
+            a failed build is not a passing state, and leaving review does not
+            make it go away.
+
+            The line above is *not* mutually exclusive with this one, which it
+            was while both were derived from a single manifest. The model
+            preview and the confirmed display are separate bundles with
+            separate rebuild jobs, so one can be failing while the other is
+            still building -- which is why the line above names the display it
+            is about and each card below names its own. Two unnamed messages
+            about "the overlay" would read as contradicting each other.
           */}
-          {overlayBuildFailed && overlayManifest && overlaySegmentationId && (
-            <OverlayBuildFailureNotice
-              manifest={overlayManifest}
-              segmentationId={overlaySegmentationId}
-              onRetried={onOverlayBuildRetried}
-            />
-          )}
+          {overlaySegmentationId &&
+            failedOverlays.map(({ role, manifest }) => (
+              <OverlayBuildFailureNotice
+                key={role}
+                manifest={manifest}
+                segmentationId={overlaySegmentationId}
+                displayLabel={OVERLAY_DISPLAY_LABELS[role]}
+                onRetried={onOverlayBuildRetried}
+              />
+            ))}
         </section>
     </aside>
   );

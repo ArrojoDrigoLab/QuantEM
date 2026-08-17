@@ -34,6 +34,29 @@ logger = logging.getLogger(__name__)
 #: nobody stares at a spinner for a minute of doomed rebuilds.
 MANIFEST_REQUEUE_FAILURE_LIMIT = 3
 
+#: What the overlay state records when the user cancels a rebuild.
+#:
+#: Cancellation is recorded through the same ``FAILED`` + reason shape a build
+#: failure uses, because that shape is the only one both ends of the app treat
+#: as *terminal*: ``ensure_overlay_manifest`` stops re-queueing (see
+#: :func:`_cancelled_since_last_success`) and the client stops polling
+#: (``overlayManifestStatus.overlayBuildFailed``). Written as DIRTY instead, a
+#: cancelled job came straight back: the poll saw pending work with no live job
+#: 1.5 s later and enqueued the identical rebuild, so Cancel visibly undid
+#: itself and a long build could not be stopped at all.
+#:
+#: The string is rendered verbatim to the user under a "could not be rebuilt"
+#: heading, so it has to say the two things that heading does not: that nothing
+#: is broken, and how to start the update again. It deliberately does not
+#: promise a previous overlay exists -- the very first build of a segmentation
+#: can be cancelled too, and the card that renders this already distinguishes a
+#: stale bundle from one that never built.
+OVERLAY_CANCELLED_MESSAGE = (
+    "Display update cancelled before it finished, so any overlay on screen is "
+    "still the previous version. Use Retry overlay build, or make any edit, to "
+    "start it updating again."
+)
+
 
 def _failed_rebuilds_since_last_success(
     segmentation: ImageSegmentation,
@@ -55,6 +78,40 @@ def _failed_rebuilds_since_last_success(
         jobs = jobs.filter(created_at__gt=state.last_built_at)
     newest = jobs.order_by("-created_at").first()
     return jobs.count(), str(getattr(newest, "message", "") or "")
+
+
+def _cancelled_since_last_success(
+    segmentation: ImageSegmentation,
+    state: SegmentationOverlayState,
+) -> bool:
+    """Was the last thing that happened to this bundle a user cancellation?
+
+    The brake on the re-queue loop for cancelled builds, and the reason it is
+    asked *here* rather than trusted from the state row. The worker's own
+    ``except JobCancelledError`` arm records the stop
+    (``mutations.run_overlay_rebuild_job``), but it does not always run: when
+    the runner gives up waiting it terminates the worker process outright, and
+    then nothing writes anything -- the state is left mid-build, looking exactly
+    like pending work nobody is building, which is the shape this endpoint
+    answers by enqueueing another job. The queue row is the one record of the
+    cancellation that survives either path.
+
+    Only the *newest* job counts, and only since the last successful build. A
+    cancellation the user has already moved past -- they edited again, the
+    follow-up ran, the bundle built -- must not keep braking; and a bundle whose
+    latest attempt failed rather than being cancelled belongs to the failure
+    budget above, not here.
+    """
+    from .mutations import overlay_jobs_for_bundle
+
+    jobs = overlay_jobs_for_bundle(
+        str(segmentation.id),
+        source_model=state.candidate_source_model,
+    )
+    if state.last_built_at is not None:
+        jobs = jobs.filter(created_at__gt=state.last_built_at)
+    newest = jobs.order_by("-created_at", "-id").first()
+    return newest is not None and newest.status == "CANCELLED"
 
 
 def _record_manifest_failure(
@@ -136,6 +193,32 @@ def build_overlay_manifest(
     segmentation: ImageSegmentation,
     state: SegmentationOverlayState,
 ) -> dict[str, Any]:
+    # The manifest is the viewer's cheap status probe as well as its rendering
+    # contract.  Query the one bundle-scoped queue row here so every open
+    # viewer/labelling layer can tell whether what it is showing is being
+    # replaced, including the time a job spends queued behind analysis.
+    from .mutations import ACTIVE_OVERLAY_JOB_STATUSES, overlay_jobs_for_bundle
+
+    update_job = (
+        overlay_jobs_for_bundle(
+            str(segmentation.id),
+            source_model=state.candidate_source_model,
+        )
+        .filter(status__in=ACTIVE_OVERLAY_JOB_STATUSES)
+        .order_by("-created_at")
+        .values(
+            "id",
+            "status",
+            "progress",
+            "message",
+            "progress_units_done",
+            "progress_units_total",
+            "progress_unit_label",
+        )
+        .first()
+    )
+    if update_job is not None:
+        update_job["id"] = str(update_job["id"])
     active_path: str | None = None
     source_query = (
         f"?{urlencode({'source_model': state.candidate_source_model})}"
@@ -168,6 +251,12 @@ def build_overlay_manifest(
         ),
         "pickable": segmentation.segmentation_type.measurement_mode != "global",
         "source_model": state.candidate_source_model or None,
+        "display_role": "model" if state.candidate_source_model else "confirmed",
+        # Overlay work maintains a display cache. The canonical geometry/state
+        # is in the database before this job is queued, so analysis never needs
+        # to wait for this flag to clear.
+        "data_ready": True,
+        "update_job": update_job,
         "bundle_version": state.bundle_version,
         "applied_revision": state.applied_revision,
         "desired_revision": state.desired_revision,
@@ -201,13 +290,27 @@ def ensure_overlay_manifest(
             str(segmentation.id),
             source_model=state.candidate_source_model,
         )
+        if (
+            has_pending_work
+            and not overlay_job_active
+            and not build_failed
+            and _cancelled_since_last_success(segmentation, state)
+        ):
+            # The user cancelled the update that would have refreshed this
+            # bundle. Record it as a stop, on the same terminal footing as a
+            # failure, so the branch below serves the stale bundle instead of
+            # enqueueing the very job they just cancelled. Gated on
+            # ``has_pending_work`` so a job cancelled after it had already
+            # finished writing does not drag a settled bundle out of READY.
+            _record_manifest_failure(segmentation, state, reason=OVERLAY_CANCELLED_MESSAGE)
+            build_failed = True
         if build_failed and not overlay_job_active:
             # The bundle on disk is usable but out of date, and the update that
-            # would have refreshed it failed. Serve the stale bundle -- seeing
-            # yesterday's objects beats seeing none -- and keep the failure
-            # visible rather than resetting it to BUILDING and asking again.
-            # The user's own next edit, or the rebuild button, clears it and
-            # retries; see ``mutations._register_overlay_mutation_one``.
+            # would have refreshed it failed or was cancelled. Serve the stale
+            # bundle -- seeing yesterday's objects beats seeing none -- and keep
+            # the stop visible rather than resetting it to BUILDING and asking
+            # again. The user's own next edit, or the rebuild button, clears it
+            # and retries; see ``mutations._register_overlay_mutation_one``.
             manifest = build_overlay_manifest(segmentation, state)
             _write_debug_manifest(segmentation, state)
             return manifest
@@ -261,6 +364,12 @@ def ensure_overlay_manifest(
         #   2. the job died without recording anything -- killed worker, lost
         #      queue -- and the count of failed jobs since the last successful
         #      build has run out of budget.
+        #   3. the user cancelled it. A first-ever build has no bundle to fall
+        #      back on, so without this the cancel spent no failure budget and
+        #      the build the user stopped was re-queued on every poll, forever.
+        if not build_failed and _cancelled_since_last_success(segmentation, state):
+            _record_manifest_failure(segmentation, state, reason=OVERLAY_CANCELLED_MESSAGE)
+            build_failed = True
         failure_count, failure_message = _failed_rebuilds_since_last_success(segmentation, state)
         out_of_budget = failure_count >= MANIFEST_REQUEUE_FAILURE_LIMIT
         if out_of_budget and not build_failed:

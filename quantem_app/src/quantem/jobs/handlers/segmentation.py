@@ -28,7 +28,7 @@ from quantem.segmentation.source_models import (
     normalize_source_model,
     resolve_segmenter_internal_name,
 )
-from quantem.segmentation.tasks import compute_segment_features_task
+from quantem.segmentation.tasks import measure_segments_batched
 
 
 def _segmentation_run_outcome(
@@ -292,14 +292,30 @@ def handle_refresh_segment_features(
         swept = True
 
     total = len(segment_ids)
-    for index, segment_id in enumerate(segment_ids):
-        cancel.check_cancelled()
-        compute_segment_features_task(segment_id)
-        progress = 10.0 + (80.0 * (index + 1) / total)
+    progress_scope = (
+        reporter.unit_scope(total=total, label="object", stage="measurement") if total else None
+    )
+
+    def report_measured(done: int, count: int) -> None:
+        if progress_scope is not None:
+            progress_scope.set(done, total=count)
         reporter.update(
-            progress=progress,
-            message=f"refreshing segment features ({index + 1}/{total})",
+            progress=10.0 + (80.0 * done / count),
+            message=f"refreshing segment features ({done}/{count})",
         )
+
+    # Batched rather than one object at a time: a sweep after a deferred
+    # Preview covers the whole segmentation, and the per-object form spent
+    # three SQL statements on every row. Progress and cancellation are still
+    # per object -- see measure_segments_batched.
+    measure_segments_batched(
+        segment_ids,
+        cancel_check=cancel.check_cancelled,
+        on_progress=report_measured,
+    )
+
+    if progress_scope is not None:
+        progress_scope.finish()
 
     if total:
         message = f"measured {total} object(s)"
@@ -338,13 +354,52 @@ def handle_rebuild_segmentation_overlay(
         raise ValueError(f"Segmentation {segmentation_id} not found")
 
     source_model = normalize_source_model(payload.get("source_model"))
-    reporter.update(progress=5.0, message=f"rebuilding overlay ({mode})")
+    reporter.update(progress=5.0, message=f"preparing {mode} display update")
+    active_scope = None
+    active_stage = ""
+
+    def report_overlay_progress(stage: str, done: int, total: int) -> None:
+        nonlocal active_scope, active_stage
+        cancel.check_cancelled()
+        stage_copy = {
+            "objects": "collecting objects",
+            "raster": "drawing display tiles",
+            "pyramid": "building zoom levels",
+            "partial": "updating changed display blocks",
+        }.get(stage, "updating display")
+        if stage != active_stage and total > 0:
+            if active_scope is not None:
+                active_scope.finish()
+            active_stage = stage
+            active_scope = reporter.unit_scope(
+                total=total,
+                label="object" if stage == "objects" else "block",
+                stage=f"overlay_{stage}",
+            )
+        if active_scope is not None:
+            active_scope.set(done, total=total)
+        fraction = (float(done) / float(total)) if total else 1.0
+        base, span = {
+            "objects": (5.0, 5.0),
+            "raster": (10.0, 50.0),
+            "pyramid": (60.0, 35.0),
+            "partial": (10.0, 85.0),
+        }.get(stage, (10.0, 85.0))
+        reporter.update(
+            progress=base + span * max(0.0, min(fraction, 1.0)),
+            message=f"{stage_copy} ({done}/{total})" if total else stage_copy,
+        )
+
     state = run_overlay_rebuild_job(
         segmentation,
         mode=mode,
         source_model=source_model or None,
+        on_progress=report_overlay_progress,
+        cancel_check=cancel.check_cancelled,
     )
-    reporter.update(progress=100.0, message="overlay rebuild complete")
+    if active_scope is not None:
+        active_scope.finish()
+    reporter.update(progress=100.0, message="display update complete")
     return {
         "segmentation_id": str(segmentation.id),
         "mode": mode,

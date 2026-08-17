@@ -63,6 +63,7 @@ export function overlayIsUpdating(
   if (!manifest) return false;
   if (overlayBuildFailed(manifest)) return false;
   return (
+    Boolean(manifest.update_job) ||
     manifest.status === "BUILDING" ||
     manifest.status === "DIRTY" ||
     manifest.desired_revision > manifest.applied_revision

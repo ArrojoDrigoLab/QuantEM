@@ -495,10 +495,30 @@ class RestrictedPyramidWritesTheSameBundleTests(TestCase):
 
         exhaustive = mutations._build_pyramid
 
-        def _visit_everything(stage_root, *, width, height, content_bboxes=None):
-            # The pre-fix behaviour: content_bboxes=None is the escape hatch that
-            # still enumerates every block of every level.
-            return exhaustive(stage_root, width=width, height=height)
+        def _visit_everything(
+            stage_root, *, width, height, content_bboxes=None, on_progress=None, cancel_check=None
+        ):
+            """The pre-fix behaviour, kept as a negative control.
+
+            ``content_bboxes=None`` is the escape hatch that still enumerates
+            every block of every level, so dropping the argument on the way
+            through is the whole point of this shim -- and the only thing it is
+            allowed to drop. ``on_progress`` and ``cancel_check`` are the
+            v0.1.6 additions that let an overlay job report per-block progress
+            and answer a cancel mid-pyramid; they are forwarded rather than
+            swallowed, so the exhaustive arm stays as cancellable and as
+            talkative as the restricted one and the only difference between the
+            two rebuilds remains the set of blocks visited. (The two arms do
+            report different totals -- 4 228 blocks against 22 -- which is the
+            saving under test, not a divergence in behaviour.)
+            """
+            return exhaustive(
+                stage_root,
+                width=width,
+                height=height,
+                on_progress=on_progress,
+                cancel_check=cancel_check,
+            )
 
         with patch.object(mutations, "_build_pyramid", _visit_everything):
             state = mutations.rebuild_overlay_full(self.segmentation)

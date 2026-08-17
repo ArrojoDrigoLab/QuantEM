@@ -22,6 +22,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+import zarr
 from django.test import TestCase
 from django.urls import reverse
 from shapely.geometry import box
@@ -31,8 +32,11 @@ from quantem.inference import resample
 from quantem.inference.segmenter import DL_MODEL_NAME, DinoMitoSegmenter
 from quantem.inference.specs import get_model_spec
 from quantem.jobs.constants import (
+    JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
     JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
+    JOB_TYPE_REFRESH_SEGMENT_FEATURES,
     QUEUE_P1_INTERACTIVE,
+    QUEUE_P4_FULL,
 )
 from quantem.jobs.handlers.rethreshold import handle_reextract_at_include_level
 from quantem.jobs.models import Job
@@ -45,12 +49,19 @@ from quantem.segmentation.models import (
     ProbabilityMap,
     RoiSegmentationStatus,
     SegmentationConfig,
+    SegmentationOverlayLabel,
+    SegmentationOverlayState,
     SegmentationResultVersion,
     SegmentObject,
 )
 from quantem.segmentation.organelle_tasks import (
     run_segmentation_full_task,
     run_segmentation_roi_task,
+)
+from quantem.segmentation.overlay_ngff import (
+    get_overlay_active_bundle_path,
+    rebuild_overlay_full,
+    run_overlay_rebuild_job,
 )
 from quantem.segmentation.prob_maps.persistence import (
     LEGACY_MAP_MESSAGE,
@@ -288,6 +299,33 @@ class TheWorkerTests(IncludeLevelDialTestCase):
         assert outcome["segment_count"] == self.live_candidates()
         assert outcome["include_level"] == 0.25
         assert self.live_candidates() > at_half
+
+    def test_preview_publishes_geometry_before_loading_images_or_measuring_objects(self):
+        self.run_the_model(0.5)
+
+        with (
+            patch(
+                "quantem.seg_core.db.inference.load_image_array",
+                side_effect=AssertionError("Preview loaded the full source image"),
+            ),
+            patch(
+                "quantem.seg_core.db.inference.load_image_roi_array",
+                side_effect=AssertionError("Preview loaded source intensity pixels"),
+            ),
+        ):
+            outcome = self.work_the_job(0.3)
+
+        assert outcome["segment_count"] > 0
+        feature_job = Job.objects.get(type=JOB_TYPE_REFRESH_SEGMENT_FEATURES)
+        assert feature_job.queue_name == QUEUE_P4_FULL
+        assert feature_job.payload_json["recompute_features"] is True
+        assert all(
+            "area" not in (features or {})
+            for features in SegmentObject.objects.filter(
+                segmentation=self.segmentation,
+                label_state="CANDIDATE",
+            ).values_list("features", flat=True)
+        )
 
     def test_the_new_object_set_is_its_own_numbered_result(self):
         self.run_the_model(0.5)
@@ -724,12 +762,27 @@ class ConfirmWholeModelOutputTests(IncludeLevelDialTestCase):
         second = self.candidate((50, 50, 75, 75))
         other_model = self.candidate((90, 90, 110, 110), source_model="omniem:mito")
 
-        response = self.post_confirm()
+        with (
+            patch(
+                "quantem.segmentation.api_views.rethreshold._partition_model_candidates",
+                side_effect=AssertionError("fast confirm must not load candidate geometry"),
+            ),
+            patch(
+                "quantem.segmentation.api_views.rethreshold._confirm_model_candidates",
+                side_effect=AssertionError("fast confirm must not run overlap geometry"),
+            ),
+        ):
+            response = self.post_confirm()
 
         assert response.status_code == 200
         assert response.json()["confirmed_count"] == 2
         assert response.json()["skipped_manual_roi_count"] == 0
         assert response.json()["overlay"]["source_model"] == SOURCE_MODEL
+        assert response.json()["overlay"]["rebuild_mode"] == "metadata_only"
+        assert response.json()["overlay"]["sync_applied"] is True
+        assert not Job.objects.filter(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY).exists(), (
+            "plain confirmation must not queue raster or pyramid work"
+        )
         first.refresh_from_db()
         second.refresh_from_db()
         other_model.refresh_from_db()
@@ -753,6 +806,25 @@ class ConfirmWholeModelOutputTests(IncludeLevelDialTestCase):
         assert manual.refined == "MANUAL"
         assert manual.geometry.equals(box(0, 0, 25, 20))
         assert not SegmentObject.objects.filter(pk=candidate.pk).exists()
+        assert response.json()["overlay"]["confirmed_display_desired_revision"] >= 1
+
+    def test_a_cross_model_merge_updates_only_the_displays_whose_geometry_changed(self):
+        self.confirmed(
+            (0, 0, 20, 20),
+            source_model="omniem:mito",
+            refined="UNREFINED",
+        )
+        self.candidate((5, 0, 25, 20))
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        jobs = Job.objects.filter(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY)
+        assert {job.payload_json.get("source_model") for job in jobs} == {
+            None,
+            SOURCE_MODEL,
+            "omniem:mito",
+        }
 
     def test_non_merging_candidate_excludes_confirmed_pixels_without_changing_them(self):
         manual = self.confirmed((0, 0, 20, 20))
@@ -838,3 +910,176 @@ class ConfirmWholeModelOutputTests(IncludeLevelDialTestCase):
 
         assert response.status_code == 409
         assert "Unlock it first" in response.json()["detail"]
+
+
+class ConfirmContestedPixelsTests(IncludeLevelDialTestCase):
+    """Confirm must repaint the pixels it takes back, and only those.
+
+    Which object owns a pixel two outlines share is decided when the raster is
+    written -- the overlay bakes the priority ladder as paint order, and a
+    rejected object outranks a candidate. So a candidate confirmed on top of
+    something rejected keeps a bite out of it in the raster until something
+    re-rasterises the region, and because Analysis now reuses the settled raster
+    rather than re-rasterising polygons, that bite is missing from the science
+    as well as from the screen. Before the state-only fast path existed, Confirm
+    re-rasterised the whole image and the question never arose.
+
+    The other half of this is the cost: rejecting a few candidates and then
+    confirming the rest is the ordinary dial workflow, so "anything rejected on
+    this image" must not be what puts the raster back in the request path. Only
+    an actual overlap may.
+    """
+
+    def post_confirm(self, source_model: str = SOURCE_MODEL):
+        return self.client.post(
+            self.confirm_url,
+            {"source_model": source_model},
+            content_type="application/json",
+        )
+
+    def rejected(
+        self,
+        bounds: tuple[float, float, float, float],
+        *,
+        source_model: str = SOURCE_MODEL,
+    ) -> SegmentObject:
+        geometry = box(*bounds)
+        return SegmentObject.objects.create(
+            segmentation=self.segmentation,
+            geometry=geometry,
+            centroid=geometry.centroid,
+            bbox=geometry.envelope,
+            label_state="EXCLUDED",
+            source_model=source_model,
+            confidence_score=0.8,
+            features={"source_model": source_model},
+        )
+
+    def bundle(self, source_model: str = "") -> SegmentationOverlayState:
+        return SegmentationOverlayState.objects.get(
+            segmentation=self.segmentation,
+            candidate_source_model=source_model,
+        )
+
+    def owner_of_pixel(self, state: SegmentationOverlayState, *, x: int, y: int) -> int:
+        """The dense label the built raster holds at one pixel."""
+        array = zarr.open_array(
+            str(get_overlay_active_bundle_path(state) / "labels" / "0"),
+            mode="r",
+        )
+        return int(np.asarray(array[y, x]))
+
+    def dense_label(self, state: SegmentationOverlayState, segment: SegmentObject) -> int:
+        return int(
+            SegmentationOverlayLabel.objects.get(
+                overlay_state=state,
+                object_uuid=segment.id,
+            ).label
+        )
+
+    def test_confirming_over_a_rejected_object_repaints_the_pixels_they_share(self):
+        rejected = self.rejected((10, 10, 40, 40))
+        candidate = self.candidate((30, 10, 60, 40))
+        confirmed_display = rebuild_overlay_full(self.segmentation, desired_revision=0)
+        model_display = rebuild_overlay_full(
+            self.segmentation,
+            source_model=SOURCE_MODEL,
+            desired_revision=0,
+        )
+        # The premise: EXCLUDED outranks CANDIDATE, so the rejected object holds
+        # the shared strip in both rasters before the confirmation.
+        assert self.owner_of_pixel(confirmed_display, x=35, y=25) == self.dense_label(
+            confirmed_display, rejected
+        )
+        assert self.owner_of_pixel(model_display, x=35, y=25) == self.dense_label(
+            model_display, rejected
+        )
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["confirmed_count"] == 1
+        assert response.json()["overlay"]["rebuild_mode"] != "metadata_only", (
+            "a confirmation that takes pixels off a rejected object cannot be LUT-only"
+        )
+
+        run_overlay_rebuild_job(self.segmentation, mode="partial")
+        run_overlay_rebuild_job(self.segmentation, mode="partial", source_model=SOURCE_MODEL)
+
+        confirmed_display = self.bundle()
+        model_display = self.bundle(SOURCE_MODEL)
+        assert self.owner_of_pixel(confirmed_display, x=35, y=25) == self.dense_label(
+            confirmed_display, candidate
+        ), "the confirmed object is rendered and measured with a hole in it"
+        assert self.owner_of_pixel(model_display, x=35, y=25) == self.dense_label(
+            model_display, candidate
+        )
+
+    def test_confirming_over_another_models_candidate_repaints_the_confirmed_display(self):
+        """Two models on one image contest pixels without any rejection at all.
+
+        Both candidate sets live in the source-less confirmed display, equal
+        priority is broken by area, so the smaller of the two owns the overlap
+        and goes on owning it after the other model is confirmed and hidden.
+        """
+        other_model = self.candidate((30, 10, 50, 40), source_model="omniem:mito")
+        candidate = self.candidate((10, 10, 40, 40))
+        confirmed_display = rebuild_overlay_full(self.segmentation, desired_revision=0)
+        assert self.owner_of_pixel(confirmed_display, x=35, y=25) == self.dense_label(
+            confirmed_display, other_model
+        )
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["overlay"]["rebuild_mode"] != "metadata_only"
+
+        run_overlay_rebuild_job(self.segmentation, mode="partial")
+
+        confirmed_display = self.bundle()
+        assert self.owner_of_pixel(confirmed_display, x=35, y=25) == self.dense_label(
+            confirmed_display, candidate
+        )
+        other_model.refresh_from_db()
+        assert other_model.label_state == "CANDIDATE"
+
+    def test_rejected_objects_that_are_not_overlapped_keep_confirm_off_the_raster(self):
+        """The cost half: a rejection somewhere on the image is not a rebuild."""
+        self.rejected((10, 10, 40, 40))
+        self.candidate((60, 60, 90, 90))
+        self.candidate((120, 120, 150, 150))
+        rebuild_overlay_full(self.segmentation, desired_revision=0)
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["confirmed_count"] == 2
+        assert response.json()["overlay"]["rebuild_mode"] == "metadata_only"
+        assert not Job.objects.filter(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY).exists()
+
+    def test_the_geometry_path_repaints_contested_pixels_too(self):
+        """A confirmed object elsewhere takes Confirm down the geometry path.
+
+        That path arbitrates against confirmed objects only, so a candidate that
+        overlaps nothing but a rejected object is a plain confirmation there as
+        well and used to contribute nothing to the dirty region.
+        """
+        self.confirmed((200, 200, 220, 220))
+        rejected = self.rejected((10, 10, 40, 40))
+        candidate = self.candidate((30, 10, 60, 40))
+        confirmed_display = rebuild_overlay_full(self.segmentation, desired_revision=0)
+        assert self.owner_of_pixel(confirmed_display, x=35, y=25) == self.dense_label(
+            confirmed_display, rejected
+        )
+
+        response = self.post_confirm()
+
+        assert response.status_code == 200
+        assert response.json()["confirmed_count"] == 1
+
+        run_overlay_rebuild_job(self.segmentation, mode="partial")
+
+        confirmed_display = self.bundle()
+        assert self.owner_of_pixel(confirmed_display, x=35, y=25) == self.dense_label(
+            confirmed_display, candidate
+        )

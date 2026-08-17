@@ -17,7 +17,10 @@ import shutil
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient, APIRequestFactory
 from shapely.geometry import Polygon
 
@@ -30,6 +33,7 @@ from quantem.jobs.models import Job
 from quantem.jobs.reporter import CancelToken, JobCancelledError, JobReporter
 from quantem.segmentation.api_views.analysis import AnalysisRunExportView
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
+from quantem.segmentation.overlay_ngff import rebuild_overlay_full
 from quantem.segmentation.type_service import (
     get_or_create_mitochondria_type,
     get_or_create_tissue_type,
@@ -42,6 +46,14 @@ IMAGE_SIZE = 200
 MITO_BOXES = ((30, 30), (90, 40), (60, 120))
 #: A candidate the user has not accepted. Nothing may count it.
 CANDIDATE_BOX = (150, 150)
+
+
+class _StopMeasuring(Exception):
+    """Stands in for ``JobCancelledError`` in the measurement fill-in tests.
+
+    The fill-in takes a plain ``cancel_check`` callable and never names the
+    job layer's exception type, so neither does the test.
+    """
 
 
 def _square(x: float, y: float, side: float = 20.0) -> Polygon:
@@ -111,6 +123,196 @@ class AnalysisRunTestCase(TestCase):
 
 
 class LoaderTests(AnalysisRunTestCase):
+    def test_analysis_measures_a_geometry_first_confirm_before_exporting_it(self):
+        segment = self.objects[0]
+        segment.features = {"generated_by_model": True}
+        segment.save(update_fields=["features"])
+        progress: list[tuple[int, int, str]] = []
+
+        loaded = loaders.load_inputs(
+            self._make_run(tissue_segmentation_id=str(self.tissue.id)),
+            on_feature_progress=lambda done, total, message: progress.append(
+                (done, total, message)
+            ),
+        )
+
+        segment.refresh_from_db()
+        self.assertIn("area", segment.features)
+        self.assertIn(str(segment.id), loaded.inputs.object_features)
+        self.assertEqual(progress, [(1, 1, "measuring newly confirmed objects")])
+
+    def _unmeasured_segmentation(self, name: str, count: int) -> ImageSegmentation:
+        """A segmentation whose confirmed objects carry geometry but no metrics.
+
+        This is the state a deferred Preview leaves behind: the extractor wrote
+        the outline and its ``*_generated`` marker and nothing else.
+        """
+        image = create_small_test_image(name, width=IMAGE_SIZE, height=IMAGE_SIZE)
+        segmentation = ImageSegmentation.objects.create(
+            asset=image.asset, segmentation_type=get_or_create_mitochondria_type()
+        )
+        for index in range(count):
+            polygon = _square(10 + (index % 12) * 15, 10 + (index // 12) * 15, side=8)
+            SegmentObject.objects.create(
+                segmentation=segmentation,
+                geometry=polygon,
+                centroid=polygon.centroid,
+                bbox=polygon.envelope,
+                label_state="CONFIRMED",
+                features={"generated_by_model": True},
+            )
+        return segmentation
+
+    @staticmethod
+    def _segmentation_sql(captured: list[dict]) -> list[str]:
+        """The captured statements that touch the objects being measured.
+
+        Scoped to the segmentation tables on purpose. The image-reading layer
+        still resolves the pyramid once per object underneath
+        ``load_image_roi_array``, which is a separate N+1 in
+        ``quantem.assets.pyramid_authority`` rather than anything this fill-in
+        controls, and folding it in would make this test fail for a reason it
+        is not about.
+        """
+        return [
+            query["sql"]
+            for query in captured
+            if "segmentation_segmentobject" in query["sql"]
+            or "segmentation_probabilitymap" in query["sql"]
+        ]
+
+    def test_the_measurement_fill_in_costs_the_same_sql_for_4_objects_as_for_36(self):
+        """The fill-in is batched, so its SQL does not scale with object count.
+
+        Preview defers measurement and Analysis outranks the background sweep,
+        so this loop routinely covers *every* confirmed object with the user
+        watching. Measured one at a time it cost a SELECT of the object, a
+        SELECT of the segmentation's probability maps and a single-row
+        committing UPDATE each -- tens of thousands of round trips on a large
+        image before the first mask was built. Two sizes rather than a bare
+        upper bound: an absolute number would drift with unrelated ORM changes,
+        whereas "nine times the objects, the same number of statements" is the
+        property that actually matters.
+        """
+        few = self._unmeasured_segmentation("Batched Fill-in Few", 4)
+        many = self._unmeasured_segmentation("Batched Fill-in Many", 36)
+
+        with CaptureQueriesContext(connection) as few_queries:
+            self.assertEqual(loaders.ensure_confirmed_object_measurements(few), 4)
+        with CaptureQueriesContext(connection) as many_queries:
+            self.assertEqual(loaders.ensure_confirmed_object_measurements(many), 36)
+
+        self.assertEqual(
+            len(self._segmentation_sql(many_queries.captured_queries)),
+            len(self._segmentation_sql(few_queries.captured_queries)),
+            "the measurement fill-in issued more SQL for more objects",
+        )
+        writes = [
+            sql
+            for sql in self._segmentation_sql(many_queries.captured_queries)
+            if sql.lstrip().upper().startswith("UPDATE")
+        ]
+        self.assertEqual(len(writes), 1, "36 objects were written one UPDATE at a time")
+        # Not a vacuous pass: every object really was measured, its provenance
+        # marker survived, and a second call finds nothing left to do.
+        for segment in SegmentObject.objects.filter(segmentation=many):
+            self.assertIn("area", segment.features)
+            self.assertIn("generated_by_model", segment.features)
+        self.assertEqual(loaders.ensure_confirmed_object_measurements(many), 0)
+
+    def test_the_measurement_fill_in_reports_and_cancels_per_object(self):
+        """Batching the SQL must not batch the progress bar or Cancel.
+
+        A chunk is 200 objects; reporting once per chunk would freeze the
+        counter for the length of 200 image-window reads, and checking
+        cancellation once per chunk would make Cancel take just as long.
+        """
+        segmentation = self._unmeasured_segmentation("Batched Fill-in Progress", 6)
+        progress: list[tuple[int, int, str]] = []
+        checks: list[int] = []
+
+        loaders.ensure_confirmed_object_measurements(
+            segmentation,
+            cancel_check=lambda: checks.append(1),
+            on_progress=lambda done, total, message: progress.append((done, total, message)),
+        )
+
+        self.assertEqual(
+            progress,
+            [(index, 6, "measuring newly confirmed objects") for index in range(1, 7)],
+        )
+        self.assertGreaterEqual(len(checks), 6)
+
+    def test_cancelling_the_fill_in_keeps_what_it_had_already_measured(self):
+        """A cancelled batch still stores the objects it finished.
+
+        The per-object UPDATE this replaced could not lose anything; a batched
+        write can, so the chunk is flushed on the way out. The work is
+        recoverable either way -- the next sweep recomputes which objects are
+        unmeasured -- but a user who cancels after watching it count to 12 000
+        should keep those 12 000, not the last multiple of the batch size.
+        """
+        segmentation = self._unmeasured_segmentation("Batched Fill-in Cancel", 5)
+        calls = {"n": 0}
+
+        def cancel_after_three() -> None:
+            # One call guards the chunk's SELECT, then one before each object.
+            calls["n"] += 1
+            if calls["n"] > 4:
+                raise _StopMeasuring()
+
+        with self.assertRaises(_StopMeasuring):
+            loaders.ensure_confirmed_object_measurements(
+                segmentation, cancel_check=cancel_after_three
+            )
+
+        measured = [
+            segment
+            for segment in SegmentObject.objects.filter(segmentation=segmentation)
+            if "area" in segment.features
+        ]
+        self.assertEqual(len(measured), 3)
+
+    def test_a_compartment_named_tissue_that_is_the_tissue_mask_is_not_swallowed(self):
+        """Analysing a Tissue segmentation that is also the tissue mask.
+
+        ``normalise_params`` names a solo compartment after its organelle, and
+        for a Tissue segmentation that name is ``"tissue"`` -- the same key the
+        tissue mask is appended under. Disambiguating on ``(name, id)`` consumed
+        both entries as the tissue and returned a CompartmentSet with no masks
+        at all, silently: the run still succeeded, with no composition columns
+        and no mask for a ``distance_target="tissue"`` to resolve against.
+        """
+        params = loaders.normalise_params(
+            {"tissue_segmentation_id": str(self.tissue.id)}, segmentation=self.tissue
+        )
+        self.assertEqual(params["compartments"], {"tissue": str(self.tissue.id)})
+        run = AnalysisRun.objects.create(
+            segmentation=self.tissue, params=params, group=params["group"]
+        )
+
+        loaded = loaders.load_inputs(run)
+
+        compartments = loaded.inputs.compartments
+        self.assertIn("tissue", compartments.masks)
+        self.assertIsNotNone(compartments.tissue)
+        self.assertTrue(np.array_equal(compartments.masks["tissue"], compartments.tissue))
+        # The 160 px square the fixture paints as tissue, not an empty mask.
+        self.assertEqual(int(compartments.masks["tissue"].sum()), 160 * 160)
+
+    def test_a_segmentation_used_twice_in_one_run_is_rasterised_once(self):
+        with mock.patch.object(
+            loaders, "segmentation_mask", wraps=loaders.segmentation_mask
+        ) as rasterise:
+            compartments = loaders.build_compartment_set(
+                {"tissue": self.tissue},
+                tissue=self.tissue,
+                shape=(IMAGE_SIZE, IMAGE_SIZE),
+            )
+
+        self.assertEqual(rasterise.call_count, 1)
+        self.assertIs(compartments.masks["tissue"], compartments.tissue)
+
     def test_only_confirmed_objects_are_rasterised(self):
         mask = loaders.segmentation_mask(self.segmentation, (IMAGE_SIZE, IMAGE_SIZE))
 
@@ -121,6 +323,24 @@ class LoaderTests(AnalysisRunTestCase):
             mask[cy + 10, cx + 10],
             "a CANDIDATE object was rasterised; only confirmed objects count",
         )
+
+    def test_a_settled_display_raster_is_reused_without_polygon_rasterisation(self):
+        rebuild_overlay_full(self.segmentation, desired_revision=0)
+
+        with mock.patch.object(
+            loaders,
+            "rasterize_region",
+            side_effect=AssertionError("analysis ignored the settled overlay cache"),
+        ):
+            mask = loaders.segmentation_mask(
+                self.segmentation,
+                (IMAGE_SIZE, IMAGE_SIZE),
+            )
+
+        for x, y in MITO_BOXES:
+            self.assertTrue(mask[y + 10, x + 10])
+        cx, cy = CANDIDATE_BOX
+        self.assertFalse(mask[cy + 10, cx + 10])
         # Three 20x20 squares are 3 * 400 px. This used to read 3 * 21 * 21 =
         # 1323, because cv2.fillPoly painted both boundaries of every span and a
         # square spanning 20 px covered 21. The mask is now what was drawn --
@@ -568,8 +788,8 @@ class ServiceTests(AnalysisRunTestCase):
         run = self._make_run(tissue_segmentation_id=str(self.tissue.id), replicates=5)
         real = service.run_analysis
 
-        def poisoned(inputs):
-            result = real(inputs)
+        def poisoned(inputs, **kwargs):
+            result = real(inputs, **kwargs)
             result["objects"]["density"]["per_um2"] = float("nan")
             return result
 
@@ -740,8 +960,8 @@ class JobTests(AnalysisRunTestCase):
         job = self._job()
         real_run_analysis = service.run_analysis
 
-        def cancel_after_measuring(inputs):
-            out = real_run_analysis(inputs)
+        def cancel_after_measuring(inputs, **kwargs):
+            out = real_run_analysis(inputs, **kwargs)
             Job.objects.filter(id=job.id).update(cancel_requested=True)
             return out
 

@@ -221,12 +221,19 @@ export function IncludeLevelDial({
     setApplyJobId(null);
     if (applyJobStatus === "FAILED" || applyJobStatus === "CANCELLED") {
       setSubmitError(applyJob?.message?.trim() || DIAL_FAILED_FALLBACK);
+    } else if (
+      applyJobStatus === "SUCCESS" &&
+      applyJob?.result_json?.feature_job_id
+    ) {
+      setConfirmationMessage(
+        "Preview geometry is ready. Measuring intensity and object details in the background."
+      );
     }
     void load().then((next) => {
       if (next) setDraft(null);
       if (applyJobStatus === "SUCCESS") onReextracted?.();
     });
-  }, [applyJob?.message, applyJobStatus, load, onReextracted]);
+  }, [applyJob?.message, applyJob?.result_json, applyJobStatus, load, onReextracted]);
 
   const startRun = useCallback(
     async (packId: string) => {

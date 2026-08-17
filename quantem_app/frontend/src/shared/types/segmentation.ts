@@ -100,6 +100,8 @@ export interface SegmentationOverlayMutationState {
   sync_applied: boolean;
   rebuild_mode: "sync_partial" | "async_partial" | "async_full" | "metadata_only";
   source_model?: string | null;
+  /** Desired revision of the separate source-less confirmed-display bundle. */
+  confirmed_display_desired_revision?: number;
 }
 
 export interface RoiCompletionResponse extends SegmentationRoi {
@@ -137,6 +139,17 @@ export interface SegmentationOverlayManifest {
   arrays: string[];
   label_dtype: "uint32";
   source_model?: string | null;
+  display_role?: "model" | "confirmed";
+  data_ready?: boolean;
+  update_job?: {
+    id: string;
+    status: "PENDING" | "RETRY" | "RUNNING" | "CANCEL_REQUESTED";
+    progress: number;
+    message: string;
+    progress_units_done: number | null;
+    progress_units_total: number | null;
+    progress_unit_label: string;
+  } | null;
   bundle_version: number;
   applied_revision: number;
   desired_revision: number;

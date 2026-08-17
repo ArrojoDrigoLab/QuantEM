@@ -560,6 +560,64 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         report(1.0)
         return segments
 
+    def extract_instances_geometry(
+        self,
+        prob: np.ndarray,
+        *,
+        min_area: int | None = None,
+        coordinate_offset: tuple[float, float] | None = None,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> list[ExtractedSegment]:
+        """Run threshold/morphology and publish outlines without measurements.
+
+        "Without measurements" means without the ones that need the source image
+        loaded, which is the whole cost this path avoids. The probability means
+        under each outline are still written: they read ``prob``, which is
+        already in hand, and no later pass can recover them (see
+        :func:`quantem.seg_core.extraction.build_segment_from_region`).
+        """
+        report = on_progress or (lambda _fraction: None)
+        report(0.0)
+        _report_stage(STAGE_EXTRACTING, organelle=self.ORGANELLE)
+        area_floor = int(min_area) if min_area is not None else self._min_area
+        dx, dy = coordinate_offset or (0.0, 0.0)
+        labels = postprocess.postprocess_mask(
+            self._foreground_mask(prob),
+            close_radius=self._organelle.close_radius,
+            min_area=area_floor,
+        )
+        # ``prob`` on this path *is* the one model's own map -- the replay adopts
+        # a single stored map and thresholds it directly, and refuses outright
+        # for a segmenter with several outputs -- so naming it gives the same
+        # ``mean_prob_<model>`` key a fresh run writes. That parity is the
+        # invariant the dial is built on: the objects a dial movement produces
+        # are the objects a fresh run at that level would produce, features and
+        # all. A hypothetical multi-output segmenter combines its maps into a
+        # ``prob`` that is nobody's map, so it names none.
+        model_names = list(self.get_dl_model_names())
+        prob_maps = {model_names[0]: prob} if len(model_names) == 1 else {}
+        regions = regionprops(labels)
+        total = max(len(regions), 1)
+        segments: list[ExtractedSegment] = []
+        for idx, region in enumerate(regions):
+            segment = build_segment_from_region(
+                region,
+                labels,
+                prob_maps,
+                prob,
+                self.generated_flag,
+                float(dx),
+                float(dy),
+                None,
+                measure_features=False,
+            )
+            if segment is not None:
+                segments.append(segment)
+            if idx % 64 == 0:
+                report(idx / total)
+        report(1.0)
+        return segments
+
     # --- Provenance ---
 
     def get_probability_map_metadata(self, model_name: str) -> dict[str, object]:
