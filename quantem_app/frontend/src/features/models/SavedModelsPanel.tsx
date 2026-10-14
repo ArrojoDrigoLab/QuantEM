@@ -68,7 +68,7 @@ export function SavedModelsPanel({ experimentId, refreshKey = "" }: { experiment
       </form>}
     </article>)}</div>
     <ConfirmDialog isOpen={Boolean(deleting)} title="Delete model?"
-      message={`Delete weights for “${deleting?.name}”? This cannot be undone. Existing segmentations and measurement records stay available, but this model can no longer run. Models used by active jobs or saved descendants cannot be deleted.`}
+      message={`Delete the model “${deleting?.name}”? This will permanently delete this model. Existing segmentations and analyses will remain available, but this model will no longer be available for new segmentations.`}
       confirmText="Delete model" cancelText="Cancel" onCancel={() => setDeleting(null)} onConfirm={() => {
         const model = deleting; setDeleting(null); if (!model) return; setBusy(true);
         void apiRequest(`/api/finetune/models/${model.id}/`, { method: "DELETE" }).then(load)

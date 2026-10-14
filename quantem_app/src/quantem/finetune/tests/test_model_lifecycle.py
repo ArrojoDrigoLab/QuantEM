@@ -120,7 +120,9 @@ class ModelLifecycleTests(TestCase):
             base_model=self.parent.base_model,
             status="SUCCESS",
         )
-        self.assertEqual(self.client.delete(self.url).status_code, 409)
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("used to train another saved model", response.data["detail"])
         self.assertTrue(self.parent.head_file.exists())
 
     def test_archive_hides_new_selection_but_is_reversible(self):

@@ -96,7 +96,7 @@ class SavedModelView(APIView):
             if adapter.versions.filter(deleted_at__isnull=True).exists():
                 return Response(
                     {
-                        "detail": "This model has saved child versions. Archive it to keep their training history intact."
+                        "detail": "This model was used to train another saved model and cannot be deleted. You can archive it instead."
                     },
                     status=409,
                 )

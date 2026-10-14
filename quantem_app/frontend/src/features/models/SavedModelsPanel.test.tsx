@@ -55,16 +55,22 @@ it("renames, archives and restores through the model lifecycle API", async () =>
   }));
 });
 
-it("keeps a model visible when deletion is blocked by an active task", async () => {
+it.each([
+  { reason: "an active task", message: "This model is in use by a task. Wait or cancel the task first." },
+  { reason: "another saved model", message: "This model was used to train another saved model and cannot be deleted. You can archive it instead." },
+])("keeps the model and shows a red error when deletion is blocked by $reason", async ({ message }) => {
   const user = userEvent.setup();
   vi.mocked(apiRequest).mockImplementation(async (_url, options) => {
-    if (options?.method === "DELETE") throw new Error("This model is in use by a task.");
+    if (options?.method === "DELETE") throw new Error(message);
     return [model];
   });
   render(<SavedModelsPanel />);
   await user.click(await screen.findByRole("button", { name: "Delete model" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent(`Delete the model “${model.name}”? This will permanently delete this model. Existing segmentations and analyses will remain available, but this model will no longer be available for new segmentations.`);
+  expect(screen.getByRole("dialog")).not.toHaveTextContent(message);
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete model" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("in use by a task");
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+  expect(screen.getByRole("alert")).toHaveClass("text-red-700");
   expect(screen.getByText(model.name)).toBeInTheDocument();
 });
 
