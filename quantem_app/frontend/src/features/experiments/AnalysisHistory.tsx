@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { getAnalysisBatch, getAnalysisHistory, type AnalysisBatch, type AnalysisHistoryEntry } from "@/shared/api/analysisHistory";
+import { getAnalysisBatch, getAnalysisHistory, type AnalysisBatch, type AnalysisHistoryEntry, type BatchItem } from "@/shared/api/analysisHistory";
 import { getAnalysisExportUrl, getAnalysisRun } from "@/shared/api/analysis";
 import { apiRequest, resolveApiUrl } from "@/shared/api/core/http";
 import type { WorkspaceImage } from "@/shared/api/workspace";
@@ -9,39 +9,17 @@ import { Button } from "@/shared/ui/design";
 import { formatTimestamp } from "@/shared/ui/format";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { AnalysisResults } from "@/features/analysis/components/AnalysisResults";
+import { AnalysisSettings } from "./AnalysisSettings";
+import { ImageAnalysisResultsDialog } from "./ImageAnalysisResultsDialog";
 
 const statusName: Record<string, string> = { SUCCESS: "Complete", PARTIAL: "Partly complete", PENDING: "Queued", RUNNING: "Running", FAILED: "Failed", CANCELLED: "Cancelled", SKIPPED: "Skipped" };
-const settingNames: Record<string, string> = {
-  mask_name: "Measurement area", require_complete: "Require completed review", reuse: "Reuse matching results",
-  tissue_segmentation_id: "Measurement mask", analysis_mask_ids: "Measurement masks", compartments: "Structures",
-  objects_in_measurement_area: "Only objects inside measurement area", points_source: "Point source",
-  points_csv: "Imported points", distance_target: "Distance to", band_edges_nm: "Distance bands (nm)",
-  replicates: "Monte Carlo repetitions", seed: "Random seed", resolution_nm_per_pixel: "Resolution (nm/px)",
-};
-
-function Settings({ values, images }: { values: Record<string, unknown>; images: WorkspaceImage[] }) {
-  const names = new Map(images.flatMap((image) => [[image.id, image.name], ...image.segmentations.map((seg) => [seg.id, `${image.name}: ${seg.name}`]), ...image.segmentations.map((seg) => [seg.type, seg.name])] as [string, string][]));
-  const display = (value: unknown): string => {
-    if (value == null || value === "") return "None";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    if (typeof value === "string") return names.get(value) ?? value;
-    if (Array.isArray(value)) return value.map(display).join(", ") || "None";
-    if (typeof value === "object") return Object.entries(value).map(([key, entry]) => `${key.replaceAll("_", " ")}: ${display(entry)}`).join("; ");
-    return String(value);
-  };
-  return <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
-    {Object.entries(values).filter(([key]) => !["asset_ids", "dataset_ids", "name", "segmentation_types"].includes(key)).map(([key, value]) => <div key={key} className="contents">
-      <dt className="font-medium">{settingNames[key] ?? key.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase())}</dt>
-      <dd className="min-w-0 whitespace-pre-wrap break-words">{key === "mask_name" && !value ? "Whole image" : display(value)}</dd>
-    </div>)}
-  </dl>;
-}
 
 function HistoryDetails({ entry, images, onChanged }: { entry: AnalysisHistoryEntry; images: WorkspaceImage[]; onChanged: () => void }) {
   const [detail, setDetail] = useState<AnalysisBatch | AnalysisRun | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [selectedItem, setSelectedItem] = useState<BatchItem | null>(null);
   useEffect(() => {
     let cancelled = false;
     let timer: number | undefined;
@@ -74,25 +52,24 @@ function HistoryDetails({ entry, images, onChanged }: { entry: AnalysisHistoryEn
       {detail.items.some((item) => ["PENDING", "RUNNING"].includes(item.status ?? "")) && <Button disabled={busy} onClick={() => void act("cancel")}>Cancel remaining</Button>}
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
-    <details><summary className="cursor-pointer font-medium">Analysis settings</summary><div className="mt-3"><Settings values={detail.settings} images={images} /></div></details>
+    <details><summary className="cursor-pointer font-medium">Analysis settings</summary><div className="mt-3"><AnalysisSettings values={detail.settings} images={images} /></div></details>
     <div className="overflow-x-auto"><table className="w-full text-left text-sm">
       <thead><tr>{["Image", "Structure", "Area", "Status", "Results"].map((name) => <th className="border-b p-2" key={name}>{name}</th>)}</tr></thead>
-      <tbody>{detail.items.map((item, index) => <tr key={index}>
+      <tbody>{detail.items.map((item, index) => {
+        const structure = images.flatMap((image) => image.segmentations).find((seg) => seg.type === item.identity.organelle)?.name ?? item.identity.organelle;
+        return <tr key={index}>
         <td className="border-b p-2">{item.identity.image}</td>
-        <td className="border-b p-2">{images.flatMap((image) => image.segmentations).find((seg) => seg.type === item.identity.organelle)?.name ?? item.identity.organelle}</td>
+        <td className="border-b p-2">{structure}</td>
         <td className="border-b p-2">{item.identity.measurement_area}</td>
         <td className="border-b p-2">{statusName[item.status ?? ""] ?? item.status}{item.current === false ? " · inputs changed" : ""}{item.reason && <p>{item.reason}</p>}</td>
-        <td className="border-b p-2"><details><summary className="cursor-pointer">Details</summary>
-          <div className="my-3"><Settings values={{ sample: item.identity.sample_id || item.identity.image, group: item.identity.group, resolution_nm_per_pixel: item.identity.pixel_size_nm, ...item.params }} images={images} /></div>
-          {Object.entries(item.metrics ?? {}).map(([metric, value]) => <p key={metric}>{metric.replaceAll("_", " ")}: {value?.toLocaleString() ?? "—"}</p>)}
-          {item.run_id && item.status === "SUCCESS" && <a className="text-cyan-800 underline" href={getAnalysisExportUrl(item.run_id, "manifest.json")} download>Download full settings</a>}
-        </details></td>
-      </tr>)}</tbody>
+        <td className="border-b p-2"><Button size="sm" aria-label={`View results for ${item.identity.image} · ${structure}`} onClick={() => setSelectedItem(item)}>View results</Button></td>
+      </tr>; })}</tbody>
     </table></div>
+    {selectedItem && <ImageAnalysisResultsDialog item={selectedItem} images={images} onClose={() => setSelectedItem(null)} />}
   </div>;
   return <div className="space-y-4">
     <div className="flex flex-wrap gap-4">{detail.exports.map((file) => <a key={file} className="text-cyan-800 underline" href={getAnalysisExportUrl(detail.id, file)} download>{file}</a>)}</div>
-    <details><summary className="cursor-pointer font-medium">Analysis settings</summary><div className="mt-3"><Settings values={detail.params as unknown as Record<string, unknown>} images={images} /></div></details>
+    <details><summary className="cursor-pointer font-medium">Analysis settings</summary><div className="mt-3"><AnalysisSettings values={detail.params as unknown as Record<string, unknown>} images={images} /></div></details>
     {detail.error && <p role="alert" className="text-red-700">{detail.error}</p>}
     <AnalysisResults run={detail} />
   </div>;

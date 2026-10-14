@@ -11,8 +11,10 @@ a desktop UI that blocks on that looks broken.
 
 from __future__ import annotations
 
+import csv
 import logging
 import mimetypes
+from itertools import islice
 from pathlib import Path
 
 from django.http import FileResponse
@@ -203,6 +205,9 @@ class AnalysisRunExportView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        return self.file_response(request, candidate)
+
+    def file_response(self, request, candidate: Path):
         content_type = (
             EXPORT_CONTENT_TYPES.get(candidate.suffix.lower())
             or mimetypes.guess_type(candidate.name)[0]
@@ -214,6 +219,41 @@ class AnalysisRunExportView(APIView):
             filename=candidate.name,
             content_type=content_type,
         )
+
+
+class AnalysisRunTableView(AnalysisRunExportView):
+    """Read a bounded page of a saved CSV without recalculating measurements."""
+
+    def file_response(self, request, candidate: Path):
+        if candidate.suffix.lower() != ".csv":
+            return Response({"error": "Choose a CSV table from this analysis."}, status=400)
+        try:
+            offset = int(request.query_params.get("offset", 0))
+            limit = int(request.query_params.get("limit", 100))
+            if offset < 0 or not 1 <= limit <= 500:
+                raise ValueError
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "Offset must be non-negative and limit must be between 1 and 500."},
+                status=400,
+            )
+        try:
+            with candidate.open(encoding="utf-8-sig", newline="") as source:
+                reader = csv.reader(source, strict=True)
+                columns = next(reader, [])
+                # Reading one extra row detects another page without counting
+                # or loading the entire export. Quoted newlines remain one row.
+                rows = list(islice((row for row in reader if row), offset, offset + limit + 1))
+        except (OSError, UnicodeError, csv.Error, OverflowError, ValueError):
+            return Response({"error": "The saved table could not be read."}, status=400)
+        return Response({
+            "name": candidate.name,
+            "columns": columns,
+            "rows": rows[:limit],
+            "offset": offset,
+            "limit": limit,
+            "has_more": len(rows) > limit,
+        })
 
 
 def _is_within(candidate: Path, base: Path) -> bool:

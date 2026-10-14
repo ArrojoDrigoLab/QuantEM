@@ -51,7 +51,7 @@ describe("Experiment workbench", () => {
     expect(screen.queryByRole("button", { name: /Select all matching/ })).not.toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Segmentations" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Analyses" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Analysis", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Analysis" }));
     await user.click(screen.getByRole("button", { name: "New analysis" }));
     await user.click(screen.getByRole("button", { name: "Select all matching (51)" }));
     await user.selectOptions(screen.getByLabelText("Dataset"), "d1");
@@ -62,7 +62,7 @@ describe("Experiment workbench", () => {
     view.unmount();
     mount();
     await screen.findByText("Field 01");
-    await user.click(screen.getByRole("button", { name: "Analysis", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Analysis" }));
     await user.click(screen.getByRole("button", { name: "New analysis" }));
     expect(screen.getByRole("checkbox", { name: "Select Field 51" })).toBeChecked();
     expect(screen.getByRole("heading", { name: "Measure selected images (51)" })).toBeInTheDocument();
@@ -85,7 +85,7 @@ describe("Experiment workbench", () => {
     });
     mount();
     await screen.findByText("Field 01");
-    await user.click(screen.getByRole("button", { name: "Analysis", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Analysis" }));
     await user.click(screen.getByRole("button", { name: "New analysis" }));
     await user.click(screen.getByRole("button", { name: "Select all matching (51)" }));
     expect(screen.getByRole("heading", { name: "Measure selected images (51)" })).toBeInTheDocument();
@@ -110,7 +110,7 @@ describe("Experiment workbench", () => {
     const user = userEvent.setup();
     mount();
     await screen.findByText("Field 01");
-    await user.click(screen.getByRole("button", { name: "Analysis", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Analysis" }));
     await user.click(screen.getByRole("button", { name: "New analysis" }));
     await user.click(screen.getByRole("checkbox", { name: "Select Field 01" }));
     await user.click(screen.getByText("Sample groups", { exact: true }));
@@ -147,7 +147,7 @@ describe("Experiment workbench", () => {
     expect(within(models).queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
 
     modelName = "Updated from the tab";
-    await user.click(screen.getByRole("button", { name: "Models", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Models" }));
     await screen.findByText(modelName);
 
     modelName = "Updated from the workspace link";

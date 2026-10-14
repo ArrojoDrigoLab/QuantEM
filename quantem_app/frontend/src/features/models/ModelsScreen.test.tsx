@@ -82,10 +82,10 @@ describe("ModelsScreen", () => {
 
     modelName = "Newly trained model";
     packs = { ...packs, packs: packs.packs.map((pack) => ({ ...pack, installed: true })) };
-    await user.click(screen.getByRole("link", { name: "Models", exact: true }));
+    await user.click(screen.getByRole("link", { name: "Models" }));
     await screen.findByText("Newly trained model");
     await waitFor(() => expect(screen.getAllByText("Downloaded")).toHaveLength(8));
-    expect(screen.queryByRole("button", { name: "Refresh", exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
   });
 
   it("shows the two simple model families and no architecture or local-folder UI", async () => {
