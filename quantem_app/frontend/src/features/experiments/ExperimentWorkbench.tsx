@@ -11,6 +11,20 @@ import { extractApiErrorMessage } from "@/utils/apiErrors";
 
 interface Controls { query: string; dataset: string; sort: string; layout: string; readiness: string; selected: string[] }
 const DEFAULTS: Controls = { query: "", dataset: "", sort: "name", layout: "table", readiness: "", selected: [] };
+
+function ImageStatus({ stage }: { stage: string }) {
+  if (stage === "DONE") return null;
+  const status = `Status: ${stage}`;
+  return <span className="inline-flex shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600"
+    role="img" tabIndex={0} aria-label={status} title={status}>
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10.3 3.9a2 2 0 0 1 3.4 0l8 14A2 2 0 0 1 20 21H4a2 2 0 0 1-1.7-3.1z" fill="#facc15" stroke="#a16207" strokeWidth="1.5" />
+      <path d="M12 8v6" stroke="#713f12" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="12" cy="17" r="1" fill="#713f12" />
+    </svg>
+  </span>;
+}
+
 export function ExperimentWorkbench({ experiment, children, refreshKey }: {
   experiment: Experiment; children: ReactNode; refreshKey: number;
 }) {
@@ -88,7 +102,7 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
         <label>Image order <select className="block rounded border px-2 py-1" value={controls.sort} onChange={(e) => change({ sort: e.target.value })}>
           <option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="sample">Sample ID</option></select></label>
         <label>Readiness <select className="block rounded border px-2 py-1" value={controls.readiness} onChange={(e) => change({ readiness: e.target.value })}>
-          <option value="">All images</option><option value="uncalibrated">Missing calibration</option><option value="reviewed">Has completed review</option><option value="unreviewed">No completed review</option></select></label>
+          <option value="">All images</option><option value="uncalibrated">Missing resolution</option><option value="reviewed">Has completed review</option><option value="unreviewed">No completed review</option></select></label>
         </>}
         <label>View <select className="block rounded border px-2 py-1" value={controls.layout} onChange={(e) => change({ layout: e.target.value })}>
           <option value="table">Workflow table</option><option value="cards">Dataset cards</option></select></label>
@@ -103,12 +117,12 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
       {controls.layout === "cards" ? children :
         loading ? <p role="status">Loading workflow status…</p> :
         <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
-          <thead><tr>{["Select", "Image", "Dataset", "Calibration", "Prediction / review", "Measurements", "Sample / group"].map((label) => <th key={label} className="border-b p-3">{label}</th>)}</tr></thead>
+          <thead><tr>{["Select", "Image", "Dataset", "Resolution", "Prediction / review", "Measurements", "Sample / group"].map((label) => <th key={label} className="border-b p-3">{label}</th>)}</tr></thead>
           <tbody>{visible.map((image) => <tr key={image.id}>
             <td className="border-b p-3"><input aria-label={`Select ${image.name}`} type="checkbox" checked={selectedIds.includes(image.id)} onChange={(e) => e.target.checked ? select([image.id]) : change({ selected: selectedIds.filter((id) => id !== image.id) })} /></td>
-            <td className="border-b p-3"><Link className="font-medium text-cyan-800 underline" to={`/assets/${image.id}`}>{image.name}</Link><p className="text-xs text-slate-500">{image.stage}</p></td>
+            <td className="border-b p-3"><div className="flex items-center gap-2"><Link className="font-medium text-cyan-800 underline" to={`/assets/${image.id}`}>{image.name}</Link><ImageStatus stage={image.stage} /></div></td>
             <td className="border-b p-3">{image.datasets.map((dataset) => dataset.name).join(", ") || "Ungrouped"}</td>
-            <td className="border-b p-3">{image.pixel_size_nm ? `${image.pixel_size_nm} nm/px` : "Missing"}</td>
+            <td className="border-b p-3">{image.pixel_size_nm ? `${image.pixel_size_nm.toFixed(2)} nm/px` : "Missing"}</td>
             <td className="border-b p-3">{image.segmentations.filter((seg) => seg.type !== "quantem_internal_analysis_mask").map((seg) => <p key={seg.id}>
               <Link className="text-cyan-800 underline" to={`/assets/${image.id}/labeling/${seg.type}?seg=${seg.id}`}>{seg.name}</Link>: {seg.stage.toLowerCase().replaceAll("_", " ")} · {seg.review_complete ? "review complete" : "review incomplete"}{seg.measurement_mode !== "global" ? ` · ${seg.confirmed_count} confirmed` : " · area only"}
             </p>)}{!image.segmentations.length && "No segmentation"}</td>
