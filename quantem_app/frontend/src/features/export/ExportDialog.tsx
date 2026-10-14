@@ -111,7 +111,7 @@ export function ExportDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id={titleId} className="m-0 text-xl font-semibold text-slate-950">
-          Export {asset.displayName}
+          Export image or mask · {asset.displayName}
         </h2>
         <p className="mt-2 text-sm text-slate-600">
           Choose one source. The download is an 8-bit grayscale PNG.
@@ -130,7 +130,7 @@ export function ExportDialog({
             />
             <span>
               <span className="block text-sm font-medium text-slate-900">
-                Original EM image
+                EM image (canonical 8-bit PNG)
               </span>
               <span className="block text-xs text-slate-500">
                 Canonical 8-bit grayscale pixels
@@ -193,7 +193,9 @@ export function ExportDialog({
         ) : null}
 
         <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-          Background is 0. Object labels count from 1 through 255, then restart at 1.
+          This exports display rasters, not the original acquisition or measurement tables.
+          Background is 0. Object labels cycle from 1 through 255 and are not unique instance IDs.
+          Use Analysis to export measurements and object IDs.
           {hasAnalysisMasks ? (
             <span className="mt-1 block">
               Where Analysis Mask objects overlap, the object later in the list replaces

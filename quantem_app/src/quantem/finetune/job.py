@@ -720,11 +720,25 @@ def _asset_names(asset_ids: Sequence[str]) -> dict[str, str]:
     }
 
 
+def _training_start(engine, base_model: str, parent_id: str | None):
+    """Reset each round to the same immutable starting checkpoint."""
+    model = engine.load_model(base_model)
+    engine.clear_model_cache()
+    if parent_id:
+        from quantem.finetune.models import Adapter
+
+        parent = Adapter.objects.get(id=parent_id, deleted_at__isnull=True, status="SUCCESS")
+        if parent.base_model != base_model or not parent.head_file:
+            raise ValueError("The parent model is unavailable or incompatible.")
+        load_head(model.module, parent.head_file)
+    return model
+
+
 def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | None) -> dict:
     """Train a named fine-tune over an explicit set of images.
 
     One round per hold-out unit under cross-validation, one otherwise. Every
-    round starts from the released weights, not from the round before it: a fold
+    round starts from the selected parent or released weights, not from the round before it: a fold
     that inherited the previous fold's training would have already seen the area
     it is about to be scored on, and its number would be worthless.
 
@@ -800,8 +814,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
 
     cancel.check_cancelled()
     _stage(reporter, STAGE_LOADING_MODEL, f"loading {base_model}")
-    model = engine.load_model(base_model)
-    engine.clear_model_cache()
+    model = _training_start(engine, base_model, payload.get("parent_adapter_id"))
     spec = model.spec
     scaled = {c.name: to_model_scale_crop(c, canonical_nm=spec.canonical_nm) for c in usable}
     tile = tile_for(spec.tile_size, spec.patch_size)
@@ -820,8 +833,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         cancel.check_cancelled()
         if index:
             # Fresh weights per round. See the docstring.
-            model = engine.load_model(base_model)
-            engine.clear_model_cache()
+            model = _training_start(engine, base_model, payload.get("parent_adapter_id"))
 
         round_config = replace(config, steps=steps_by_round[index])
         patches = build_patches(

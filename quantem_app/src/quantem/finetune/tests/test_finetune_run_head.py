@@ -135,6 +135,33 @@ class ScopedRunTests(TestCase):
         assert (MODELS_DIR / result["head_path"]).resolve() == live.resolve()
         assert Adapter.objects.get(id=self.adapter.id).head_path == result["head_path"]
 
+    def test_continuation_loads_the_parent_for_every_real_training_round(self):
+        from quantem.finetune.adapt import load_head
+
+        self._run()
+        parent = Adapter.objects.get(id=self.adapter.id)
+        parent_bytes = parent.head_file.read_bytes()
+        self.adapter = Adapter.objects.create(
+            parent=parent, base_model=parent.base_model, name="Continued",
+            mode="head", segmentation_type=parent.segmentation_type,
+            training_exposure=self.asset_ids,
+        )
+        self.adapter.scope_assets.set(self.asset_ids)
+        with mock.patch("quantem.finetune.job.load_head", wraps=load_head) as loaded:
+            result, _ = self._run(
+                parent_adapter_id=str(parent.id),
+                training_mode=TRAINING_MODE_HOLDOUT_1,
+                cv_benchmark=True,
+            )
+        assert loaded.call_count == 2
+        assert all(call.args[1] == parent.head_file for call in loaded.call_args_list)
+        assert result["status"] == "SUCCESS"
+        assert result["rounds"] == 2
+        assert parent.head_file.read_bytes() == parent_bytes
+        self.adapter.refresh_from_db()
+        assert self.adapter.head_file != parent.head_file
+        assert any("not independent" in note for note in self.adapter.caveats())
+
     # -- hold out one -------------------------------------------------------
 
     def test_holding_one_image_out_gives_an_image_disjoint_score(self):

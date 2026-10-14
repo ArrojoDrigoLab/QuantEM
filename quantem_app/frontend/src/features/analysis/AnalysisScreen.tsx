@@ -14,7 +14,6 @@ import { segmentationDisplayName } from "@/shared/segmentationNames";
 import {
   getAnalysisRun,
   getAnalysisRuns,
-  getGlobalAreaReport,
   startAnalysisRun,
 } from "@/shared/api/analysis";
 import { cancelJob, deleteJob } from "@/shared/api/jobs";
@@ -23,7 +22,7 @@ import { useJobProgress } from "@/shared/hooks/useJobProgress";
 import { Badge, Button, PageState, Panel } from "@/shared/ui/design";
 import { cx } from "@/shared/ui/cx";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
-import type { AnalysisRun, GlobalAreaReport } from "@/shared/types/analysis";
+import type { AnalysisRun } from "@/shared/types/analysis";
 import {
   ANALYSIS_MASK_INTERNAL_NAME,
   buildAnalysisPayload,
@@ -52,7 +51,6 @@ export function AnalysisScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [globalMaskIds, setGlobalMaskIds] = useState<string[]>([]);
-  const [globalReport, setGlobalReport] = useState<GlobalAreaReport | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [measuringGlobal, setMeasuringGlobal] = useState(false);
 
@@ -145,7 +143,6 @@ export function AnalysisScreen() {
 
   useEffect(() => {
     setGlobalMaskIds([]);
-    setGlobalReport(null);
     setGlobalError(null);
   }, [segmentationId]);
 
@@ -154,7 +151,11 @@ export function AnalysisScreen() {
     setMeasuringGlobal(true);
     setGlobalError(null);
     try {
-      setGlobalReport(await getGlobalAreaReport(segmentationId, globalMaskIds));
+      const response = await startAnalysisRun(segmentationId, { analysis_mask_ids: globalMaskIds });
+      setActiveRunId(response.analysis_run_id);
+      setJobId(response.job_id);
+      setCancelError(null);
+      void refetchRuns();
     } catch (error) {
       setGlobalError(
         extractApiErrorMessage(error, "The foreground-area report could not be measured.")
@@ -162,7 +163,7 @@ export function AnalysisScreen() {
     } finally {
       setMeasuringGlobal(false);
     }
-  }, [globalMaskIds, segmentationId]);
+  }, [globalMaskIds, segmentationId, refetchRuns]);
 
   const handleSelectSegmentation = useCallback(
     (nextId: string) => {
@@ -391,7 +392,7 @@ export function AnalysisScreen() {
               />
             ) : null}
 
-            {!isGlobal ? <RunHistory
+            <RunHistory
               runs={historyRows}
               selectedRunId={activeRunId}
               onSelect={(runId) => {
@@ -401,37 +402,16 @@ export function AnalysisScreen() {
               }}
               loading={runsLoading}
               error={runsError}
-            /> : null}
+            />
           </div>
 
           <div className="flex flex-col gap-5">
-            {isGlobal && globalReport ? (
-              <Panel className="p-4">
-                <h2 className="m-0 text-base font-semibold text-slate-950">
-                  Foreground area report
-                </h2>
-                {[globalReport.whole_image, ...globalReport.analysis_masks].map((row) => (
-                  <div key={row.segmentation_id ?? "whole"} className="mt-3 border-t border-slate-200 pt-3">
-                    <strong className="text-sm text-slate-900">{row.name}</strong>
-                    <p className="m-0 mt-1 text-sm text-slate-700">
-                      {row.foreground_percent === null
-                        ? "Undefined (the denominator has no pixels)"
-                        : `${row.foreground_percent.toFixed(3)}%`}
-                    </p>
-                    <p className="m-0 mt-1 text-xs text-slate-500">
-                      {row.foreground_pixels.toLocaleString()} foreground pixels /{" "}
-                      {row.denominator_pixels.toLocaleString()} denominator pixels
-                    </p>
-                  </div>
-                ))}
-              </Panel>
-            ) : null}
             {/* Exactly one panel describes the run's state, and it is the only
                 place the failure is printed. There used to be two -- a job
                 panel here and a status panel inside AnalysisResults -- which
                 is how the same Windows exit code appeared twice above a
                 sentence claiming the run was still pending. */}
-            {!isGlobal && runState.status && runState.status !== "SUCCESS" ? (
+            {runState.status && runState.status !== "SUCCESS" ? (
               <Panel
                 className={cx(
                   "p-4",
@@ -556,11 +536,11 @@ export function AnalysisScreen() {
               </Panel>
             ) : null}
 
-            {!isGlobal && runState.status === "SUCCESS" && run ? (
+            {runState.status === "SUCCESS" && run ? (
               <AnalysisResults run={run} />
             ) : null}
 
-            {!isGlobal && runState.status === null ? (
+            {runState.status === null ? (
               <Panel className="p-6 text-center">
                 <p className="m-0 text-sm text-slate-600">
                   Configure a run on the left, or pick one from the history to

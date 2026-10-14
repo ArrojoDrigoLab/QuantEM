@@ -187,6 +187,8 @@ export interface AnalysisRunParams {
 }
 
 export interface AnalysisRun {
+  global_area?: GlobalAreaReport | null;
+  current?: boolean | null;
   id: string;
   segmentation_id: string;
   status: AnalysisRunStatus;
@@ -227,6 +229,8 @@ export interface AnalysisRunSummary {
 }
 
 export interface AnalysisRunCreatePayload {
+  objects_in_measurement_area?: boolean;
+  analysis_mask_ids?: string[];
   /** organelle name -> segmentation id, e.g. `{"mito": "<uuid>"}`. */
   compartments?: Record<string, string>;
   tissue_segmentation_id?: string | null;
@@ -245,4 +249,4 @@ export interface AnalysisRunCreateResponse {
 }
 
 /** The three files `write_bundle` produces. */
-export type AnalysisExportName = "objects.csv" | "image_summary.csv" | "manifest.json";
+export type AnalysisExportName = "objects.csv" | "image_summary.csv" | "manifest.json" | "area.csv" | "composition.csv";

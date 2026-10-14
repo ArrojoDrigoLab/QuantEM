@@ -74,7 +74,7 @@ describe("ExportDialog", () => {
       />
     );
 
-    expect(screen.getByRole("radio", { name: /Original EM image/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /canonical 8-bit PNG/i })).toBeChecked();
     expect(await screen.findByRole("radio", { name: /Mitochondria/i })).toBeInTheDocument();
     expect(
       screen.getByRole("radio", { name: /Cell compartments/i })

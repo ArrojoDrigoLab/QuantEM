@@ -63,6 +63,33 @@ class SegmentationAnalysisView(APIView):
 
     def post(self, request, seg_id):
         segmentation = _segmentation_or_404(seg_id)
+        if segmentation.segmentation_type.measurement_mode == "global":
+            from quantem.analysis.batches import enqueue_run
+            from quantem.analysis.identity import input_fingerprint
+
+            mask_ids = request.data.get("analysis_mask_ids", [])
+            if not isinstance(mask_ids, list):
+                return Response({"error": "Choose a list of analysis masks."}, status=400)
+            masks = ImageSegmentation.objects.filter(
+                id__in=mask_ids,
+                asset_id=segmentation.asset_id,
+                segmentation_type__internal_name="quantem_internal_analysis_mask",
+            )
+            if masks.count() != len(set(mask_ids)):
+                return Response({"error": "Choose analysis masks on this image."}, status=400)
+            params = {"global_area": True, "analysis_mask_ids": mask_ids}
+            run = AnalysisRun.objects.create(
+                segmentation=segmentation,
+                params=params,
+                input_fingerprint=input_fingerprint(segmentation, params),
+                input_identity={
+                    "asset_id": str(segmentation.asset_id),
+                    "image": segmentation.asset.display_name,
+                    "provenance": segmentation.final_result_provenance,
+                },
+            )
+            job = enqueue_run(run)
+            return Response({"job_id": str(job.id), "analysis_run_id": str(run.id)}, status=202)
         serializer = AnalysisRunCreateSerializer(
             data=request.data, context={"segmentation": segmentation}
         )
@@ -73,10 +100,17 @@ class SegmentationAnalysisView(APIView):
             )
 
         params = serializer.validated_data
+        from quantem.analysis.identity import input_fingerprint
+
         run = AnalysisRun.objects.create(
             segmentation=segmentation,
             params=params,
             group=params.get("group", ""),
+            input_fingerprint=input_fingerprint(segmentation, params),
+            input_identity={
+                "asset_id": str(segmentation.asset_id),
+                "image": segmentation.asset.display_name,
+            },
         )
 
         defaults = JOB_DEFAULTS[JOB_TYPE_RUN_ANALYSIS]

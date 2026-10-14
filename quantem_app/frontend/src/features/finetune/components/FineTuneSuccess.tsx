@@ -366,6 +366,7 @@ export function FineTuneSuccess({
 
   return (
     <div className="flex flex-col gap-4" data-testid="finetune-success">
+      {run?.evaluation_note && <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{run.evaluation_note}</p>}
       <div className="flex items-center gap-2">
         <Badge tone="good">Finished</Badge>
         <p className="m-0 text-sm text-slate-800">

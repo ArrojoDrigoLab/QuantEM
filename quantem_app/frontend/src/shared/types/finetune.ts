@@ -379,6 +379,8 @@ export interface FineTuneScopeResponse {
 
 /** What a selection is on the wire: datasets expand, then union with assets. */
 export interface FineTuneScopeSelectionPayload {
+  parent_adapter_id?: string;
+  include_previous_annotations?: boolean;
   segmentation_type: string;
   asset_ids: string[];
   dataset_ids: string[];
@@ -428,6 +430,8 @@ export interface FineTunePreviewResponse {
 }
 
 export interface FineTuneRunPayload {
+  parent_adapter_id?: string;
+  include_previous_annotations?: boolean;
   name: string;
   /** Non-null replaces that fine-tune in place; null is a new one, and a name collision is a 409. */
   overwrite_adapter_id: string | null;
@@ -514,6 +518,10 @@ export interface FineTuneCvResults {
 
 /** `GET /api/finetune/runs/<id>/` — the adapter row, plus what CV measured. */
 export type FineTuneRunDetail = Adapter & {
+  parent_id?: string | null;
+  archived_at?: string | null;
+  training_exposure?: string[];
+  evaluation_note?: string;
   cv_results?: FineTuneCvResults | Record<string, never>;
   training_mode?: FineTuneMode;
   cv_benchmark?: boolean;

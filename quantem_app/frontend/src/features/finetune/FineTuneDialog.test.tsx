@@ -828,35 +828,35 @@ describe("FineTuneDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("names an existing fine-tune when it is picked for overwrite", async () => {
+  it("creates a new named version when continuing a saved fine-tune", async () => {
     const user = userEvent.setup();
     stubApi();
     openDialog();
     await screen.findByTestId("scope-tree");
 
     await user.selectOptions(
-      await screen.findByLabelText("Overwrite an existing fine-tune"),
+      await screen.findByLabelText("Continue a saved model"),
       "ad-old"
     );
 
-    expect(screen.getByLabelText("Name")).toHaveValue("First attempt");
+    expect(screen.getByLabelText("Name")).toHaveValue("First attempt · next version");
     expect(
-      screen.getByText(/old weights stay in place until this run succeeds/)
+      screen.getByText(/Creates a new version from the saved weights/)
     ).toBeInTheDocument();
   });
 
-  it("hides overwrite controls when this organelle has no fine-tunes", async () => {
+  it("hides continuation controls when this organelle has no fine-tunes", async () => {
     stubApi({ adapters: [] });
     openDialog();
 
     await screen.findByTestId("scope-tree");
     await screen.findByLabelText("Starting from");
     expect(
-      screen.queryByLabelText("Overwrite an existing fine-tune")
+      screen.queryByLabelText("Continue a saved model")
     ).not.toBeInTheDocument();
   });
 
-  it("inherits labeling model and defaults to a fine-tune scoped to this image", async () => {
+  it("inherits labeling context without implicitly overwriting a saved model", async () => {
     const user = userEvent.setup();
     const started = vi.fn<(payload: FineTuneRunPayload) => void>();
     stubApi({ onStart: started });
@@ -876,10 +876,11 @@ describe("FineTuneDialog", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getByLabelText("Overwrite an existing fine-tune")
-      ).toHaveValue("ad-old")
+        screen.getByLabelText("Continue a saved model")
+      ).toHaveValue("")
     );
-    expect(screen.getByLabelText("Name")).toHaveValue("First attempt");
+    expect(screen.getByLabelText("Name")).toHaveValue("");
+    await user.type(screen.getByLabelText("Name"), "New model");
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Fine-tune" })).toBeEnabled()
@@ -888,7 +889,7 @@ describe("FineTuneDialog", () => {
 
     await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
     expect(started.mock.calls[0][0]).toMatchObject({
-      overwrite_adapter_id: "ad-old",
+      overwrite_adapter_id: null,
       base_model: "omniem:mito",
       asset_ids: ["img-2"],
       segmentation_id: "seg-img-2",
@@ -904,7 +905,7 @@ describe("FineTuneDialog", () => {
     await user.type(screen.getByLabelText("Name"), "First attempt");
 
     expect(
-      screen.getByText(/already called that. Pick it below to replace it/)
+      screen.getByText(/saved version already has that name/)
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Fine-tune" })).toBeDisabled();
   });

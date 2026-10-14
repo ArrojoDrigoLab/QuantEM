@@ -314,6 +314,7 @@ def _remove_segmentation_files(segmentation_id: str) -> None:
     has already happened.
     """
     from quantem.core.config import (  # noqa: PLC0415
+        DATA_DIR,
         GLOBAL_MASKS_DIR,
         PROB_MAPS_DIR,
         TMP_DIR,
@@ -325,6 +326,7 @@ def _remove_segmentation_files(segmentation_id: str) -> None:
         GLOBAL_MASKS_DIR / segmentation_id,
         PROB_MAPS_DIR / segmentation_id,
         TMP_DIR / "prob_maps" / segmentation_id,
+        DATA_DIR / "correction_revisions" / segmentation_id,
     ):
         try:
             shutil.rmtree(path, ignore_errors=True)
@@ -348,8 +350,8 @@ class SegmentationDetailView(APIView):
     ``DELETE``
         Deletes the segmentation and everything that belongs to it: its objects
         (confirmed, rejected and unreviewed alike), its overlay rasters, its
-        probability maps, its adapters (including any trained head weights),
-        its completed-ROI record and its feedback. Nothing is archived; there
+        probability maps, correction revisions,
+        its completed-ROI record and its feedback. Saved models and weights are kept. There
         is no undo short of running the model again. Refused with a 409 while a
         job is queued, running or retrying on the segmentation (the body names
         the task the way Tasks & Queues names it, and carries the job's id and
@@ -456,39 +458,20 @@ class SegmentationDetailView(APIView):
 
         segmentation_id = str(segmentation.id)
 
-        # Adapter head weights live on disk under MODELS_DIR and the row only
-        # names the path, so collect the files before the CASCADE removes the
-        # rows that know about them.
-        Adapter = apps.get_model("finetune", "Adapter")
-        head_files = [
-            head_file
-            for adapter in Adapter.objects.filter(segmentation=segmentation)
-            if (head_file := adapter.head_file) is not None
-        ]
-
         with transaction.atomic():
             # CASCADE takes the objects, overlays (states + labels), probability
-            # map rows, completed ROIs, feedback, config, archives and adapters.
-            # AnalysisRun.segmentation is SET_NULL: the runs and their export
-            # bundles stay, marked segmentation_deleted in their payloads.
+            # map rows, completed ROIs, feedback, config and revision records.
+            # AnalysisRun and Adapter use SET_NULL: saved measurements, model
+            # identities and trained weights survive their source segmentation.
             segmentation.delete()
 
-        for head_file in head_files:
-            try:
-                head_file.unlink(missing_ok=True)
-            except OSError:
-                logger.warning(
-                    "Could not remove adapter head %s while deleting segmentation %s.",
-                    head_file,
-                    segmentation_id,
-                    exc_info=True,
-                )
         _remove_segmentation_files(segmentation_id)
 
         return Response(
             {
                 "deleted": preview,
                 "analysis_runs_kept": preview["analysis_run_count"],
+                "adapters_kept": preview["adapter_count"],
             },
             status=status.HTTP_200_OK,
         )

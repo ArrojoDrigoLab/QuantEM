@@ -27,6 +27,7 @@ from quantem.segmentation.api_views.preview import urlpatterns as preview_urls
 from quantem.segmentation.api_views.propose import urlpatterns as propose_urls
 from quantem.segmentation.api_views.quality import urlpatterns as quality_urls
 from quantem.segmentation.api_views.rethreshold import urlpatterns as rethreshold_urls
+from quantem.segmentation.api_views.revisions import urlpatterns as revision_urls
 from quantem.segmentation.api_views.runs import urlpatterns as runs_urls
 from quantem.segmentation.feedback.views import SegmentationUserFeedbackView
 from quantem.segmentation.views import (
@@ -226,4 +227,5 @@ urlpatterns = [
     *propose_urls,
     *preview_urls,
     *runs_urls,
+    *revision_urls,
 ]

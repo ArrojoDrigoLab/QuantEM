@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { ModelManagementSection } from "@/features/models/ModelManagementSection";
+import { SavedModelsPanel } from "@/features/models/SavedModelsPanel";
 
 /** Legacy direct route; the primary model-management surface is Settings. */
 export function ModelsScreen() {
@@ -22,6 +23,7 @@ export function ModelsScreen() {
             Back to Home
           </Link>
         </header>
+        <SavedModelsPanel />
         <ModelManagementSection />
       </div>
     </main>

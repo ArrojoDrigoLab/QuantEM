@@ -1257,7 +1257,7 @@ class GroupRollupApiTests(AnalysisRunTestCase):
 
         (group,) = [g for g in body["groups"] if g["group"] == "fasted"]
         self.assertEqual(group["n_units"], 2)
-        self.assertIn("analysis run", group["unit"])
+        self.assertIn("one image", group["unit"])
         n_objects = group["metrics"]["n_objects"]
         self.assertEqual(n_objects["n_units"], 2)
         self.assertAlmostEqual(n_objects["mean"], 2.5)
@@ -1281,10 +1281,9 @@ class GroupRollupApiTests(AnalysisRunTestCase):
 
         (group,) = self._groups()["groups"]
 
-        self.assertEqual(group["n_units"], 2)
+        self.assertEqual(group["n_units"], 1)
         self.assertEqual(len(group["image_keys"]), 1)
-        self.assertTrue(group["warnings"], "repeated images must be flagged")
-        self.assertIn("not independent experimental units", group["warnings"][0])
+        self.assertEqual(len(group["run_ids"]), 1)
 
     def test_the_segmentation_filter_scopes_the_rollup(self):
         self._run(self.segmentation, group="fasted")
@@ -1299,6 +1298,13 @@ class GroupRollupApiTests(AnalysisRunTestCase):
         self.assertEqual(group["n_units"], 1)
         # One unit has no spread, and the payload must not invent one.
         self.assertIsNone(group["metrics"]["n_objects"]["sem"])
+
+    def test_different_recipes_are_not_silently_pooled(self):
+        self._run(self.segmentation, group="fasted")
+        self._run(self._second_unit(), group="fasted", points_source="centroids")
+        response = self.client.get("/api/analysis/groups/")
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("different organelles", response.data["error"])
 
     def test_only_successful_runs_are_counted(self):
         """A pending or failed run has no numbers; counting it as a unit would

@@ -300,9 +300,9 @@ describe("ViewerScreen", () => {
 
     await user.click(await screen.findByRole("button", { name: "Export image" }));
     expect(
-      await screen.findByRole("dialog", { name: "Export Image 1" })
+      await screen.findByRole("dialog", { name: "Export image or mask · Image 1" })
     ).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /Original EM image/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /canonical 8-bit PNG/i })).toBeChecked();
   });
 
   it("shows the experiment above the image name and returns to that experiment", async () => {
@@ -580,8 +580,9 @@ describe("ViewerScreen", () => {
         )
       ).toBeInTheDocument();
       expect(
-        screen.getByText(/2 overlay rasters, 1 probability map, 1 adapted model/)
+        screen.getByText(/2 overlay rasters, 1 probability map/)
       ).toBeInTheDocument();
+      expect(screen.getByText(/Saved fine-tuned models and their trained weights are kept/)).toBeInTheDocument();
       // What survives is said too: the analysis record is kept, marked.
       expect(
         screen.getByText(/The 2 analysis runs made from it are/)

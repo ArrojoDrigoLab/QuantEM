@@ -36,10 +36,10 @@ describe("FineTuneOrganelleButton", () => {
     );
 
     const button = await screen.findByTestId("finetune-organelle-button");
-    await waitFor(() => expect(button).toBeDisabled());
+    await waitFor(() => expect(button).toBeEnabled());
     expect(button).toHaveAttribute(
       "title",
-      "Mark an ROI as Done to enable fine-tuning"
+      "Open fine-tuning to choose annotated images or apply a saved model."
     );
 
     eligible = true;

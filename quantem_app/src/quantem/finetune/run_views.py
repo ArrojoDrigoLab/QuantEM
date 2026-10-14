@@ -337,11 +337,43 @@ def _preview(
     return body, scope, crop_set
 
 
+def _parent_scope(data):
+    data = dict(data)
+    parent = None
+    if data.get("parent_adapter_id"):
+        parent = get_object_or_404(
+            Adapter,
+            id=data["parent_adapter_id"],
+            status="SUCCESS",
+            deleted_at__isnull=True,
+            archived_at__isnull=True,
+        )
+        if parent.preserves_live_version or not parent.head_file or not parent.head_file.is_file():
+            raise ValueError("This saved model has no available trained weights.")
+        if str(parent.segmentation_type_id) != str(data.get("segmentation_type")):
+            raise ValueError("Choose a saved model for the same organelle.")
+        data["base_model"] = parent.base_model
+        if data.get("include_previous_annotations", True):
+            data["asset_ids"] = list(
+                dict.fromkeys(
+                    [
+                        *(data.get("asset_ids") or []),
+                        *(str(v) for v in parent.scope_assets.values_list("id", flat=True)),
+                    ]
+                )
+            )
+    return data, parent
+
+
 class FineTunePreviewView(APIView):
     """``POST /api/finetune/preview/``"""
 
     def post(self, request):
         data = request.data if isinstance(request.data, dict) else {}
+        try:
+            data, _parent = _parent_scope(data)
+        except ValueError as exc:
+            return _detail(str(exc))
         segmentation_type = SegmentationType.objects.filter(
             id=str(data.get("segmentation_type") or "").strip() or None
         ).first()
@@ -367,6 +399,10 @@ class FineTuneRunsView(APIView):
 
     def post(self, request):
         data = request.data if isinstance(request.data, dict) else {}
+        try:
+            data, parent = _parent_scope(data)
+        except ValueError as exc:
+            return _detail(str(exc))
         name = str(data.get("name") or "").strip()
         if not name:
             return _detail("Give this fine-tune a name so you can find it again.")
@@ -394,6 +430,8 @@ class FineTuneRunsView(APIView):
         cv_benchmark = bool(data.get("cv_benchmark"))
 
         preview, scope, crop_set = _preview(segmentation_type, data)
+        if parent is not None and str(parent.experiment_id) != str(scope.experiment_id):
+            return _detail("Continue training within the saved model's experiment.")
         if not preview["eligible"] or crop_set is None:
             return _detail(
                 preview["blockers"][0]
@@ -433,6 +471,10 @@ class FineTuneRunsView(APIView):
                 return _detail(
                     "That fine-tune was made for a different organelle, so it "
                     "cannot be replaced by this one."
+                )
+            if adapter.versions.exists():
+                return _detail(
+                    "A version with saved descendants cannot be overwritten. Create a new version."
                 )
 
         # Planned before the row is written, because the queue asks for the
@@ -483,10 +525,34 @@ class FineTuneRunsView(APIView):
         ).first()
 
         with transaction.atomic():
+            if parent is not None:
+                parent = Adapter.objects.select_for_update().get(id=parent.id)
+                if parent.deleted_at or parent.archived_at or parent.status != "SUCCESS":
+                    return _detail(
+                        "The parent model is no longer available. Refresh the model list.",
+                        status.HTTP_409_CONFLICT,
+                    )
             preserves_live_version = False
             if adapter is None:
                 adapter = Adapter.objects.create(
                     base_model=base_model,
+                    parent=parent,
+                    training_exposure=list(
+                        dict.fromkeys(
+                            [
+                                *(parent.training_exposure if parent else []),
+                                *(
+                                    [
+                                        str(v)
+                                        for v in parent.scope_assets.values_list("id", flat=True)
+                                    ]
+                                    if parent
+                                    else []
+                                ),
+                                *scope.asset_ids,
+                            ]
+                        )
+                    ),
                     name=name,
                     mode="head",
                     params=params,
@@ -502,6 +568,8 @@ class FineTuneRunsView(APIView):
                 # if replacement committed first, apply's own locked recheck
                 # sees PENDING and refuses to enqueue stale work.
                 adapter = Adapter.objects.select_for_update().get(id=adapter.id)
+                from quantem.finetune.lifecycle import model_jobs
+
                 applying = Job.objects.filter(
                     batch_id__startswith=f"finetune-apply:{adapter.id}:",
                     status__in=Job.OPEN_STATUSES,
@@ -513,6 +581,16 @@ class FineTuneRunsView(APIView):
                         status.HTTP_409_CONFLICT,
                     )
 
+                if (
+                    adapter.deleted_at
+                    or adapter.parent_id
+                    or adapter.versions.exists()
+                    or model_jobs(adapter)
+                ):
+                    return _detail(
+                        "This version cannot be replaced while in use or with saved lineage. Create a new saved version.",
+                        status.HTTP_409_CONFLICT,
+                    )
                 preserves_live_version = bool(adapter.applied_at) and (
                     adapter.status == "SUCCESS" or adapter.preserves_live_version
                 )
@@ -554,6 +632,7 @@ class FineTuneRunsView(APIView):
                 job_type=JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
                 payload={
                     "adapter_id": str(adapter.id),
+                    "parent_adapter_id": str(parent.id) if parent else None,
                     "segmentation_type_id": str(segmentation_type.id),
                     "asset_ids": list(scope.asset_ids),
                     "dataset_ids": list(scope.dataset_ids),
@@ -692,6 +771,16 @@ def serialize_run(adapter: Adapter) -> dict:
                 else None
             ),
             "training_mode": adapter.training_mode,
+            "parent_id": str(adapter.parent_id) if adapter.parent_id else None,
+            "archived_at": adapter.archived_at,
+            "deleted_at": adapter.deleted_at,
+            "training_exposure": adapter.training_exposure,
+            "evaluation_note": (
+                "Comparison starts from the parent model. Regions on images used by earlier versions "
+                "are not independent held-out evaluation."
+                if adapter.parent_id
+                else ""
+            ),
             "cv_benchmark": adapter.cv_benchmark,
             "cv_results": adapter.cv_results or {},
             "asset_count": len(scope_assets),
@@ -792,6 +881,11 @@ class FineTuneRunApplyView(APIView):
 
     def post(self, request, adapter_id):
         adapter = get_object_or_404(Adapter, id=adapter_id)
+        if adapter.deleted_at or adapter.archived_at:
+            return _detail(
+                "This model is deleted or archived. Restore an archived model from Models first.",
+                status.HTTP_409_CONFLICT,
+            )
         if adapter.status != "SUCCESS":
             return _detail(
                 "This fine-tune has not finished yet, so there is nothing to run.",
@@ -861,7 +955,7 @@ class FineTuneRunApplyView(APIView):
         try:
             with transaction.atomic():
                 adapter = Adapter.objects.select_for_update().get(id=adapter.id)
-                if adapter.status != "SUCCESS":
+                if adapter.status != "SUCCESS" or adapter.deleted_at or adapter.archived_at:
                     raise _ApplyConflict("This fine-tune is no longer ready to run.")
 
                 targets = []
@@ -962,6 +1056,7 @@ class FineTuneAdaptersView(APIView):
     def get(self, request):
         adapters = (
             Adapter.objects.select_related("experiment")
+            .filter(deleted_at__isnull=True, archived_at__isnull=True)
             .prefetch_related("scope_assets")
             .exclude(name="")
         )

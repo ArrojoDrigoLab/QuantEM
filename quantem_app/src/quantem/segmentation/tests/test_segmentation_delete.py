@@ -27,7 +27,7 @@ from quantem.analysis.serializers import (
     AnalysisRunSerializer,
     AnalysisRunSummarySerializer,
 )
-from quantem.core.config import PROB_MAPS_DIR
+from quantem.core.config import MODELS_DIR, PROB_MAPS_DIR
 from quantem.finetune.models import Adapter
 from quantem.jobs.models import Job
 from quantem.segmentation.models import (
@@ -176,6 +176,12 @@ class DeleteRefusalTests(_DeleteTestBase):
 class DeleteTests(_DeleteTestBase):
     def test_delete_removes_the_segmentation_and_everything_it_owns(self):
         self._populate()
+        adapter = Adapter.objects.get(segmentation=self.segmentation)
+        head = MODELS_DIR / "adapters" / str(adapter.id) / "head.pt"
+        head.parent.mkdir(parents=True, exist_ok=True)
+        head.write_bytes(b"learned weights")
+        adapter.head_path = str(head.relative_to(MODELS_DIR))
+        adapter.save()
         overlay_dir = get_overlay_root(str(self.segmentation.id))
         (overlay_dir / "versions").mkdir(parents=True, exist_ok=True)
         prob_dir = PROB_MAPS_DIR / str(self.segmentation.id)
@@ -194,7 +200,10 @@ class DeleteTests(_DeleteTestBase):
         self.assertEqual(SegmentObject.objects.count(), 0)
         self.assertEqual(ProbabilityMap.objects.count(), 0)
         self.assertEqual(SegmentationOverlayState.objects.count(), 0)
-        self.assertEqual(Adapter.objects.count(), 0)
+        self.assertEqual(response.data["adapters_kept"], 1)
+        adapter.refresh_from_db()
+        self.assertIsNone(adapter.segmentation_id)
+        self.assertEqual(head.read_bytes(), b"learned weights")
         self.assertFalse(overlay_dir.exists())
         self.assertFalse(prob_dir.exists())
 

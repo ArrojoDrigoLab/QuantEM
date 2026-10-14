@@ -112,6 +112,7 @@ export function AnalysisConfigForm({
             </option>
           ))}
         </select>
+        <p className="mt-2 text-xs text-slate-600">Counts and morphology use confirmed objects whose centroids fall inside the selected area. Outlines are measured in full; compartment areas are clipped to the mask.</p>
       </div>
 
       <div className="mt-4">

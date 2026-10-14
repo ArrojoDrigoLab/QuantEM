@@ -186,9 +186,9 @@ def pixel_size_nm(segmentation: ImageSegmentation) -> float | None:
 
 def confirmed_objects(segmentation: ImageSegmentation) -> QuerySet[SegmentObject]:
     """The confirmed ``SegmentObject`` rows of a segmentation, oldest first."""
-    return SegmentObject.objects.filter(segmentation=segmentation, label_state=CONFIRMED).order_by(
-        "created_at", "id"
-    )
+    return SegmentObject.objects.filter(
+        segmentation=segmentation, label_state=CONFIRMED, superseded_at__isnull=True
+    ).order_by("created_at", "id")
 
 
 def object_features(segmentation: ImageSegmentation) -> dict[str, dict[str, Any]]:
@@ -885,6 +885,7 @@ def normalise_params(raw: dict[str, Any], *, segmentation: ImageSegmentation) ->
         "replicates": replicates,
         "seed": seed,
         "group": str(raw.get("group") or ""),
+        "objects_in_measurement_area": raw.get("objects_in_measurement_area") is True,
     }
 
 
@@ -2641,6 +2642,19 @@ def load_inputs(
         _geom_values["n_regions"] = n_review_regions
         reviewed_regions = provenance.section(_geom_values, _geom_unavailable)
 
+    if params.get("objects_in_measurement_area") and comp.tissue is not None:
+        inside = set()
+        for object_id, x, y in confirmed_objects(segmentation).values_list(
+            "id", "centroid_x", "centroid_y"
+        ):
+            if 0 <= x < shape[1] and 0 <= y < shape[0] and comp.tissue[int(y), int(x)]:
+                inside.add(str(object_id))
+        features = {key: value for key, value in features.items() if str(key) in inside}
+        sources = {key: value for key, value in sources.items() if str(key) in inside}
+        provenance_caveats.append(
+            "Object counts and morphology include confirmed objects whose centroids lie in the selected measurement area. "
+            "Object outlines are measured in full; compartment area is clipped to the mask."
+        )
     inputs = AnalysisInputs(
         image_key=str(asset.id),
         segmentation_id=str(segmentation.id),

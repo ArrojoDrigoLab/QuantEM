@@ -313,6 +313,7 @@ class NamedRunTests(TestCase):
 
     def test_naming_the_run_to_overwrite_is_accepted(self):
         first = self._start().json()["adapter_id"]
+        Job.objects.filter(payload_json__adapter_id=first).update(status="SUCCESS")
         again = self._start(overwrite_adapter_id=first)
         assert again.status_code == 202
         assert again.json()["adapter_id"] == first
@@ -335,6 +336,7 @@ class NamedRunTests(TestCase):
     def test_an_overwrite_resets_the_results_but_keeps_the_weights(self):
         """An unused old head stays on disk until its replacement is safe."""
         adapter_id = self._start().json()["adapter_id"]
+        Job.objects.filter(payload_json__adapter_id=adapter_id).update(status="SUCCESS")
         Adapter.objects.filter(id=adapter_id).update(
             status="SUCCESS",
             head_path="adapters/keep/head.pt",
@@ -352,6 +354,7 @@ class NamedRunTests(TestCase):
 
     def test_an_overwrite_keeps_the_live_version_and_its_targets_routable(self):
         adapter_id = self._start().json()["adapter_id"]
+        Job.objects.filter(payload_json__adapter_id=adapter_id).update(status="SUCCESS")
         adapter = Adapter.objects.get(id=adapter_id)
         adapter.status = "SUCCESS"
         adapter.applied_at = timezone.now()
@@ -401,6 +404,7 @@ class NamedRunTests(TestCase):
         from quantem.finetune.tests.fixtures import FakeCancel, FakeReporter
 
         adapter_id = self._start().json()["adapter_id"]
+        Job.objects.filter(payload_json__adapter_id=adapter_id).update(status="SUCCESS")
         adapter = Adapter.objects.get(id=adapter_id)
         adapter.status = "SUCCESS"
         adapter.applied_at = timezone.now()

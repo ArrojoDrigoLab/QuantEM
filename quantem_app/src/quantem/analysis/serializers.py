@@ -33,6 +33,7 @@ class AnalysisRunCreateSerializer(serializers.Serializer):
     compartments = serializers.DictField(
         child=serializers.CharField(), required=False, default=dict
     )
+    objects_in_measurement_area = serializers.BooleanField(required=False, default=False)
     tissue_segmentation_id = serializers.CharField(
         required=False, allow_null=True, allow_blank=True, default=None
     )
@@ -127,6 +128,8 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
     monte_carlo_self_check = serializers.SerializerMethodField()
     caveats = serializers.SerializerMethodField()
     exports = serializers.SerializerMethodField()
+    global_area = serializers.SerializerMethodField()
+    current = serializers.SerializerMethodField()
 
     class Meta:
         model = AnalysisRun
@@ -140,6 +143,9 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
             "started_at",
             "finished_at",
             "params",
+            "global_area",
+            "current",
+            "input_identity",
             "pixel_size_nm",
             "calibrated",
             "composition",
@@ -157,6 +163,14 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
 
     def _section(self, obj: AnalysisRun, key: str) -> Any:
         return (obj.results or {}).get(key)
+
+    def get_global_area(self, obj):
+        return self._section(obj, "global_area")
+
+    def get_current(self, obj):
+        from quantem.analysis.identity import run_is_current
+
+        return run_is_current(obj) if obj.input_fingerprint else None
 
     def get_segmentation_deleted(self, obj: AnalysisRun) -> bool:
         """True when the segmentation this run measured has since been deleted.

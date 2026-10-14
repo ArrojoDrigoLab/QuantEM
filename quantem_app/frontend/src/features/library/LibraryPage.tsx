@@ -37,6 +37,8 @@ import {
   rememberWorkflowGuideDismissed,
 } from "@/features/library/components/workflowGuideStorage";
 import { useExperiments } from "@/features/library/components/grouping/useExperiments";
+import { RecentExperiments } from "@/features/experiments/RecentExperiments";
+import { Link } from "react-router-dom";
 import { LibrarySelectionBar } from "@/features/library/components/grouping/LibrarySelectionBar";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
@@ -272,7 +274,12 @@ export function LibraryPage() {
   /** Selecting mode, and what is selected in it. Off until asked for. */
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const { experiments, reload: reloadExperiments } = useExperiments();
+  const { experiments, error: experimentsError, reload: reloadExperiments } = useExperiments();
+  const [experimentSort, setExperimentSort] = useState(() => {
+    try { return window.localStorage.getItem("quantem.experimentSort") ?? "recent"; }
+    catch { return "recent"; }
+  });
+  const [experimentSearch, setExperimentSearch] = useState("");
   const entriesRequestIdRef = useRef(0);
   const entriesInFlightKeyRef = useRef<string | null>(null);
   /** Read inside `loadEntries` without making it depend on the entry list. */
@@ -512,12 +519,18 @@ export function LibraryPage() {
           });
         }
       });
-      const rows = [...headers.values()];
+      const rows = [...headers.values()].filter((row) => row.name.toLowerCase().includes(experimentSearch.toLowerCase())).sort((a, b) => {
+        const first = experiments.find((row) => row.id === a.id);
+        const second = experiments.find((row) => row.id === b.id);
+        return Number(Boolean(second?.pinned)) - Number(Boolean(first?.pinned)) ||
+          (experimentSort === "recent" ? (Date.parse(second?.last_opened_at ?? "") || 0) - (Date.parse(first?.last_opened_at ?? "") || 0) : 0) ||
+          a.name.localeCompare(b.name);
+      });
       return experimentFilter
         ? rows.filter((experiment) => experiment.id === experimentFilter)
         : rows;
     },
-    [experimentFilter, experiments, justImported]
+    [experimentFilter, experiments, justImported, experimentSort, experimentSearch]
   );
   const activePreviewGroupIds = useMemo(
     () => new Set(shownExperiments.map((experiment) => experiment.id)),
@@ -696,6 +709,18 @@ export function LibraryPage() {
         </header>
 
         {showHelp ? <WorkflowGuide onDismiss={dismissWorkflowGuide} /> : null}
+
+        {experimentsError ? <p role="alert">Experiments could not be loaded. <Button onClick={() => void reloadExperiments()}>Retry</Button></p> : null}
+        <RecentExperiments experiments={experiments} onChange={() => void reloadExperiments()} />
+        <div className="flex flex-wrap items-center gap-3">
+          <label>Find experiment <input aria-label="Find experiment" type="search" className="rounded border px-2 py-1"
+            value={experimentSearch} onChange={(event) => setExperimentSearch(event.target.value)} /></label>
+          <label>Experiment order <select className="rounded border px-2 py-1" value={experimentSort} onChange={(event) => {
+            setExperimentSort(event.target.value);
+            try { window.localStorage.setItem("quantem.experimentSort", event.target.value); } catch { /* Session controls remain usable. */ }
+          }}><option value="recent">Recently opened · pinned first</option><option value="name">Name · pinned first</option></select></label>
+          <Link to="/models" className="text-cyan-800 underline">Models</Link>
+        </div>
 
         <ImageUploadPanel
           ref={uploadPanelRef}

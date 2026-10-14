@@ -157,7 +157,7 @@ describe("LibraryPage", () => {
     expect(await screen.findByRole("heading", { name: "QuantEM" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Library" })).not.toBeInTheDocument();
     expect(screen.queryByText("Running on CPU")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Models" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Models" })).toHaveAttribute("href", "/models");
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();

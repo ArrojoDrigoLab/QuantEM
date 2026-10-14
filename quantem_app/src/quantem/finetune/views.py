@@ -280,6 +280,11 @@ class AdapterApplyView(APIView):
 
     def post(self, request, adapter_id):
         adapter = get_object_or_404(Adapter, id=adapter_id)
+        if adapter.deleted_at or adapter.archived_at:
+            return _error(
+                "This model is deleted or archived. Restore archived models from Models first.",
+                status.HTTP_409_CONFLICT,
+            )
         if adapter.status != "SUCCESS":
             return _error(
                 f"This adapter is {adapter.status.lower()}; only a finished "

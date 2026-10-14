@@ -77,6 +77,9 @@ def serialize_experiment(experiment: Experiment) -> dict[str, Any]:
         "datasets": dataset_payloads,
         "asset_count": asset_count,
         "ungrouped_asset_count": max(asset_count - len(grouped_ids), 0),
+        "pinned": experiment.pinned,
+        "last_opened_at": _isoformat(experiment.last_opened_at),
+        "last_route": experiment.last_route,
         "created_at": _isoformat(experiment.created_at),
         "updated_at": _isoformat(experiment.updated_at),
     }

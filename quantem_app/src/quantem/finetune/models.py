@@ -107,7 +107,7 @@ class Adapter(TimeStampedModel):
     #: sibling segmentations of the same organelle on other images.
     segmentation = models.ForeignKey(
         "segmentation.ImageSegmentation",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="adapters",
         null=True,
         blank=True,
@@ -153,6 +153,12 @@ class Adapter(TimeStampedModel):
     #: put those images back on the released model.
     preserves_live_version = models.BooleanField(default=False)
     base_model = models.CharField(max_length=64)  # e.g. "quantem:mito"
+    parent = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="versions"
+    )
+    archived_at = models.DateTimeField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    training_exposure = models.JSONField(default=list, blank=True)
     #: Identifies a fine-tune for overwrite. Unique per organelle among named
     #: rows -- the same name for mitochondria and for ER is two different
     #: fine-tunes, and that is deliberate.
@@ -237,6 +243,12 @@ class Adapter(TimeStampedModel):
             "The threshold was fit on the training crops only; the held-out "
             "score is reported at that threshold, never used to choose it."
         ]
+        if self.parent_id:
+            notes.append(
+                "This model continued from saved weights. Images seen during earlier "
+                "versions are not independent held-out evaluation, even when held back "
+                "from the current training round."
+            )
         if self.split_mode == SPLIT_WITHIN_IMAGE:
             notes.append(
                 "The held-out crops come from the same image as the training "
@@ -310,6 +322,7 @@ def active_adapter_for(segmentation, adapter_id: str | None = None) -> Adapter |
             Adapter.objects.filter(
                 models.Q(status=STATUS_SUCCESS) | models.Q(preserves_live_version=True),
                 id=adapter_id,
+                deleted_at__isnull=True,
                 segmentation_type_id=getattr(segmentation, "segmentation_type_id", None),
             )
             .filter(
@@ -325,6 +338,7 @@ def active_adapter_for(segmentation, adapter_id: str | None = None) -> Adapter |
         Adapter.objects.filter(
             models.Q(status=STATUS_SUCCESS) | models.Q(preserves_live_version=True),
             segmentation=segmentation,
+            deleted_at__isnull=True,
             segmentation_type__isnull=True,
             applied_at__isnull=False,
         )
@@ -339,6 +353,7 @@ def active_adapter_for(segmentation, adapter_id: str | None = None) -> Adapter |
             Adapter.objects.filter(
                 models.Q(status=STATUS_SUCCESS) | models.Q(preserves_live_version=True),
                 segmentation_type_id=type_id,
+                deleted_at__isnull=True,
                 applied_at__isnull=False,
             )
             # ``scope_assets`` is retained as a read fallback for adapters

@@ -45,6 +45,10 @@ function catalogue(): ModelCatalogue {
 }
 
 function renderScreen() {
+  server.use(
+    http.get(`${API}/api/finetune/models/`, () => HttpResponse.json([])),
+    http.get(`${API}/api/segmentation-types/`, () => HttpResponse.json([])),
+  );
   server.use(http.get(`${API}/api/models/`, () => HttpResponse.json(catalogue())));
   return render(
     <MemoryRouter>
