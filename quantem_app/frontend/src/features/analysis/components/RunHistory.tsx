@@ -1,9 +1,7 @@
 /**
  * Runs already started for this segmentation.
  *
- * The caveat count is on the row rather than hidden behind a click: a run with
- * four caveats and a run with none are not interchangeable, and someone
- * choosing which numbers to quote needs to see that in the list.
+ * The note count accompanies each saved run.
  *
  * A failed fetch is never rendered as an empty list. "0 runs -- nothing has
  * been analysed yet" in response to a 404 tells the user their previous runs
@@ -120,7 +118,7 @@ export function RunHistory({
                 ) : null}
                 {run.n_caveats > 0 ? (
                   <span className="text-amber-700">
-                    {run.n_caveats} caveat{run.n_caveats === 1 ? "" : "s"}
+                    {run.n_caveats} note{run.n_caveats === 1 ? "" : "s"}
                   </span>
                 ) : null}
               </div>

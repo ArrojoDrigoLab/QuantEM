@@ -104,7 +104,7 @@ describe("RunHistory", () => {
 
     expect(screen.getByText("1 runs")).toBeInTheDocument();
     expect(screen.getByText("uncalibrated")).toBeInTheDocument();
-    expect(screen.getByText("2 caveats")).toBeInTheDocument();
+    expect(screen.getByText("2 notes")).toBeInTheDocument();
   });
 
   /**

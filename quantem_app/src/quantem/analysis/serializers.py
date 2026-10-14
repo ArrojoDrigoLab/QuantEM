@@ -16,6 +16,7 @@ from .distances import DEFAULT_BAND_EDGES_NM
 from .loaders import POINT_SOURCES, AnalysisInputError, normalise_params
 from .models import AnalysisRun
 from .montecarlo import DEFAULT_REPLICATES, DEFAULT_SEED
+from .notes import analysis_notes
 
 
 class AnalysisRunCreateSerializer(serializers.Serializer):
@@ -103,7 +104,7 @@ class AnalysisRunSummarySerializer(serializers.ModelSerializer):
         return (obj.results or {}).get("calibrated")
 
     def get_n_caveats(self, obj: AnalysisRun) -> int:
-        return len((obj.results or {}).get("caveats") or [])
+        return len(analysis_notes(obj.results))
 
 
 class AnalysisRunSerializer(serializers.ModelSerializer):
@@ -209,7 +210,7 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
         return self._section(obj, "monte_carlo_self_check")
 
     def get_caveats(self, obj: AnalysisRun) -> list[str]:
-        return self._section(obj, "caveats") or []
+        return analysis_notes(obj.results)
 
     def get_exports(self, obj: AnalysisRun) -> list[str]:
         """Bundle files that actually exist on disk, newest run state first."""

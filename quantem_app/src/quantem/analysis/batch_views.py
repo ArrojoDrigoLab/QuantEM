@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import shutil
 import tempfile
 import zipfile
 
@@ -14,8 +15,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from quantem.analysis.batches import enqueue_run, preview_batch, start_batch
+from quantem.analysis.export_files import open_export
 from quantem.analysis.identity import input_fingerprint, run_is_current
 from quantem.analysis.models import AnalysisBatch, AnalysisBatchItem, AnalysisRun
+from quantem.analysis.notes import analysis_notes
 from quantem.analysis.rollup import aggregate
 from quantem.analysis.service import export_dir_for_run, image_summary_row
 from quantem.jobs.models import Job
@@ -45,6 +48,7 @@ def item_body(item):
         "params": item.params,
         "current": run_is_current(run) if run and status == "SUCCESS" else None,
         "results": run.results if run and status == "SUCCESS" else None,
+        "notes": analysis_notes(run.results) if run and status == "SUCCESS" else [],
     }
     body["metrics"] = numeric_metrics(body)
     return body
@@ -332,7 +336,11 @@ class BatchExportView(APIView):
                                 continue
                             path = item.run.export_path / name
                             if path.is_file():
-                                bundle.write(path, f"runs/{item.run.id}/{name}")
+                                with (
+                                    open_export(path, result=item.run.results) as source,
+                                    bundle.open(f"runs/{item.run.id}/{name}", "w") as target,
+                                ):
+                                    shutil.copyfileobj(source, target)
             stream.seek(0)
             return FileResponse(stream, as_attachment=True, filename=f"measurements-{batch_id}.zip")
         except Exception:

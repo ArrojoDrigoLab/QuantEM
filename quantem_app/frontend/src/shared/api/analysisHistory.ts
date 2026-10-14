@@ -13,6 +13,7 @@ export interface BatchItem {
   identity: BatchIdentity; reason: string; ready?: boolean; status?: string;
   current?: boolean | null; reused?: boolean; run_id?: string;
   metrics?: Record<string, number | null>; params?: Record<string, unknown>;
+  notes?: string[];
 }
 export interface AnalysisBatch {
   id: string; name: string; created_at: string; settings: Record<string, unknown>; items: BatchItem[];

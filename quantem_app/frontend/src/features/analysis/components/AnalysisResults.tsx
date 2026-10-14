@@ -8,6 +8,7 @@ import { BandHistogram } from "@/features/analysis/components/BandHistogram";
 import { CompositionPanel } from "@/features/analysis/components/CompositionPanel";
 import { MonteCarloPanel } from "@/features/analysis/components/MonteCarloPanel";
 import { ObjectsPanel } from "@/features/analysis/components/ObjectsPanel";
+import { AnalysisNotes } from "./AnalysisNotes";
 
 export interface AnalysisResultsProps {
   run: AnalysisRun;
@@ -115,6 +116,8 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
           </div>
         </div>
       </Panel>
+
+      <AnalysisNotes notes={run.caveats} />
 
       {run.composition ? (
         <CompositionPanel

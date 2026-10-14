@@ -17,7 +17,7 @@ beforeEach(() => vi.clearAllMocks());
 
 it("filters history by image but opens every image and saved setting in the original batch", async () => {
   vi.mocked(getAnalysisHistory).mockResolvedValue([entry]);
-  vi.mocked(getAnalysisBatch).mockResolvedValue({ id: "batch", name: entry.name, created_at: entry.created_at, settings: { require_complete: true, reuse: false }, items: entry.images.map((image) => ({ identity: { image: image.name, asset_id: image.id, organelle: "mitochondria", sample_id: image.name, group: "", pixel_size_nm: 2.5, measurement_area: "Whole image" }, status: "SUCCESS", reason: "", params: { seed: 42 }, metrics: { n_objects: 7, area_fraction_mito: 0.00000012345 }, run_id: `run-${image.id}` })) });
+  vi.mocked(getAnalysisBatch).mockResolvedValue({ id: "batch", name: entry.name, created_at: entry.created_at, settings: { require_complete: true, reuse: false }, items: entry.images.map((image) => ({ identity: { image: image.name, asset_id: image.id, organelle: "mitochondria", sample_id: image.name, group: "", pixel_size_nm: 2.5, measurement_area: "Whole image" }, status: "SUCCESS", reason: "", params: { seed: 42 }, metrics: { n_objects: 7, area_fraction_mito: 0.00000012345 }, notes: ["No tissue mask was supplied."], run_id: `run-${image.id}` })) });
   render(<MemoryRouter initialEntries={["/experiments/exp?tab=analysis&image=a"]}><AnalysisHistory experimentId="exp" images={[]} /></MemoryRouter>);
   const row = await screen.findByRole("button", { name: /Donor comparison/ });
   expect(getAnalysisHistory).toHaveBeenCalledWith("exp", "a");
@@ -29,12 +29,14 @@ it("filters history by image but opens every image and saved setting in the orig
   await userEvent.click(screen.getByText("Analysis settings"));
   expect(screen.getByText("Require completed review")).toBeVisible();
   expect(screen.getByText("Yes")).toBeVisible();
+  expect(screen.getByRole("region", { name: "Notes" })).toHaveTextContent("Field B: No tissue mask was supplied.");
 
   vi.mocked(getAnalysisRun).mockResolvedValue({ id: "run-b", exports: ["objects.csv"], status: "SUCCESS" } as AnalysisRun);
   vi.mocked(getAnalysisTable).mockResolvedValue({ name: "objects.csv", columns: ["object_id", "area_um2"], rows: [["object-b", "2.75"]], offset: 0, limit: 100, has_more: false });
   const results = screen.getByRole("button", { name: "View results for Field B · mitochondria" });
   await userEvent.click(results);
   const dialog = await screen.findByRole("dialog", { name: "Field B · mitochondria" });
+  expect(within(dialog).queryByText(/No tissue mask/)).not.toBeInTheDocument();
   expect(await within(dialog).findByRole("table", { name: "Objects spreadsheet" })).toHaveTextContent("object-b");
   expect(getAnalysisRun).toHaveBeenCalledWith("run-b");
   expect(within(dialog).getByRole("button", { name: "Close results" })).toHaveFocus();

@@ -23,6 +23,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from quantem.analysis.export_files import open_export, spreadsheet_columns
 from quantem.analysis.global_area import global_area_report
 from quantem.analysis.models import AnalysisRun
 from quantem.analysis.serializers import (
@@ -205,16 +206,16 @@ class AnalysisRunExportView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        return self.file_response(request, candidate)
+        return self.file_response(request, candidate, run.results)
 
-    def file_response(self, request, candidate: Path):
+    def file_response(self, request, candidate: Path, result=None):
         content_type = (
             EXPORT_CONTENT_TYPES.get(candidate.suffix.lower())
             or mimetypes.guess_type(candidate.name)[0]
             or "application/octet-stream"
         )
         return FileResponse(
-            candidate.open("rb"),
+            open_export(candidate, result=result),
             as_attachment=True,
             filename=candidate.name,
             content_type=content_type,
@@ -224,7 +225,7 @@ class AnalysisRunExportView(APIView):
 class AnalysisRunTableView(AnalysisRunExportView):
     """Read a bounded page of a saved CSV without recalculating measurements."""
 
-    def file_response(self, request, candidate: Path):
+    def file_response(self, request, candidate: Path, result=None):
         if candidate.suffix.lower() != ".csv":
             return Response({"error": "Choose a CSV table from this analysis."}, status=400)
         try:
@@ -241,9 +242,12 @@ class AnalysisRunTableView(AnalysisRunExportView):
             with candidate.open(encoding="utf-8-sig", newline="") as source:
                 reader = csv.reader(source, strict=True)
                 columns = next(reader, [])
+                keep = spreadsheet_columns(columns)
                 # Reading one extra row detects another page without counting
                 # or loading the entire export. Quoted newlines remain one row.
                 rows = list(islice((row for row in reader if row), offset, offset + limit + 1))
+                columns = [columns[index] for index in keep]
+                rows = [[row[index] if index < len(row) else "" for index in keep] for row in rows]
         except (OSError, UnicodeError, csv.Error, OverflowError, ValueError):
             return Response({"error": "The saved table could not be read."}, status=400)
         return Response({

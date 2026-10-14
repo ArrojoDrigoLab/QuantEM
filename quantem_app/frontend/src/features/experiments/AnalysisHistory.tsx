@@ -9,6 +9,7 @@ import { Button } from "@/shared/ui/design";
 import { formatTimestamp } from "@/shared/ui/format";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { AnalysisResults } from "@/features/analysis/components/AnalysisResults";
+import { AnalysisNotes } from "@/features/analysis/components/AnalysisNotes";
 import { AnalysisSettings } from "./AnalysisSettings";
 import { ImageAnalysisResultsDialog } from "./ImageAnalysisResultsDialog";
 
@@ -65,6 +66,7 @@ function HistoryDetails({ entry, images, onChanged }: { entry: AnalysisHistoryEn
         <td className="border-b p-2"><Button size="sm" aria-label={`View results for ${item.identity.image} · ${structure}`} onClick={() => setSelectedItem(item)}>View results</Button></td>
       </tr>; })}</tbody>
     </table></div>
+    <AnalysisNotes notes={detail.items.flatMap((item) => (item.notes ?? []).map((note) => `${item.identity.image}: ${note}`))} />
     {selectedItem && <ImageAnalysisResultsDialog item={selectedItem} images={images} onClose={() => setSelectedItem(null)} />}
   </div>;
   return <div className="space-y-4">
@@ -110,15 +112,15 @@ export function AnalysisHistory({ experimentId, images, refreshKey = 0 }: { expe
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {loading ? <p role="status">Loading analyses…</p> : !entries.length && !error ? <p>No saved analyses.</p> :
-      <div className="divide-y overflow-x-auto rounded border bg-white">{entries.map((entry) => {
+      <div className="divide-y rounded border bg-white">{entries.map((entry) => {
         const key = `${entry.kind}:${entry.id}`;
-        return <article key={key} className="min-w-[660px]">
-          <Button className="!flex !w-full !justify-start !rounded-none !border-0 !bg-transparent !p-3 !text-left" aria-expanded={open === key} onClick={() => setOpen(open === key ? "" : key)}>
+        return <article key={key}>
+          <div className="overflow-x-auto"><Button className="!flex !w-full min-w-[660px] !justify-start !rounded-none !border-0 !bg-transparent !p-3 !text-left" aria-expanded={open === key} onClick={() => setOpen(open === key ? "" : key)}>
             <span aria-hidden="true">{open === key ? "▾" : "▸"}</span>
             <span className="min-w-0 flex-1 truncate font-medium" title={entry.name}>{entry.name}</span>
             <span className="shrink-0 text-xs text-slate-600">{formatTimestamp(entry.created_at)}</span>
             <span className="shrink-0 text-xs">{entry.images.length} {entry.images.length === 1 ? "image" : "images"} · {entry.structures.join(", ")} · {statusName[entry.status] ?? entry.status}</span>
-          </Button>
+          </Button></div>
           {open === key && <div className="space-y-3 border-t p-4"><h3 className="font-semibold">{entry.name}</h3><p className="text-sm">{entry.measurement_area} · {entry.measurement_count} measurements</p><HistoryDetails entry={entry} images={images} onChanged={reload} /></div>}
         </article>;
       })}</div>}

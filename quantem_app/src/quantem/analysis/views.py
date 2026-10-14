@@ -44,6 +44,7 @@ from rest_framework.views import APIView
 
 from .identity import run_is_current
 from .models import AnalysisRun
+from .notes import analysis_notes
 from .rollup import rollup
 from .service import circular_columns, image_summary_row
 
@@ -248,7 +249,7 @@ class AnalysisGroupRollupView(APIView):
                 continue
             recipes.add(_recipe(run))
             row["run_id"] = str(run.id)
-            caveats_by_run[str(run.id)] = [str(c) for c in (run.results.get("caveats") or [])]
+            caveats_by_run[str(run.id)] = analysis_notes(run.results)
             circular_by_run[str(run.id)] = circular_columns(run.results, row)
             rows.append(row)
 

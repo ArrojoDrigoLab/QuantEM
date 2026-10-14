@@ -493,18 +493,7 @@ class LoaderTests(AnalysisRunTestCase):
 
 
 class NoticeTypographyTests(AnalysisRunTestCase):
-    """The caveats are rendered verbatim; ``--`` is not a dash on a screen.
-
-    The Analysis screen puts ``run.caveats`` straight into its "Read before
-    quoting these numbers" panel, one ``<li>`` per sentence, and the rest of the
-    UI writes an em dash. A reader who has just been told the count may be wrong
-    should not also be reading source-code punctuation.
-
-    The same strings are the ``caveats`` column of ``image_summary.csv``, which
-    is why the writer gained a byte-order mark: an em dash in a UTF-8 CSV that
-    Excel decodes as the system codepage becomes three mojibake characters, and
-    that would be a worse trade than the ``--`` it replaced.
-    """
+    """Notes use display typography; exported CSVs preserve Unicode names."""
 
     def _run_with_caveats(self) -> AnalysisRun:
         # A rejected candidate, so the proofreading caveat -- one of the
@@ -537,12 +526,11 @@ class NoticeTypographyTests(AnalysisRunTestCase):
 
         self.assertTrue(
             path.read_bytes().startswith(b"\xef\xbb\xbf"),
-            "without the BOM Excel decodes the caveats column as the system "
-            "codepage and turns every em dash into three characters",
+            "The BOM preserves Unicode image and region names in Excel.",
         )
         rows = list(csv.DictReader(path.open(encoding="utf-8-sig")))
         self.assertEqual(list(rows[0])[0], "image_key")
-        self.assertNotIn("--", rows[0]["caveats"])
+        self.assertNotIn("caveats", rows[0])
 
     def test_the_manifest_writes_the_character_not_its_escape(self):
         """``json.dumps`` escapes non-ASCII by default, which would put a

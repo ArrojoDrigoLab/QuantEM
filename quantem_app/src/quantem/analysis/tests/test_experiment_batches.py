@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import zipfile
@@ -150,6 +151,18 @@ class ExperimentBatchTests(AnalysisRunTestCase):
             self.assertEqual({row["n_units"] for row in groups}, {"1"})
             manifest = json.loads(archive.read("manifest.json"))
             self.assertEqual(manifest["settings"]["name"], "Broad metrics")
+            self.assertTrue(any(entry["notes"] for entry in manifest["items"]))
+            for name in archive.namelist():
+                if name.endswith(".csv"):
+                    columns = next(csv.reader(io.StringIO(archive.read(name).decode("utf-8-sig"))), [])
+                    self.assertNotIn("caveats", columns)
+                    self.assertNotIn("n_caveats", columns)
+                elif name.startswith("runs/") and name.endswith("manifest.json"):
+                    saved_manifest = json.loads(archive.read(name))
+                    directory = name.rsplit("/", 1)[0]
+                    for entry in saved_manifest["outputs"]["files"]:
+                        content = archive.read(f"{directory}/{entry['filename']}")
+                        self.assertEqual(entry["sha256"], hashlib.sha256(content).hexdigest())
         response.close()
 
     def test_cancelling_queued_batch_is_terminal_and_retry_keeps_old_run(self):

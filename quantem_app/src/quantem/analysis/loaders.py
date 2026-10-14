@@ -2036,12 +2036,6 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
             "pixel size and resample to it, and a run at 8 nm on a 5 nm image "
             "resolves different objects than a native one."
         )
-        report.caveat(
-            f"The scale inference ran at in {report.where} is unknown, not "
-            f"native: {why}. The manifest cannot say whether the image was "
-            "resampled before inference, and this compartment must not be read "
-            "as having run at the image's own resolution."
-        )
         values["ran_at"] = SCALE_UNKNOWN
         for key in ("ran_at_nm", "resampled"):
             unavailable[key] = reason

@@ -194,7 +194,8 @@ class ObjectProvenanceTests(ManifestTestCase):
         _, _, got = self._run()
         caveats = " ".join(got["result"]["caveats"])
         assert "mean_prob" in caveats
-        assert "whole-image number" in caveats
+        assert "model probability" in caveats
+        assert "whole-image number" not in caveats
 
     def test_the_manifest_repeats_the_reason_where_the_numbers_live(self):
         _, _, got = self._run()
@@ -545,11 +546,12 @@ class DimensionlessNumbersEscapeTheUnitsGuardTests(UncalibratedImageTestCase):
         assert not [c for c in got["result"]["caveats"] if "not trained for" in c]
         assert "Pixel size is not set" in self._caveats(got)
 
-    def test_the_scale_caveat_reaches_the_spreadsheet_too(self):
-        _, out, _ = self._run()
+    def test_scale_notes_stay_in_the_summary_not_the_spreadsheet(self):
+        _, out, got = self._run()
         row = self._rows(out, "image_summary.csv")[0]
 
-        assert "not trained for" in row["caveats"]
+        assert "not trained for" in self._caveats(got)
+        assert "caveats" not in row
 
 
 class ProofreadingRecordTests(ManifestTestCase):
@@ -629,25 +631,25 @@ class ProofreadingRecordTests(ManifestTestCase):
         assert reviewed["reviewed_px"] is None
         assert "unknown rather than zero" in reviewed["unavailable"]["reviewed_px"]
         assert self._rows(out, "image_summary.csv")[0]["reviewed_fraction"] == ""
-        assert [c for c in got["result"]["caveats"] if "recorded as reviewed" in c]
+        assert not [c for c in got["result"]["caveats"] if "recorded as reviewed" in c]
 
 
 class SpreadsheetCaveatTests(ManifestTestCase):
     """People open ``image_summary.csv`` in Excel and quote what they find."""
 
-    def test_the_caveats_are_in_the_file_the_numbers_are_in(self):
+    def test_the_spreadsheet_has_no_note_columns(self):
         _, out, got = self._run()
         row = self._rows(out, "image_summary.csv")[0]
 
-        assert int(row["n_caveats"]) == len(got["result"]["caveats"])
-        for caveat in got["result"]["caveats"]:
-            assert caveat in row["caveats"]
+        assert "n_caveats" not in row
+        assert "caveats" not in row
+        assert got["result"]["caveats"]
 
-    def test_the_caveat_columns_come_after_every_number(self):
+    def test_the_circular_columns_annotation_remains_last(self):
         _, out, _ = self._run()
         columns = list(self._rows(out, "image_summary.csv")[0])
 
-        assert columns[-3:] == ["circular_columns", "n_caveats", "caveats"]
+        assert columns[-1] == "circular_columns"
 
     def test_a_circular_enrichment_names_the_exact_columns_it_condemns(self):
         _, out, _ = self._run(points_source="centroids")
@@ -655,7 +657,7 @@ class SpreadsheetCaveatTests(ManifestTestCase):
 
         assert row["enrichment_mito"], "the number is there to be quoted"
         assert row["circular_columns"] == "enrichment_mito z_enrichment_mito"
-        assert "circular" in row["caveats"]
+        assert "caveats" not in row
 
     def test_the_area_fraction_is_not_condemned_with_them(self):
         """It is a real measurement, and the denominator that makes the others
@@ -670,12 +672,12 @@ class SpreadsheetCaveatTests(ManifestTestCase):
 
         assert self._rows(out, "image_summary.csv")[0]["circular_columns"] == ""
 
-    def test_the_caveat_cell_survives_a_round_trip_as_one_field(self):
+    def test_the_image_summary_keeps_one_row_per_image(self):
         _, out, _ = self._run(points_source="centroids")
         rows = self._rows(out, "image_summary.csv")
 
-        assert len(rows) == 1, "a newline in the caveats would split the record"
-        assert "\n" not in rows[0]["caveats"]
+        assert len(rows) == 1
+        assert "caveats" not in rows[0]
 
 
 class ImpossibleCalibrationTests(TestCase):
@@ -921,8 +923,8 @@ class ObjectsCsvTraceabilityTests(ManifestTestCase):
 
     ROI = _square(0, 0, side=120.0)
 
-    def test_every_row_names_its_run_its_segmentation_and_its_caveat_count(self):
-        run, out, got = self._run()
+    def test_every_row_names_its_run_and_segmentation_without_a_caveat_count(self):
+        run, out, _ = self._run()
         rows = self._rows(out, "objects.csv")
 
         assert rows
@@ -930,7 +932,7 @@ class ObjectsCsvTraceabilityTests(ManifestTestCase):
             assert row["analysis_run_id"] == str(run.id)
             assert row["segmentation_id"] == str(self.segmentation.id)
             assert row["image_key"] == str(self.asset.id)
-            assert int(row["n_caveats"]) == len(got["result"]["caveats"])
+            assert "n_caveats" not in row
 
     def test_the_reviewed_and_the_unreviewed_are_distinguishable(self):
         """The caveat said in so many words that they were not."""

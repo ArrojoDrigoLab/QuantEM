@@ -62,6 +62,7 @@ from .morphometrics import (
     derive,
     summarize,
 )
+from .notes import partial_metric_note
 
 if TYPE_CHECKING:  # pragma: no cover - the Django model is imported lazily below
     from .models import AnalysisRun
@@ -123,13 +124,8 @@ OBJECT_COLUMN_RENAMES: dict[str, str] = {
 #: decision, not a measurement one. ``ObjectMetrics`` keeps every number it
 #: measured whatever this file does with it.
 #:
-#: ``objects.csv`` is the file that goes into R or Prism, and it used to carry
-#: no route at all to the sentences that qualify it: no run id, no segmentation
-#: id, and nothing saying there were any caveats. ``n_caveats`` is the count and
-#: ``image_key`` is the join to the ``image_summary.csv`` row whose ``caveats``
-#: column holds the text -- the full text is not repeated on every object row,
-#: because a two-kilobyte cell times ten thousand rows is a twenty-megabyte
-#: file that no one reads either.
+#: Identifiers link object measurements to their image and saved analysis.
+#: Explanatory notes belong in the analysis summary, outside the spreadsheet.
 OBJECT_CSV_FIELDS: tuple[str, ...] = (
     *(
         OBJECT_COLUMN_RENAMES.get(name, name)
@@ -140,7 +136,6 @@ OBJECT_CSV_FIELDS: tuple[str, ...] = (
     "group",
     "segmentation_id",
     "analysis_run_id",
-    "n_caveats",
 )
 
 
@@ -223,8 +218,6 @@ IMAGE_SUMMARY_BASE_FIELDS: tuple[str, ...] = (
 #: warning that says it is not was two files away.
 IMAGE_SUMMARY_LAST_FIELDS: tuple[str, ...] = (
     "circular_columns",
-    "n_caveats",
-    "caveats",
 )
 
 COMPOSITION_CSV_BASE_FIELDS: tuple[str, ...] = (
@@ -690,12 +683,6 @@ def _proofreading_caveats(proofreading: dict[str, Any], inputs: AnalysisInputs) 
             "in_reviewed_area column is true for the objects inside the "
             "area a person went through. These whole-image totals do not."
         )
-    elif proofreading.get("reviewed_px") is None and inputs.object_features:
-        out.append(
-            "No area of this image is recorded as reviewed, so the bundle "
-            "cannot say how much of it a person went through. Every count and "
-            "fraction covers the whole image regardless."
-        )
     return out
 
 
@@ -942,17 +929,9 @@ def run_analysis(
     for key in estimator_notes:
         caveats.append(f"{key}: {summary[key]['estimator_note']}")
 
-    partial = [key for key, stats in summary.items() if stats.get("n_missing")]
-    if partial:
-        one = len(partial) == 1
-        caveats.append(
-            f"{len(partial)} of {len(result['objects']['summary'])} metrics "
-            f"{'is' if one else 'are'} measured on fewer than the {len(metrics)} "
-            f"confirmed objects ({', '.join(partial)}). "
-            f"{'It carries' if one else 'Each carries'} its own n and the reason "
-            f"for it in the summary table; {'it is not' if one else 'none of them is'} "
-            "a whole-image number."
-        )
+    partial_note = partial_metric_note(summary, len(metrics))
+    if partial_note:
+        caveats.append(partial_note)
 
     if inputs.points_xy is not None and len(inputs.points_xy):
         assignment = assign_points(inputs.points_xy, inputs.compartments, areas=areas)
@@ -1216,13 +1195,7 @@ def image_summary_row(result: dict[str, Any]) -> dict[str, Any]:
     if distances:
         row["distance_median_nm"] = distances.get("median_nm")
 
-    caveats = list(result.get("caveats") or [])
     row["circular_columns"] = " ".join(circular_columns(result, row))
-    row["n_caveats"] = len(caveats)
-    # One cell, because a spreadsheet reader who sorts by a column must not lose
-    # the sentence that qualifies it. Newlines would end the CSV record in some
-    # readers and are replaced by the separator rather than quoted.
-    row["caveats"] = " | ".join(c.replace("\n", " ") for c in caveats)
     return row
 
 
@@ -1288,17 +1261,12 @@ def write_bundle(
     # objects.csv -- one row per object, every metric, traceable to its image
     obj_rows: list[dict[str, Any]] = []
     for r in results:
-        n_caveats = len(r.get("caveats") or [])
         for m in r.get("_object_metrics", []):
             row = object_csv_row(m)
             row["image_key"] = r["image_key"]
             row["group"] = r["group"]
             row["segmentation_id"] = r.get("segmentation_id") or ""
             row["analysis_run_id"] = r.get("analysis_run_id") or ""
-            # The count, not the text. A reader who sorts this file and finds a
-            # non-zero here knows there are sentences they have not read, and
-            # image_key is the join to the image_summary.csv row that holds them.
-            row["n_caveats"] = n_caveats
             obj_rows.append(row)
     obj_columns = _write_csv(out_dir / "objects.csv", obj_rows, fields=OBJECT_CSV_FIELDS)
 
@@ -1348,7 +1316,7 @@ def write_bundle(
                 "image_summary.csv": (
                     len(img_rows),
                     img_columns,
-                    "one row per image, with that image's caveats in the last column",
+                    "one row per image",
                 ),
                 "composition.csv": (
                     len(comp_rows),
@@ -1458,10 +1426,7 @@ def _outputs_manifest(
                 "which weights area, the axis lengths and the pixel size more "
                 "than once."
             )
-        # The caveats column is prose, so these files are not ASCII. Named here
-        # because the byte-order mark that makes Excel read them correctly is
-        # the same one that prefixes the first column name of anything opened
-        # as plain utf-8.
+        # Preserve non-ASCII image and region names when opening CSVs in Excel.
         entry["encoding"] = "utf-8-sig"
         files.append(entry)
     return {
@@ -1469,7 +1434,7 @@ def _outputs_manifest(
         "checksum_algorithm": "sha256",
         "n_rows_excludes": "the header row, which every file here has",
         "encoding": (
-            "UTF-8 with a byte-order mark, so Excel opens the caveats column "
+            "UTF-8 with a byte-order mark, so Excel opens image and region names "
             "as text rather than as the system codepage. Read them as "
             "'utf-8-sig' (pandas.read_csv and R's read.csv strip the mark "
             "themselves); manifest.json is UTF-8 without one."
@@ -1484,7 +1449,7 @@ def _outputs_manifest(
             "manifest.json is not listed: a file cannot contain its own digest. "
             "Checksum it externally if the bundle needs to be pinned whole. Rows "
             "in objects.csv carry the image_key of the image_summary.csv row "
-            "whose caveats qualify them."
+            "for the same image. Notes are shown in the analysis summary."
         ),
         "joining": (
             "Join objects.csv to image_summary.csv on image_key. The two files "
@@ -1783,8 +1748,7 @@ def _write_csv(
 
     ``fields`` are the columns known in advance; anything else a row carries is
     appended in first-seen order, and ``last_fields`` are held back to the end
-    whatever order they were built in -- the caveat text belongs after the
-    numbers, not between two of them. A run with nothing to report writes the
+    whatever order they were built in. A run with nothing to report writes the
     header alone -- never a zero-byte file, which ``pandas.read_csv`` rejects
     with ``EmptyDataError`` rather than reading as an empty table.
 
@@ -1792,11 +1756,7 @@ def _write_csv(
     can tell a truncated file from an intact one without opening it.
 
     Written UTF-8 **with a BOM**, and the manifest says so beside each file.
-    The caveats column is prose and carries em dashes; Excel opening a ``.csv``
-    by double-click decodes it as the system codepage unless a byte-order mark
-    says otherwise, and renders them as ``â€"``. The house rule for this module
-    is that a result the user cannot open in Excel is not a result, and that
-    covers the sentence qualifying a number as much as the number.
+    This preserves non-ASCII image and region names when Excel opens a CSV.
 
     The cost is that ``csv.DictReader`` over a handle opened as plain ``utf-8``
     sees ``\\ufeffimage_key`` as the first column name. Open these files as
