@@ -36,6 +36,7 @@ class Experiment(TimeStampedModel):
     name = models.CharField(max_length=255, unique=True)
     notes = models.TextField(blank=True, default="")
 
+    # Legacy preference retained for database compatibility; navigation ignores it.
     pinned = models.BooleanField(default=False)
     last_opened_at = models.DateTimeField(null=True, blank=True)
     last_route = models.CharField(max_length=1024, blank=True, default="")

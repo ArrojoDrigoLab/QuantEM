@@ -485,7 +485,7 @@ export function ExperimentPage() {
           </p>
         ) : null}
 
-        <ExperimentWorkbench key={experiment.id} experiment={experiment} refreshKey={refreshKey} onPin={setExperiment}>
+        <ExperimentWorkbench key={experiment.id} experiment={experiment} refreshKey={refreshKey}>
         {experiment.datasets.map((dataset) => (
           <DatasetSection
             key={dataset.id}

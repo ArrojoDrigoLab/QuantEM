@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { getWorkspace, pinExperiment, saveSample, type WorkspaceImage } from "@/shared/api/workspace";
+import { getWorkspace, saveSample, type WorkspaceImage } from "@/shared/api/workspace";
 import type { Experiment } from "@/shared/types/common";
 import { Button } from "@/shared/ui/design";
 import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
@@ -11,8 +11,8 @@ import { extractApiErrorMessage } from "@/utils/apiErrors";
 
 interface Controls { query: string; dataset: string; sort: string; layout: string; readiness: string; selected: string[] }
 const DEFAULTS: Controls = { query: "", dataset: "", sort: "name", layout: "table", readiness: "", selected: [] };
-export function ExperimentWorkbench({ experiment, children, refreshKey, onPin }: {
-  experiment: Experiment; children: ReactNode; refreshKey: number; onPin: (value: Experiment) => void;
+export function ExperimentWorkbench({ experiment, children, refreshKey }: {
+  experiment: Experiment; children: ReactNode; refreshKey: number;
 }) {
   const key = `${experiment.id}.controls`;
   const [controls, setControls] = useState<Controls>(() => ({ ...DEFAULTS, ...readMemory<Partial<Controls>>(key, {}) }));
@@ -76,7 +76,6 @@ export function ExperimentWorkbench({ experiment, children, refreshKey, onPin }:
       <nav className="flex gap-2" aria-label="Experiment sections">{["images", "analysis", "models"].map((entry) =>
         <Button key={entry} variant={tab === entry ? "primary" : "secondary"} aria-current={tab === entry ? "page" : undefined}
           onClick={() => chooseTab(entry)}>{entry[0].toUpperCase() + entry.slice(1)}</Button>)}</nav>
-      <Button onClick={() => { void pinExperiment(experiment.id, !experiment.pinned).then(onPin).catch(() => setError("The pin could not be saved.")); }}>{experiment.pinned ? "Unpin experiment" : "Pin experiment"}</Button>
       <Button onClick={() => void load()}>Refresh status</Button>
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}

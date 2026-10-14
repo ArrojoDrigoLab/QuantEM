@@ -7,7 +7,7 @@ import { getWorkspace, saveSample, type WorkspaceImage } from "@/shared/api/work
 import { apiRequest } from "@/shared/api/core/http";
 import type { Experiment } from "@/shared/types/common";
 
-vi.mock("@/shared/api/workspace", () => ({ getWorkspace: vi.fn(), saveSample: vi.fn(), pinExperiment: vi.fn() }));
+vi.mock("@/shared/api/workspace", () => ({ getWorkspace: vi.fn(), saveSample: vi.fn() }));
 vi.mock("@/shared/api/core/http", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/shared/api/core/http")>(),
   apiRequest: vi.fn(), resolveApiUrl: (url: string) => url,
@@ -27,7 +27,7 @@ const images: WorkspaceImage[] = Array.from({ length: 51 }, (_, i) => ({
 }));
 const identity = { image: "Field 01", asset_id: "image-0", organelle: "mitochondria", sample_id: "Donor 1", group: "T1D", measurement_area: "Whole image", pixel_size_nm: 8 };
 function mount() {
-  return render(<MemoryRouter><ExperimentWorkbench experiment={experiment} refreshKey={0} onPin={vi.fn()}><div>Cards</div></ExperimentWorkbench></MemoryRouter>);
+  return render(<MemoryRouter><ExperimentWorkbench experiment={experiment} refreshKey={0}><div>Cards</div></ExperimentWorkbench></MemoryRouter>);
 }
 
 beforeEach(() => {

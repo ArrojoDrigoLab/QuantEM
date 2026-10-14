@@ -1,5 +1,4 @@
 import { apiRequest } from "./core/http";
-import type { Experiment } from "@/shared/types/common";
 
 export interface WorkspaceSegmentation {
   id: string; type_id: string; type: string; name: string;
@@ -19,10 +18,6 @@ export const getNavigationImages = (id: string) =>
 export const recordVisit = (id: string, route: string) =>
   apiRequest(`/api/experiments/${id}/navigation/`, {
     method: "POST", body: JSON.stringify({ route }),
-  });
-export const pinExperiment = (id: string, pinned: boolean) =>
-  apiRequest<Experiment>(`/api/experiments/${id}/navigation/`, {
-    method: "PATCH", body: JSON.stringify({ pinned }),
   });
 export const saveSample = (experiment: string, asset_id: string, sample_id: string, group: string) =>
   apiRequest(`/api/experiments/${experiment}/workspace/`, {

@@ -522,8 +522,7 @@ export function LibraryPage() {
       const rows = [...headers.values()].filter((row) => row.name.toLowerCase().includes(experimentSearch.toLowerCase())).sort((a, b) => {
         const first = experiments.find((row) => row.id === a.id);
         const second = experiments.find((row) => row.id === b.id);
-        return Number(Boolean(second?.pinned)) - Number(Boolean(first?.pinned)) ||
-          (experimentSort === "recent" ? (Date.parse(second?.last_opened_at ?? "") || 0) - (Date.parse(first?.last_opened_at ?? "") || 0) : 0) ||
+        return (experimentSort === "recent" ? (Date.parse(second?.last_opened_at ?? "") || 0) - (Date.parse(first?.last_opened_at ?? "") || 0) : 0) ||
           a.name.localeCompare(b.name);
       });
       return experimentFilter
@@ -711,14 +710,14 @@ export function LibraryPage() {
         {showHelp ? <WorkflowGuide onDismiss={dismissWorkflowGuide} /> : null}
 
         {experimentsError ? <p role="alert">Experiments could not be loaded. <Button onClick={() => void reloadExperiments()}>Retry</Button></p> : null}
-        <RecentExperiments experiments={experiments} onChange={() => void reloadExperiments()} />
+        <RecentExperiments experiments={experiments} />
         <div className="flex flex-wrap items-center gap-3">
           <label>Find experiment <input aria-label="Find experiment" type="search" className="rounded border px-2 py-1"
             value={experimentSearch} onChange={(event) => setExperimentSearch(event.target.value)} /></label>
           <label>Experiment order <select className="rounded border px-2 py-1" value={experimentSort} onChange={(event) => {
             setExperimentSort(event.target.value);
             try { window.localStorage.setItem("quantem.experimentSort", event.target.value); } catch { /* Session controls remain usable. */ }
-          }}><option value="recent">Recently opened · pinned first</option><option value="name">Name · pinned first</option></select></label>
+          }}><option value="recent">Recently opened</option><option value="name">Name</option></select></label>
           <Link to="/models" className="text-cyan-800 underline">Models</Link>
         </div>
 

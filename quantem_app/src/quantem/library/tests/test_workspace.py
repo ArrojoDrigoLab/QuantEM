@@ -12,22 +12,15 @@ class WorkspaceTests(TestCase):
         self.experiment = self.asset.experiment
         self.url = f"/api/experiments/{self.experiment.id}/"
 
-    def test_visit_and_pin_do_not_rewrite_scientific_update_time(self):
+    def test_visit_does_not_rewrite_scientific_update_time(self):
         updated = self.experiment.updated_at
         route = f"/assets/{self.asset.id}/analysis?seg=test"
         self.assertEqual(
             self.client.post(self.url + "navigation/", {"route": route}, format="json").status_code,
             200,
         )
-        self.assertEqual(
-            self.client.patch(
-                self.url + "navigation/", {"pinned": True}, format="json"
-            ).status_code,
-            200,
-        )
         self.experiment.refresh_from_db()
         self.assertEqual(self.experiment.last_route, route)
-        self.assertTrue(self.experiment.pinned)
         self.assertIsNotNone(self.experiment.last_opened_at)
         self.assertEqual(self.experiment.updated_at, updated)
 

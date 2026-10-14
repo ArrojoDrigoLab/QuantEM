@@ -39,7 +39,6 @@ export interface Dataset {
  * the tree a fine-tune's scope is chosen from.
  */
 export interface Experiment {
-  pinned?: boolean;
   last_opened_at?: string | null;
   last_route?: string;
   id: string;

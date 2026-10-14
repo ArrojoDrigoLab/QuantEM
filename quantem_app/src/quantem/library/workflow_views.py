@@ -14,7 +14,6 @@ from quantem.analysis.models import AnalysisRun
 from quantem.assets.models import Asset
 from quantem.library.models import Experiment, ImageWorkflowMetadata
 from quantem.library.sample_identity import sample_identity
-from quantem.library.serializers import serialize_experiment
 from quantem.segmentation.models import ImageSegmentation
 
 
@@ -40,15 +39,6 @@ class ExperimentNavigationView(APIView):
             last_opened_at=timezone.now(), last_route=route
         )
         return Response({"saved": True})
-
-    def patch(self, request, experiment_id):
-        experiment = get_object_or_404(Experiment, pk=experiment_id)
-        pinned = request.data.get("pinned")
-        if not isinstance(pinned, bool):
-            return Response({"detail": "pinned must be true or false."}, status=400)
-        experiment.pinned = pinned
-        experiment.save(update_fields=["pinned"])
-        return Response(serialize_experiment(experiment))
 
 
 class ExperimentWorkspaceView(APIView):

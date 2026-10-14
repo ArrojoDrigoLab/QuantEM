@@ -15,7 +15,7 @@ import {
 import type { Dataset, Experiment } from "@/shared/types/common";
 import type { HomeEntry, HomeEntryPage } from "@/shared/types/images";
 import { getWorkspace } from "@/shared/api/workspace";
-vi.mock("@/shared/api/workspace", () => ({ getWorkspace: vi.fn(), pinExperiment: vi.fn(), saveSample: vi.fn() }));
+vi.mock("@/shared/api/workspace", () => ({ getWorkspace: vi.fn(), saveSample: vi.fn() }));
 
 vi.mock("@/shared/api/assets", async () => {
   const actual = await vi.importActual<typeof import("@/shared/api/assets")>(

@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { getAsset, getExperiment } from "@/shared/api/assets";
-import { getNavigationImages, recordVisit, pinExperiment } from "@/shared/api/workspace";
+import { getNavigationImages, recordVisit } from "@/shared/api/workspace";
 import { getJobQueueStatus } from "@/shared/api/jobs";
 import { rememberWorkspace } from "@/features/experiments/workspaceMemory";
 import { RecentExperiments } from "@/features/experiments/RecentExperiments";
@@ -12,7 +12,7 @@ import type { Experiment } from "@/shared/types/common";
 import type { AssetDetail } from "@/shared/types/images";
 
 vi.mock("@/shared/api/assets", () => ({ getAsset: vi.fn(), getExperiment: vi.fn(), getAssetSegmentations: vi.fn() }));
-vi.mock("@/shared/api/workspace", () => ({ getNavigationImages: vi.fn(), recordVisit: vi.fn(), pinExperiment: vi.fn() }));
+vi.mock("@/shared/api/workspace", () => ({ getNavigationImages: vi.fn(), recordVisit: vi.fn() }));
 vi.mock("@/shared/api/jobs", () => ({ getJobQueueStatus: vi.fn() }));
 vi.mock("@/features/finetune/FineTuneDialog", () => ({
   FineTuneDialog: (props: { open: boolean; initialExperimentId?: string; initialAssetIds?: string[] }) => props.open
@@ -45,17 +45,17 @@ it("offers contextual fine-tuning and follows the filtered image order without l
   await waitFor(() => expect(recordVisit).toHaveBeenCalledWith("experiment", "/assets/image-2/analysis"));
 });
 
-it("puts pinned experiments before recent ones and resumes their last page", async () => {
-  vi.mocked(pinExperiment).mockResolvedValue({ ...experiment, pinned: true });
-  const changed = vi.fn();
+it("shows the three most recently opened experiments and resumes their last page", () => {
+  const previouslyPinned = { ...experiment, id: "old", name: "Old", pinned: true, last_opened_at: "2026-10-01" };
   render(<MemoryRouter><RecentExperiments experiments={[
+    { ...experiment, id: "unopened", name: "Unopened" },
+    previouslyPinned,
+    { ...experiment, id: "third", name: "Third", last_opened_at: "2026-10-11" },
     { ...experiment, id: "recent", name: "Recent", last_opened_at: "2026-10-13", last_route: "/assets/recent/analysis" },
-    { ...experiment, id: "pinned", name: "Pinned", pinned: true, last_opened_at: "2026-10-01" },
-  ]} onChange={changed} /></MemoryRouter>);
+    { ...experiment, id: "second", name: "Second", last_opened_at: "2026-10-12" },
+  ]} /></MemoryRouter>);
   const links = screen.getAllByRole("link");
-  expect(links.map((link) => link.textContent)).toEqual(["Pinned", "Recent"]);
-  expect(links[1]).toHaveAttribute("href", "/assets/recent/analysis");
-  await userEvent.click(screen.getByRole("button", { name: "Pin Recent" }));
-  await waitFor(() => expect(pinExperiment).toHaveBeenCalledWith("recent", true));
-  expect(changed).toHaveBeenCalled();
+  expect(links.map((link) => link.textContent)).toEqual(["Recent", "Second", "Third"]);
+  expect(links[0]).toHaveAttribute("href", "/assets/recent/analysis");
+  expect(links[1]).toHaveAttribute("href", "/experiments/second");
 });
