@@ -43,7 +43,7 @@ export function SavedModelsPanel({ experimentId, refreshKey = "" }: { experiment
   return <section className="rounded-lg border bg-white p-4" aria-label="Saved fine-tuned models">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold">Saved fine-tuned models</h2>
-      <label><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived</label>
+      <label className="ml-auto inline-flex items-center gap-2 whitespace-nowrap"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />Show archived</label>
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {loading ? <p role="status">Loading models…</p> : !models.length && !error ? <p>No saved fine-tunes here yet. Use Fine-tune to create one.</p> : null}
