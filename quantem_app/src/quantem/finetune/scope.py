@@ -345,7 +345,9 @@ def plan_step_counts(
             raise ValueError("fine-tuning steps must be greater than zero")
         return [steps for _fold in folds]
     return [
-        steps_for_training_tiles(count_tiles(fold.train, base_model, config=config))
+        steps_for_training_tiles(
+            count_tiles(fold.train, base_model, config=config), schedule=config.schedule
+        )
         for fold in folds
     ]
 

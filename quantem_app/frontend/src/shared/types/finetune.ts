@@ -412,6 +412,8 @@ export type FineTuneMode = "use_all" | "holdout_1";
  * 400, sent ahead of time so a user never reaches one.
  */
 export interface FineTunePreviewResponse {
+  coverage?: { annotated_pixels: number; background_only_areas: number; areas_with_tiles: number; context_is_ignored: boolean };
+  warnings?: string[];
   experiment: FineTuneExperimentRef | null;
   /** The exact pack used for install checks, tile counts, and the mode default. */
   base_model: string;
@@ -428,6 +430,15 @@ export interface FineTunePreviewResponse {
 }
 
 export interface FineTuneRunPayload {
+  schedule?: "quick" | "extended";
+  steps?: number;
+  lr?: number;
+  seed?: number;
+  weight_decay?: number;
+  validation_fraction?: number;
+  eval_interval?: number;
+  patience?: number;
+  min_delta?: number;
   name: string;
   /** Non-null replaces that fine-tune in place; null is a new one, and a name collision is a 409. */
   overwrite_adapter_id: string | null;
@@ -513,7 +524,16 @@ export interface FineTuneCvResults {
 }
 
 /** `GET /api/finetune/runs/<id>/` — the adapter row, plus what CV measured. */
+export interface TrainingTrace {
+  steps: number; n_patches: number; patches_seen: number; selected_step: number; stopped_early: boolean;
+  history: {step: number; train_loss: number; validation_loss: number | null; validation_dice: number | null}[];
+}
+export interface TrainingRound {
+  round: number; training: TrainingTrace;
+  checkpoint_selection?: {selection?: TrainingTrace | null};
+}
 export type FineTuneRunDetail = Adapter & {
+  training_rounds?: TrainingRound[];
   cv_results?: FineTuneCvResults | Record<string, never>;
   training_mode?: FineTuneMode;
   cv_benchmark?: boolean;

@@ -1,47 +1,11 @@
-"""Will this actually run? Answered before anything is queued.
-
-Two of the three ways guided fine-tuning fails are knowable from data the crops
-endpoint already has, and both used to be discovered minutes later by a job that
-died in the queue:
-
-* **Threshold calibration with no stored probability map.** There is nothing to
-  sweep, so the job raises seconds in. :meth:`CropSet.mode_blockers` already
-  computes this; the refusal simply has to happen at the door.
-* **Head training on a checked area too small to cut a training window out of.**
-  This one is pure geometry and is the subject of this module.
-
-The geometry rule, derived rather than guessed
-----------------------------------------------
-:func:`quantem.finetune.adapt.build_patches` pads a crop up to one ``tile`` and
-keeps a window only when at least ``min_valid_fraction`` of it is inside a
-checked area -- the padding is marked invalid, so it contributes shape and
-nothing else. A crop therefore yields **no training windows at all** unless
-
-    (checked area, in model pixels) >= min_valid_fraction x tile x tile
-
-That is a *necessary* condition for every crop shape, because any single
-window's valid count is bounded by the crop's total valid area. Necessary, not
-sufficient -- a long thin region can clear it on area and still have no window
-that clears it -- which is the right direction for a refusal: it fires only when
-head training is certain to produce zero steps.
-
-For the shipped packs the number works out at ``tile x sqrt(0.2)``, i.e. about
-229 model pixels for the 512 px packs and 232 for the 518 px ones. Expressed as
-a physical span (``model pixels x canonical nm``) it becomes something a
-microscopist can act on, which is the form the user is shown: *"Your checked
-area is 1.1 µm across; this needs about 1.9 µm."*
-
-Nothing here re-implements the resampling. :func:`quantem.inference.resample.
-plan_resample` decides the model-scale shape for the real run and it decides it
-here too, so the pre-flight cannot drift away from the trainer.
-"""
+"""Head training accepts every completed area with source pixels."""
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 
-from quantem.finetune.adapt import AdaptConfig, tile_for
+from quantem.finetune.adapt import AdaptConfig
 from quantem.inference import resample
 from quantem.inference.specs import MODEL_SPECS, ModelSpec
 
@@ -53,15 +17,8 @@ __all__ = [
 
 
 def required_model_px(spec: ModelSpec, config: AdaptConfig = AdaptConfig()) -> float:
-    """Side of the smallest square checked area head training can use, in model px.
-
-    The rule is on area; this is its square root, which is what a length-based
-    sentence has to quote. Deliberately not rounded -- the comparison is done on
-    area, and rounding here would make the sentence and the verdict disagree at
-    the boundary.
-    """
-    tile = tile_for(spec.tile_size, spec.patch_size)
-    return float(tile) * math.sqrt(config.min_valid_fraction)
+    """There is no minimum model-scale area requirement."""
+    return 0.0
 
 
 @dataclass(frozen=True)
@@ -127,8 +84,7 @@ def check_head_size(crops, base_model: str) -> HeadSizeVerdict | None:
     if spec is None or not crops:
         return None
 
-    tile = tile_for(spec.tile_size, spec.patch_size)
-    min_area = AdaptConfig.min_valid_fraction * tile * tile
+    min_area = 0.0
     required_px = required_model_px(spec)
 
     best: tuple[float, float, float | None, float | None] | None = None

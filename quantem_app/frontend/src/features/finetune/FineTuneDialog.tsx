@@ -163,6 +163,13 @@ function FineTuneDialogBody({
   const [savedAdapterId, setSavedAdapterId] = useState("");
   const [baseModel, setBaseModel] = useState(initialBaseModel ?? "");
   const [modeChoice, setModeChoice] = useState<FineTuneModeChoice>("use_all");
+  const [schedule, setSchedule] = useState<"quick" | "extended">("quick");
+  const [steps, setSteps] = useState("");
+  const [lr, setLr] = useState("0.0001");
+  const [seed, setSeed] = useState("0");
+  const [validation, setValidation] = useState(false);
+  const [evalInterval, setEvalInterval] = useState("100");
+  const [patience, setPatience] = useState("5");
   // A ref, rather than state, so a preview already in flight cannot overwrite
   // a radio choice made before its response arrives. It also lets the preview
   // and its server-selected default land in the same render.
@@ -586,6 +593,11 @@ function FineTuneDialogBody({
         mode,
         cv_benchmark,
         segmentation_id: segmentationId || undefined,
+        schedule,
+        steps: steps ? Number(steps) : undefined,
+        lr: Number(lr), seed: Number(seed),
+        validation_fraction: validation ? 0.2 : 0,
+        eval_interval: Number(evalInterval), patience: validation ? Number(patience) : 0,
       });
       setAdapterId(response.adapter_id);
     } catch (error) {
@@ -607,7 +619,7 @@ function FineTuneDialogBody({
     name,
     overwriteAdapterId,
     baseModel,
-    segmentationId,
+    segmentationId, schedule, steps, lr, seed, validation, evalInterval, patience,
   ]);
 
   const apply = useCallback(
@@ -915,6 +927,14 @@ function FineTuneDialogBody({
                   ) : null}
                 </div>
 
+                {livePreview?.coverage ? (
+                  <p className="text-xs text-slate-600">
+                    {livePreview.coverage.areas_with_tiles} of {annotationCount} areas contribute training pixels,
+                    including {livePreview.coverage.background_only_areas} background-only areas.
+                    Only completed pixels affect training; surrounding image context is ignored by the loss.
+                  </p>
+                ) : null}
+                {livePreview?.warnings?.map((warning) => <p key={warning} className="text-xs text-amber-800">{warning}</p>)}
                 {previewError ? (
                   <p className="m-0 mt-1 text-sm text-red-700" role="alert">
                     {previewError}
@@ -989,6 +1009,34 @@ function FineTuneDialogBody({
                 </div>
               </fieldset>
 
+              <details className="rounded border border-slate-200 p-3">
+                <summary className="cursor-pointer text-sm font-semibold">Training options</summary>
+                <div className="mt-2 grid grid-cols-2 gap-3 text-sm">
+                  <label>Duration
+                    <select className="block w-full rounded border p-1" value={schedule} onChange={(e) => setSchedule(e.target.value as "quick" | "extended")}>
+                      <option value="quick">Quick (300–600 steps, or one complete pass)</option>
+                      <option value="extended">Extended (20 steps per tile, up to 20,000)</option>
+                    </select>
+                  </label>
+                  <label>Custom steps (blank for automatic)
+                    <input type="number" min="1" max="20000" className="block w-full rounded border p-1" value={steps} onChange={(e) => setSteps(e.target.value)} />
+                  </label>
+                  <label>Learning rate
+                    <input type="number" min="0.0000001" max="0.01" step="any" className="block w-full rounded border p-1" value={lr} onChange={(e) => setLr(e.target.value)} />
+                  </label>
+                  <label>Random seed
+                    <input type="number" min="0" step="1" className="block w-full rounded border p-1" value={seed} onChange={(e) => setSeed(e.target.value)} />
+                  </label>
+                  <label className="col-span-2"><input type="checkbox" checked={validation} onChange={(e) => setValidation(e.target.checked)} /> Select the training duration using validation</label>
+                  <label>Evaluate every (steps)
+                    <input type="number" min="1" max="20000" className="block w-full rounded border p-1" value={evalInterval} onChange={(e) => setEvalInterval(e.target.value)} />
+                  </label>
+                  <label>Stop after unimproved evaluations (0 disables)
+                    <input type="number" min="0" max="1000" className="block w-full rounded border p-1" value={patience} onChange={(e) => setPatience(e.target.value)} />
+                  </label>
+                </div>
+                <p className="text-xs text-slate-600">Each pass visits every training tile before repeating. Validation reserves 20% of the training images to select the best loss, then refits all training areas for the selected duration. It needs at least two training images and can take up to twice the step budget. Final held-out images remain separate. Training and validation history is saved with the model.</p>
+              </details>
               {submitError ? (
                 <p className="m-0 text-sm text-red-700" role="alert">
                   {submitError}

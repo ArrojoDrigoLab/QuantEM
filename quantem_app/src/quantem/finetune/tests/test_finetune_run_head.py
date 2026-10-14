@@ -115,6 +115,26 @@ class ScopedRunTests(TestCase):
 
     # -- use all ------------------------------------------------------------
 
+    def test_checkpoint_selection_is_separate_from_outer_holdout_and_refits_all(self):
+        third = _big("selection_third.tif")
+        self.asset_ids.append(str(third.asset_id))
+        result, _ = self._run(
+            training_mode=TRAINING_MODE_HOLDOUT_1,
+            steps=8,
+            training_options={"validation_fraction": 0.5, "eval_interval": 2, "patience": 2},
+        )
+        trace = result["training_rounds"][0]
+        selected = trace["checkpoint_selection"]
+        assert selected["selection"]["history"]
+        validation = set(selected["validation_crop_names"])
+        fit = set(selected["selection_train_crop_names"])
+        test = set(result["heldout_crop_names"])
+        assert not validation & fit and not (validation | fit) & test
+        assert validation | fit == set(result["train_crop_names"])
+        assert trace["training"]["coverage_fraction"] == 1
+        self.adapter.refresh_from_db()
+        assert self.adapter.params["training_rounds"] == result["training_rounds"]
+
     def test_use_all_trains_on_every_area_in_one_round(self):
         result, reporter = self._run()
         assert result["rounds"] == 1

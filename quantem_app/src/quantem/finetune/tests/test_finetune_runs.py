@@ -135,9 +135,19 @@ class NamedRunTests(TestCase):
         assert job.payload_json["planned_steps"] == [420]
         assert job.progress_units_total == 420
 
+    def test_extended_options_are_validated_and_budget_selection_plus_refit(self):
+        response = self._start(steps=4000, lr=0.00003, schedule="extended",
+                               validation_fraction=0.2, eval_interval=200, patience=4)
+        assert response.status_code == 202
+        job = Job.objects.get(id=response.json()["job_id"])
+        assert job.payload_json["training_options"]["lr"] == 0.00003
+        assert job.payload_json["planned_steps"] == [8000]
+        assert job.progress_units_total == 8000
+        assert self._start(name="bad rate", lr="nan").status_code == 400
+
     def test_an_explicit_step_override_cannot_bypass_the_bounds(self):
-        too_few = self._start(name="Too few", steps=299)
-        too_many = self._start(name="Too many", steps=601)
+        too_few = self._start(name="Too few", steps=0)
+        too_many = self._start(name="Too many", steps=20001)
         assert too_few.status_code == 400
         assert too_many.status_code == 400
         assert Job.objects.count() == 0

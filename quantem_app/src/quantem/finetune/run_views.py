@@ -42,9 +42,6 @@ from rest_framework.views import APIView
 
 from quantem.assets.models import Asset
 from quantem.finetune.adapt import (
-    MAX_ADAPT_STEPS,
-    MIN_ADAPT_STEPS,
-    AdaptConfig,
     torch_available,
 )
 from quantem.finetune.models import (
@@ -55,6 +52,7 @@ from quantem.finetune.models import (
     TRAINING_MODES,
     Adapter,
 )
+from quantem.finetune.options import parse_options
 from quantem.finetune.scope import (
     ResolvedScope,
     default_training_mode,
@@ -279,7 +277,9 @@ def _preview(
     if body["blockers"]:
         return body, scope, None
 
-    crop_set = collect_crops_for_scope(str(segmentation_type.id), scope.asset_ids)
+    crop_set = collect_crops_for_scope(
+        str(segmentation_type.id), scope.asset_ids, context_model=base_model
+    )
     tiles_by_image: dict[str, int] = {}
     tile_count = 0
     if base_model in MODEL_SPECS:
@@ -288,6 +288,13 @@ def _preview(
             tiles_by_image[crop.image_key] = tiles_by_image.get(crop.image_key, 0) + tiles
             tile_count += tiles
 
+    body["coverage"] = {
+        "annotated_pixels": sum(c.annotated_px for c in crop_set.crops),
+        "background_only_areas": sum(c.foreground_px == 0 for c in crop_set.crops),
+        "areas_with_tiles": sum(tiles_for_crop(c, base_model) > 0 for c in crop_set.crops),
+        "context_is_ignored": True,
+    }
+    body["warnings"] = crop_set.warnings
     names = {
         str(asset_id): display_name
         for asset_id, display_name in Asset.objects.filter(id__in=scope.asset_ids).values_list(
@@ -444,31 +451,37 @@ class FineTuneRunsView(APIView):
         )
         requested_steps = data.get("steps")
         try:
-            fixed_steps = (
-                int(requested_steps)
-                if requested_steps is not None and requested_steps != ""
-                else None
-            )
-            if fixed_steps is not None and not MIN_ADAPT_STEPS <= fixed_steps <= MAX_ADAPT_STEPS:
+            options_data = {k: v for k, v in data.items() if v is not None and v != ""}
+            config = parse_options(options_data)
+            fixed_steps = config.steps if requested_steps not in (None, "") else None
+            if fixed_steps is not None and any(
+                sum(tiles_for_crop(c, base_model) for c in fold.train) > fixed_steps
+                for fold in folds
+            ):
                 raise ValueError(
-                    f"Fine-tuning steps must be between {MIN_ADAPT_STEPS} and {MAX_ADAPT_STEPS}."
+                    "The step budget must cover every training tile at least once. Increase steps or use the automatic schedule."
                 )
             planned_steps = plan_step_counts(
                 folds,
                 base_model,
                 fixed_steps=fixed_steps,
+                config=config,
             )
         except ValueError as exc:
             return _detail(str(exc))
+        # Selection and refit each have this upper bound; early stopping can
+        # finish sooner. The progress denominator budgets for both passes.
+        budget_multiplier = 2 if config.validation_fraction > 0 else 1
         params = {
+            **config.as_dict(),
             # ``steps`` remains the number that produced the shipped head (the
             # last fold under CV), preserving the adapter/provenance contract.
             "steps": planned_steps[-1],
             "steps_by_round": planned_steps,
-            "total_steps": sum(planned_steps),
-            "step_policy": "fixed" if fixed_steps is not None else "20_per_tile_clamped_300_600",
-            "lr": float(data.get("lr") or AdaptConfig.lr),
-            "seed": int(data.get("seed") or AdaptConfig.seed),
+            "total_steps": sum(planned_steps) * budget_multiplier,
+            "step_policy": "fixed" if fixed_steps is not None else config.schedule,
+            "lr": config.lr,
+            "seed": config.seed,
         }
 
         # Kept populated when the dialog was opened from a labeling view, so
@@ -562,7 +575,8 @@ class FineTuneRunsView(APIView):
                     "training_mode": training_mode,
                     "cv_benchmark": cv_benchmark,
                     "planned_rounds": len(folds),
-                    "planned_steps": planned_steps,
+                    "planned_steps": [n * budget_multiplier for n in planned_steps],
+                    "training_options": config.as_dict(),
                     "fixed_steps": fixed_steps,
                     "overwrite": bool(overwrite_id),
                     "preserves_live_version": preserves_live_version,
@@ -694,6 +708,7 @@ def serialize_run(adapter: Adapter) -> dict:
             "training_mode": adapter.training_mode,
             "cv_benchmark": adapter.cv_benchmark,
             "cv_results": adapter.cv_results or {},
+            "training_rounds": (adapter.params or {}).get("training_rounds", []),
             "asset_count": len(scope_assets),
             "asset_ids": [str(asset.id) for asset in scope_assets],
             "dataset_ids": [str(dataset.id) for dataset in adapter.scope_datasets.all()],

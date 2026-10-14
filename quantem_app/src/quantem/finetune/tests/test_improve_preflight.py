@@ -14,7 +14,6 @@ was reachable through the shipping UI before this package:
 
 from __future__ import annotations
 
-import math
 import time
 
 from django.urls import reverse
@@ -48,17 +47,10 @@ class HeadSizeRuleTests(FinetuneAppTestCase):
     """The geometry rule itself, against the trainer it is derived from."""
 
     def test_required_span_matches_the_trainers_own_coverage_rule(self):
-        # 20 % of one tile's area, expressed as the side of a square. If
-        # `build_patches` ever changes its rule this is the test that says so.
-        for pack_id in ("quantem:mito", "omniem:mito"):
-            spec = MODEL_SPECS[pack_id]
-            expected = spec.tile_size * math.sqrt(0.2)
-            assert required_model_px(spec) == expected
-        # The numbers the sentences quote, pinned.
-        assert round(required_model_px(MODEL_SPECS["quantem:mito"])) == 229
-        assert round(required_model_px(MODEL_SPECS["omniem:mito"])) == 232
+        for spec in MODEL_SPECS.values():
+            assert required_model_px(spec) == 0
 
-    def test_a_small_checked_area_is_refused_with_both_spans_in_micrometres(self):
+    def test_a_small_checked_area_is_accepted(self):
         segmentation = annotated_segmentation(
             "Preflight small", size=SMALL, roi=SMALL_ROI, obj=SMALL_OBJECT
         )
@@ -69,9 +61,8 @@ class HeadSizeRuleTests(FinetuneAppTestCase):
 
         verdict = check_head_size(crops, "omniem:mito")
         assert verdict is not None
-        assert verdict.ok is False
-        # The sentence UX_PLAN §2.3 asks for, verbatim.
-        assert verdict.reason == ("Your checked area is 1.1 µm across; this needs about 1.9 µm.")
+        assert verdict.ok is True
+        assert verdict.reason is None
 
     def test_a_large_checked_area_passes(self):
         segmentation = annotated_segmentation(
@@ -112,10 +103,8 @@ class CropsEndpointTests(FinetuneAppTestCase):
         assert body["mode_blockers"]["head"] == []
 
         body = self.client.get(url, {"base_model": "omniem:mito"}).json()
-        assert body["head_size"]["ok"] is False
-        assert body["mode_blockers"]["head"] == [
-            "Your checked area is 1.1 µm across; this needs about 1.9 µm."
-        ]
+        assert body["head_size"]["ok"] is True
+        assert body["mode_blockers"]["head"] == []
         # The always-available rung is untouched by a geometry problem.
         assert body["mode_blockers"]["threshold_only"] == []
 
@@ -162,7 +151,7 @@ class StartRefusalTests(FinetuneAppTestCase):
         assert Job.objects.count() == before
         assert not self.Adapter.objects.filter(segmentation=segmentation).exists()
 
-    def test_head_run_on_a_small_checked_area_is_refused_with_the_two_spans(self):
+    def test_head_run_on_a_small_checked_area_is_queued(self):
         segmentation = annotated_segmentation(
             "Start small", size=SMALL, roi=SMALL_ROI, obj=SMALL_OBJECT
         )
@@ -170,12 +159,9 @@ class StartRefusalTests(FinetuneAppTestCase):
 
         response = self._start(segmentation, base_model="omniem:mito", mode="head")
 
-        assert response.status_code == 400
-        assert response.json()["error"] == (
-            "Your checked area is 1.1 µm across; this needs about 1.9 µm."
-        )
-        assert Job.objects.count() == before
-        assert not self.Adapter.objects.filter(segmentation=segmentation).exists()
+        assert response.status_code == 202
+        assert Job.objects.count() == before + 1
+        assert self.Adapter.objects.filter(segmentation=segmentation).exists()
 
     def test_a_runnable_threshold_run_still_starts(self):
         segmentation = annotated_segmentation("Start fine")
