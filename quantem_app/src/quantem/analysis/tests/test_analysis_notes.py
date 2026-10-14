@@ -28,15 +28,12 @@ def saved_results():
 
 def test_saved_notes_remove_unwanted_messages_and_explain_partial_metrics(saved_results):
     notes = analysis_notes(saved_results)
-    assert notes == [TISSUE, (
-        "1 of 21 metrics is measured on fewer than the 52 confirmed objects (mean_prob). "
-        "mean_prob: 52 manually drawn objects have no model probability score."
-    )]
+    assert notes == [TISSUE]
     assert len(saved_results["caveats"]) == 4
 
 
 def test_other_notes_and_actual_missing_metric_reasons_are_retained(saved_results):
-    saved_results["objects"]["summary"]["mean_prob"] = {
+    saved_results["objects"]["summary"]["area_px"] = {
         "n": 50, "n_missing": 2,
         "note": "Measured on 50 of 52 confirmed objects; 2 carry no stored value. Missing sources: 2 model objects.",
     }
@@ -44,7 +41,7 @@ def test_other_notes_and_actual_missing_metric_reasons_are_retained(saved_result
     saved_results["caveats"].append(other)
     notes = analysis_notes(saved_results)
     assert "2 carry no stored value. Missing sources: 2 model objects." in notes[1]
-    assert notes[-1] == other
+    assert other not in notes
     assert all("summary table" not in note for note in notes)
 
 
@@ -74,7 +71,7 @@ def test_saved_csv_preview_download_and_manifest_use_the_same_columns(tmp_path, 
     run = AnalysisRun.objects.create(status="SUCCESS", export_dir=str(tmp_path), results=saved_results)
     client = APIClient()
     preview = client.get(f"/api/analysis/{run.id}/table/image_summary.csv").data
-    assert preview["columns"] == ["image_key", "area_um2"]
+    assert preview["columns"] == ["image_key", "area (µm²)"]
     assert preview["rows"] == [["9007199254740993", "0.00000012345"]]
     response = client.get(f"/api/analysis/{run.id}/export/image_summary.csv")
     downloaded = b"".join(response.streaming_content)

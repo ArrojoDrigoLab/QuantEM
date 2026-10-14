@@ -6,12 +6,14 @@ const settingNames: Record<string, string> = {
   objects_in_measurement_area: "Only objects inside measurement area", points_source: "Point source",
   points_csv: "Imported points", distance_target: "Distance to", band_edges_nm: "Distance bands (nm)",
   replicates: "Monte Carlo repetitions", seed: "Random seed", resolution_nm_per_pixel: "Resolution (nm/px)",
+  input_resolution_nm_per_pixel: "Image resolution at inference (nm/px)",
+  inference_resolution_nm_per_pixel: "Inference resolution (nm/px)", minimum_area_px: "Minimum area (px²)",
 };
 
-export function AnalysisSettings({ values, images }: { values: Record<string, unknown>; images: WorkspaceImage[] }) {
+export function AnalysisSettings({ values, images, unknownLabel = "None" }: { values: Record<string, unknown>; images: WorkspaceImage[]; unknownLabel?: string }) {
   const names = new Map(images.flatMap((image) => [[image.id, image.name], ...image.segmentations.map((seg) => [seg.id, `${image.name}: ${seg.name}`]), ...image.segmentations.map((seg) => [seg.type, seg.name])] as [string, string][]));
   const display = (value: unknown): string => {
-    if (value == null || value === "") return "None";
+    if (value == null || value === "") return unknownLabel;
     if (typeof value === "boolean") return value ? "Yes" : "No";
     if (typeof value === "string") return names.get(value) ?? value;
     if (Array.isArray(value)) return value.map(display).join(", ") || "None";

@@ -17,6 +17,7 @@ from .loaders import POINT_SOURCES, AnalysisInputError, normalise_params
 from .models import AnalysisRun
 from .montecarlo import DEFAULT_REPLICATES, DEFAULT_SEED
 from .notes import analysis_notes
+from .settings import saved_segmentation_settings
 
 
 class AnalysisRunCreateSerializer(serializers.Serializer):
@@ -131,6 +132,7 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
     exports = serializers.SerializerMethodField()
     global_area = serializers.SerializerMethodField()
     current = serializers.SerializerMethodField()
+    segmentation_settings = serializers.SerializerMethodField()
 
     class Meta:
         model = AnalysisRun
@@ -144,6 +146,7 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
             "started_at",
             "finished_at",
             "params",
+            "segmentation_settings",
             "global_area",
             "current",
             "input_identity",
@@ -167,6 +170,9 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
 
     def get_global_area(self, obj):
         return self._section(obj, "global_area")
+
+    def get_segmentation_settings(self, obj):
+        return saved_segmentation_settings(obj)
 
     def get_current(self, obj):
         from quantem.analysis.identity import run_is_current

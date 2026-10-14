@@ -8,6 +8,8 @@ import { Button } from "@/shared/ui/design";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { AnalysisTablePreview } from "@/features/analysis/components/AnalysisTablePreview";
 import { AnalysisSettings } from "./AnalysisSettings";
+import { SegmentationSettings } from "@/features/analysis/components/SegmentationSettings";
+import { metricLabel } from "@/features/analysis/metricLabel";
 
 const TABS = ["Spreadsheet", "Image averages", "Settings"] as const;
 type Tab = typeof TABS[number];
@@ -89,13 +91,14 @@ export function ImageAnalysisResultsDialog({ item, images, onClose }: {
         {metrics.length ? <table className="w-full text-left text-sm" aria-label="Image averages">
           <thead><tr><th scope="col" className="border-b px-3 py-2">Measurement</th><th scope="col" className="border-b px-3 py-2">Value</th></tr></thead>
           <tbody>{metrics.map(([metric, value]) => <tr key={metric} className="even:bg-slate-50">
-            <th scope="row" className="border-b px-3 py-2 font-normal">{metric.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase())}</th>
+            <th scope="row" className="border-b px-3 py-2 font-normal">{metricLabel(metric)}</th>
             <td className="border-b px-3 py-2 tabular-nums">{value?.toLocaleString(undefined, { maximumSignificantDigits: 8 }) ?? "—"}</td>
           </tr>)}</tbody>
         </table> : <p className="text-sm text-slate-600">No image averages were saved.</p>}
       </div>
       <div role="tabpanel" id={`${id}-panel-2`} aria-labelledby={`${id}-tab-2`} hidden={tab !== "Settings"} className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
         <AnalysisSettings values={{ sample: item.identity.sample_id || item.identity.image, group: item.identity.group, resolution_nm_per_pixel: item.identity.pixel_size_nm, measurement_area: item.identity.measurement_area, ...item.params }} images={images} />
+        {run && <SegmentationSettings settings={run.segmentation_settings ?? []} images={images} />}
         {item.run_id && item.status === "SUCCESS" && <a className="inline-flex h-10 items-center rounded-md border border-slate-300 px-4 text-sm font-medium text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-500" href={getAnalysisExportUrl(item.run_id, "manifest.json")} download>Download settings</a>}
       </div>
     </section>

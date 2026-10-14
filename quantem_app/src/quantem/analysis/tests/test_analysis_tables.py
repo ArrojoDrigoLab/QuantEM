@@ -36,7 +36,7 @@ def test_preview_pages_exact_saved_values_without_changing_the_export(saved_tabl
     first = APIClient().get(url, {"limit": 2})
     assert first.status_code == 200
     assert first.data == {
-        "name": "objects.csv", "columns": ["object_id", "area_um2", "note"],
+        "name": "objects.csv", "columns": ["object_id", "area (µm²)", "note"],
         "rows": rows[:2], "offset": 0, "limit": 2, "has_more": True,
     }
     last = APIClient().get(url, {"offset": 2, "limit": 2})
@@ -60,7 +60,7 @@ def test_preview_of_an_empty_table_keeps_its_headers(saved_table):
     path.write_text("object_id,area_um2\n", encoding="utf-8-sig")
     response = APIClient().get(f"/api/analysis/{run.id}/table/objects.csv")
     assert response.status_code == 200
-    assert response.data["columns"] == ["object_id", "area_um2"]
+    assert response.data["columns"] == ["object_id", "area (µm²)"]
     assert response.data["rows"] == []
     assert response.data["has_more"] is False
 

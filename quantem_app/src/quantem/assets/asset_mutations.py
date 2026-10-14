@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import uuid
 from pathlib import Path
@@ -473,8 +474,8 @@ def parse_pixel_size_nm(value) -> float | None:
         parsed = float(text)
     except ValueError as exc:
         raise ValueError(f"Pixel size must be a number, got {value!r}") from exc
-    if parsed <= 0:
-        raise ValueError("Pixel size must be greater than zero.")
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise ValueError("Resolution must be a finite number greater than zero.")
     return parsed
 
 

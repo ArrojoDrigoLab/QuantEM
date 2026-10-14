@@ -280,11 +280,13 @@ def sample_summary(rows):
 
 
 def csv_text(rows):
+    from quantem.analysis.columns import column_title
+
     stream = io.StringIO(newline="")
     fields = list(dict.fromkeys(key for row in rows for key in row))
     if fields:
         writer = csv.DictWriter(stream, fieldnames=fields)
-        writer.writeheader()
+        writer.writerow({key: column_title(key) for key in fields})
         writer.writerows(rows)
     return stream.getvalue()
 

@@ -246,7 +246,9 @@ class AnalysisRunTableView(AnalysisRunExportView):
                 # Reading one extra row detects another page without counting
                 # or loading the entire export. Quoted newlines remain one row.
                 rows = list(islice((row for row in reader if row), offset, offset + limit + 1))
-                columns = [columns[index] for index in keep]
+                from quantem.analysis.columns import column_title
+
+                columns = [column_title(columns[index]) for index in keep]
                 rows = [[row[index] if index < len(row) else "" for index in keep] for row in rows]
         except (OSError, UnicodeError, csv.Error, OverflowError, ValueError):
             return Response({"error": "The saved table could not be read."}, status=400)

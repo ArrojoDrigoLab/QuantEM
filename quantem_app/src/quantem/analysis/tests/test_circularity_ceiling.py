@@ -236,7 +236,7 @@ class TestTheReportingRule:
 
         assert "Measured on 1 of 2 confirmed objects" in note
         assert "1 carries no stored value for this metric." in note
-        assert "User-drawn or defined objects have no model probability" in note
+        assert "User-drawn or defined objects have no model probability" not in note
         assert "Quote it " + "as" not in note
 
 

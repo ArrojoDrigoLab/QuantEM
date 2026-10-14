@@ -62,7 +62,8 @@ from .morphometrics import (
     derive,
     summarize,
 )
-from .notes import partial_metric_note
+from .notes import analysis_notes, partial_metric_note
+from .settings import segmentation_settings
 
 if TYPE_CHECKING:  # pragma: no cover - the Django model is imported lazily below
     from .models import AnalysisRun
@@ -1122,6 +1123,7 @@ def run_analysis(
         )
 
     result["_object_metrics"] = metrics
+    result["caveats"] = analysis_notes(result)
     report(100.0, "measurements complete")
     return result
 
@@ -1336,6 +1338,7 @@ def write_bundle(
                 "n_objects_by_source": r["objects"].get("by_source") or {},
                 "proofreading": r.get("proofreading") or {},
                 "points": r.get("points") or None,
+                "segmentation_settings": r.get("segmentation_settings") or [],
                 "caveats": r["caveats"],
             }
             for r in results
@@ -1654,6 +1657,9 @@ def run_for_segmentation(
         for caveat in loaded.caveats:
             if caveat not in result["caveats"]:
                 result["caveats"].append(caveat)
+
+        result["segmentation_settings"] = segmentation_settings(loaded.provenance)
+        result["caveats"] = analysis_notes(result)
 
         # Checked before anything reaches the disk. A single non-finite number
         # -- ``nan`` from a distance that overflowed was the measured case --

@@ -257,6 +257,12 @@ def persist_run_probability_maps(
             metadata: dict[str, object] = dict(
                 segmenter.get_probability_map_metadata(model_name) or {}
             )
+            native_nm = segmentation.asset.pixel_size_nm
+            canonical_nm = metadata.get("canonical_nm")
+            metadata["resolution_recorded"] = True
+            metadata["native_pixel_size_nm"] = native_nm
+            metadata["ran_at_nm"] = canonical_nm if native_nm and canonical_nm else None
+            metadata["resampled"] = bool(authority is not None and abs(authority.back_factor - 1.0) > 1e-6)
             if run_id:
                 metadata["run_id"] = str(run_id)
             if run_finished_at:

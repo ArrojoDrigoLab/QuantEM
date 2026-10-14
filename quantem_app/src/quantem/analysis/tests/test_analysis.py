@@ -678,12 +678,12 @@ class TestService:
         assert r["distances"]["target"] == "mito"
         assert "z" in r["monte_carlo"]
 
-    def test_uncalibrated_run_is_flagged_with_a_caveat(self, tmp_path):
+    def test_uncalibrated_run_keeps_units_explicit_without_a_generic_note(self, tmp_path):
         from quantem.analysis.service import run_analysis
 
         r = run_analysis(self._inputs(tmp_path, pixel_size_nm=None))
         assert r["calibrated"] is False
-        assert any("Pixel size" in c for c in r["caveats"])
+        assert not any("Pixel size" in c for c in r["caveats"])
         assert "distances" not in r  # cannot express nm without calibration
 
     def test_a_skipped_distance_analysis_is_named_not_merely_absent(self, tmp_path):
@@ -697,10 +697,10 @@ class TestService:
         r = run_analysis(self._inputs(tmp_path, pixel_size_nm=None))
 
         assert "distances" not in r
-        skipped = [c for c in r["caveats"] if "Distance-to-mito" in c]
+        skipped = [c for c in r["caveats"] if "Distance to mito" in c]
         assert skipped, r["caveats"]
-        assert "skipped" in skipped[0]
-        assert "pixel size" in skipped[0]
+        assert "not calculated" in skipped[0]
+        assert "resolution settings" in skipped[0]
 
     def test_a_distance_target_with_no_points_is_also_named(self, tmp_path):
         from quantem.analysis.service import run_analysis
@@ -708,7 +708,7 @@ class TestService:
         r = run_analysis(self._inputs(tmp_path, with_points=False))
 
         assert "distances" not in r
-        assert any("Distance-to-mito was requested but skipped" in c for c in r["caveats"])
+        assert any("Distance to mito was not calculated" in c for c in r["caveats"])
 
     def test_an_empty_tissue_mask_is_a_caveat_not_a_crash(self, tmp_path):
         """``self_check`` always drew >= 5,000 points, and sampling inside an
@@ -732,9 +732,9 @@ class TestService:
         assert r["composition"]["tissue_px"] == 0
         assert "monte_carlo" not in r
         assert "monte_carlo_self_check" not in r
-        empty = [c for c in r["caveats"] if "tissue mask is empty" in c]
+        empty = [c for c in r["caveats"] if "measurement area is empty" in c]
         assert empty, r["caveats"]
-        assert "no confirmed objects" in empty[0]
+        assert "statistics are unavailable" in empty[0]
 
     def test_objects_csv_has_a_header_when_there_are_no_objects(self, tmp_path):
         """A zero-byte CSV is not an empty table.

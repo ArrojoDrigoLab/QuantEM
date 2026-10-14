@@ -6,7 +6,9 @@ import json
 from django.utils import timezone
 
 from quantem.analysis.global_area import global_area_report
+from quantem.analysis.notes import analysis_notes
 from quantem.analysis.service import export_dir_for_run
+from quantem.analysis.settings import global_settings
 
 
 def run_global_area(run, *, progress, cancel_check):
@@ -28,7 +30,9 @@ def run_global_area(run, *, progress, cancel_check):
             "calibrated": bool(pixel),
             "caveats": [],
             "identity": run.input_identity,
+            "segmentation_settings": global_settings(run.segmentation),
         }
+        result["caveats"] = analysis_notes(result)
         directory = export_dir_for_run(run.id)
         directory.mkdir(parents=True, exist_ok=True)
         with (directory / "area.csv").open("w", newline="", encoding="utf-8") as stream:

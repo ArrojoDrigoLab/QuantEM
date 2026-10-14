@@ -954,6 +954,13 @@ def _mask_provenance(
     }
     if mask_storage is not None:
         result["mask_storage"] = mask_storage
+    scores = {}
+    for features in confirmed_objects(segmentation).values_list("features", flat=True):
+        source = (features or {}).get("probability_source")
+        if source:
+            entry = scores.setdefault(str(source.get("map_id")), {**source, "n_objects": 0})
+            entry["n_objects"] += 1
+    result["probability_measurements"] = list(scores.values())
     return result
 
 
@@ -1284,13 +1291,14 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
     the segmentation today and need not be the one that made these objects. The
     lookup is memoised because runs share adapters far more often than not.
     """
-    by_id: dict[str, dict[str, Any]] = {}
+    by_id: dict[tuple[str, ...], dict[str, Any]] = {}
     adapters: dict[str, dict[str, Any]] = {}
     for stamp in report.stamps.stamps:
         run_id = str(stamp.get("id") or "")
         adapter_id = stamp.get("adapter_id")
+        identity = tuple(str(stamp.get(key)) for key in RUN_STAMP_FIELDS if key != "finished_at")
         entry = by_id.setdefault(
-            run_id,
+            identity,
             {
                 "run_id": run_id or None,
                 "finished_at": stamp.get("finished_at"),
@@ -1303,6 +1311,18 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
                     else None
                 ),
                 "ran_at_nm": stamp.get("ran_at_nm"),
+                "native_pixel_size_nm": stamp.get("native_pixel_size_nm"),
+                "resampled": (
+                    stamp["ran_at_nm"] is not None
+                    and stamp["native_pixel_size_nm"] is not None
+                    and abs(stamp["ran_at_nm"] - stamp["native_pixel_size_nm"]) > 1e-6
+                    if "ran_at_nm" in stamp and "native_pixel_size_nm" in stamp and stamp.get("resolution_recorded", True) else None
+                ),
+                "scope": stamp.get("scope"),
+                "include_level": stamp.get("include_level"),
+                "run_version": stamp.get("run_version"),
+                "prob_map_grid": stamp.get("prob_map_grid"),
+                "device": stamp.get("device"),
                 "min_area": stamp.get("min_area"),
                 "n_objects": 0,
             },
@@ -1311,12 +1331,11 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
     runs = sorted(
         by_id.values(), key=lambda r: (str(r["finished_at"] or ""), str(r["run_id"] or ""))
     )
-    if len(runs) > 1:
+    run_count = len({run["run_id"] for run in runs})
+    if run_count > 1:
         report.caveat(
-            f"The objects in {report.where} come from {len(runs)} different "
-            "inference runs, so no single threshold, adapter or scale describes "
-            "all of them. Each run is listed separately in the manifest with the "
-            "number of objects it produced."
+            f"The objects in {report.where} come from {run_count} different "
+            "inference runs."
         )
     return runs
 
@@ -2530,6 +2549,9 @@ def load_inputs(
         cancel_check=cancel_check,
         on_progress=on_feature_progress,
     )
+    from quantem.segmentation.features.probability import fill_missing_outline_probabilities
+
+    fill_missing_outline_probabilities(segmentation, cancel_check=cancel_check)
     features = object_features(segmentation)
     sources = object_sources(segmentation)
 
@@ -2547,12 +2569,18 @@ def load_inputs(
     else:
         tissue_provenance = None
 
+    subject_provenance = (
+        _mask_provenance("Objects", segmentation, confirmed_objects(segmentation).count(), shape=shape)
+        if not any(block["segmentation_id"] == str(segmentation.id) for block in compartment_provenance)
+        else None
+    )
+
     # Every distinct model behind any mask in this run, so the manifest can
     # carry each one's digests once rather than per compartment.
     pack_ids = sorted(
         {
             source
-            for block in [*compartment_provenance, tissue_provenance]
+            for block in [*compartment_provenance, tissue_provenance, subject_provenance]
             if block
             for source in block["n_confirmed_by_source"]
             if source not in {SOURCE_MODEL_MANUAL, SOURCE_MODEL_UNKNOWN}
@@ -2586,6 +2614,7 @@ def load_inputs(
         "image_shape": [shape[0], shape[1]],
         "subject_segmentation_id": str(segmentation.id),
         "compartments": compartment_provenance,
+        "subject": subject_provenance,
         "tissue": tissue_provenance,
         "points_source": params["points_source"],
         "points": _points_provenance(params["points_source"], points_xy, parsed_points),

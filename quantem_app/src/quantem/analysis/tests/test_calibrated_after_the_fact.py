@@ -81,26 +81,23 @@ class CalibratedAfterTheFactTests(RunIdentityTestCase):
             )
         return mito
 
-    def test_the_wrong_scale_caveat_survives_a_pixel_size_typed_in_afterwards(self):
+    def test_original_resolution_survives_later_calibration(self):
         mito = self._mito_produced_uncalibrated()
         _run, got = self._run(mito, compartments={"mito": str(mito.id)})
 
-        caveats = " ".join(got["result"]["caveats"])
-        self.assertIn("no pixel size", caveats)
-        self.assertIn("does not re-run inference", caveats)
-        self.assertIn(
-            "0, 19, 120 and 233",
-            caveats,
-            "the measured demonstration belongs with the warning",
-        )
+        settings = got["result"]["segmentation_settings"][0]["runs"][0]
+        self.assertIsNone(settings["native_pixel_size_nm"])
+        self.assertFalse(settings["resampled"])
+        self.assertFalse(any("Re-run inference" in c for c in got["result"]["caveats"]))
 
-    def test_the_recalibration_caveat_names_the_transition_it_used_to_miss(self):
+    def test_recalibration_is_recorded_in_saved_settings(self):
         mito = self._mito_produced_uncalibrated()
         _run, got = self._run(mito, compartments={"mito": str(mito.id)})
 
-        caveats = " ".join(got["result"]["caveats"])
-        self.assertIn("had no pixel size", caveats)
-        self.assertIn("Re-run inference", caveats)
+        settings = got["result"]["segmentation_settings"][0]["runs"][0]
+        self.assertIsNone(settings["native_pixel_size_nm"])
+        self.assertFalse(settings["resampled"])
+        self.assertFalse(any("Re-run inference" in c for c in got["result"]["caveats"]))
 
     def test_the_manifest_does_not_call_the_missed_resample_a_design_fact(self):
         """``ran_at: "native"`` has two causes and the note stated only the
@@ -289,9 +286,8 @@ class NumbersNotOnlySentencesTests(RunIdentityTestCase):
         self.assertEqual(got["result"]["objects"]["n"], 3)
         self.assertIn("monte_carlo", got["result"])
 
-        caveats = " ".join(got["result"]["caveats"])
-        self.assertIn("n_objects, area_fraction_*, enrichment_* and z_*", caveats)
-        self.assertIn("blank", caveats)
+        self.assertTrue(got["result"]["segmentation_settings"])
+        self.assertFalse(any("n_objects, area_fraction_*" in c for c in got["result"]["caveats"]))
 
     def test_a_refused_distance_gives_the_true_reason(self):
         """The old sentence said the image was uncalibrated. It records 5 nm/px."""
@@ -299,10 +295,10 @@ class NumbersNotOnlySentencesTests(RunIdentityTestCase):
         _run, got = self._full_run(mito, "mito")
 
         self.assertIsNone(got["result"].get("distances"))
-        skipped = [c for c in got["result"]["caveats"] if "Distance-to-mito" in c]
+        skipped = [c for c in got["result"]["caveats"] if "Distance to mito" in c]
         self.assertEqual(len(skipped), 1, got["result"]["caveats"])
         self.assertNotIn("this image is uncalibrated", skipped[0])
-        self.assertIn("produced before this image had a pixel size", skipped[0])
+        self.assertIn("saved resolution settings", skipped[0])
 
     def test_a_pack_that_declares_no_canonical_scale_keeps_its_microns(self):
         """The guard must fire on a *skipped resample*, not on any missing stamp.
@@ -359,8 +355,8 @@ class NumbersNotOnlySentencesTests(RunIdentityTestCase):
 
         self.assertFalse(got["result"]["calibrated"])
         self.assertEqual(self._summary_row(run)["objects_per_um2"], "")
-        caveats = " ".join(got["result"]["caveats"])
-        self.assertIn("quantem:mito", caveats)
+        settings = next(s for s in got["result"]["segmentation_settings"] if s["compartment"] == "mito")
+        self.assertIsNone(settings["runs"][0]["native_pixel_size_nm"])
 
     def test_a_genuinely_calibrated_run_keeps_every_column(self):
         """The guard must not fire on the ordinary, correct path."""
@@ -437,7 +433,7 @@ class ServedToTheAnalysisScreenTests(RunIdentityTestCase):
         self.assertIsNone(served.data["composition"]["tissue_um2"])
         self.assertIsNone(served.data["objects"]["density"]["per_um2"])
         self.assertIsNone(served.data["distances"])
-        self.assertTrue(
+        self.assertFalse(
             any("does not re-run inference" in c for c in served.data["caveats"]),
             served.data["caveats"],
         )
@@ -621,14 +617,12 @@ class UnrecognisedPackCountsAsASkippedResampleTests(RunIdentityTestCase):
         self.assertIsNone(result["objects"]["density"]["per_um2"])
         self.assertIsNone(result["composition"]["tissue_um2"])
 
-    def test_the_blanks_come_with_the_sentence_that_explains_them(self):
+    def test_unknown_model_is_recorded_in_settings_without_a_warning(self):
         """A blank column with no caveat is the failure this guard replaces."""
         _run, got = self._objects_from_an_unknown_pack()
-        caveats = " ".join(got["result"]["caveats"])
-
-        self.assertIn(self.UNKNOWN_PACK, caveats)
-        self.assertIn("not a pack this build knows", caveats)
-        self.assertIn("cannot be looked up", caveats)
+        settings = got["result"]["segmentation_settings"][0]
+        self.assertEqual(settings["runs"][0]["pack_id"], self.UNKNOWN_PACK)
+        self.assertFalse(any("cannot be looked up" in c for c in got["result"]["caveats"]))
 
     def test_it_agrees_with_the_manifest_caveat_on_the_same_run(self):
         _run, got = self._objects_from_an_unknown_pack()

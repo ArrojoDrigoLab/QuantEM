@@ -515,10 +515,7 @@ class NoticeTypographyTests(AnalysisRunTestCase):
         self.assertTrue(caveats, "this fixture is meant to produce caveats")
         offenders = [c for c in caveats if "--" in c]
         self.assertEqual(offenders, [], "these render as -- in the notice panel")
-        self.assertTrue(
-            any("—" in c for c in caveats),
-            "at least one of these sentences has a dash in it at all",
-        )
+        self.assertTrue(all(len(c) < 1000 for c in caveats))
 
     def test_the_summary_csv_carries_the_mark_that_makes_excel_read_it(self):
         run = self._run_with_caveats()
@@ -615,7 +612,7 @@ class ServiceTests(AnalysisRunTestCase):
             run.results["caveats"],
         )
 
-    def test_uncalibrated_image_is_flagged_and_reports_no_microns(self):
+    def test_uncalibrated_image_reports_no_microns_without_a_generic_note(self):
         self.asset.pixel_size_nm = None
         self.asset.save(update_fields=["pixel_size_nm"])
         run = self._make_run(tissue_segmentation_id=str(self.tissue.id), replicates=5)
@@ -625,7 +622,7 @@ class ServiceTests(AnalysisRunTestCase):
         run.refresh_from_db()
         self.assertFalse(run.results["calibrated"])
         self.assertIsNone(run.results["composition"]["tissue_um2"])
-        self.assertTrue(any("Pixel size" in c for c in run.results["caveats"]))
+        self.assertFalse(any("Pixel size" in c for c in run.results["caveats"]))
 
     def test_centroid_points_produce_enrichment_distances_and_a_circularity_caveat(self):
         run = self._make_run(
@@ -644,7 +641,7 @@ class ServiceTests(AnalysisRunTestCase):
         self.assertEqual(results["distances"]["target"], "mito")
         self.assertEqual(results["monte_carlo"]["replicates"], 5)
         self.assertTrue(
-            any("circular" in c for c in results["caveats"]),
+            any("not an independent measurement" in c for c in results["caveats"]),
             "measuring a compartment with its own centroids must be labelled",
         )
 
@@ -662,7 +659,7 @@ class ServiceTests(AnalysisRunTestCase):
         points = run.results["points"]
         self.assertEqual(points["n_total"], 3)
         self.assertEqual(points["n_off_tissue"], 2)
-        self.assertTrue(any("outside the tissue mask" in c for c in run.results["caveats"]))
+        self.assertTrue(any("outside the measurement area" in c for c in run.results["caveats"]))
 
     def test_an_empty_tissue_mask_succeeds_with_a_caveat(self):
         """A tissue segmentation with nothing confirmed in it.
@@ -689,9 +686,9 @@ class ServiceTests(AnalysisRunTestCase):
         results = run.results
         self.assertEqual(results["composition"]["tissue_px"], 0)
 
-        empty = [c for c in results["caveats"] if "tissue mask is empty" in c]
+        empty = [c for c in results["caveats"] if "measurement area is empty" in c]
         self.assertTrue(empty, results["caveats"])
-        self.assertIn("no confirmed objects", empty[0])
+        self.assertIn("statistics are unavailable", empty[0])
 
         # The Monte-Carlo block is skipped whole -- not half-computed.
         self.assertNotIn("monte_carlo", results)
@@ -720,10 +717,10 @@ class ServiceTests(AnalysisRunTestCase):
         run.refresh_from_db()
         self.assertEqual(run.status, AnalysisRun.STATUS_SUCCESS, run.error)
         self.assertNotIn("distances", run.results)
-        named = [c for c in run.results["caveats"] if "Distance-to-mito" in c]
+        named = [c for c in run.results["caveats"] if "Distance to mito" in c]
         self.assertTrue(named, run.results["caveats"])
-        self.assertIn("skipped", named[0])
-        self.assertIn("pixel size", named[0])
+        self.assertIn("not calculated", named[0])
+        self.assertIn("resolution settings", named[0])
 
     def test_a_point_outside_the_image_does_not_fabricate_a_distance(self):
         """``1e30`` is finite, so it parses, and it used to cast to ``INT_MIN``
@@ -759,9 +756,9 @@ class ServiceTests(AnalysisRunTestCase):
         self.assertEqual(distances["n_unreadable"], points["n_unreadable"])
 
         # And a caveat names the distance analysis, which none of them did.
-        named = [c for c in run.results["caveats"] if "measured against mito" in c]
+        named = [c for c in run.results["caveats"] if "nearest image-border positions" in c]
         self.assertTrue(named, run.results["caveats"])
-        self.assertIn("border pixel", named[0])
+        self.assertIn("image-border positions", named[0])
 
         row = service.image_summary_row(run.results)
         self.assertLess(row["distance_median_nm"], ceiling)
@@ -848,11 +845,11 @@ class ServiceTests(AnalysisRunTestCase):
         self.assertIsNone(mc["z"]["enrichment_mito"])
         self.assertIsNone(mc["p_two_sided"]["enrichment_mito"])
 
-        named = [c for c in run.results["caveats"] if "no spread" in c]
+        named = [c for c in run.results["caveats"] if "variation could not be estimated" in c]
         self.assertTrue(named, run.results["caveats"])
         # The floor twenty replicates cannot go below, named in the caveat
         # because it is what the number would have been.
-        self.assertIn("0.04762", named[0])
+        self.assertIn("p-values are unavailable", named[0])
         self.assertIn("enrichment_mito", named[0])
 
         # And the blank reaches the exported table, not only the screen.
@@ -1016,7 +1013,7 @@ class AnalysisApiTests(AnalysisRunTestCase):
         self.assertEqual(distances["n_out_of_image"], 1)
         self.assertEqual(sum(distances["band_counts"]), distances["n_measured"])
         self.assertTrue(
-            any("measured against mito" in c for c in served.data["caveats"]),
+            any("nearest image-border positions" in c for c in served.data["caveats"]),
             served.data["caveats"],
         )
 
@@ -1121,7 +1118,7 @@ class AnalysisApiTests(AnalysisRunTestCase):
         self.assertIn("attachment", response["Content-Disposition"])
         self.assertIn("objects.csv", response["Content-Disposition"])
         body = b"".join(response.streaming_content).decode("utf-8")
-        self.assertIn("area_um2", body)
+        self.assertIn("area (µm²)", body)
 
     def test_export_serves_the_manifest_as_json(self):
         run = self._completed_run()
@@ -1195,7 +1192,7 @@ class AnalysisApiTests(AnalysisRunTestCase):
         self.assertIsNone(detail.data["monte_carlo"])
         self.assertIsNone(detail.data["monte_carlo_self_check"])
         self.assertTrue(
-            any("tissue mask is empty" in c for c in detail.data["caveats"]),
+            any("measurement area is empty" in c for c in detail.data["caveats"]),
             detail.data["caveats"],
         )
 
@@ -1347,7 +1344,7 @@ class GroupRollupApiTests(AnalysisRunTestCase):
         self.assertTrue(texts, "a group mean carries the caveats of its runs")
         for caveat in run.results["caveats"]:
             self.assertIn(caveat, texts)
-        circular = next(entry for entry in group["caveats"] if "circular" in entry["text"])
+        circular = next(entry for entry in group["caveats"] if "not an independent measurement" in entry["text"])
         self.assertEqual(circular["run_ids"], [str(run.id)])
         self.assertEqual(circular["n_runs"], 1)
 

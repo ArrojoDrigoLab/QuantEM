@@ -165,6 +165,49 @@ class RunIdentityTestCase(TestCase):
         )
 
 
+class SavedSettingsTests(RunIdentityTestCase):
+    def test_settings_include_the_measured_objects_when_compartments_use_other_segmentations(self):
+        subject = self._segmentation(get_or_create_mitochondria_type)
+        target = self._segmentation(get_or_create_er_type)
+        self._object(subject, _square(20, 20), source_model="quantem:mito", stamp=_stamp(pack_id="quantem:mito"))
+        self._object(target, _square(50, 50), source_model="quantem:er", stamp=_stamp())
+        _run, saved = self._run(subject, compartments={"ER": str(target.id)})
+        settings = saved["result"]["segmentation_settings"]
+        assert {entry["segmentation_id"] for entry in settings} == {str(subject.id), str(target.id)}
+
+    def test_snapshot_survives_later_edits_and_distinguishes_rethresholded_runs(self):
+        from quantem.analysis.serializers import AnalysisRunSerializer
+
+        seg = self._segmentation(get_or_create_mitochondria_type)
+        for index, threshold in enumerate([0.4, 0.6]):
+            self._object(seg, _square(20 + 30 * index, 20), source_model="quantem:mito",
+                         stamp=_stamp(pack_id="quantem:mito", threshold=threshold, ran_at_nm=8.0))
+        run, saved = self._run(seg, compartments={"mito": str(seg.id)})
+        snapshot = saved["result"]["segmentation_settings"]
+        assert sorted(entry["threshold"] for entry in snapshot[0]["runs"]) == [0.4, 0.6]
+        assert all(entry["resampled"] is True for entry in snapshot[0]["runs"])
+        assert len([note for note in run.results["caveats"] if "multiple models and settings" in note]) == 1
+        assert not any("different inference runs" in note for note in run.results["caveats"])
+        self.asset.pixel_size_nm = 99.0
+        self.asset.save(update_fields=["pixel_size_nm"])
+        SegmentObject.objects.filter(segmentation=seg).update(features={})
+        assert AnalysisRunSerializer(run).data["segmentation_settings"] == snapshot
+        assert saved["manifest"]["images"][0]["segmentation_settings"] == snapshot
+
+    def test_historical_manifest_settings_are_used_without_current_database_guesses(self):
+        from quantem.analysis.serializers import AnalysisRunSerializer
+
+        seg = self._segmentation(get_or_create_mitochondria_type)
+        self._object(seg, _square(20, 20), source_model="quantem:mito",
+                     stamp=_stamp(pack_id="quantem:mito", native_pixel_size_nm=None))
+        run, saved = self._run(seg, compartments={"mito": str(seg.id)})
+        expected = run.results.pop("segmentation_settings")
+        run.save(update_fields=["results"])
+        SegmentObject.objects.filter(segmentation=seg).update(features={})
+        assert AnalysisRunSerializer(run).data["segmentation_settings"] == expected
+        assert expected[0]["runs"][0]["resampled"] is False
+
+
 # ---------------------------------------------------------------------------
 # 1. The empty tissue mask
 # ---------------------------------------------------------------------------
@@ -258,7 +301,7 @@ class EmptyTissueEndToEndTests(RunIdentityTestCase):
         assert enrichment == {"mito": None, "nucleus": None, "cytoplasm": None}, (
             "a compartment with no area cannot have a defined enrichment"
         )
-        assert any("tissue mask is empty" in c for c in got["result"]["caveats"])
+        assert any("measurement area is empty" in c for c in got["result"]["caveats"])
 
     def test_the_exported_summary_row_carries_the_same_undefined(self):
         """``image_summary.csv`` is what a chart reads. A 0.0 that became 100%
@@ -302,17 +345,16 @@ class UnknownScaleTests(RunIdentityTestCase):
         assert "no confirmed objects at all" in reason
         assert "not 'native'" in reason
 
-    def test_the_unknown_scale_is_a_top_level_caveat_not_a_buried_field(self):
+    def test_unknown_settings_do_not_generate_a_note(self):
         mito = self._segmentation(get_or_create_mitochondria_type)
         empty = self._segmentation(get_or_create_er_type)
         self._object(mito, _square(30, 40), source_model="quantem:mito")
 
         _run, got = self._run(mito, compartments={"mito": str(mito.id), "er": str(empty.id)})
 
-        named = [c for c in got["result"]["caveats"] if "'er'" in c and "unknown" in c]
-        assert named, got["result"]["caveats"]
-        assert "not\nnative" not in named[0]
-        assert "resampled" in named[0]
+        assert not any("unknown" in c for c in got["result"]["caveats"])
+        settings = got["result"]["segmentation_settings"]
+        assert next(s for s in settings if s["compartment"] == "er")["runs"] == []
 
     def test_a_hand_drawn_compartment_says_no_inference_ran_rather_than_native(self):
         mito = self._segmentation(get_or_create_mitochondria_type)
@@ -379,7 +421,7 @@ class UnknownScaleTests(RunIdentityTestCase):
         assert scale["resampled"] is False
         assert scale["canonical_nm_by_pack"] == {"quantem:er": None}
 
-    def test_a_recalibrated_image_says_the_run_used_a_different_pixel_size(self):
+    def test_recalibrated_image_keeps_original_resolution_in_settings(self):
         er = self._segmentation(get_or_create_er_type)
         for i in range(3):
             self._object(
@@ -391,9 +433,8 @@ class UnknownScaleTests(RunIdentityTestCase):
 
         _run, got = self._run(er, compartments={"er": str(er.id)})
 
-        named = [c for c in got["result"]["caveats"] if "pixel size has changed" in c]
-        assert named, got["result"]["caveats"]
-        assert "2.0" in named[0] and str(TEST_PIXEL_SIZE_NM) in named[0]
+        assert not any("pixel size has changed" in c for c in got["result"]["caveats"])
+        assert got["result"]["segmentation_settings"][0]["runs"][0]["native_pixel_size_nm"] == 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -425,7 +466,7 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
         assert threshold["recorded_from"] == "the objects"
         assert threshold["n_objects"] == 5
 
-    def test_an_adapter_applied_after_inference_is_a_top_level_caveat(self):
+    def test_later_adapter_does_not_change_the_saved_settings(self):
         """The reported case: proofread, fine-tune, apply, analyse. The adapter
         calibrated nothing that is in the bundle."""
         from quantem.finetune.models import Adapter
@@ -457,9 +498,8 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
         assert block["adapter"]["applied"] is False
         assert block["adapter_applied_now"]["applied"] is True
 
-        named = [c for c in got["result"]["caveats"] if ADAPTER_ID in c]
-        assert named, got["result"]["caveats"]
-        assert "does not re-infer" in named[0]
+        assert not any("does not re-infer" in c for c in got["result"]["caveats"])
+        assert got["result"]["segmentation_settings"][0]["runs"][0]["threshold"] == 0.5
 
     def test_objects_from_two_runs_at_two_thresholds_report_neither_as_the_value(self):
         er = self._segmentation(get_or_create_er_type)
@@ -487,13 +527,13 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
         assert "more than one threshold" in threshold["unavailable"]["value"]
         assert [r["n_objects"] for r in block["runs"]] == [3, 2]
         assert any(
-            "not all produced at the same foreground threshold" in c
+            "were segmented under multiple models and settings" in c
             for c in got["result"]["caveats"]
         )
-        assert any("not all produced under the same adapter" in c for c in got["result"]["caveats"])
+        assert any("were segmented under multiple models and settings" in c for c in got["result"]["caveats"])
         assert any("2 different inference runs" in c for c in got["result"]["caveats"])
 
-    def test_objects_made_before_stamping_fall_back_and_say_so_at_the_top(self):
+    def test_legacy_objects_have_unknown_settings_without_a_note(self):
         er = self._segmentation(get_or_create_er_type)
         for i in range(4):
             self._object(er, _square(20 + 25 * i, 20), source_model="quantem:er")
@@ -505,14 +545,12 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
         assert threshold["value"] == 0.5
         assert threshold["recorded_from"] == "the segmentation's current configuration"
         assert "predate per-run stamping" in block["recorded_from"]
-        named = [
-            c
-            for c in got["result"]["caveats"]
-            if "current ones, not the run's" in c and "'er'" in c
-        ]
-        assert named, got["result"]["caveats"]
+        saved = got["result"]["segmentation_settings"][0]["runs"][0]
+        assert saved["run_id"] is None
+        assert "threshold" not in saved
+        assert not any("current ones, not the run's" in c for c in got["result"]["caveats"])
 
-    def test_a_partly_stamped_compartment_names_how_many_are_unaccounted_for(self):
+    def test_missing_run_settings_keep_their_object_counts(self):
         er = self._segmentation(get_or_create_er_type)
         for i in range(3):
             self._object(er, _square(20 + 25 * i, 20), source_model="quantem:er", stamp=_stamp())
@@ -521,9 +559,9 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
 
         _run, got = self._run(er, compartments={"er": str(er.id)})
 
-        named = [c for c in got["result"]["caveats"] if "carry no record" in c]
-        assert named, got["result"]["caveats"]
-        assert "2 of the 5" in named[0]
+        assert not any("carry no record" in c for c in got["result"]["caveats"])
+        runs = got["result"]["segmentation_settings"][0]["runs"]
+        assert next(r for r in runs if r["run_id"] is None)["n_objects"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -910,9 +948,8 @@ class RealInferenceToManifestTests(TestCase):
 
         assert threshold["value"] == 0.5, "the released model's own threshold ran"
         assert threshold["superseded_for_future_runs"]["adapter_id"] == str(later.id)
-        named = [c for c in got["result"]["caveats"] if str(later.id) in c]
-        assert named, got["result"]["caveats"]
-        assert "does not re-infer" in named[0]
+        assert not any("does not re-infer" in c for c in got["result"]["caveats"])
+        assert got["result"]["segmentation_settings"][0]["runs"][0]["threshold"] == 0.5
 
 
 class BundleFileTests(RunIdentityTestCase):
@@ -925,9 +962,9 @@ class BundleFileTests(RunIdentityTestCase):
         manifest = json.loads((Path(run.export_dir) / "manifest.json").read_text(encoding="utf-8"))
 
         image_caveats = manifest["images"][0]["caveats"]
-        assert any("current ones, not the run's" in c for c in image_caveats)
+        assert not any("current ones, not the run's" in c for c in image_caveats)
         run.refresh_from_db()
-        assert any("current ones, not the run's" in c for c in run.results["caveats"])
+        assert not any("current ones, not the run's" in c for c in run.results["caveats"])
 
 
 class AdapterBelongsToTheRunThatUsedItTests(RunIdentityTestCase):

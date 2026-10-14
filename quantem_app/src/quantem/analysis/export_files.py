@@ -10,6 +10,7 @@ import json
 import tempfile
 from pathlib import Path
 
+from .columns import column_title
 from .notes import analysis_notes
 
 REMOVED_CSV_COLUMNS = frozenset({"caveats", "n_caveats"})
@@ -24,13 +25,14 @@ def _csv_export(path: Path):
         reader = csv.reader(source)
         columns = next(reader, [])
         keep = spreadsheet_columns(columns)
-        if len(keep) == len(columns):
+        titles = [column_title(columns[index]) for index in keep]
+        if titles == columns:
             return path.open("rb")
         output = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")  # noqa: SIM115 -- the caller owns this stream.
         try:
             text = io.TextIOWrapper(output, encoding="utf-8-sig", newline="")
             writer = csv.writer(text)
-            writer.writerow([columns[index] for index in keep])
+            writer.writerow(titles)
             for row in reader:
                 if row:
                     writer.writerow([row[index] if index < len(row) else "" for index in keep])
@@ -53,7 +55,7 @@ def _manifest_export(path: Path, result: dict | None):
                 update_notes(item)
         elif isinstance(value, dict):
             if isinstance(value.get("caveats"), list):
-                value["caveats"] = analysis_notes({**(result or {}), "caveats": value["caveats"]})
+                value["caveats"] = analysis_notes({"objects": (result or {}).get("objects"), "caveats": value["caveats"]})
             for item in value.values():
                 update_notes(item)
 
@@ -62,7 +64,8 @@ def _manifest_export(path: Path, result: dict | None):
     changed = False
     for entry in outputs.get("files", []):
         columns = entry.get("columns") or []
-        if not REMOVED_CSV_COLUMNS.intersection(columns):
+        titles = [column_title(columns[i]) for i in spreadsheet_columns(columns)]
+        if titles == columns:
             continue
         filename = entry.get("filename", "")
         candidate = (path.parent / filename).resolve()
@@ -71,7 +74,7 @@ def _manifest_export(path: Path, result: dict | None):
         with _csv_export(candidate) as content:
             digest = hashlib.file_digest(content, "sha256").hexdigest()
             size = content.seek(0, io.SEEK_END)
-        entry.update(sha256=digest, size_bytes=size, columns=[columns[i] for i in spreadsheet_columns(columns)])
+        entry.update(sha256=digest, size_bytes=size, columns=titles)
         if filename == "image_summary.csv":
             entry["contents"] = "one row per image"
         changed = True
