@@ -108,26 +108,11 @@
   border-color: #e07070;
 }
 
-/* An applied adapter changes what Run model does. Cyan when it is
-   in force (a fact about this run), amber when it is applied but the selected
-   model means it will be skipped (a surprise worth flagging). Both are 12px on
-   the #f5f5f5 header and both clear AA, measured in the browser: 6.99:1 for
-   #155e75 on #ecfeff, 8.18:1 for #7c2d12 on #ffedd5. */
-.header-adapter-notice {
-  max-width: 46ch;
-  padding: 4px 9px;
-  border: 1px solid #67c3d4;
-  border-radius: 6px;
-  background: #ecfeff;
-  color: #155e75;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.header-adapter-notice.is-inactive {
-  border-color: #ea8a5a;
-  background: #ffedd5;
-  color: #7c2d12;
+.header-run-model {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 40ch;
 }
 
 /* "Marking it done locks the segmentation" is a promise the app now keeps, so

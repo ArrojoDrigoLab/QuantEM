@@ -35,7 +35,8 @@ import {
   packIdForSourceModel,
   runnabilityForPackId,
 } from "@/features/models/runnable";
-import { appliedAdapterState } from "@/features/models/appliedAdapter";
+import { useIncludeLevelControls } from "./components/threshold/useIncludeLevelControls";
+import { RunModelButton } from "./components/threshold/IncludeLevelDial";
 import { clearSegmentationManualLabels } from "@/shared/api/segmentations/annotations";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { useRestartBlocker } from "@/features/update/restartGuardHooks";
@@ -66,25 +67,6 @@ export function SegmentationScreen() {
         packIdForSourceModel(route.activeSourceModel)
       ),
     [modelCatalogue, route.activeSourceModel]
-  );
-
-  // Whether this segmentation has an adapted model applied, and whether the
-  // selected source model means the next run will actually go through it.
-  // The labeling view used to say nothing about either.
-  const appliedAdapter = useMemo(
-    () =>
-      appliedAdapterState(
-        modelCatalogue,
-        route.currentSegmentation?.id ?? null,
-        route.activeSourceModel,
-        route.activeAdapterId
-      ),
-    [
-      modelCatalogue,
-      route.activeAdapterId,
-      route.activeSourceModel,
-      route.currentSegmentation?.id,
-    ]
   );
 
   const isPointInsideImageBounds = useCallback(
@@ -662,7 +644,6 @@ export function SegmentationScreen() {
     tissue,
     modelRunnability,
     modelCatalogue,
-    appliedAdapter,
     onFineTuneImageCompleted: handleFineTuneImageCompleted,
     onClearMislabeledObjects: handleClearMislabeledObjects,
     leftSegments,
@@ -673,6 +654,29 @@ export function SegmentationScreen() {
     handleAddStroke,
     handleLeftViewportChange,
     handleRightViewportChange,
+  });
+
+  const thresholdEnabled = Boolean(
+    !route.isLocked && route.currentSegmentation && packIdForSourceModel(route.activeSourceModel)
+  );
+  const thresholdControls = useIncludeLevelControls({
+    enabled: thresholdEnabled,
+    busy: processing.hasQueuedOrRunningOrganelleTask,
+    segmentationId: route.currentSegmentation?.id ?? "",
+    sourceModel: route.activeSourceModel,
+    adapterId: route.activeAdapterId,
+    segmentationInternalName: route.segmentationInternalName,
+    statusStage: route.currentSegmentation?.status_stage,
+    roiId: processing.previewRoiId,
+    onSourceModelChange: route.handleSourceModelChange,
+    onRunQueued: () => {
+      void Promise.all([processing.refetchJobs(), route.refetchSegmentations()]);
+    },
+    onRunFinished: () => { void route.refetchSegmentations(); },
+    onReextracted: overlayRefresh.refreshSegmentViews,
+    onConfirmStarted: handleConfirmStarted,
+    onConfirmCommitted: handleConfirmCommitted,
+    onConfirmFailed: handleConfirmFailed,
   });
 
   if (!route.selectedImageId) {
@@ -709,7 +713,10 @@ export function SegmentationScreen() {
       {processing.shouldShowProcessingStatus && (
         <SegmentationJobBanner jobs={processing.processingJobs} />
       )}
-      <SegmentationHeader {...viewModels.headerProps} />
+      <SegmentationHeader {...viewModels.headerProps}
+        modelRunControl={thresholdEnabled && thresholdControls.blocked
+          ? <RunModelButton controls={thresholdControls} /> : undefined}
+      />
       <main
         className={`segmentation-main ${
           ui.showConfirmedPanel && !route.isLocked ? "show-confirmed" : "hide-confirmed"
@@ -754,38 +761,7 @@ export function SegmentationScreen() {
         />
         <SegmentationSidebar
           {...viewModels.sidebarProps}
-          // Wired here rather than in the view-model hook because the dial
-          // needs `refreshSegmentViews`, which lives on this screen: a
-          // re-extract replaces the whole candidate set and renumbers the
-          // result, so the ID-map overlay and the segment lists are both stale
-          // afterwards. The dial deliberately knows nothing about drawing.
-          includeLevel={
-            !route.isLocked && route.currentSegmentation &&
-            packIdForSourceModel(route.activeSourceModel)
-              ? {
-                  segmentationId: route.currentSegmentation.id,
-                  sourceModel: route.activeSourceModel,
-                  adapterId: route.activeAdapterId,
-                  segmentationInternalName: route.segmentationInternalName,
-                  statusStage: route.currentSegmentation.status_stage,
-                  roiId: processing.previewRoiId,
-                  onSourceModelChange: route.handleSourceModelChange,
-                  onRunQueued: () => {
-                    void Promise.all([
-                      processing.refetchJobs(),
-                      route.refetchSegmentations(),
-                    ]);
-                  },
-                  onRunFinished: () => {
-                    void route.refetchSegmentations();
-                  },
-                  onReextracted: overlayRefresh.refreshSegmentViews,
-                  onConfirmStarted: handleConfirmStarted,
-                  onConfirmCommitted: handleConfirmCommitted,
-                  onConfirmFailed: handleConfirmFailed,
-                }
-              : undefined
-          }
+          includeLevel={thresholdEnabled ? { controls: thresholdControls } : undefined}
         />
         <SegmentationLeftPanel {...viewModels.leftPanelProps} />
         {ui.showConfirmedPanel && !route.isLocked && (

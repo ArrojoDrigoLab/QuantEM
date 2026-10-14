@@ -26,7 +26,6 @@ import type { Point } from "@/utils/geometry";
 import type { SegmentObject } from "@/shared/types";
 import type { Runnability } from "@/features/models/runnable";
 import { packIdForSourceModel } from "@/features/models/runnable";
-import type { AppliedAdapterState } from "@/features/models/appliedAdapter";
 import type {
   FineTuneAppliedImageEvent,
   ModelCatalogue,
@@ -53,8 +52,6 @@ interface UseSegmentationScreenViewModelsArgs {
   /** Whether the selected source model can be loaded here. */
   modelRunnability: Runnability;
   modelCatalogue: ModelCatalogue | null;
-  /** The adapter applied to this segmentation, and whether it is in force. */
-  appliedAdapter: AppliedAdapterState | null;
   onFineTuneImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
   /**
    * Delete every reviewed object and queue a fresh run — the recovery for a
@@ -94,7 +91,6 @@ export function useSegmentationScreenViewModels({
   tissue,
   modelRunnability,
   modelCatalogue,
-  appliedAdapter,
   onFineTuneImageCompleted,
   onClearMislabeledObjects,
   leftSegments,
@@ -183,7 +179,6 @@ export function useSegmentationScreenViewModels({
       isApplyingActiveRoi: processing.isRerunningRoi,
       hasQueuedOrRunningOrganelleTask: processing.hasQueuedOrRunningOrganelleTask,
       modelCatalogue,
-      appliedAdapter,
       onClearMislabeledObjects,
     });
 
@@ -579,7 +574,6 @@ export function useSegmentationScreenViewModels({
     leftSegments,
     modelRunnability,
     modelCatalogue,
-    appliedAdapter,
     overlay,
     processing,
     roiFocusRequest,

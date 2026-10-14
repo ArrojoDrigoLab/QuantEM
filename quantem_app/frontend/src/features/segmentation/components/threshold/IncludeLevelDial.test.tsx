@@ -1,12 +1,12 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { server } from "@/test/msw/server";
 
-import { IncludeLevelDial } from "./IncludeLevelDial";
+import { IncludeLevelDial, RunModelButton } from "./IncludeLevelDial";
+import { useIncludeLevelControls, type IncludeLevelOptions } from "./useIncludeLevelControls";
 import type { IncludeLevelState } from "./api";
 import { useThresholdPreviewStore } from "./useThresholdPreviewStore";
 
@@ -39,8 +39,16 @@ function serveState(value: IncludeLevelState) {
   server.use(http.get(DIAL_URL, () => HttpResponse.json(value)));
 }
 
-function renderDial(props: Partial<ComponentProps<typeof IncludeLevelDial>> = {}) {
-  return render(<IncludeLevelDial segmentationId={SEG_ID} {...props} />);
+function DialHarness(props: Partial<IncludeLevelOptions>) {
+  const controls = useIncludeLevelControls({ segmentationId: SEG_ID, ...props });
+  return <>
+    <header><RunModelButton controls={controls} /></header>
+    <aside><IncludeLevelDial controls={controls} /></aside>
+  </>;
+}
+
+function renderDial(props: Partial<IncludeLevelOptions> = {}) {
+  return render(<DialHarness {...props} />);
 }
 
 afterEach(() => {
@@ -56,7 +64,7 @@ describe("IncludeLevelDial", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Threshold" })).toBeInTheDocument()
     );
-    expect(screen.getByRole("img")).toHaveAccessibleName(/saved model result/i);
+    expect(screen.getByRole("img")).toHaveAccessibleName("Probability threshold for objects. The default threshold for this model is 0.50.");
     expect(screen.getByRole("slider")).toHaveAccessibleName("Threshold");
   });
 
@@ -67,7 +75,7 @@ describe("IncludeLevelDial", () => {
     await screen.findByTestId("include-level-value");
 
     expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.32");
-    expect(screen.getByRole("button", { name: "No candidates" })).toBeDisabled();
+    expect(screen.queryByTestId("include-level-apply")).not.toBeInTheDocument();
     expect(container.textContent).not.toMatch(/model does not run|objects at this/i);
   });
 
@@ -104,7 +112,9 @@ describe("IncludeLevelDial", () => {
       fireEvent.change(slider, { target: { value: String(value) } });
     }
 
-    expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.20");
+    expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.50");
+    expect(screen.getByTestId("include-level-new-value")).toHaveTextContent("0.20");
+    expect(screen.getByRole("button", { name: "Recalculate at threshold 0.20" })).toBeEnabled();
     expect(posted).not.toHaveBeenCalled();
   });
 
@@ -130,12 +140,14 @@ describe("IncludeLevelDial", () => {
   });
 
   it("refreshes the screen once re-extraction succeeds", async () => {
-    serveState(state({ include_level: 0.5 }));
+    let currentThreshold = 0.5;
     const onReextracted = vi.fn();
     server.use(
-      http.post(DIAL_URL, () =>
-        HttpResponse.json({ job_id: "job-1", include_level: 0.48 })
-      ),
+      http.get(DIAL_URL, () => HttpResponse.json(state({ include_level: currentThreshold }))),
+      http.post(DIAL_URL, () => {
+        currentThreshold = 0.48;
+        return HttpResponse.json({ job_id: "job-1", include_level: 0.48 });
+      }),
       http.get(`${BASE}/api/jobs/job-1/`, () =>
         HttpResponse.json({ id: "job-1", status: "SUCCESS" })
       )
@@ -157,9 +169,12 @@ describe("IncludeLevelDial", () => {
     await waitFor(() =>
       expect(useThresholdPreviewStore.getState().overlay).toBeNull()
     );
+    expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.48");
+    expect(screen.queryByTestId("include-level-new-value")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("include-level-apply")).not.toBeInTheDocument();
   });
 
-  it("moves the unavailable explanation into a tooltip and shows Run model", async () => {
+  it("shows Run model only in the header and keeps the threshold explanation on hover", async () => {
     serveState(
       state({
         can_move: false,
@@ -172,10 +187,11 @@ describe("IncludeLevelDial", () => {
 
     const help = await screen.findByRole("img");
     expect(help).toHaveAccessibleName(
-      "No stored result is kept for this image, so the include level cannot be moved without running the model again. Running it once saves one, and the level can be moved freely from then on. Use Run model below, then adjust the threshold."
+      "Probability threshold for objects. Run the model first to view results and adjust this value."
     );
     expect(screen.queryByText(/No stored probability map/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run model" })).toBeEnabled();
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Run model" })).toBeEnabled();
+    expect(within(screen.getByRole("complementary")).queryByRole("button", { name: "Run model" })).not.toBeInTheDocument();
   });
 
   it("allows the first saved result to be applied at the model default", async () => {
@@ -195,10 +211,6 @@ describe("IncludeLevelDial", () => {
     const previewButton = await screen.findByRole("button", {
       name: "Preview / Process",
     });
-    expect(previewButton).toHaveAttribute(
-      "title",
-      "Turn this model and threshold setting into objects. Normalizes the shapes and applies size thresholds."
-    );
     await userEvent.click(previewButton);
 
     await waitFor(() => expect(bodies).toEqual([{ include_level: 0.41 }]));
@@ -268,7 +280,7 @@ describe("IncludeLevelDial", () => {
     expect(
       await screen.findByText(/Confirmed 2 model objects for analysis/i)
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirmed" })).toBeDisabled();
+    expect(screen.queryByTestId("include-level-apply")).not.toBeInTheDocument();
   });
 
   it("downloads an organelle model before running it when none is installed", async () => {
@@ -343,6 +355,39 @@ describe("IncludeLevelDial", () => {
     expect(onSourceModelChange).toHaveBeenCalledWith("quantem:mito");
   });
 
+  it("hides recalculation when the slider returns to the saved threshold", async () => {
+    serveState(state({ include_level: 0.65 }));
+    renderDial();
+    const slider = await screen.findByRole("slider");
+    fireEvent.change(slider, { target: { value: "0.4" } });
+    expect(screen.getByRole("button", { name: "Recalculate at threshold 0.40" })).toBeEnabled();
+    fireEvent.change(slider, { target: { value: "0.65" } });
+    expect(screen.queryByTestId("include-level-apply")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("include-level-new-value")).not.toBeInTheDocument();
+  });
+
+  it("does not offer another model run for a successful empty result", async () => {
+    serveState(state({ include_level: 0.5, object_count: 0 }));
+    renderDial();
+    expect(await screen.findByRole("slider")).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Run model" })).not.toBeInTheDocument();
+  });
+
+  it("updates availability and the default threshold when switching fine-tuned models", async () => {
+    server.use(http.get(DIAL_URL, ({ request }) => {
+      const hasResult = new URL(request.url).searchParams.get("adapter_id") === "adapter-a";
+      return HttpResponse.json(state({ can_move: hasResult, default_include_level: hasResult ? 0.65 : 0.35 }));
+    }));
+    const { rerender } = renderDial({ sourceModel: "quantem:mito", adapterId: "adapter-a" });
+    await waitFor(() => expect(screen.getByRole("slider")).toBeEnabled());
+    expect(screen.getByRole("img")).toHaveAccessibleName("Probability threshold for objects. The default threshold for this model is 0.65.");
+    expect(screen.queryByRole("button", { name: "Run model" })).not.toBeInTheDocument();
+    rerender(<DialHarness sourceModel="quantem:mito" adapterId="adapter-b" />);
+    expect(await screen.findByRole("button", { name: "Run model" })).toBeEnabled();
+    expect(screen.getByRole("slider")).toBeDisabled();
+    expect(screen.getByRole("img")).toHaveAccessibleName("Probability threshold for objects. Run the model first to view results and adjust this value.");
+  });
+
   it("keeps a tested ROI in the preview requests", async () => {
     const roiId = "22222222-2222-4222-8222-222222222222";
     const getQueries: string[] = [];
@@ -374,5 +419,49 @@ describe("IncludeLevelDial", () => {
         { include_level: 0.3, source_model: "quantem:mito", roi_id: roiId },
       ])
     );
+  });
+
+  it("runs the selected fine-tuned model and removes Run model when its result arrives", async () => {
+    let hasResult = false;
+    const runBodies: unknown[] = [];
+    server.use(
+      http.get(DIAL_URL, () => HttpResponse.json(state({ can_move: hasResult, default_include_level: 0.65 }))),
+      http.get(`${BASE}/api/models/`, () => HttpResponse.json({
+        packs: [{ id: "quantem:mito", organelle: "mito", installed: true, runnable: true }], adapted: [], device: null,
+      })),
+      http.post(`${BASE}/api/segmentations/${SEG_ID}/apply-full-image/`, async ({ request }) => {
+        runBodies.push(await request.json());
+        hasResult = true;
+        return HttpResponse.json({ job_id: "run-adapted" });
+      }),
+      http.get(`${BASE}/api/jobs/run-adapted/`, () => HttpResponse.json({ id: "run-adapted", status: "SUCCESS" }))
+    );
+    renderDial({ sourceModel: "quantem:mito", adapterId: "adapter-a" });
+    await userEvent.click(await screen.findByRole("button", { name: "Run model" }));
+    await waitFor(() => expect(screen.getByRole("slider")).toBeEnabled());
+    expect(runBodies).toEqual([{ source_model: "quantem:mito", adapter_id: "adapter-a" }]);
+    expect(screen.queryByRole("button", { name: /Run model|Running model/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("img")).toHaveAccessibleName("Probability threshold for objects. The default threshold for this model is 0.65.");
+  });
+
+  it("ignores a delayed response for a previously selected model", async () => {
+    let firstRequested = false;
+    let firstReturned = false;
+    server.use(http.get(DIAL_URL, async ({ request }) => {
+      if (new URL(request.url).searchParams.get("adapter_id") === "adapter-a") {
+        firstRequested = true;
+        await delay(150);
+        firstReturned = true;
+        return HttpResponse.json(state({ can_move: true, default_include_level: 0.65 }));
+      }
+      return HttpResponse.json(state({ can_move: false, default_include_level: 0.35 }));
+    }));
+    const { rerender } = renderDial({ sourceModel: "quantem:mito", adapterId: "adapter-a" });
+    await waitFor(() => expect(firstRequested).toBe(true));
+    rerender(<DialHarness sourceModel="quantem:mito" adapterId="adapter-b" />);
+    await screen.findByRole("button", { name: "Run model" });
+    await waitFor(() => expect(firstReturned).toBe(true));
+    expect(screen.getByRole("slider")).toBeDisabled();
+    expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.35");
   });
 });

@@ -45,7 +45,7 @@ import {
   useCompletionConfirm,
 } from "@/features/segmentation/components/header/completionDialogState";
 import { describeObjectsPixelSize } from "@/shared/objectsPixelSize";
-import type { AppliedAdapterState } from "@/features/models/appliedAdapter";
+import type { ReactNode } from "react";
 import type {
   AssetDetail,
   ImageSegmentation,
@@ -96,12 +96,7 @@ interface SegmentationHeaderProps {
   hasQueuedOrRunningOrganelleTask?: boolean;
   /** Download state for the two released choices in the model picker. */
   modelCatalogue?: ModelCatalogue | null;
-  /**
-   * The adapter applied to this segmentation, and whether the selected source
-   * model means the next run will actually go through it. Null when there is
-   * none, or when the catalogue has not answered.
-   */
-  appliedAdapter?: AppliedAdapterState | null;
+  modelRunControl?: ReactNode;
   /**
    * Delete every reviewed object on this segmentation and queue a fresh run.
    *
@@ -136,7 +131,7 @@ export function SegmentationHeader({
   isApplyingActiveRoi = false,
   hasQueuedOrRunningOrganelleTask = false,
   modelCatalogue = null,
-  appliedAdapter = null,
+  modelRunControl,
   onClearMislabeledObjects,
 }: SegmentationHeaderProps) {
   const segmentationId = currentSegmentation?.id ?? null;
@@ -298,6 +293,7 @@ export function SegmentationHeader({
         {!isComplete && <AboutThisResult
           isOrganelle={isOrganelle}
           displayedObjects={displayedObjects}
+          modelRunControl={modelRunControl}
           objectsPixelSize={objectsPixelSize}
           currentSegmentation={currentSegmentation}
           isBusy={isBusy}
@@ -306,9 +302,6 @@ export function SegmentationHeader({
         />}
         <HeaderNotices
           currentSegmentation={currentSegmentation}
-          isOrganelle={isOrganelle}
-          appliedAdapter={appliedAdapter}
-          runTargetLabel={runTargetLabel}
           isComplete={isComplete}
         />
         <HeaderRouteLinks

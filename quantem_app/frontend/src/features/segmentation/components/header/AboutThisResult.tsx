@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 /**
  * "About this result": where the objects on screen came from.
  *
@@ -27,6 +28,7 @@ import type { FineTuneAppliedImageEvent } from "@/shared/types/finetune";
 export function AboutThisResult({
   isOrganelle,
   displayedObjects,
+  modelRunControl,
   objectsPixelSize,
   currentSegmentation,
   isBusy,
@@ -35,6 +37,7 @@ export function AboutThisResult({
 }: {
   isOrganelle: boolean;
   displayedObjects: DisplayedObjectsDescription;
+  modelRunControl?: ReactNode;
   objectsPixelSize: ObjectsPixelSizeWarning | null;
   currentSegmentation: ImageSegmentation | null;
   isBusy: boolean;
@@ -56,7 +59,7 @@ export function AboutThisResult({
     : "";
   return (
     <>
-      {isOrganelle && (
+      {isOrganelle && (modelRunControl ?? (
         <span
           className={`source-model-provenance ${displayedObjects.tone}`}
           title={displayedObjects.detail}
@@ -64,7 +67,7 @@ export function AboutThisResult({
         >
           {displayedObjects.summary}
         </span>
-      )}
+      ))}
       {isComplete && finalNote && (
         <span
           className="source-model-provenance"

@@ -669,20 +669,8 @@ describe("SegmentationHeader", () => {
       trainedHead: true,
     };
 
-    it("says the run will use the calculated threshold for this image", () => {
-      renderHeader({ appliedAdapter: APPLIED });
-
-      expect(screen.getByText(/Adapted model: mito @ liver_HFD2/)).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /Run model will use the calculated threshold of 0\.45 for this image/
-        )
-      ).toBeInTheDocument();
-    });
-
     it("keeps the base and fine-tuned models as separate picker options", () => {
       renderHeader({
-        appliedAdapter: APPLIED,
         activeModelValue: "adapted:a1",
         modelOptions: [
           {
@@ -707,6 +695,7 @@ describe("SegmentationHeader", () => {
       expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue(
         "adapted:a1"
       );
+      expect(screen.queryByText(/Adapted model:|calculated threshold|Adapter not in use/)).not.toBeInTheDocument();
       expect(screen.getByRole("option", { name: "QuantEM" })).toBeInTheDocument();
       expect(
         screen.getByRole("option", {
@@ -715,45 +704,14 @@ describe("SegmentationHeader", () => {
       ).toBeInTheDocument();
     });
 
-    it("warns when the selected model means the adapter will be skipped", () => {
-      // The silent case: the run falls back to the released pack at its
-      // published threshold and nothing on screen changes.
-      renderHeader({
-        activeSourceModel: "omniem:mito",
-        appliedAdapter: {
-          ...APPLIED,
-          active: false,
-          selectedSourceModel: "omniem:mito",
-        },
-      });
+  });
 
-      expect(screen.getByText(/Adapter not in use/)).toBeInTheDocument();
-      expect(
-        screen.getByText(/will use the published model at threshold 0\.50/)
-      ).toBeInTheDocument();
-    });
-
-    it("says nothing when no adapter is applied", () => {
-      renderHeader();
-
-      expect(screen.queryByText(/Adapted model:/)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Adapter not in use/)).not.toBeInTheDocument();
-      const picker = screen.getByRole("combobox", { name: "Model" });
-      expect(picker.textContent).not.toContain("(adapted)");
-    });
-
-    it("does not claim a head when only the threshold was calibrated", () => {
-      renderHeader({
-        appliedAdapter: {
-          ...APPLIED,
-          adapter: { ...APPLIED.adapter, mode: "threshold_only" },
-          trainedHead: false,
-        },
-      });
-
-      expect(screen.getByText(/calculated threshold of 0\.45/)).toBeInTheDocument();
-      expect(screen.queryByText(/fine-tuned head/)).not.toBeInTheDocument();
-    });
+  it("places the model run control where the object count would appear", async () => {
+    const run = vi.fn();
+    renderHeader({ modelRunControl: <button onClick={run}>Run model</button> });
+    expect(screen.queryByTestId("displayed-objects-provenance")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Run model" }));
+    expect(run).toHaveBeenCalledOnce();
   });
 
   it("offers routes back to the library, experiment, and viewer", async () => {
@@ -1134,7 +1092,7 @@ describe("SegmentationHeader", () => {
       "omniem:mito"
     );
     expect(screen.getByTestId("displayed-objects-provenance")).toHaveTextContent(
-      "No objects from OmniEM yet"
+      "0 objects · OmniEM"
     );
   });
 

@@ -44,9 +44,6 @@ function renderNotices(segmentation: ImageSegmentation | null) {
   return render(
     <HeaderNotices
       currentSegmentation={segmentation}
-      isOrganelle
-      appliedAdapter={null}
-      runTargetLabel="QuantEM"
       isComplete={false}
     />
   );
