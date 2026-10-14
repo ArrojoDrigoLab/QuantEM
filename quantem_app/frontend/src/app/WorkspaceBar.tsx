@@ -83,7 +83,8 @@ export function WorkspaceBar() {
       </nav>
       <div className="flex items-center gap-2">
         <Button onClick={() => setFineTune(true)}>Fine-tune</Button>
-        <Link to={experiment ? `/experiments/${experiment.id}?tab=models` : "/models"}>Models</Link>
+        <Link className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2"
+          to={experiment ? `/experiments/${experiment.id}?tab=models` : "/models"}>Models</Link>
         <TaskQueueButton isOpen={tasks} onClick={() => setTasks(true)} />
         {assetId && <Button onClick={() => setHistory(true)}>Correction history</Button>}
       </div>
