@@ -209,24 +209,6 @@ export function SegmentationSidebar({
             />
             Navigate (A)
           </label>
-          {!readOnly && leftNavigateMode && (
-            // Actionable, not just descriptive: choosing a tool now leaves
-            // Navigate automatically, but the A shortcut can put it back
-            // mid-session and the way out has to be one click from the notice.
-            <div className="group-confirm-hint">
-              <span>
-                Navigate mode is on: clicks and drags pan the image instead of
-                labeling.
-              </span>
-              <button
-                type="button"
-                className="navigate-hint-action"
-                onClick={() => onLeftNavigateModeChange(false)}
-              >
-                Turn off Navigate
-              </button>
-            </div>
-          )}
           <label className="view-confirmed-toggle" htmlFor="view-confirmed-toggle">
             <input
               id="view-confirmed-toggle"
