@@ -31,6 +31,7 @@ import {
   type ImportBatchPosition,
 } from "@/features/library/components/ImageUploadPanel";
 import { JobQueueSidebar } from "@/features/library/components/JobQueueSidebar";
+import { TaskQueueButton } from "@/features/library/components/TaskQueueButton";
 import { WorkflowGuide } from "@/features/library/components/WorkflowGuide";
 import {
   rememberWorkflowGuideDismissed,
@@ -682,7 +683,7 @@ export function LibraryPage() {
               {showHelp ? "Hide guide" : "Guide"}
             </Button>
             <FineTuneMenuButton />
-            <Button onClick={() => setIsQueueSidebarOpen(true)}>Tasks & Queues</Button>
+            <TaskQueueButton isOpen={isQueueSidebarOpen} onClick={() => setIsQueueSidebarOpen(true)} />
             <Button
               size="icon"
               variant="secondary"

@@ -6,10 +6,10 @@ import type { Experiment } from "@/shared/types/common";
 import type { AssetDetail, SegmentationType } from "@/shared/types/images";
 import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
 import { JobQueueSidebar } from "@/features/library/components/JobQueueSidebar";
+import { TaskQueueButton } from "@/features/library/components/TaskQueueButton";
 import { Button } from "@/shared/ui/design";
 import { readWorkspaceMemory } from "@/features/experiments/workspaceMemory";
 import { CorrectionHistory } from "@/features/experiments/CorrectionHistory";
-import { getJobQueueStatus } from "@/shared/api/jobs";
 
 export function WorkspaceBar() {
   const location = useLocation();
@@ -22,19 +22,7 @@ export function WorkspaceBar() {
   const [fineTune, setFineTune] = useState(false);
   const [tasks, setTasks] = useState(false);
   const [history, setHistory] = useState(false);
-  const [taskStatus, setTaskStatus] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    let current = true;
-    const update = () => { void getJobQueueStatus().then((queue) => {
-      if (!current) return;
-      const pending = queue.queues.reduce((count, row) => count + row.pending.length, 0);
-      setTaskStatus(`${queue.running.length} running · ${pending} queued${queue.failed.length ? ` · ${queue.failed.length} failed` : ""}`);
-    }).catch(() => { if (current) setTaskStatus("status unavailable"); }); };
-    update();
-    const timer = window.setInterval(update, 10000);
-    return () => { current = false; clearInterval(timer); };
-  }, []);
   useEffect(() => {
     const element = barRef.current;
     if (!element) { document.documentElement.style.removeProperty("--workspace-bar-height"); return; }
@@ -96,7 +84,7 @@ export function WorkspaceBar() {
       <div className="flex items-center gap-2">
         <Button onClick={() => setFineTune(true)}>Fine-tune</Button>
         <Link to={experiment ? `/experiments/${experiment.id}?tab=models` : "/models"}>Models</Link>
-        <Button onClick={() => setTasks(true)} title={taskStatus ?? "View tasks"}>Tasks{taskStatus ? ` · ${taskStatus}` : ""}</Button>
+        <TaskQueueButton isOpen={tasks} onClick={() => setTasks(true)} />
         {assetId && <Button onClick={() => setHistory(true)}>Correction history</Button>}
       </div>
     </div>
