@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { Link, MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExperimentWorkbench } from "./ExperimentWorkbench";
 import { getWorkspace, saveSample, type WorkspaceImage } from "@/shared/api/workspace";
@@ -12,7 +12,10 @@ vi.mock("@/shared/api/core/http", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/shared/api/core/http")>(),
   apiRequest: vi.fn(), resolveApiUrl: (url: string) => url,
 }));
-vi.mock("@/features/models/SavedModelsPanel", () => ({ SavedModelsPanel: () => <div>Saved models</div> }));
+vi.mock("@/shared/api/assets", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/shared/api/assets")>(),
+  getSegmentationTypes: vi.fn().mockResolvedValue([]),
+}));
 
 const experiment: Experiment = {
   id: "experiment", name: "Nanotomy T1D", notes: "", datasets: [
@@ -126,6 +129,34 @@ describe("Experiment workbench", () => {
     await userEvent.click(screen.getByRole("button", { name: "Refresh status" }));
     await screen.findByText("Field 01");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("reloads models on repeated tab and workspace navigation clicks and the shared refresh", async () => {
+    const user = userEvent.setup();
+    let modelName = "First saved model";
+    vi.mocked(apiRequest).mockImplementation(async (url) => url.startsWith("/api/finetune/models/") ? [{
+      id: "saved", name: modelName, base_model: "quantem:mito", segmentation_type: "mito",
+      mode: "head", status: "SUCCESS", created_at: "2026-10-01", asset_ids: [],
+    }] : []);
+    render(<MemoryRouter initialEntries={["/experiments/experiment?tab=models"]}>
+      <Link to="/experiments/experiment?tab=models">Workspace Models</Link>
+      <ExperimentWorkbench experiment={experiment} refreshKey={0}><div>Cards</div></ExperimentWorkbench>
+    </MemoryRouter>);
+    await screen.findByText("First saved model");
+    const models = screen.getByRole("region", { name: "Saved fine-tuned models" });
+    expect(within(models).queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+
+    modelName = "Updated from the tab";
+    await user.click(screen.getByRole("button", { name: "Models", exact: true }));
+    await screen.findByText(modelName);
+
+    modelName = "Updated from the workspace link";
+    await user.click(screen.getByRole("link", { name: "Workspace Models" }));
+    await screen.findByText(modelName);
+
+    modelName = "Updated from the refresh icon";
+    await user.click(screen.getByRole("button", { name: "Refresh status" }));
+    await screen.findByText(modelName);
   });
 
   it("pages the browsing table and preserves the dataset cards view", async () => {

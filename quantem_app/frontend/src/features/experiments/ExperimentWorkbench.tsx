@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { getWorkspace, type WorkspaceImage, type WorkspaceSegmentation } from "@/shared/api/workspace";
 import { getAssetNgffThumbnailUrl } from "@/shared/api/assets";
 import type { Experiment } from "@/shared/types/common";
@@ -65,6 +65,7 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
   const historyChanged = useCallback(() => setHistoryRevision((value) => value + 1), []);
   const [page, setPage] = useState(() => readMemory<number>(`${experiment.id}.page`, 0));
   const [params, setParams] = useSearchParams();
+  const { key: navigationKey } = useLocation();
   const tab = params.get("tab") ?? "images";
   const restored = useRef(false);
   const change = (patch: Partial<Controls>) => {
@@ -110,7 +111,11 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
       <nav className="flex gap-2" aria-label="Experiment sections">{["images", "analysis", "models"].map((entry) =>
         <Button key={entry} variant={tab === entry ? "primary" : "secondary"} aria-current={tab === entry ? "page" : undefined}
           onClick={() => chooseTab(entry)}>{entry[0].toUpperCase() + entry.slice(1)}</Button>)}</nav>
-      <Button onClick={historyChanged}>Refresh status</Button>
+      <Button size="icon" className="ml-auto shrink-0" aria-label="Refresh status" title="Refresh" onClick={historyChanged}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M8 16H3v5" />
+        </svg>
+      </Button>
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {tab === "images" && <>
@@ -147,6 +152,6 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
       {newAnalysis && !params.has("image") && <BatchAnalysisPanel experimentId={experiment.id} images={images} selectedIds={selectedIds} onSelectionChange={(ids) => change({ selected: ids })} onHistoryChange={historyChanged} onMetadataSaved={historyChanged} />}
       <AnalysisHistory experimentId={experiment.id} images={images} refreshKey={historyRevision} />
     </>}
-    {tab === "models" && <SavedModelsPanel experimentId={experiment.id} />}
+    {tab === "models" && <SavedModelsPanel experimentId={experiment.id} refreshKey={`${navigationKey}:${historyRevision}`} />}
   </div>;
 }

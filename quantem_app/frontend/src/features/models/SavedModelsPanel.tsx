@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 
 type SavedModel = FineTuneRunDetail & { segmentation_type: string };
-export function SavedModelsPanel({ experimentId }: { experimentId?: string }) {
+export function SavedModelsPanel({ experimentId, refreshKey = "" }: { experimentId?: string; refreshKey?: string }) {
   const [models, setModels] = useState<SavedModel[]>([]);
   const [types, setTypes] = useState<SegmentationType[]>([]);
   const [archived, setArchived] = useState(false);
@@ -33,7 +33,7 @@ export function SavedModelsPanel({ experimentId }: { experimentId?: string }) {
     } catch (cause) { setError(extractApiErrorMessage(cause, "Models could not be loaded.")); }
     finally { setLoading(false); }
   }, [experimentId, archived]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshKey]);
   const update = async (model: SavedModel, values: { name?: string; archived?: boolean }) => {
     setBusy(true);
     try { await apiRequest(`/api/finetune/models/${model.id}/`, { method: "PATCH", body: JSON.stringify(values) }); setRename(null); await load(); }
@@ -44,7 +44,6 @@ export function SavedModelsPanel({ experimentId }: { experimentId?: string }) {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold">Saved fine-tuned models</h2>
       <label><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived</label>
-      <Button onClick={() => void load()}>Refresh</Button>
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {loading ? <p role="status">Loading models…</p> : !models.length && !error ? <p>No saved fine-tunes here yet. Use Fine-tune to create one.</p> : null}

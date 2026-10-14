@@ -1,10 +1,11 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { ModelManagementSection } from "@/features/models/ModelManagementSection";
 import { SavedModelsPanel } from "@/features/models/SavedModelsPanel";
 
 /** Legacy direct route; the primary model-management surface is Settings. */
 export function ModelsScreen() {
+  const { key: navigationKey } = useLocation();
   return (
     <main className="min-h-screen px-5 py-5 text-slate-900 lg:px-8">
       <div className="mx-auto flex max-w-5xl flex-col gap-5">
@@ -19,8 +20,8 @@ export function ModelsScreen() {
             Back to Home
           </Link>
         </header>
-        <SavedModelsPanel />
-        <ModelManagementSection />
+        <SavedModelsPanel refreshKey={navigationKey} />
+        <ModelManagementSection refreshKey={navigationKey} />
       </div>
     </main>
   );

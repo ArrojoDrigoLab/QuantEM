@@ -29,10 +29,10 @@ const ORGANELLES: Array<{ id: OrganelleKey; label: string }> = [
 ];
 
 /** The model catalogue and its install/remove actions, shared by both surfaces. */
-export function ModelManagementSection({ compact = false }: { compact?: boolean }) {
+export function ModelManagementSection({ compact = false, refreshKey = "" }: { compact?: boolean; refreshKey?: string }) {
   const { data: catalogue, error, loading, refetch } = useApiQuery<ModelCatalogue>(
     () => getModelCatalogue(),
-    []
+    [refreshKey]
   );
   const [busyPackId, setBusyPackId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{
