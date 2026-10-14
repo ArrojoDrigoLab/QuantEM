@@ -69,7 +69,7 @@ function HistoryDetails({ entry, images, onChanged }: { entry: AnalysisHistoryEn
   if (!detail) return <p role="status">Loading analysis…</p>;
   if ("items" in detail) return <div className="space-y-4">
     <div className="flex flex-wrap gap-4">
-      <a className="text-cyan-800 underline" href={resolveApiUrl(`/api/analysis-batches/${detail.id}/export/?objects=true`)} download>Download analysis ZIP</a>
+      <a className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2" href={resolveApiUrl(`/api/analysis-batches/${detail.id}/export/?objects=true`)} download>Download</a>
       {detail.items.some((item) => ["FAILED", "CANCELLED"].includes(item.status ?? "")) && <Button disabled={busy} onClick={() => void act("retry_failed")}>Retry failed</Button>}
       {detail.items.some((item) => ["PENDING", "RUNNING"].includes(item.status ?? "")) && <Button disabled={busy} onClick={() => void act("cancel")}>Cancel remaining</Button>}
     </div>

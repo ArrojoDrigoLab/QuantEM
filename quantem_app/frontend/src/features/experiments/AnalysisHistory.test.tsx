@@ -25,7 +25,7 @@ it("filters history by image but opens every image and saved setting in the orig
   await userEvent.click(row);
   expect(await screen.findByRole("cell", { name: "Field B", exact: true })).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "Field A", exact: true })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Download analysis ZIP" })).toHaveAttribute("href", "/api/analysis-batches/batch/export/?objects=true");
+  expect(screen.getByRole("link", { name: "Download", exact: true })).toHaveAttribute("href", "/api/analysis-batches/batch/export/?objects=true");
   await userEvent.click(screen.getByText("Analysis settings"));
   expect(screen.getByText("Require completed review")).toBeVisible();
   expect(screen.getByText("Yes")).toBeVisible();
