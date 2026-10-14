@@ -53,6 +53,18 @@ function renderControls(overrides: Partial<ErRoiSection> = {}) {
 }
 
 describe("ErRoiControls", () => {
+  it("keeps ROI navigation but hides every mutation when read-only", async () => {
+    const { props } = renderControls({
+      readOnly: true,
+      rois: [makeRoi({ completed_for_segmentation: true })],
+    });
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Open" }));
+    expect(props.onActivateRoi).toHaveBeenCalledWith("roi-1");
+  });
+
   it("puts the compact Add New action on the ROI heading and shows ROI dimensions", () => {
     renderControls();
 

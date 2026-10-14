@@ -221,7 +221,13 @@ export function useSegmentationScreenViewModels({
           onViewportChange: handleLeftViewportChange,
           overlayNgffLayers: [],
           idMapOverlays:
-            reviewMode.workflowMode === "review" ? overlayLayers.leftIdMapOverlays : [],
+            route.isLocked
+              ? ui.showConfirmedPanel
+                ? overlayLayers.leftIdMapOverlays.filter(
+                    (layer) => layer.id === "label-left-confirmed-idmap"
+                  )
+                : []
+              : reviewMode.workflowMode === "review" ? overlayLayers.leftIdMapOverlays : [],
           onOverlayRevisionDisplayed: overlayManifest.handleLeftOverlayRevisionDisplayed,
           transientFitBounds: focusedRoi
             ? {
@@ -235,7 +241,7 @@ export function useSegmentationScreenViewModels({
             ? `${route.image.id}:${route.currentSegmentationId}:${focusedRoi.id}:${roiFocusRequest?.revision}`
             : null,
         },
-        workflow: leftPanelWorkflowState,
+        workflow: { ...leftPanelWorkflowState, readOnly: route.isLocked },
         segments: {
           items: [],
           highlightedSegmentId: null,
@@ -254,7 +260,7 @@ export function useSegmentationScreenViewModels({
           groupHighlightedSegmentIds: reviewGroup.groupBboxHighlightedSegmentIds,
         },
         roi: buildSegmentationRoiViewModel(
-          processing.activeRoi,
+          route.isLocked ? focusedRoi ?? processing.activeRoi : processing.activeRoi,
           processing.segmentationRois ?? []
         ),
         drawing: {
@@ -405,6 +411,7 @@ export function useSegmentationScreenViewModels({
             : undefined;
 
     const sidebarProps = buildSegmentationSidebarProps({
+      readOnly: route.isLocked,
       tissue: {
         enabled: route.isTissueSegmentation,
         tool: tissue.tool,
@@ -484,6 +491,16 @@ export function useSegmentationScreenViewModels({
       },
     });
 
+    if (route.isLocked) {
+      leftPanelProps.segments.items = ui.showConfirmedPanel
+        ? leftPanelProps.segments.items.filter((segment) => segment.label_state === "CONFIRMED")
+        : [];
+      leftPanelProps.layerControls = {
+        ...leftPanelProps.layerControls,
+        candidates: undefined,
+      };
+    }
+
     return {
       headerProps,
       leftPanelProps,
@@ -492,12 +509,13 @@ export function useSegmentationScreenViewModels({
         ? {
             ...sidebarProps,
             erRoi: {
+              readOnly: route.isLocked,
               placementActive: erRoi.placementActive,
               pendingRoiActive: erRoi.pendingRoi !== null,
               relocatingRoiId: erRoi.relocatingRoiId,
               confirming: erRoi.confirming,
               rois: processing.segmentationRois ?? [],
-              activeRoiId: processing.activeRoi?.id ?? null,
+              activeRoiId: (route.isLocked ? focusedRoi?.id : null) ?? processing.activeRoi?.id ?? null,
               markingRoiId: erRoi.markingRoiId,
               markingRoiDone: erRoi.markingRoiDone,
               deletingRoiId: erRoi.deletingRoiId,
@@ -519,7 +537,7 @@ export function useSegmentationScreenViewModels({
               },
               onActivateRoi: (roiId: string) => {
                 void (async () => {
-                  if (processing.activeRoi?.id !== roiId) {
+                  if (!route.isLocked && processing.activeRoi?.id !== roiId) {
                     const activated = await erRoi.activateRoi(roiId);
                     if (!activated) return;
                   }

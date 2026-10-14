@@ -227,7 +227,7 @@ export function HeaderNotices({
         // about the newest attempt -- see `LatestAttemptNotice`.
         <LatestAttemptNotice message={currentSegmentation.status_error.trim()} />
       ) : null}
-      {isOrganelle && appliedAdapter && (
+      {!isComplete && isOrganelle && appliedAdapter && (
         <AppliedAdapterNotice
           state={appliedAdapter}
           selectedLabel={runTargetLabel}

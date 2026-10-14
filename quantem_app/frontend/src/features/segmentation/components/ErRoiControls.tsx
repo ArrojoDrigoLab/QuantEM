@@ -6,6 +6,7 @@ import { ROI_REVIEWED_LABEL, ROI_REVIEWED_TOOLTIP } from "@/shared/constants/con
 import type { SegmentationRoi } from "@/shared/types/segmentation";
 
 export interface ErRoiSection {
+  readOnly?: boolean;
   placementActive: boolean;
   pendingRoiActive: boolean;
   relocatingRoiId: string | null;
@@ -34,6 +35,7 @@ function roiDetails(roi: SegmentationRoi): string {
 }
 
 export function ErRoiControls({
+  readOnly = false,
   placementActive,
   pendingRoiActive,
   relocatingRoiId,
@@ -87,19 +89,19 @@ export function ErRoiControls({
     <div className="er-roi-controls">
       <div className="er-roi-heading">
         <h4>ROI</h4>
-        <button
+        {!readOnly && <button
           type="button"
           className={`er-roi-heading-button ${placementActive ? "active" : ""}`}
           onClick={onPrimaryClick}
           disabled={confirming}
         >
           {primaryLabel}
-        </button>
+        </button>}
       </div>
-      {placementActive && !pendingRoiActive && (
+      {!readOnly && placementActive && !pendingRoiActive && (
         <p className="er-roi-hint">Click to place the new ROI.</p>
       )}
-      {editing && pendingRoiActive && (
+      {!readOnly && editing && pendingRoiActive && (
         <p className="er-roi-hint">
           Drag an edge or corner to resize. Drag inside the ROI to move it.
         </p>
@@ -121,7 +123,7 @@ export function ErRoiControls({
                   <span className="er-roi-item-label" title={details}>
                     {title}
                   </span>
-                  <button
+                  {!readOnly && <button
                     type="button"
                     className="er-roi-edit-button"
                     disabled={done || placementActive || confirming}
@@ -130,7 +132,7 @@ export function ErRoiControls({
                     onClick={() => onEditRoi(roi)}
                   >
                     {relocatingRoiId === roi.id ? "Editing" : "Edit Area"}
-                  </button>
+                  </button>}
                 </div>
                 <div className="er-roi-item-actions">
                   <button
@@ -141,6 +143,7 @@ export function ErRoiControls({
                   >
                     {activatingRoiId === roi.id ? "Opening..." : "Open"}
                   </button>
+                  {!readOnly && <>
                   <button
                     type="button"
                     className="er-roi-action-button er-roi-test-button"
@@ -200,6 +203,8 @@ export function ErRoiControls({
                       <path d="M14 11v5" />
                     </svg>
                   </button>
+                  </>}
+                  {readOnly && done && <span className="er-roi-done-toggle">Done</span>}
                   {isActive && <span className="er-roi-active-badge">active</span>}
                 </div>
               </li>
@@ -208,7 +213,7 @@ export function ErRoiControls({
         </ul>
       )}
       <ConfirmDialog
-        isOpen={pendingDeleteRoi !== null}
+        isOpen={!readOnly && pendingDeleteRoi !== null}
         title="Delete ROI"
         message={
           pendingDeleteRoi

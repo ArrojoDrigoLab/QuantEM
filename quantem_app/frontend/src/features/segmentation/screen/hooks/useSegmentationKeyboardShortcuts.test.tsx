@@ -68,6 +68,26 @@ describe("useSegmentationKeyboardShortcuts", () => {
     setupSegmentationScreenTest();
   });
 
+  it("keeps Navigate available but never invokes edits while locked", () => {
+    const pointVerbs = {
+      hoverPoint: { x: 10, y: 20 }, hasHoverTarget: true,
+      keep: vi.fn(), remove: vi.fn(), unmark: vi.fn(), undo: vi.fn(),
+    };
+    const args = makeArgs({ readOnly: true, pointVerbs });
+    renderHook(() => useSegmentationKeyboardShortcuts(args));
+    for (const key of [" ", "Enter", "x", "u", "z", "Delete", "r"]) {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key }));
+    }
+    for (const action of [pointVerbs.keep, pointVerbs.remove, pointVerbs.unmark, pointVerbs.undo]) {
+      expect(action).not.toHaveBeenCalled();
+    }
+    expect(args.review.handleAcceptPolygon).not.toHaveBeenCalled();
+    expect(args.removeArea.handleApply).not.toHaveBeenCalled();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+    expect(args.toggleLeftNavigateMode).toHaveBeenCalledOnce();
+  });
+
   it("toggles navigate mode with the A shortcut", () => {
     const args = makeArgs();
     renderHook(() => useSegmentationKeyboardShortcuts(args));

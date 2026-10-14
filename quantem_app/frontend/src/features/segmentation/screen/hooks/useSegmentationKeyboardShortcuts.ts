@@ -39,6 +39,7 @@ interface PointVerbs {
 }
 
 interface UseSegmentationKeyboardShortcutsArgs {
+  readOnly?: boolean;
   leftNavigateMode: boolean;
   toggleLeftNavigateMode: () => void;
   cycleHoverIndex: (direction: "next" | "prev") => void;
@@ -90,6 +91,7 @@ interface UseSegmentationKeyboardShortcutsArgs {
 }
 
 export function useSegmentationKeyboardShortcuts({
+  readOnly = false,
   leftNavigateMode,
   toggleLeftNavigateMode,
   cycleHoverIndex,
@@ -115,7 +117,7 @@ export function useSegmentationKeyboardShortcuts({
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key !== " " && event.code !== "Space") return;
       const panned = panKeyState.consumeSpacePan();
-      if (panned || leftNavigateMode || !pointVerbs) return;
+      if (readOnly || panned || leftNavigateMode || !pointVerbs) return;
       if (review.leftMode !== "hover" || review.isGroupActionMode) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
       if (removeArea.mode === "area") return;
@@ -160,6 +162,7 @@ export function useSegmentationKeyboardShortcuts({
         toggleLeftNavigateMode();
         return;
       }
+      if (readOnly) return;
 
       // Undo and step-to-next-object are not tied to a tool, so they work in
       // every mode -- including Navigate, where the user is looking around
@@ -323,6 +326,7 @@ export function useSegmentationKeyboardShortcuts({
       window.removeEventListener("keyup", handleKeyUp, true);
     };
   }, [
+    readOnly,
     cycleHoverIndex,
     drawing,
     leftNavigateMode,

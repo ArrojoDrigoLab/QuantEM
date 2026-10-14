@@ -248,7 +248,7 @@ export function SegmentationHeader({
       </div>
 
       <div className="header-controls">
-        {sourceModelPickerOptions.length > 0 && (
+        {!isComplete && sourceModelPickerOptions.length > 0 && (
           <div className="header-source-model">
             {/* "Model" and "Objects shown" are separated on purpose: the
                 picker chooses which model the next run uses *and* which
@@ -295,7 +295,7 @@ export function SegmentationHeader({
             </div>
           </div>
         )}
-        <AboutThisResult
+        {!isComplete && <AboutThisResult
           isOrganelle={isOrganelle}
           displayedObjects={displayedObjects}
           objectsPixelSize={objectsPixelSize}
@@ -303,7 +303,7 @@ export function SegmentationHeader({
           isBusy={isBusy}
           isComplete={isComplete}
           onOpenClearRerun={onClearMislabeledObjects ? clearRerun.open : undefined}
-        />
+        />}
         <HeaderNotices
           currentSegmentation={currentSegmentation}
           isOrganelle={isOrganelle}

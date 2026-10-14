@@ -96,6 +96,7 @@ interface ViewSection {
 type IncludeLevelSection = ComponentProps<typeof IncludeLevelDial>;
 
 export interface SegmentationSidebarProps {
+  readOnly?: boolean;
   /** Manual tissue-mask toolbar (brush/polygon with Include/Exclude). */
   tissue: TissueSection;
   review: ReviewSection;
@@ -112,6 +113,7 @@ export interface SegmentationSidebarProps {
 }
 
 export function SegmentationSidebar({
+  readOnly = false,
   tissue,
   review,
   layers,
@@ -164,10 +166,10 @@ export function SegmentationSidebar({
   return (
     <aside className="labeling-sidebar">
         <section className="labeling-sidebar-section">
-          <h3>Labeling View</h3>
-          {erRoi && <ErRoiControls {...erRoi} />}
-          {includeLevel ? <IncludeLevelDial {...includeLevel} /> : null}
-          {isTissueSegmentation ? (
+          <h3>{readOnly ? "View" : "Labeling View"}</h3>
+          {erRoi && <ErRoiControls {...erRoi} readOnly={readOnly || erRoi.readOnly} />}
+          {!readOnly && includeLevel ? <IncludeLevelDial {...includeLevel} /> : null}
+          {!readOnly && (isTissueSegmentation ? (
             <TissueWorkflowControls {...tissueControls} />
           ) : (
             <WorkflowModeToolbar
@@ -195,7 +197,7 @@ export function SegmentationSidebar({
               extraModes={extraModes}
               extraTools={extraTools}
             />
-          )}
+          ))}
         </section>
         <section className="labeling-sidebar-section">
           <label className="view-confirmed-toggle" htmlFor="navigate-toggle">
@@ -207,7 +209,7 @@ export function SegmentationSidebar({
             />
             Navigate (A)
           </label>
-          {leftNavigateMode && (
+          {!readOnly && leftNavigateMode && (
             // Actionable, not just descriptive: choosing a tool now leaves
             // Navigate automatically, but the A shortcut can put it back
             // mid-session and the way out has to be one click from the notice.
@@ -234,13 +236,13 @@ export function SegmentationSidebar({
             />
             View confirmed
           </label>
-          {isGroupActionMode && !leftNavigateMode && (
+          {!readOnly && isGroupActionMode && !leftNavigateMode && (
             <div className="group-confirm-hint">
               Drag a box in labeling view, then press Enter, Space, or the active
               group button to {activeGroupActionVerb}. Delete clears the selection.
             </div>
           )}
-          {isGroupActionMode && !leftNavigateMode && groupSelectionCount > 0 && (
+          {!readOnly && isGroupActionMode && !leftNavigateMode && groupSelectionCount > 0 && (
             <div className="group-confirm-count">Selected: {groupSelectionCount}</div>
           )}
           {workflowMode === "review" &&

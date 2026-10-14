@@ -1109,7 +1109,7 @@ describe("SegmentationHeader", () => {
       ).toBeInTheDocument();
     });
 
-    it("is disabled while the segmentation is locked, and says why", () => {
+    it("hides the rerun action and model picker while locked", () => {
       renderHeader({
         currentSegmentation: makeSegmentation({
           ...PREDATES,
@@ -1119,9 +1119,8 @@ describe("SegmentationHeader", () => {
         onClearMislabeledObjects: vi.fn(),
       });
 
-      const button = screen.getByTestId("clear-rerun-button");
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute("title", expect.stringContaining("locked"));
+      expect(screen.queryByTestId("clear-rerun-button")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
     });
   });
 

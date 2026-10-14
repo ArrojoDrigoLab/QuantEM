@@ -52,6 +52,7 @@ export function SegmentationScreen() {
   const route = useSegmentationRouteState(modelCatalogue, modelCatalogueLoading);
   const ui = useSegmentationScreenUiState({
     currentSegmentationId: route.currentSegmentationId,
+    readOnly: route.isLocked,
   });
   const drawing = useDrawing();
 
@@ -105,7 +106,7 @@ export function SegmentationScreen() {
 
   const overlay = useSegmentationOverlayState({
     currentSegmentationId: route.currentSegmentationId,
-    activeSourceModel: route.activeSourceModel,
+    activeSourceModel: route.isLocked ? null : route.activeSourceModel,
     segmentationInternalName: route.segmentationInternalName,
     refetchSegmentations: route.refetchSegmentations,
     refetchLeftSegments: refetchLeftSegmentsProxy,
@@ -550,6 +551,7 @@ export function SegmentationScreen() {
   );
 
   useSegmentationKeyboardShortcuts({
+    readOnly: route.isLocked,
     leftNavigateMode: ui.leftNavigateMode,
     toggleLeftNavigateMode: ui.toggleLeftNavigateMode,
     cycleHoverIndex: hover.cycleHoverIndex,
@@ -710,11 +712,11 @@ export function SegmentationScreen() {
       <SegmentationHeader {...viewModels.headerProps} />
       <main
         className={`segmentation-main ${
-          ui.showConfirmedPanel ? "show-confirmed" : "hide-confirmed"
+          ui.showConfirmedPanel && !route.isLocked ? "show-confirmed" : "hide-confirmed"
         }`}
       >
         <ConfirmDialog
-          isOpen={completedRoi.saveDialogOpen}
+          isOpen={!route.isLocked && completedRoi.saveDialogOpen}
           title={
             completedRoi.mode === "exclude"
               ? "Remove from the confirmed area"
@@ -758,7 +760,7 @@ export function SegmentationScreen() {
           // result, so the ID-map overlay and the segment lists are both stale
           // afterwards. The dial deliberately knows nothing about drawing.
           includeLevel={
-            route.currentSegmentation &&
+            !route.isLocked && route.currentSegmentation &&
             packIdForSourceModel(route.activeSourceModel)
               ? {
                   segmentationId: route.currentSegmentation.id,
@@ -786,7 +788,7 @@ export function SegmentationScreen() {
           }
         />
         <SegmentationLeftPanel {...viewModels.leftPanelProps} />
-        {ui.showConfirmedPanel && (
+        {ui.showConfirmedPanel && !route.isLocked && (
           <SegmentationRightPanel
             {...viewModels.rightPanelProps}
             confirmingObjects={confirmingObjectsOverlay !== null}
