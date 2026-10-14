@@ -78,6 +78,7 @@ describe("Experiment workbench", () => {
     await screen.findByText("Field 01");
     await user.click(screen.getByRole("button", { name: "Select all matching (51)" }));
     await user.click(screen.getByRole("button", { name: "Analyze selection" }));
+    expect(screen.getByRole("heading", { name: "Measure selected images (51)" })).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "Mitochondria" }));
     expect(screen.getByRole("button", { name: "Run ready images" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Check readiness" }));

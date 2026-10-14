@@ -13,6 +13,7 @@ from quantem.analysis.identity import run_is_current
 from quantem.analysis.models import AnalysisRun
 from quantem.assets.models import Asset
 from quantem.library.models import Experiment, ImageWorkflowMetadata
+from quantem.library.sample_identity import sample_identity
 from quantem.library.serializers import serialize_experiment
 from quantem.segmentation.models import ImageSegmentation
 
@@ -115,7 +116,10 @@ class ExperimentWorkspaceView(APIView):
                     "pixel_size_nm": asset.pixel_size_nm,
                     "stage": asset.preprocess_stage,
                     "datasets": [{"id": str(d.id), "name": d.name} for d in asset.datasets.all()],
-                    "sample_id": meta.sample_id if meta else "",
+                    **sample_identity(
+                        asset.display_name or asset.original_filename, asset.id,
+                        meta.sample_id if meta else "",
+                    ),
                     "group": meta.group if meta else "",
                     "segmentations": by_asset.get(str(asset.id), []),
                 }
@@ -143,4 +147,7 @@ class ExperimentWorkspaceView(APIView):
                     )
                 values[key] = value.strip()
         metadata, _ = ImageWorkflowMetadata.objects.update_or_create(asset=asset, defaults=values)
-        return Response({"sample_id": metadata.sample_id, "group": metadata.group})
+        return Response({
+            **sample_identity(asset.display_name or asset.original_filename, asset.id, metadata.sample_id),
+            "group": metadata.group,
+        })

@@ -113,13 +113,13 @@ export function ExperimentWorkbench({ experiment, children, refreshKey, onPin }:
             </p>)}{!image.segmentations.length && "No segmentation"}</td>
             <td className="border-b p-3">{image.segmentations.filter((seg) => seg.latest_analysis).map((seg) => <p key={seg.id}>{seg.name}: {seg.latest_analysis?.current === false ? "outdated" : seg.latest_analysis?.current === null ? "unverified" : seg.latest_analysis?.status.toLowerCase()}</p>)}
               <Link className="text-cyan-800 underline" to={`/assets/${image.id}/analysis`}>Open analysis</Link></td>
-            <td className="border-b p-3">{image.sample_id || "Not assigned"} / {image.group || "Not assigned"}</td>
+            <td className="border-b p-3">{image.sample_id || image.name} / {image.group || "Ungrouped"}</td>
           </tr>)}</tbody>
         </table>{!visible.length && !error && <p className="p-4">No images match these filters.</p>}
         <div className="flex items-center justify-between p-3"><Button disabled={page === 0} onClick={() => setPage(page - 1)}>Previous page</Button><span>Page {Math.min(page, pageCount - 1) + 1} of {pageCount} · {filtered.length} images</span><Button disabled={page >= pageCount - 1} onClick={() => setPage(page + 1)}>Next page</Button></div></div>}
       <form className="flex flex-wrap items-end gap-3 rounded border bg-white p-4" onSubmit={(e) => { e.preventDefault(); void setMetadata(); }}>
-        <div className="w-full"><strong>Assign biological sample metadata to selected images</strong><p className="text-sm text-slate-600">Use the same sample ID for fields from the same donor or biological replicate. Dataset membership alone does not establish independence. Saving replaces both fields; a blank value clears it.</p></div>
-        <label>Sample ID <input className="block rounded border px-2 py-1" maxLength={255} value={sample} onChange={(e) => setSample(e.target.value)} /></label>
+        <div className="w-full"><strong>Group selected images</strong><p className="text-sm text-slate-600">Sample IDs default to image names. Use a shared ID to average images from the same sample together.</p></div>
+        <label>Sample ID <input className="block rounded border px-2 py-1" maxLength={255} placeholder="Image name by default" value={sample} onChange={(e) => setSample(e.target.value)} /></label>
         <label>Group <input className="block rounded border px-2 py-1" maxLength={255} value={group} onChange={(e) => setGroup(e.target.value)} /></label>
         <Button type="submit" disabled={saving || !selectedIds.length}>Save for {selectedIds.length} images</Button>
       </form>

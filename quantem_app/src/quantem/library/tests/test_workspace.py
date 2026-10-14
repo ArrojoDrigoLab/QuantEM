@@ -43,7 +43,8 @@ class WorkspaceTests(TestCase):
 
     def test_sample_metadata_round_trips_without_guessing_from_dataset(self):
         response = self.client.get(self.url + "workspace/")
-        self.assertEqual(response.data["images"][0]["sample_id"], "")
+        self.assertEqual(response.data["images"][0]["sample_id"], self.asset.display_name)
+        self.assertFalse(response.data["images"][0]["sample_is_explicit"])
         response = self.client.patch(
             self.url + "workspace/",
             {"asset_id": str(self.asset.id), "sample_id": "Donor 02", "group": "T1D"},
@@ -53,6 +54,25 @@ class WorkspaceTests(TestCase):
         self.assertEqual(
             self.client.get(self.url + "workspace/").data["images"][0]["sample_id"], "Donor 02"
         )
+        response = self.client.patch(
+            self.url + "workspace/",
+            {"asset_id": str(self.asset.id), "sample_id": "   "}, format="json",
+        )
+        self.assertEqual(response.data["sample_id"], self.asset.display_name)
+        self.assertFalse(response.data["sample_is_explicit"])
+        self.assertEqual(response.data["group"], "T1D")
+
+    def test_blank_image_renames_are_rejected_without_changing_other_fields(self):
+        for suffix in ("", "library-edit/"):
+            for name in ("", " \t ", None):
+                response = self.client.patch(
+                    f"/api/assets/{self.asset.id}/{suffix}",
+                    {"display_name": name, "notes": "Should not be saved"}, format="json",
+                )
+                self.assertEqual(response.status_code, 400, response.data)
+                self.asset.refresh_from_db()
+                self.assertEqual(self.asset.display_name, "Frequent experiment")
+                self.assertEqual(self.asset.notes, "")
 
     def test_navigation_listing_avoids_loading_measurements(self):
         with self.assertNumQueries(2):

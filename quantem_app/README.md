@@ -25,9 +25,10 @@ annotations are required to start training, but not to open the dialog or apply 
 2. Select individual images, **Select visible**, or **Select all matching**. Dataset and
    readiness filters narrow the matching set. Selection persists across filters and includes
    each image only once, even when datasets overlap.
-3. Enter explicit **Sample ID** and **Group** values when biological summaries are needed.
-   Fields from one donor or biological replicate should share a sample ID. Dataset
-   membership does not establish sample identity. Saving replaces both metadata fields.
+3. Images use their image names as sample labels and are included in summaries by default.
+   Optionally assign a shared **Sample ID** to average images from one donor or sample
+   together, and a **Group** to compare conditions. Saving replaces both fields;
+   leaving Sample ID blank restores the image-name default.
 4. Choose **Analyze selection**, select organelles and the measurement area, then **Check
    readiness**. A named analysis mask must exist on each image; an absent or ambiguous mask
    skips that image. Review completion is required by default and is independent of whether
@@ -44,10 +45,11 @@ centroid must lie inside it; its full outline supplies shape measurements. Globa
 segmentations provide foreground-area measurements rather than object counts or shapes.
 Global reports are saved in analysis history like object reports.
 
-Sample summaries first average fields within each explicitly identified sample; group
-statistics then average those sample means with equal weight. Missing sample IDs, failed
-items and outdated results are excluded from group statistics but remain documented in the
-image table and manifest. A single sample has no estimable sample SD or SEM. Different
+Each image contributes separately unless a shared sample ID is explicitly assigned. Sample
+summaries average fields within those shared samples; group statistics then average sample
+means with equal weight. Identical image names do not combine images automatically. Failed
+items and outdated results remain in the image table and manifest but cannot contribute
+current measurements. A single sample has no estimable sample SD or SEM. Different
 organelles and measurement areas stay separate. The older image-level group endpoint counts
 only the latest successful run per image and refuses incompatible measurement recipes.
 

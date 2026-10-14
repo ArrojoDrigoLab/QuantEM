@@ -20,6 +20,7 @@ from quantem.analysis.rollup import aggregate
 from quantem.analysis.service import export_dir_for_run, image_summary_row
 from quantem.jobs.models import Job
 from quantem.library.models import Experiment
+from quantem.library.sample_identity import sample_identity
 
 
 def item_body(item):
@@ -29,7 +30,13 @@ def item_body(item):
         status = item.job.status
     body = {
         "id": str(item.id),
-        "identity": item.identity,
+        "identity": {
+            **item.identity,
+            **sample_identity(
+                item.identity.get("image"), item.identity.get("asset_id"),
+                item.identity.get("sample_id"), explicit=item.identity.get("sample_is_explicit"),
+            ),
+        },
         "status": status,
         "reason": item.skip_reason or (run.error if run else ""),
         "run_id": str(run.id) if run else None,
@@ -211,12 +218,22 @@ def measurement_rows(body):
 
 
 def sample_summary(rows):
-    """Average fields within explicit samples first; never treat repeated runs as samples."""
+    """Include each image, combining fields only when a shared sample ID is assigned."""
     cells = {}
-    for row in rows:
-        if row.get("status") != "SUCCESS" or not row.get("current") or not row.get("sample_id"):
+    for index, row in enumerate(rows):
+        if row.get("status") != "SUCCESS" or not row.get("current"):
             continue
-        key = (row.get("group", ""), row["sample_id"], row["organelle"], row["measurement_area"])
+        sample_info = sample_identity(
+            row.get("image"), row.get("asset_id", index), row.get("sample_id"),
+            explicit=row.get("sample_is_explicit"),
+        )
+        # Identical filenames must not accidentally combine independent images,
+        # or collide with a user-assigned sample ID of the same name.
+        asset_id = "" if sample_info["sample_is_explicit"] else row.get("asset_id", str(index))
+        key = (
+            row.get("group", ""), sample_info["sample_id"], asset_id,
+            row["organelle"], row["measurement_area"],
+        )
         for metric, value in row.items():
             if (
                 (
@@ -229,12 +246,13 @@ def sample_summary(rows):
                 cells.setdefault((*key, metric), []).append(value)
     groups = {}
     samples = []
-    for (group, sample, organelle, area, metric), values in cells.items():
+    for (group, sample, asset_id, organelle, area, metric), values in cells.items():
         mean = aggregate(values).mean
         samples.append(
             {
                 "group": group,
                 "sample_id": sample,
+                "asset_id": asset_id,
                 "organelle": organelle,
                 "measurement_area": area,
                 "metric": metric,
@@ -281,7 +299,13 @@ class BatchExportView(APIView):
                 bundle.writestr("groups.csv", csv_text(groups))
                 manifest = {
                     **body,
-                    "aggregation": "Unweighted mean of image values within each explicit sample, then unweighted sample means. Missing sample IDs and outdated results excluded.",
+                    "aggregation": (
+                        "Each image is a sample by default, labelled with its image name. "
+                        "Images with the same explicitly assigned sample ID are averaged first, "
+                        "then samples are averaged with equal weight within each group. "
+                        "Only successful, current measurements contribute; "
+                        "missing sample IDs never exclude an image."
+                    ),
                     "missing_values": "Blank values are unavailable; skipped images are not zero.",
                     "items": [
                         {key: val for key, val in item.items() if key != "results"}

@@ -143,6 +143,11 @@ class ExperimentBatchTests(AnalysisRunTestCase):
             rows = list(csv.DictReader(io.StringIO(archive.read("measurements.csv").decode())))
             self.assertEqual({row["status"] for row in rows}, {"SUCCESS", "SKIPPED"})
             self.assertTrue(any(name.endswith("/objects.csv") for name in archive.namelist()))
+            samples = list(csv.DictReader(io.StringIO(archive.read("samples.csv").decode())))
+            groups = list(csv.DictReader(io.StringIO(archive.read("groups.csv").decode())))
+            self.assertTrue(samples)
+            self.assertEqual({row["sample_id"] for row in samples}, {self.asset.display_name})
+            self.assertEqual({row["n_units"] for row in groups}, {"1"})
             manifest = json.loads(archive.read("manifest.json"))
             self.assertEqual(manifest["settings"]["name"], "Broad metrics")
         response.close()
@@ -196,9 +201,58 @@ class ExperimentBatchTests(AnalysisRunTestCase):
         rows = [{**common, "sample_id": "A", "area_fraction_mito": value} for value in (0.1, 0.3)]
         rows += [
             {**common, "sample_id": "B", "area_fraction_mito": 0.8},
-            {**common, "sample_id": "", "area_fraction_mito": 10},
         ]
         samples, groups = sample_summary(rows)
         self.assertEqual(len(samples), 2)
         self.assertAlmostEqual(groups[0]["mean"], 0.5)
         self.assertEqual(groups[0]["n_units"], 2)
+
+    def test_unnamed_samples_contribute_and_duplicate_filenames_stay_separate(self):
+        common = {
+            "status": "SUCCESS", "current": True, "group": "",
+            "organelle": "mito", "measurement_area": "Whole image", "image": "scan.tif",
+        }
+        rows = [
+            {**common, "asset_id": "one", "sample_id": "", "n_objects": 10},
+            {**common, "asset_id": "two", "sample_id": "   ", "n_objects": 20},
+            {**common, "asset_id": "three", "sample_id": "scan.tif", "n_objects": 60},
+        ]
+        samples, groups = sample_summary(rows)
+        self.assertEqual(len(samples), 3)
+        self.assertEqual({row["sample_id"] for row in samples}, {"scan.tif"})
+        self.assertEqual(groups[0]["n_units"], 3)
+        self.assertAlmostEqual(groups[0]["mean"], 30)
+
+    def test_existing_batch_exports_use_image_names_without_remeasuring(self):
+        batch = start_batch(self.experiment, self.payload)
+        item = batch.items.get()
+        run = self._execute(item)
+        # Batches saved before the default changed have an empty sample ID.
+        item.identity.pop("sample_is_explicit")
+        item.identity["sample_id"] = ""
+        item.save(update_fields=["identity"])
+        rows = measurement_rows(batch_body(batch))
+        self.assertEqual(rows[0]["sample_id"], self.asset.display_name)
+        self.assertFalse(rows[0]["sample_is_explicit"])
+        self.assertEqual(sample_summary(rows)[1][0]["n_units"], 1)
+        self.assertTrue(run_is_current(run))
+
+    def test_missing_scale_does_not_exclude_available_metrics(self):
+        common = {
+            "status": "SUCCESS", "current": True, "sample_id": "", "group": "",
+            "organelle": "mito", "measurement_area": "Whole image",
+        }
+        rows = [
+            {**common, "asset_id": "one", "image": "One", "pixel_size_nm": None,
+             "n_objects": 10, "mean_area_um2": None},
+            {**common, "asset_id": "two", "image": "Two", "pixel_size_nm": 4,
+             "n_objects": 20, "mean_area_um2": 0.5},
+            {**common, "asset_id": "old", "image": "Old", "current": False, "n_objects": 1000},
+            {**common, "asset_id": "failed", "image": "Failed", "status": "FAILED", "n_objects": 1000},
+        ]
+        _, groups = sample_summary(rows)
+        counts = next(row for row in groups if row["metric"] == "n_objects")
+        self.assertEqual(counts["n_units"], 2)
+        self.assertEqual(counts["mean"], 15)
+        area = next(row for row in groups if row["metric"] == "mean_area_um2")
+        self.assertEqual(area["n_units"], 1)

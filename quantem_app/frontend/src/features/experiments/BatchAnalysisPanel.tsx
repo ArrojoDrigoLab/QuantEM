@@ -83,8 +83,7 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
     result[key] = (result[key] ?? 0) + 1; return result;
   }, {});
   return <section className="space-y-4 rounded-lg border bg-white p-4" aria-label="Experiment analysis">
-    <h2 className="text-lg font-semibold">Measure selected images</h2>
-    <p className="text-sm text-slate-600">{selectedIds.length} unique images selected. Change the selection in Images. Object analyses use confirmed objects; global segmentations provide area measurements only. Review completion and prediction completion are separate.</p>
+    <h2 className="text-lg font-semibold">Measure selected images ({selectedIds.length})</h2>
     <div className="flex flex-wrap items-center gap-4">
       <label>Batch name <input className="rounded border px-2 py-1" value={name} onChange={(e) => setName(e.target.value)} /></label>
       <label>Measurement area <select className="rounded border px-2 py-1" value={mask} onChange={(e) => setMask(e.target.value)}>
@@ -102,8 +101,7 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
       <label><input type="checkbox" checked={complete} onChange={(e) => setComplete(e.target.checked)} /> Require review marked complete</label>
       <label><input type="checkbox" checked={reuse} onChange={(e) => setReuse(e.target.checked)} /> Reuse matching current results</label>
     </div>
-    {!complete && <p className="text-sm text-amber-900">Unreviewed images will be included. Their confirmed objects may be an incomplete subset; exports record review status.</p>}
-    <p className="text-sm text-slate-600">A missing named mask skips the image. Missing calibration is recorded; physical units are unavailable. Samples are entered explicitly in Images; unnamed samples stay in image results but are excluded from group statistics.</p>
+    {!complete && <p className="text-sm text-amber-900">Only confirmed objects are counted, so unfinished reviews may give lower counts.</p>}
     <div className="flex flex-wrap gap-2">
       <Button disabled={busy || !selectedIds.length || !types.length} onClick={() => void run(true)}>Check readiness</Button>
       <Button variant="primary" disabled={busy || previewKey !== payloadKey || !preview?.some((item) => item.ready)} onClick={() => void run(false)}>Run ready images</Button>
@@ -126,12 +124,11 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
       <thead><tr>{["Image", "Organelle", "Area", "Sample / group", "Status", selectedMetric?.replaceAll("_", " ") ?? "Measurement", "Details"].map((label) => <th key={label} className="border-b p-2">{label}</th>)}</tr></thead>
       <tbody>{rows.map((item, index) => <tr key={index}>
         <td className="border-b p-2"><Link className="text-cyan-800 underline" to={`/assets/${item.identity.asset_id}/analysis`}>{item.identity.image}</Link></td>
-        <td className="border-b p-2">{item.identity.organelle}</td><td className="border-b p-2">{item.identity.measurement_area}</td>
-        <td className="border-b p-2">{item.identity.sample_id || "No sample ID"} / {item.identity.group || "No group"}</td>
+        <td className="border-b p-2">{options.find((seg) => seg.type === item.identity.organelle)?.name ?? item.identity.organelle}</td><td className="border-b p-2">{item.identity.measurement_area}</td>
+        <td className="border-b p-2">{item.identity.sample_id || item.identity.image} / {item.identity.group || "Ungrouped"}</td>
         <td className="border-b p-2">{item.ready === true ? "Ready" : item.ready === false ? "Skipped" : item.status}{item.reused ? " · reused" : ""}{item.current === false ? " · outdated" : ""}</td>
         <td className="border-b p-2">{selectedMetric && item.metrics?.[selectedMetric] != null ? item.metrics[selectedMetric]?.toLocaleString(undefined, { maximumSignificantDigits: 6 }) : "—"}</td>
-        <td className="border-b p-2">{item.reason}{!item.identity.pixel_size_nm ? " Physical units unavailable." : ""}</td>
+        <td className="border-b p-2">{item.reason}</td>
       </tr>)}</tbody></table></div>}
-    <p className="text-xs text-slate-600">The ZIP contains image measurements, explicit sample means, group statistics and a manifest of settings, model identity and skipped/failed items. Group statistics average images within each sample, then average samples with equal weight; outdated results are excluded. Partial exports retain their current status.</p>
   </section>;
 }

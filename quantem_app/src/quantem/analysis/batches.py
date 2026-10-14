@@ -8,8 +8,13 @@ from rest_framework.exceptions import ValidationError
 from quantem.analysis.identity import input_fingerprint
 from quantem.analysis.models import AnalysisBatch, AnalysisBatchItem, AnalysisRun
 from quantem.assets.models import Asset
-from quantem.jobs.constants import ACTIVE_SEGMENTATION_JOB_TYPES, JOB_DEFAULTS, JOB_TYPE_RUN_ANALYSIS
+from quantem.jobs.constants import (
+    ACTIVE_SEGMENTATION_JOB_TYPES,
+    JOB_DEFAULTS,
+    JOB_TYPE_RUN_ANALYSIS,
+)
 from quantem.jobs.models import Job
+from quantem.library.sample_identity import sample_identity
 from quantem.segmentation.api_views.shared import active_segmentation_job
 
 
@@ -80,7 +85,9 @@ def preview_batch(experiment, data):
             "experiment_id": str(experiment.id),
             "experiment": experiment.name,
             "datasets": [d.name for d in asset.datasets.all()],
-            "sample_id": meta.sample_id if meta else "",
+            **sample_identity(
+                asset.display_name or asset.original_filename, asset.id, meta.sample_id if meta else "",
+            ),
             "group": meta.group if meta else "",
             "pixel_size_nm": asset.pixel_size_nm,
         }
