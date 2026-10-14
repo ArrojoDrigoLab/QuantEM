@@ -92,7 +92,10 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
     </div>
     <fieldset className="flex flex-wrap gap-4"><legend className="mb-2 font-medium">Organelles</legend>
       {options.map((seg) => <label key={seg.type}><input type="checkbox" checked={types.includes(seg.type)}
-        onChange={(e) => setTypes((current) => e.target.checked ? [...current, seg.type] : current.filter((value) => value !== seg.type))} /> {seg.name} {seg.measurement_mode === "global" ? "(area only)" : ""}</label>)}
+        onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          setTypes((current) => checked ? [...current, seg.type] : current.filter((value) => value !== seg.type));
+        }} /> {seg.name} {seg.measurement_mode === "global" ? "(area only)" : ""}</label>)}
       {!options.length && <p>Run a segmentation on an image before measuring this experiment.</p>}
     </fieldset>
     <div className="flex flex-wrap gap-4">
