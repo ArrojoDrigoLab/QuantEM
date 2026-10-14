@@ -64,6 +64,7 @@ from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
+import zarr
 from PIL import Image
 from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
@@ -80,6 +81,7 @@ from quantem.segmentation.models import (
     SegmentObject,
 )
 from quantem.segmentation.prob_maps.io import resolve_probability_map_path
+from quantem.segmentation.prob_maps.preview import probability_map_size
 
 logger = logging.getLogger(__name__)
 
@@ -413,9 +415,8 @@ def _prob_sources(
         if not path.exists():
             continue
         try:
-            with Image.open(path) as handle:
-                width, height = handle.size
-        except Exception:  # pragma: no cover - unreadable PNG
+            width, height = probability_map_size(path)
+        except Exception:  # pragma: no cover - unreadable stored map
             logger.debug("Cannot read probability map %s", path, exc_info=True)
             continue
 
@@ -456,11 +457,14 @@ def _source_covering(
 
 def _load_prob_window(source: _ProbSource, x: int, y: int, width: int, height: int) -> np.ndarray:
     """Crop the stored map to a window, as float32 in ``[0, 1]``."""
+    left = x - source.x
+    top = y - source.y
+    if source.path.is_dir():
+        stored = zarr.open_array(str(source.path), mode="r")
+        return np.asarray(stored[top : top + height, left : left + width], dtype=np.float32) / 255.0
     with Image.open(source.path) as handle:
         if handle.mode != "L":
             handle = handle.convert("L")
-        left = x - source.x
-        top = y - source.y
         window = handle.crop((left, top, left + width, top + height))
         return np.asarray(window, dtype=np.float32) / 255.0
 

@@ -2,6 +2,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+import pytest
+import zarr
 from django.test import TestCase
 from PIL import Image
 
@@ -10,10 +12,16 @@ from quantem.seg_core.db.prob_maps import (
     MAX_ROI_COMPOSITE_MEGAPIXELS,
     get_prob_map_file_path,
     load_prob_map_from_path,
+    load_prob_map_uint8_from_path,
     prob_map_file_exists,
     save_probability_map,
 )
 from quantem.segmentation.models import ProbabilityMap
+from quantem.segmentation.prob_maps.io import clone_probability_map
+from quantem.segmentation.prob_maps.preview import (
+    ensure_probability_preview,
+    probability_preview_path,
+)
 from quantem.testing import (
     create_image_from_test_tiff,
     create_mitochondria_segmentation,
@@ -26,6 +34,99 @@ class ProbabilityMapPersistenceTests(TestCase):
         self.image = create_image_from_test_tiff("Probability Map Persistence Test")
         self.segmentation = create_mitochondria_segmentation(self.image)
         self.roi = create_roi(self.segmentation, width=128, height=128)
+
+    def test_chunked_writer_bounds_both_dimensions(self):
+        levels = np.linspace(0, 1, 35 * 29, dtype=np.float32).reshape(35, 29)
+
+        class SliceOnlySource:
+            shape = levels.shape
+            dtype = levels.dtype
+
+            def __getitem__(self, key):
+                block = levels[key]
+                assert block.shape[0] <= 8 and block.shape[1] <= 8
+                return block
+
+        with (
+            patch("quantem.seg_core.db.prob_maps.PROBABILITY_MAP_ZARR_MIN_PIXELS", 1),
+            patch("quantem.seg_core.db.prob_maps.PROBABILITY_MAP_CHUNK_SIZE", 8),
+        ):
+            save_probability_map(
+                self.segmentation, "DINO", SliceOnlySource(), "mito", "mito_generated"
+            )
+        from quantem.inference.resample import quantize_probability
+
+        actual = load_prob_map_uint8_from_path(self.segmentation, "DINO", "mito")
+        np.testing.assert_array_equal(np.asarray(actual), quantize_probability(levels))
+
+    def test_format_switch_preserves_shared_map_and_selects_new_result(self):
+        old_levels = np.full((35, 29), 204, dtype=np.uint8)
+        new_levels = np.full((35, 29), 51, dtype=np.uint8)
+        with patch("quantem.seg_core.db.prob_maps.PROBABILITY_MAP_ZARR_MIN_PIXELS", 1):
+            old = save_probability_map(
+                self.segmentation, "DINO", old_levels, "mito", "mito_generated"
+            )
+        other = create_mitochondria_segmentation(create_image_from_test_tiff("Shared map"))
+        clone = clone_probability_map(old, other)
+        old_path = STORAGE_DIR / clone.file_path
+        new = save_probability_map(self.segmentation, "DINO", new_levels, "mito", "mito_generated")
+        assert (
+            get_prob_map_file_path(self.segmentation, "DINO", "mito") == STORAGE_DIR / new.file_path
+        )
+        np.testing.assert_array_equal(
+            np.asarray(zarr.open_array(str(old_path), mode="r")), old_levels
+        )
+        assert probability_preview_path(old_path).is_file()
+        np.testing.assert_array_equal(
+            load_prob_map_uint8_from_path(self.segmentation, "DINO", "mito"),
+            new_levels,
+        )
+
+    def test_format_switch_keeps_the_new_preview(self):
+        levels = np.full((35, 29), 204, dtype=np.uint8)
+        save_probability_map(self.segmentation, "DINO", levels, "mito", "mito_generated")
+        with patch("quantem.seg_core.db.prob_maps.PROBABILITY_MAP_ZARR_MIN_PIXELS", 1):
+            stored = save_probability_map(
+                self.segmentation, "DINO", levels, "mito", "mito_generated"
+            )
+        assert probability_preview_path(STORAGE_DIR / stored.file_path).is_file()
+
+    def test_failed_record_write_restores_previous_bytes_and_preview(self):
+        old_levels = np.full((35, 29), 204, dtype=np.uint8)
+        for minimum in (1, 10_000):
+            with (
+                self.subTest(minimum=minimum),
+                patch(
+                    "quantem.seg_core.db.prob_maps.PROBABILITY_MAP_ZARR_MIN_PIXELS",
+                    minimum,
+                ),
+            ):
+                stored = save_probability_map(
+                    self.segmentation, "DINO", old_levels, "mito", "mito_generated"
+                )
+                path = STORAGE_DIR / stored.file_path
+                preview = ensure_probability_preview(path, max_dimension=16)
+                before = preview.read_bytes()
+                with patch.object(
+                    ProbabilityMap.objects,
+                    "create",
+                    side_effect=RuntimeError("database unavailable"),
+                ):
+                    with pytest.raises(RuntimeError, match="database unavailable"):
+                        save_probability_map(
+                            self.segmentation,
+                            "DINO",
+                            np.zeros_like(old_levels),
+                            "mito",
+                            "mito_generated",
+                        )
+                np.testing.assert_array_equal(
+                    np.asarray(load_prob_map_uint8_from_path(self.segmentation, "DINO", "mito")),
+                    old_levels,
+                )
+                assert preview.read_bytes() == before
+                assert not list(path.parent.glob(".*.bak*"))
+                assert not list(path.parent.glob(".*.tmp*"))
 
     def test_roi_composite_upsert_works_without_json_contains_lookup(self):
         prob_data = np.full((self.roi.height, self.roi.width), 0.5, dtype=np.float32)
@@ -177,3 +278,33 @@ class ProbabilityMapPersistenceTests(TestCase):
                 metadata__composite=True,
             ).exists()
         )
+
+    def test_large_maps_store_identical_uint8_levels_in_chunks(self):
+        levels = np.arange(35 * 29, dtype=np.uint16).reshape(35, 29).astype(np.uint8)
+
+        with patch(
+            "quantem.seg_core.db.prob_maps.PROBABILITY_MAP_ZARR_MIN_PIXELS",
+            1,
+        ):
+            stored = save_probability_map(
+                segmentation=self.segmentation,
+                model_name="DINO",
+                prob_data=levels,
+                prefix="mito",
+                generated_flag="mito_generated",
+            )
+
+        path = get_prob_map_file_path(self.segmentation, "DINO", "mito")
+        self.assertTrue(path.is_dir())
+        self.assertEqual(path.suffix, ".zarr")
+        expected_relative = str(path.relative_to(STORAGE_DIR)).replace("\\", "/")
+        self.assertEqual(stored.file_path.replace("\\", "/"), expected_relative)
+
+        chunked = load_prob_map_uint8_from_path(self.segmentation, "DINO", "mito")
+        self.assertIsNotNone(chunked)
+        np.testing.assert_array_equal(np.asarray(chunked), levels)
+
+        preview = ensure_probability_preview(path, max_dimension=16)
+        self.assertTrue(preview.is_file())
+        with Image.open(preview) as image:
+            self.assertEqual(image.mode, "L")

@@ -227,7 +227,7 @@ describe("the Tasks drawer during a run", () => {
     expect(within(row).getByText(/preparing the threshold preview/)).toBeInTheDocument();
   });
 
-  it("rolls every organelle on the image into one line, drawn once", async () => {
+  it("shows each running task's own tiles and no batch total", async () => {
     const rollup = makeRollup();
     vi.mocked(getJobQueueStatus).mockResolvedValue(
       makeStatus({
@@ -236,6 +236,7 @@ describe("the Tasks drawer during a run", () => {
           makeRunningRunJob({
             id: "b",
             batch_progress: rollup,
+            image: { id: "img-2", display_name: "Another image" },
             segmentation: { id: "seg-2", name: "Nucleus" },
             unit_progress: {
               done: 2,
@@ -251,14 +252,14 @@ describe("the Tasks drawer during a run", () => {
     );
 
     render(<JobQueueSidebar isOpen onClose={vi.fn()} />);
-    const aggregates = await screen.findAllByTestId("run-progress-row-aggregate");
+    const tasks = await screen.findAllByTestId("run-progress-row-organelle");
 
-    expect(aggregates).toHaveLength(1);
-    expect(within(aggregates[0]).getByText(/19 of 62 tiles/)).toBeInTheDocument();
-    expect(
-      within(aggregates[0]).getByText(/Everything on Grid2_Cell04/)
-    ).toBeInTheDocument();
-    expect(screen.getAllByTestId("run-progress-row-organelle")).toHaveLength(2);
+    expect(tasks).toHaveLength(2);
+    expect(within(tasks[0]).getByText(/17 of 56 tiles/)).toBeInTheDocument();
+    expect(within(tasks[1]).getByText(/2 of 6 tiles/)).toBeInTheDocument();
+    expect(screen.queryByTestId("run-progress-row-aggregate")).toBeNull();
+    expect(screen.queryByText(/Everything on/)).toBeNull();
+    expect(screen.queryByText(/19 of 62 tiles/)).toBeNull();
   });
 
   it("keeps a model download visibly apart from the run", async () => {
@@ -446,8 +447,8 @@ describe("the Tasks drawer before a run starts", () => {
    * was first written by the run itself, so a queued organelle was a row with a
    * status and nothing else, and the wave rollup could not count it either.
    */
-  it("says how many tiles a queued run is waiting to walk", async () => {
-    const queued = makeRunningRunJob({
+  it("shows the queue's job count and each queued run's own tile plan", async () => {
+    const queuedNucleus = makeRunningRunJob({
       id: "job-queued-1",
       status: "PENDING",
       started_at: null,
@@ -463,19 +464,45 @@ describe("the Tasks drawer before a run starts", () => {
         eta_seconds: null,
       },
     });
+    const queuedMito = makeRunningRunJob({
+      id: "job-queued-2",
+      status: "PENDING",
+      started_at: null,
+      progress: 0,
+      progress_stage: "queued",
+      message: "",
+      image: { id: "img-2", display_name: "Another image" },
+      segmentation: { id: "seg-2", name: "Mitochondria" },
+      unit_progress: {
+        done: 0,
+        total: 56,
+        label: "tile",
+        percent: 0,
+        stage: "queued",
+        eta_seconds: null,
+      },
+    });
     vi.mocked(getJobQueueStatus).mockResolvedValue(
       makeStatus({
         queues: [
-          { queue_name: "p4_full", display_name: "P4 Background", pending: [queued] },
+          {
+            queue_name: "p4_full",
+            display_name: "P4 Background",
+            pending: [queuedNucleus, queuedMito],
+          },
         ],
       })
     );
 
     render(<JobQueueSidebar isOpen onClose={vi.fn()} />);
-    const row = await screen.findByTestId("run-progress-row-organelle");
+    const rows = await screen.findAllByTestId("run-progress-row-organelle");
+    const group = screen.getByText("P4 Background").closest(".job-queue-group");
 
-    expect(
-      within(row).getByText("waiting to start · 0 of 88 tiles")
-    ).toBeInTheDocument();
+    expect(group).not.toBeNull();
+    expect(within(group as HTMLElement).getByText("2")).toBeInTheDocument();
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText("waiting to start · 0 of 88 tiles")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("waiting to start · 0 of 56 tiles")).toBeInTheDocument();
+    expect(screen.queryByTestId("run-progress-row-aggregate")).toBeNull();
   });
 });

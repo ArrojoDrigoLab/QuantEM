@@ -1,9 +1,10 @@
 """Browser-sized previews of authoritative probability maps.
 
-The stored PNG remains full resolution because replaying a threshold must use
-every source pixel. A browser preview has a different constraint: common canvas
-and GPU texture limits are below the dimensions of large EM montages, and
-decoding a gigapixel grayscale PNG into RGBA can require several gigabytes.
+The stored PNG or chunked Zarr remains full resolution because replaying a
+threshold must use every source pixel. A browser preview has a different
+constraint: common canvas and GPU texture limits are below the dimensions of
+large EM montages, and decoding a gigapixel grayscale image into RGBA can
+require several gigabytes.
 
 This module writes a small sidecar used only for display. New inference runs
 produce it directly from the already-resident uint8 array; older maps get one
@@ -20,6 +21,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
+import zarr
 from PIL import Image
 
 from quantem.assets.canonical_decode import decode_canonical_array
@@ -36,7 +38,12 @@ _PNG_HEADER_BYTES = 24
 
 
 def probability_map_size(source_path: Path) -> tuple[int, int]:
-    """Read ``(width, height)`` from the PNG header without decoding its pixels."""
+    """Read ``(width, height)`` without decoding the probability pixels."""
+    if source_path.is_dir():
+        array = zarr.open_array(str(source_path), mode="r")
+        if len(array.shape) != 2:
+            raise ValueError(f"Probability map is not two-dimensional: {source_path}")
+        return int(array.shape[1]), int(array.shape[0])
     with source_path.open("rb") as source:
         header = source.read(_PNG_HEADER_BYTES)
     if (
@@ -56,8 +63,9 @@ def probability_preview_path(
     *,
     max_dimension: int = MAX_PROBABILITY_PREVIEW_DIMENSION,
 ) -> Path:
-    """Sidecar path for one source PNG and preview-size contract."""
-    return source_path.with_name(f"{source_path.stem}_preview_{max_dimension}.png")
+    """Sidecar path for one authoritative map and preview-size contract."""
+    stem = source_path.name if source_path.suffix.lower() == ".zarr" else source_path.stem
+    return source_path.with_name(f"{stem}_preview_{max_dimension}.png")
 
 
 def _preview_shape(width: int, height: int, max_dimension: int) -> tuple[int, int, int]:
@@ -82,16 +90,19 @@ def save_probability_preview(
     max_dimension: int = MAX_PROBABILITY_PREVIEW_DIMENSION,
 ) -> Path:
     """Write a nearest-sampled preview without changing probability values."""
-    array = np.asarray(probability_uint8)
-    if array.ndim != 2:
-        raise ValueError(f"Expected a 2D probability map, got shape {array.shape}")
-    height, width = array.shape
+    shape = getattr(probability_uint8, "shape", ())
+    if len(shape) != 2:
+        raise ValueError(f"Expected a 2D probability map, got shape {shape}")
+    height, width = int(shape[0]), int(shape[1])
     _, _, factor = _preview_shape(width, height, max_dimension)
-    if factor == 1:
+    if factor == 1 and source_path.is_file():
         return source_path
 
     destination = probability_preview_path(source_path, max_dimension=max_dimension)
-    sampled = np.ascontiguousarray(array[::factor, ::factor], dtype=np.uint8)
+    sampled = np.ascontiguousarray(
+        probability_uint8[::factor, ::factor],
+        dtype=np.uint8,
+    )
     _atomic_save_grayscale(Image.fromarray(sampled, mode="L"), destination)
     return destination
 
@@ -108,7 +119,7 @@ def ensure_probability_preview(
         height,
         max_dimension,
     )
-    if factor == 1:
+    if factor == 1 and source_path.is_file():
         return source_path
 
     destination = probability_preview_path(source_path, max_dimension=max_dimension)
@@ -124,7 +135,11 @@ def ensure_probability_preview(
                 return destination
         except FileNotFoundError:
             pass
-        probability_uint8 = decode_canonical_array(source_path)
+        probability_uint8 = (
+            zarr.open_array(str(source_path), mode="r")
+            if source_path.is_dir()
+            else decode_canonical_array(source_path)
+        )
         sampled = np.ascontiguousarray(probability_uint8[::factor, ::factor], dtype=np.uint8)
         _atomic_save_grayscale(Image.fromarray(sampled, mode="L"), destination)
     return destination

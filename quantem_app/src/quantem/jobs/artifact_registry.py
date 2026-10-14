@@ -146,7 +146,13 @@ def _probability_map_paths(segmentation_id: str) -> list[StoragePath]:
     ):
         raw_text = str(raw_value or "").strip()
         if raw_text:
-            paths.append(StoragePath(validate_storage_relpath(raw_text), required=False))
+            paths.append(
+                StoragePath(
+                    validate_storage_relpath(raw_text),
+                    path_type="dir" if raw_text.lower().endswith(".zarr") else "file",
+                    required=False,
+                )
+            )
     return paths
 
 

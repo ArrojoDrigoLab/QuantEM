@@ -1,14 +1,15 @@
 /**
  * Turning a job's progress fields into the three indicators the plan asks for.
  *
- * The owner asked for three things while a run is going, and they are three
- * because they answer three different questions:
+ * The running surfaces show two kinds of task-local progress:
  *
  * 1. **per-organelle tiling progress** — how far through *this* model's pass;
- * 2. **the aggregate across every organelle for this image** — how far through
- *    the whole thing the user pressed go on;
- * 3. **a separate model-download indicator** — bytes coming over the network,
+ * 2. **a separate model-download indicator** — bytes coming over the network,
  *    which is not segmentation progress and must never be mistaken for it.
+ *
+ * The API also carries a batch rollup for scheduling/reporting. It is not
+ * rendered by default because a batch may span different images; attaching
+ * its total to one running image produces a false label and a false tile count.
  *
  * Every number here comes from a structured field. Nothing is parsed out of
  * `job.message`, which is how the drawer used to get a tile count and is why

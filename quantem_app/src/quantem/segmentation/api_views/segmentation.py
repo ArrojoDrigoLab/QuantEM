@@ -670,7 +670,13 @@ class SegmentationCompleteView(APIView):
                 outcome = archive_and_discard(segmentation)
             persist_final_result_provenance(segmentation)
             segmentation.status_stage = "COMPLETED"
-            segmentation.save(update_fields=["status_stage"])
+            # A completed result must not keep describing an older failed
+            # attempt.  Both labeling screens render any non-empty
+            # ``status_error`` even when the stage is no longer FAILED, so
+            # leaving it behind makes a successfully finalized segmentation
+            # continue to look broken.
+            segmentation.status_error = ""
+            segmentation.save(update_fields=["status_stage", "status_error"])
             register_overlay_mutation_all_bundles(
                 segmentation,
                 dirty_bbox=full_image_dirty_bbox(segmentation),

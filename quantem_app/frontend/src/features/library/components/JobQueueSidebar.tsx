@@ -32,7 +32,6 @@ import { useJobNextSteps } from "@/features/library/components/jobNextSteps";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { RunProgressList } from "@/shared/progress/RunProgressList";
 import {
-  buildAggregateRows,
   buildProgressRows,
   hasStructuredProgress,
   isRunJob,
@@ -272,7 +271,6 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
   // alarm about the queue is worse than no banner. What this panel can observe
   // directly -- what is running, queued, failed and completed -- is reported
   // instead.
-  const aggregateRows = buildAggregateRows(runningJobs);
   const doneJobsCount = failedJobs.length + completedJobs.length;
   const actionError = cancelError || deleteError || retryError || clearDoneError;
   const isPendingAction = (jobId: string) => Boolean(pendingActions[jobId]);
@@ -404,18 +402,6 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
               <div className="job-queue-empty">No active tasks.</div>
             ) : (
               <>
-                {/* One line per image, above the runs it covers. Every job in a
-                    wave carries the same rollup, so this is deduplicated by
-                    wave rather than drawn inside each run's block -- otherwise
-                    "Everything on Grid2_Cell04" would appear once per
-                    organelle and read as several different totals. */}
-                {aggregateRows.length > 0 && (
-                  <RunProgressList
-                    className="job-queue-run-progress"
-                    rows={aggregateRows}
-                    data-testid="job-queue-aggregate-progress"
-                  />
-                )}
                 {runningJobs.map((job) => (
                   <div key={job.id} className="job-queue-item">
                     <div className="job-queue-item-row">
@@ -453,9 +439,12 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
                     {/* Two ways to draw a running job, and which one is right
                         depends on whether the job can count its own work.
 
-                        A run that reports tiles gets the structured rows: the
-                        wave rollup, the run's own tiles-primary line, the
-                        download. What it does *not* get is `job.message`. That
+                        A run that reports tiles gets only its own structured
+                        tiles-primary line (or its own organelle legs), plus a
+                        separate download line when applicable. It never gets a
+                        batch rollup: a batch can span many images, so such a
+                        total does not describe this running item. What it does
+                        *not* get is `job.message`. That
                         message is where "DINO: 57% (Tile 32/56)" came from --
                         an internal codename, and a percentage on the tiling
                         plan's divisor sitting beside a bar on the whole-job

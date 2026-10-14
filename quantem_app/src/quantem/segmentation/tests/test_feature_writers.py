@@ -31,6 +31,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+import zarr
 from django.test import TestCase
 from PIL import Image
 from rest_framework.test import APIClient
@@ -414,3 +415,24 @@ class ProbabilityStatisticsAreNeverFabricatedTests(TestCase):
 
         self.segment.refresh_from_db()
         self.assertNotIn(mean_key, self.segment.features)
+
+    def test_chunked_map_statistics_match_the_png_values(self):
+        relative_path = f"prob_maps/{self.segmentation.id}/fg.zarr"
+        prob_map = self._prob_map(relative_path=relative_path)
+        path = storage_path(relative_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stored = zarr.open_array(
+            str(path),
+            mode="w",
+            shape=(SIZE, SIZE),
+            chunks=(64, 64),
+            dtype=np.uint8,
+            zarr_format=2,
+        )
+        stored[:] = np.uint8(204)
+
+        compute_segment_features_task(str(self.segment.id))
+
+        self.segment.refresh_from_db()
+        for key in prob_map_feature_keys(prob_map.id):
+            self.assertAlmostEqual(self.segment.features[key], 0.8, places=6)

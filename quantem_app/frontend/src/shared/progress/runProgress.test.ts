@@ -294,7 +294,7 @@ describe("the model-download line", () => {
 });
 
 describe("the list", () => {
-  it("is the aggregate, then each organelle, then the downloads", () => {
+  it("defaults to each task's own progress, then downloads", () => {
     const rollup = batch();
     const rows = buildProgressRows([
       runJob({ id: "mito", batch_progress: rollup }),
@@ -314,10 +314,30 @@ describe("the list", () => {
       }),
     ]);
     expect(rows.map((row) => row.kind)).toEqual([
-      "aggregate",
       "organelle",
       "organelle",
       "download",
+    ]);
+  });
+
+  it("only includes a batch total when a caller explicitly opts in", () => {
+    const rollup = batch();
+    const rows = buildProgressRows(
+      [
+        runJob({ id: "mito", batch_progress: rollup }),
+        runJob({
+          id: "nucleus",
+          segmentation: { id: "seg-2", name: "Nucleus" },
+          batch_progress: rollup,
+          unit_progress: units({ done: 2, total: 6 }),
+        }),
+      ],
+      { includeAggregate: true }
+    );
+    expect(rows.map((row) => row.kind)).toEqual([
+      "aggregate",
+      "organelle",
+      "organelle",
     ]);
   });
 });

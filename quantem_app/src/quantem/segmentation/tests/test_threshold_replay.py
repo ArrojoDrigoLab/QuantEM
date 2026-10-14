@@ -33,6 +33,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+import zarr
 from django.test import TestCase
 
 from quantem.inference import resample
@@ -211,6 +212,23 @@ class ThresholdReplayTests(TestCase):
         )
 
     # --- the acceptance test ---
+
+    def test_chunked_replay_keeps_bytes_and_matches_measured_results(self):
+        self._fresh_run(0.5)
+        expected = _fingerprint(self.segmentation)
+        with (
+            patch("quantem.seg_core.db.prob_maps.PROBABILITY_MAP_ZARR_MIN_PIXELS", 1),
+            patch.object(
+                resample.NativeProbabilityMap,
+                "as_float",
+                side_effect=AssertionError("full float allocation"),
+            ),
+            patch("quantem.inference.out_of_core.should_use_out_of_core", return_value=True),
+        ):
+            self._fresh_run(0.5)
+            result, _ = replay_stored_probability_map(_segmenter(0.5), self.segmentation)
+            assert isinstance(result.prob, zarr.Array)
+        assert _fingerprint(self.segmentation) == expected
 
     def test_replay_at_t_is_identical_to_a_fresh_run_at_t(self):
         """The non-negotiable one. Five thresholds, exact equality each time."""

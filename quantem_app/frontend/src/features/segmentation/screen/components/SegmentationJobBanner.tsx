@@ -8,9 +8,11 @@
  * no screen at all, and the only tile count anywhere in the product was the
  * free-text `DINO: 57% (Tile 32/56)` in the Tasks drawer.
  *
- * Now: the aggregate across every organelle for this image, one tiles-primary
- * line per organelle, and any model download as a visibly different kind of
- * row. All of it from structured fields; none of it parsed out of a message.
+ * Now: one tiles-primary line per organelle, and any model download as a
+ * visibly different kind of row. A batch can span many images, so its total is
+ * deliberately not rendered as though it belonged to the image on this
+ * screen. All visible counts come from the task's own structured fields; none
+ * are parsed out of a message.
  *
  * The panel also outlives the run. Pressing Cancel used to empty it within one
  * poll, taking the tile count with it, so the app's answer to "how far did it
@@ -25,15 +27,12 @@ import "./SegmentationJobBanner.css";
 
 interface SegmentationJobBannerProps {
   jobs: JobQueueItem[];
-  /** The image these runs are on; names the aggregate line. */
-  imageName?: string | null;
 }
 
 export function SegmentationJobBanner({
   jobs,
-  imageName,
 }: SegmentationJobBannerProps) {
-  const rows = buildProgressRows(jobs, { imageName: imageName ?? undefined });
+  const rows = buildProgressRows(jobs, { includeAggregate: false });
   if (rows.length === 0) {
     return null;
   }

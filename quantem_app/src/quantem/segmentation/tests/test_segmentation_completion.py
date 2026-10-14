@@ -128,6 +128,19 @@ class CompletionRequiresAcknowledgementTests(_CompletionTestBase):
         self.assertEqual(self.segmentation.status_stage, "COMPLETED")
         self.assertEqual(self._live_ids(), {candidate.id for candidate in candidates})
 
+    def test_completing_clears_the_error_from_an_older_failed_attempt(self):
+        self.segmentation.status_stage = "FAILED"
+        self.segmentation.status_error = "The worker exited without recording a result."
+        self.segmentation.save(update_fields=["status_stage", "status_error"])
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 200)
+        self.segmentation.refresh_from_db()
+        self.assertEqual(self.segmentation.status_stage, "COMPLETED")
+        self.assertEqual(self.segmentation.status_error, "")
+        self.assertEqual(response.data["status_error"], "")
+
     def test_discard_without_a_count_is_refused_and_deletes_nothing(self):
         self._candidates(32)
 

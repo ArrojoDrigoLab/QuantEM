@@ -407,8 +407,7 @@ export function buildAggregateRows(
 }
 
 /**
- * The whole list, in the plan's order: the aggregate first, then one line per
- * organelle, then the downloads.
+ * Task-local organelle rows followed by downloads, with optional batch totals.
  */
 export function buildProgressRows(
   jobs: JobQueueItem[],
@@ -420,7 +419,10 @@ export function buildProgressRows(
 ): ProgressRow[] {
   const rows: ProgressRow[] = [];
 
-  if (options.includeAggregate !== false) {
+  // Batch totals are opt-in. A batch is a scheduling wave and may span many
+  // images, so treating its sum as the progress of whichever image happens to
+  // be first is incorrect. Running surfaces render each task's own rows.
+  if (options.includeAggregate === true) {
     const seen = new Set<string>();
     for (const job of jobs) {
       const batch = job.batch_progress;

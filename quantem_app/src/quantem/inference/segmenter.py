@@ -38,8 +38,10 @@ measured effect of this ordering and for the interpolator it requires.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from skimage.measure import regionprops
@@ -48,7 +50,7 @@ from quantem.seg_core.base_segmenter import BaseSegmenter
 from quantem.seg_core.extraction import build_segment_from_region
 from quantem.seg_core.types import ExtractedSegment
 
-from . import engine, postprocess, resample, tiling
+from . import engine, out_of_core, postprocess, resample, tiling
 from .specs import (
     DEFAULT_FAMILY,
     ORGANELLES,
@@ -200,11 +202,12 @@ class DinoOrganelleSegmenter(BaseSegmenter):
 
     @property
     def prob_map_prefix(self) -> str:
-        # QuantEM historically stored ``<organelle>_dino_prob.png``.  Preserve
-        # that path so existing QuantEM runs remain replayable, while giving
-        # OmniEM its own namespace.  Both families expose the same internal DL
-        # output name (``DINO``), so without a family component one full-image
-        # run overwrites the other model's authoritative probability bytes.
+        # QuantEM historically named the authority
+        # ``<organelle>_dino_prob.png`` (large maps now use the same stem with
+        # ``.zarr``). Preserve that namespace so existing QuantEM runs remain
+        # replayable, while giving OmniEM its own. Both families expose the same
+        # internal DL output name (``DINO``), so without a family component one
+        # full-image run overwrites the other model's authoritative bytes.
         if self._family == DEFAULT_FAMILY:
             return self._organelle.key
         return f"{self._organelle.key}_{self._family}"
@@ -457,10 +460,23 @@ class DinoOrganelleSegmenter(BaseSegmenter):
             raise ValueError(f"prob map shape {native.shape} != image {tuple(image.shape[:2])}")
         self.adopt_native_probability_map(native)
         report(DL_MODEL_NAME, 1.0)
-        return {DL_MODEL_NAME: native.as_float()}
+        probability = (
+            native.data if out_of_core.should_use_out_of_core(native.data) else native.as_float()
+        )
+        return {DL_MODEL_NAME: probability}
 
     def combine_prob_maps(self, prob_maps: dict[str, np.ndarray]) -> np.ndarray:
-        return np.asarray(prob_maps[DL_MODEL_NAME], dtype=np.float32)
+        probability = prob_maps[DL_MODEL_NAME]
+        # A gigapixel native map stays in its canonical uint8 representation.
+        # Thresholding already reads these bytes, and object-local confidence
+        # dequantises the same values later. Expanding the complete field to
+        # float32 here would add three bytes per pixel without changing one
+        # decision or reported mean.
+        if np.dtype(getattr(probability, "dtype", np.dtype("O"))) == np.dtype(
+            np.uint8
+        ) and out_of_core.should_use_out_of_core(probability):
+            return probability
+        return np.asarray(probability, dtype=np.float32)
 
     # --- The stored native-coordinate map ---
 
@@ -507,6 +523,37 @@ class DinoOrganelleSegmenter(BaseSegmenter):
             return native.foreground(self._fg_threshold)
         return resample.binarize_quantized(resample.quantize_probability(prob), self._fg_threshold)
 
+    @contextmanager
+    def _instance_labels(self, prob: Any, *, min_area: int) -> Iterator[np.ndarray]:
+        """Yield labels using disk-backed state for large or chunked maps."""
+        native = self._native_prob
+        prob_shape = tuple(int(value) for value in getattr(prob, "shape", ())[:2])
+        if (
+            native is not None
+            and native.shape == prob_shape
+            and out_of_core.should_use_out_of_core(native.data)
+        ):
+            # Lazy import keeps the inference package usable without Django
+            # settings. The worker path has configured the one application data
+            # root by the time it can reach this branch.
+            from quantem.core.config import TMP_DIR  # noqa: PLC0415
+
+            with out_of_core.postprocess_probability_source(
+                native.data,
+                threshold=self._fg_threshold,
+                close_radius=self._organelle.close_radius,
+                min_area=min_area,
+                workspace_root=TMP_DIR / "postprocess",
+            ) as labels:
+                yield labels
+            return
+
+        yield postprocess.postprocess_mask(
+            self._foreground_mask(prob),
+            close_radius=self._organelle.close_radius,
+            min_area=min_area,
+        )
+
     def extract_instances(
         self,
         prob: np.ndarray,
@@ -532,31 +579,27 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         # closing radius, the hole fill, the labeling and the area floor -- all
         # of which are defined in native pixels and none of which now sees the
         # model's grid at all.
-        labels = postprocess.postprocess_mask(
-            self._foreground_mask(prob),
-            close_radius=self._organelle.close_radius,
-            min_area=area_floor,
-        )
         intensity = image if image is not None and image.ndim == 2 else None
 
         segments: list[ExtractedSegment] = []
-        regions = regionprops(labels, intensity_image=intensity)
-        total = max(len(regions), 1)
-        for idx, region in enumerate(regions):
-            segment = build_segment_from_region(
-                region,
-                labels,
-                prob_maps,
-                prob,
-                self.generated_flag,
-                float(dx),
-                float(dy),
-                image,
-            )
-            if segment is not None:
-                segments.append(segment)
-            if idx % 64 == 0:
-                report(idx / total)
+        with self._instance_labels(prob, min_area=area_floor) as labels:
+            regions = regionprops(labels, intensity_image=intensity)
+            total = max(len(regions), 1)
+            for idx, region in enumerate(regions):
+                segment = build_segment_from_region(
+                    region,
+                    labels,
+                    prob_maps,
+                    prob,
+                    self.generated_flag,
+                    float(dx),
+                    float(dy),
+                    image,
+                )
+                if segment is not None:
+                    segments.append(segment)
+                if idx % 64 == 0:
+                    report(idx / total)
         report(1.0)
         return segments
 
@@ -581,11 +624,6 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         _report_stage(STAGE_EXTRACTING, organelle=self.ORGANELLE)
         area_floor = int(min_area) if min_area is not None else self._min_area
         dx, dy = coordinate_offset or (0.0, 0.0)
-        labels = postprocess.postprocess_mask(
-            self._foreground_mask(prob),
-            close_radius=self._organelle.close_radius,
-            min_area=area_floor,
-        )
         # ``prob`` on this path *is* the one model's own map -- the replay adopts
         # a single stored map and thresholds it directly, and refuses outright
         # for a segmenter with several outputs -- so naming it gives the same
@@ -596,25 +634,26 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         # ``prob`` that is nobody's map, so it names none.
         model_names = list(self.get_dl_model_names())
         prob_maps = {model_names[0]: prob} if len(model_names) == 1 else {}
-        regions = regionprops(labels)
-        total = max(len(regions), 1)
         segments: list[ExtractedSegment] = []
-        for idx, region in enumerate(regions):
-            segment = build_segment_from_region(
-                region,
-                labels,
-                prob_maps,
-                prob,
-                self.generated_flag,
-                float(dx),
-                float(dy),
-                None,
-                measure_features=False,
-            )
-            if segment is not None:
-                segments.append(segment)
-            if idx % 64 == 0:
-                report(idx / total)
+        with self._instance_labels(prob, min_area=area_floor) as labels:
+            regions = regionprops(labels)
+            total = max(len(regions), 1)
+            for idx, region in enumerate(regions):
+                segment = build_segment_from_region(
+                    region,
+                    labels,
+                    prob_maps,
+                    prob,
+                    self.generated_flag,
+                    float(dx),
+                    float(dy),
+                    None,
+                    measure_features=False,
+                )
+                if segment is not None:
+                    segments.append(segment)
+                if idx % 64 == 0:
+                    report(idx / total)
         report(1.0)
         return segments
 

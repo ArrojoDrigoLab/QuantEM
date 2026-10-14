@@ -121,6 +121,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Any
 
 import cv2
 import numpy as np
@@ -477,7 +478,7 @@ class NativeProbabilityMap:
     nearest-neighbour staircase; see the module docstring).
     """
 
-    data: np.ndarray
+    data: Any
     interpolation: str = NO_RESAMPLE
     back_factor: float = 1.0
     quantization: str = QUANTIZATION_ID
@@ -492,21 +493,27 @@ class NativeProbabilityMap:
         )
 
     @classmethod
-    def from_stored(cls, stored: np.ndarray, **provenance: object) -> NativeProbabilityMap:
+    def from_stored(cls, stored: Any, **provenance: object) -> NativeProbabilityMap:
         """Re-adopt bytes that were previously stored, for replay.
 
         No requantisation: the bytes are taken as they are, which is the whole
         point -- re-deriving them from a float would be a second, different
         decision.
         """
-        array = np.asarray(stored)
-        if array.dtype != np.uint8:
+        shape = getattr(stored, "shape", ())
+        dtype = np.dtype(getattr(stored, "dtype", np.dtype("O")))
+        if len(shape) != 2:
+            raise ValueError(f"a stored probability map must be 2D; got {shape}")
+        if dtype != np.dtype(np.uint8):
             raise TypeError(
-                f"a stored probability map is uint8; got {array.dtype}. Quantise "
+                f"a stored probability map is uint8; got {dtype}. Quantise "
                 "with quantize_probability() rather than casting."
             )
         return cls(
-            data=array,
+            # Preserve sliceable disk-backed arrays. Coercing a Zarr array here
+            # would decode the complete map before the out-of-core path could
+            # see it.
+            data=stored,
             interpolation=str(provenance.get("interpolation") or NO_RESAMPLE),
             back_factor=float(provenance.get("back_factor") or 1.0),
             quantization=str(provenance.get("quantization") or QUANTIZATION_ID),

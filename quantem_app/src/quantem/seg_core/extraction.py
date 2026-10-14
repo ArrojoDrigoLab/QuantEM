@@ -233,7 +233,7 @@ def build_segment_from_region(
     else:
         cy = int(np.clip(round(centroid_y), 0, prob.shape[0] - 1))
         cx = int(np.clip(round(centroid_x), 0, prob.shape[1] - 1))
-        confidence_score = float(_as_probability(np.asarray(prob)[cy : cy + 1, cx : cx + 1])[0, 0])
+        confidence_score = float(_as_probability(np.asarray(prob[cy : cy + 1, cx : cx + 1]))[0, 0])
 
     # Geometry-first Preview deliberately stops here after the outline and the
     # probability above. The expensive intensity and regionprops measurements --
@@ -319,7 +319,7 @@ def build_segment_from_region(
 
 
 def _masked_values(
-    array: np.ndarray | None,
+    array,
     region,
     minr: int,
     minc: int,
@@ -333,10 +333,14 @@ def _masked_values(
     """
     if array is None:
         return None
-    array = np.asarray(array)
-    if array.ndim != 2 or array.shape[0] < maxr or array.shape[1] < maxc:
+    shape = getattr(array, "shape", ())
+    if len(shape) != 2 or int(shape[0]) < maxr or int(shape[1]) < maxc:
         return None
-    values = array[minr:maxr, minc:maxc][region.image]
+    # Convert the bbox crop, never the source. A Zarr-backed native map can be
+    # tens of gigapixels; ``np.asarray(array)`` here would silently undo the
+    # bounded-memory extraction path for every object.
+    crop = np.asarray(array[minr:maxr, minc:maxc])
+    values = crop[region.image]
     return values if values.size else None
 
 

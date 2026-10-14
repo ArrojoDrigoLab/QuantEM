@@ -48,6 +48,13 @@ __all__ = [
 #: called ``skimage.measure.label(mask)`` bare, so this preserves its behaviour.
 _CONNECTIVITY = None
 
+#: Maximum temporary selector used while removing undersized labels.  The
+#: previous vectorized expression materialized one bool per image pixel; on a
+#: 10.8-gigapixel image that was another 10.1 GiB allocation after the label
+#: image had already been copied.  Row blocks keep the same lookup and write
+#: semantics while bounding that scratch space.
+_FILTER_SELECTOR_TARGET_BYTES = 64 * 1024 * 1024
+
 
 def binarize(prob: np.ndarray, threshold: float = DEFAULT_THRESHOLD) -> np.ndarray:
     """Foreground mask from a probability map (``>= threshold``)."""
@@ -70,7 +77,12 @@ def label_instances(mask: np.ndarray) -> np.ndarray:
     return sk_label(mask, connectivity=_CONNECTIVITY)
 
 
-def filter_min_area(labels: np.ndarray, min_area: int) -> np.ndarray:
+def filter_min_area(
+    labels: np.ndarray,
+    min_area: int,
+    *,
+    in_place: bool = False,
+) -> np.ndarray:
     """Zero out components strictly smaller than ``min_area`` pixels.
 
     Operates on an already-labeled image, so the label ids of the survivors are
@@ -89,6 +101,14 @@ def filter_min_area(labels: np.ndarray, min_area: int) -> np.ndarray:
     application-layer filter QuantEM adds. So the rule is ours to state, and it
     is the one the parameter's name implies: an object of exactly ``min_area``
     pixels meets the minimum and is kept. ``area < min_area`` is removed.
+
+    Args:
+        labels: Integer connected-component image.
+        min_area: Components below this many pixels are removed.
+        in_place: Reuse ``labels`` instead of copying it.  The post-processing
+            pipeline owns its newly-created label image and enables this for
+            large images; the public default preserves the historical
+            non-mutating behavior.
     """
     if min_area <= 1:
         return labels
@@ -98,8 +118,16 @@ def filter_min_area(labels: np.ndarray, min_area: int) -> np.ndarray:
         return labels
     drop = np.zeros(counts.size, dtype=bool)
     drop[too_small] = True
-    out = labels.copy()
-    out[drop[labels]] = 0
+    out = labels if in_place else labels.copy()
+
+    # ``drop[out]`` is the desired selector, but evaluating it for the whole
+    # image recreates the image-sized bool allocation this path exists to
+    # avoid.  A row block is a view of ``out``; only its selector is temporary.
+    pixels_per_row = max(int(np.prod(out.shape[1:], dtype=np.int64)), 1)
+    rows_per_block = max(1, _FILTER_SELECTOR_TARGET_BYTES // pixels_per_row)
+    for start in range(0, int(out.shape[0]), rows_per_block):
+        block = out[start : start + rows_per_block]
+        block[drop[block]] = 0
     return out
 
 
@@ -115,8 +143,16 @@ def postprocess_mask(
         Int label image; 0 is background.
     """
     cleaned = close_and_fill(mask, close_radius)
+    # ``_foreground_mask`` normally hands this function a temporary full-image
+    # bool array.  Once closing/filling produced a distinct result, retaining
+    # that original through labeling and filtering costs another byte per
+    # image pixel for no purpose.
+    if cleaned is not mask:
+        mask = None
     labels = label_instances(cleaned)
-    return filter_min_area(labels, min_area)
+    cleaned = None
+    mask = None
+    return filter_min_area(labels, min_area, in_place=True)
 
 
 def postprocess_probability(

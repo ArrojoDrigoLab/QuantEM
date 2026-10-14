@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 from skimage.morphology import remove_small_objects
 
+from quantem.inference import postprocess
 from quantem.inference.postprocess import filter_min_area, postprocess_probability
 
 
@@ -60,6 +61,27 @@ def test_trivial_thresholds_are_a_no_op(min_area):
 def test_empty_image():
     labels = np.zeros((8, 8), dtype=np.int32)
     assert filter_min_area(labels, 10).sum() == 0
+
+
+def test_default_filter_does_not_mutate_its_input():
+    labels = _labels_with_sizes(2, 40, 3, 50)
+    before = labels.copy()
+
+    out = filter_min_area(labels, 10)
+
+    assert np.array_equal(labels, before)
+    assert out is not labels
+
+
+def test_in_place_filter_reuses_labels_across_bounded_row_blocks(monkeypatch):
+    labels = _labels_with_sizes(2, 40, 3, 50)
+    expected = filter_min_area(labels, 10)
+    monkeypatch.setattr(postprocess, "_FILTER_SELECTOR_TARGET_BYTES", labels.shape[1])
+
+    out = filter_min_area(labels, 10, in_place=True)
+
+    assert out is labels
+    assert np.array_equal(out, expected)
 
 
 def test_differs_from_skimage_026_only_at_the_boundary():

@@ -230,16 +230,20 @@ def persist_run_probability_maps(
         data = prob_maps.get(model_name)
         if data is None:
             continue
-        array = np.asarray(data)
-        if array.ndim != 2 or array.size == 0:
+        array = data
+        shape = getattr(array, "shape", ())
+        if len(shape) != 2:
+            continue
+        array_size = int(shape[0]) * int(shape[1])
+        if array_size == 0:
             continue
         if authority is not None and authority.shape == array.shape:
             array = authority.data
 
-        if roi is None and ceiling_px and array.size > ceiling_px:
+        if roi is None and ceiling_px and array_size > ceiling_px:
             message = (
                 f"QuantEM is configured not to keep a full-image threshold map: this image is "
-                f"{array.size / 1e6:.0f} MP, above the {max_megapixels():.0f} MP "
+                f"{array_size / 1e6:.0f} MP, above the {max_megapixels():.0f} MP "
                 f"ceiling ({MAX_MEGAPIXELS_ENV}). Set that value to 0 to retain "
                 "the local uint8 map, or run the model over an ROI."
             )
@@ -247,7 +251,7 @@ def persist_run_probability_maps(
                 "Skipping probability map for segmentation %s (%s): %d px > %d px",
                 segmentation.id,
                 model_name,
-                array.size,
+                array_size,
                 int(ceiling_px),
             )
             report(message)
@@ -304,7 +308,7 @@ def persist_run_probability_maps(
             model_name,
             segmentation.id,
             path,
-            array.size,
+            array_size,
         )
 
     if written:
@@ -549,8 +553,8 @@ def load_stored_native_map(
     the sentence on screen say which of the two happened, and stops a legacy map
     being quietly re-decided under conventions it was never written under.
 
-    **Why the bytes are loaded directly.** The stored PNG is already the uint8
-    authority thresholded by inference. Loading it through
+    **Why the bytes are loaded directly.** The stored PNG or chunked Zarr is
+    already the uint8 authority thresholded by inference. Loading it through
     :func:`load_prob_map_uint8_from_path` avoids an image-sized float allocation
     followed by an exactly reversible requantisation. The helper remains the
     single probability-map decode chokepoint; this function does not open image

@@ -30,7 +30,9 @@ class ExtractedSegment:
 class InferenceResult:
     """Result of organelle inference containing named probability maps."""
 
-    prob_maps: dict[str, np.ndarray]  # Named DL outputs: {"DINO": arr, ...}
-    prob: np.ndarray  # Foreground probability map instances are extracted from [0, 1]
+    # Values are normally NumPy arrays. Replaying a very large stored result
+    # supplies a sliceable uint8 Zarr array so extraction never materializes it.
+    prob_maps: dict[str, Any]  # Named DL outputs: {"DINO": arr, ...}
+    prob: Any  # Foreground probability map or stored uint8 threshold authority
     extracted_segments: list[ExtractedSegment] | None = None
     artifacts: dict[str, Any] | None = None

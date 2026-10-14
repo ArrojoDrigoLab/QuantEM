@@ -68,10 +68,9 @@ describe("the run panel", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("draws the owner's three kinds of row at once", () => {
+  it("draws each task and download without a batch-total row", () => {
     render(
       <SegmentationJobBanner
-        imageName="Grid2_Cell04"
         jobs={[
           runJob(),
           runJob({
@@ -105,10 +104,6 @@ describe("the run panel", () => {
       />
     );
 
-    const aggregate = screen.getByTestId("run-progress-row-aggregate");
-    expect(within(aggregate).getByText(/Everything on Grid2_Cell04/)).toBeInTheDocument();
-    expect(within(aggregate).getByText(/533 of 946 tiles/)).toBeInTheDocument();
-
     const organelles = screen.getAllByTestId("run-progress-row-organelle");
     expect(organelles).toHaveLength(2);
     expect(within(organelles[0]).getByText(/531 of 858 tiles/)).toBeInTheDocument();
@@ -119,6 +114,9 @@ describe("the run panel", () => {
     expect(
       within(download).getByText("QuantEM — Nucleus — 118 of 365 MB")
     ).toBeInTheDocument();
+    expect(screen.queryByTestId("run-progress-row-aggregate")).toBeNull();
+    expect(screen.queryByText(/Everything on/)).toBeNull();
+    expect(screen.queryByText(/533 of 946 tiles/)).toBeNull();
   });
 
   it("puts no internal model name and no free-text tile ratio on screen", () => {
@@ -148,7 +146,6 @@ describe("the run panel after a run stops", () => {
   it("keeps the count a cancelled run reached", () => {
     render(
       <SegmentationJobBanner
-        imageName="Grid2_Cell04"
         jobs={[
           runJob({
             status: "CANCELLED",

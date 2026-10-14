@@ -9,10 +9,13 @@ rows the viewer builds.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 from django.test import TestCase
 from shapely.geometry import Polygon
 
+from quantem.seg_core.db.prob_maps import save_probability_map
 from quantem.segmentation.models import CompletedROI, ImageSegmentation, SegmentObject
 from quantem.segmentation.services.adapt import (
     IGNORE,
@@ -208,6 +211,30 @@ class CropExtractionTests(TestCase):
         # The map's high-probability block is (30..70, 30..70) in image space.
         assert crop.prob[30, 30] > 0.85  # (50, 50)
         assert crop.prob[100, 100] < 0.05  # (120, 120)
+
+    def test_chunked_probability_window_matches_the_png_contract(self):
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
+        )
+        self._segment(_square(30, 30, 70, 70))
+        probability = np.zeros((SIZE, SIZE), dtype=np.float32)
+        probability[30:70, 30:70] = 0.9
+        with patch(
+            "quantem.seg_core.db.prob_maps.PROBABILITY_MAP_ZARR_MIN_PIXELS",
+            1,
+        ):
+            save_probability_map(
+                self.segmentation,
+                "DINO",
+                probability,
+                "mito",
+                "mito_generated",
+            )
+
+        (crop,) = require_crops(self.segmentation, load_prob=True).crops
+        assert crop.prob is not None and crop.prob.shape == (120, 120)
+        assert crop.prob[30, 30] > 0.85
+        assert crop.prob[100, 100] < 0.05
 
     def test_a_probability_map_of_unknown_extent_is_not_used(self):
         """An ROI-scoped map is stored at the ROI's size with no offset recorded.

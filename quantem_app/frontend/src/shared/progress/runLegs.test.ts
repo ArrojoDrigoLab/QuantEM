@@ -1,11 +1,9 @@
 /**
  * One job, several organelles: the row model (package P4).
  *
- * The progress plumbing already drew three kinds of line -- per-organelle,
- * aggregate, download -- and it built the per-organelle ones from one job each.
- * The moment a run over four organelles became one job, that collapsed four
- * lines into one and made the aggregate row disappear (it only appeared with
- * more than one *job* in the wave). These pin the repair.
+ * A run over several organelles is one job row but still needs one task-local
+ * line per organelle. Batch totals are deliberately not part of the default
+ * list because a scheduling batch can span several images.
  */
 
 import { describe, expect, it } from "vitest";
@@ -96,14 +94,14 @@ describe("one job, several organelles", () => {
     ]);
   });
 
-  it("shows the aggregate even though the wave is a single job row", () => {
+  it("does not attach a batch total to a multi-organelle running item", () => {
     const job = imageRunJob([
       leg({ segmentation_id: "seg-mito", name: "Mitochondria" }),
       leg(),
     ]);
     const rows = buildProgressRows([job]);
-    expect(rows[0].kind).toBe("aggregate");
-    expect(rows[0].name).toBe("Everything on Grid2_Cell04");
+    expect(rows.map((row) => row.kind)).toEqual(["organelle", "organelle"]);
+    expect(rows.some((row) => row.name.startsWith("Everything"))).toBe(false);
   });
 
   it("does not show an aggregate for a run of one organelle", () => {
@@ -112,16 +110,18 @@ describe("one job, several organelles", () => {
     expect(rows.some((row) => row.kind === "aggregate")).toBe(false);
   });
 
-  it("counts unfinished organelles, not unfinished job rows", () => {
+  it("reports each unfinished organelle on its own row", () => {
     const job = imageRunJob([
       leg({ segmentation_id: "a", name: "Mitochondria", status: "SUCCESS" }),
       leg({ segmentation_id: "b", name: "Nucleus", status: "FAILED" }),
       leg({ segmentation_id: "c", name: "Lipid Droplets", status: "CANCELLED" }),
     ]);
     const rows = buildProgressRows([job]);
-    // The rollup says runs_failed 0 -- the job itself is still running -- and
-    // the honest clause is about organelles.
-    expect(rows[0].detail).toContain("2 of 3 did not finish");
+    expect(rows.map((row) => row.detail)).toEqual([
+      "19 of 88 tiles · finished",
+      "stopped at 19 of 88 tiles · this one did not finish",
+      "stopped at 19 of 88 tiles · you stopped this one",
+    ]);
   });
 
   it("leaves a single-organelle job exactly as it was", () => {

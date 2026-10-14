@@ -135,5 +135,8 @@ def resolve_probability_map_path(prob_map: ProbabilityMap) -> Path:
     """
     resolved = storage_path(prob_map.file_path)
     if not resolved.exists():
-        ensure_cached_storage_path(prob_map.file_path, path_type="file")
+        ensure_cached_storage_path(
+            prob_map.file_path,
+            path_type="dir" if str(prob_map.file_path).lower().endswith(".zarr") else "file",
+        )
     return resolved

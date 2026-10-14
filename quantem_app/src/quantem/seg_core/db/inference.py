@@ -822,6 +822,7 @@ def replay_stored_probability_map(
     # Lazy: quantem.segmentation.prob_maps.persistence imports this package's
     # prob_maps module, and importing it at module scope closes that loop
     # through quantem.seg_core.db.__init__.
+    from quantem.inference.out_of_core import should_use_out_of_core
     from quantem.segmentation.prob_maps.persistence import (  # noqa: PLC0415
         NO_STORED_MAP_MESSAGE,
         load_stored_native_map,
@@ -910,9 +911,8 @@ def replay_stored_probability_map(
         setter(float(threshold))
 
     adopt(stored.native)
-    if geometry_only:
-        # The native bytes are already the threshold authority. Avoid two
-        # image-sized float32 allocations solely to recover geometry.
+    if geometry_only or should_use_out_of_core(stored.native.data):
+        # Extraction dequantizes only the pixels belonging to each object.
         prob_maps = {model_name: stored.native.data}
         prob = stored.native.data
     else:

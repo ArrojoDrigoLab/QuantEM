@@ -4,7 +4,10 @@ Probability map feature helpers for segment percentiles.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import zarr
 from PIL import Image
 from shapely.geometry import Polygon
 
@@ -17,18 +20,32 @@ from quantem.segmentation.models import ProbabilityMap
 from quantem.segmentation.prob_maps.io import resolve_probability_map_path
 
 
+class _FloatProbabilityView:
+    """Sliceable float32 view over chunked uint8 probability levels."""
+
+    def __init__(self, source) -> None:
+        self._source = source
+        self.shape = tuple(int(value) for value in source.shape)
+
+    def __getitem__(self, key):
+        return np.asarray(self._source[key], dtype=np.float32) / np.float32(255.0)
+
+
 def load_probability_map_float(
     prob_map: ProbabilityMap,
-) -> tuple[np.ndarray, tuple[int, int]]:
+) -> tuple[Any, tuple[int, int]]:
     prob_file_path = resolve_probability_map_path(prob_map)
     if not prob_file_path.exists():
         raise FileNotFoundError(f"Probability map file not found: {prob_file_path}")
 
-    pil_image = Image.open(prob_file_path)
-    if pil_image.mode != "L":
-        pil_image = pil_image.convert("L")
-    prob_data_uint8 = np.array(pil_image, dtype=np.uint8)
-    if prob_data_uint8.ndim != 2:
+    if prob_file_path.is_dir():
+        prob_data_uint8 = zarr.open_array(str(prob_file_path), mode="r")
+    else:
+        pil_image = Image.open(prob_file_path)
+        if pil_image.mode != "L":
+            pil_image = pil_image.convert("L")
+        prob_data_uint8 = np.array(pil_image, dtype=np.uint8)
+    if len(prob_data_uint8.shape) != 2:
         raise ValueError(f"Expected 2D probability map, got shape {prob_data_uint8.shape}")
 
     offset = (0, 0)
@@ -45,7 +62,11 @@ def load_probability_map_float(
             )
         offset = (roi_x, roi_y)
 
-    prob_data = prob_data_uint8.astype(np.float32) / 255.0
+    prob_data = (
+        _FloatProbabilityView(prob_data_uint8)
+        if prob_file_path.is_dir()
+        else prob_data_uint8.astype(np.float32) / 255.0
+    )
     return prob_data, offset
 
 
@@ -108,7 +129,7 @@ def rasterize_polygon_in_bbox(
 
 
 def compute_prob_map_percentiles_from_data(
-    prob_data: np.ndarray,
+    prob_data,
     offset: tuple[int, int],
     polygon: Polygon,
     bbox: Polygon,
@@ -128,7 +149,13 @@ def compute_prob_map_percentiles_from_data(
     if len(rr) == 0:
         return {}
 
-    values = prob_data[rr, cc]
+    # Read one object-local rectangle. Zarr does not implement NumPy's paired
+    # advanced indexing, and asking it for the complete array would defeat the
+    # chunked store; the local crop is identical for both backends.
+    y0, y1 = int(rr.min()), int(rr.max()) + 1
+    x0, x1 = int(cc.min()), int(cc.max()) + 1
+    crop = np.asarray(prob_data[y0:y1, x0:x1])
+    values = crop[rr - y0, cc - x0]
     if values.size == 0:
         return {}
 
