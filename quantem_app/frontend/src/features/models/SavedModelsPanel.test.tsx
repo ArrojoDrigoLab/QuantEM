@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { SavedModelsPanel } from "./SavedModelsPanel";
@@ -62,8 +62,8 @@ it("keeps a model visible when deletion is blocked by an active task", async () 
     return [model];
   });
   render(<SavedModelsPanel />);
-  await user.click(await screen.findByRole("button", { name: "Delete weights…" }));
-  await user.click(screen.getByRole("button", { name: "Delete weights" }));
+  await user.click(await screen.findByRole("button", { name: "Delete model" }));
+  await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete model" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("in use by a task");
   expect(screen.getByText(model.name)).toBeInTheDocument();
 });

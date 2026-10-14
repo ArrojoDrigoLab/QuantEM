@@ -57,7 +57,7 @@ export function SavedModelsPanel({ experimentId }: { experimentId?: string }) {
         <Button size="sm" disabled={busy || model.status !== "SUCCESS" || Boolean(model.archived_at)} onClick={() => { setApplySaved(true); setContinuing(model); }}>Apply to images</Button>
         <Button size="sm" disabled={busy} onClick={() => setRename({ id: model.id, name: model.name })}>Rename</Button>
         <Button size="sm" disabled={busy} onClick={() => void update(model, { archived: !model.archived_at })}>{model.archived_at ? "Restore to list" : "Archive"}</Button>
-        <Button size="sm" disabled={busy} onClick={() => setDeleting(model)}>Delete weights…</Button>
+        <Button size="sm" disabled={busy} onClick={() => setDeleting(model)}>Delete model</Button>
       </div>
       <p className="my-2 text-xs text-slate-600">Created {new Date(model.created_at).toLocaleString()} · {model.asset_ids?.length ?? 0} training images
         {model.parent_id ? ` · Continued from ${models.find((row) => row.id === model.parent_id)?.name ?? model.parent_id}` : " · Pretrained starting point"}</p>
@@ -68,9 +68,9 @@ export function SavedModelsPanel({ experimentId }: { experimentId?: string }) {
         <Button disabled={busy || !rename.name.trim()} type="submit">Save name</Button><Button onClick={() => setRename(null)}>Cancel</Button>
       </form>}
     </article>)}</div>
-    <ConfirmDialog isOpen={Boolean(deleting)} title="Delete saved model weights?"
+    <ConfirmDialog isOpen={Boolean(deleting)} title="Delete model?"
       message={`Delete weights for “${deleting?.name}”? This cannot be undone. Existing segmentations and measurement records stay available, but this model can no longer run. Models used by active jobs or saved descendants cannot be deleted.`}
-      confirmText="Delete weights" cancelText="Cancel" onCancel={() => setDeleting(null)} onConfirm={() => {
+      confirmText="Delete model" cancelText="Cancel" onCancel={() => setDeleting(null)} onConfirm={() => {
         const model = deleting; setDeleting(null); if (!model) return; setBusy(true);
         void apiRequest(`/api/finetune/models/${model.id}/`, { method: "DELETE" }).then(load)
           .catch((cause) => setError(extractApiErrorMessage(cause, "The model could not be deleted."))).finally(() => setBusy(false));
