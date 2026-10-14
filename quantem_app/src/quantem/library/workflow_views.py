@@ -9,11 +9,11 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from quantem.analysis.identity import run_is_current
-from quantem.analysis.models import AnalysisRun
+from quantem.analysis.history import experiment_history
 from quantem.assets.models import Asset
 from quantem.library.models import Experiment, ImageWorkflowMetadata
 from quantem.library.sample_identity import sample_identity
+from quantem.library.segmentation_coverage import coverage, with_coverage
 from quantem.segmentation.models import ImageSegmentation
 
 
@@ -55,9 +55,9 @@ class ExperimentWorkspaceView(APIView):
                 {"id": str(asset.id), "name": asset.display_name}
                 for asset in assets.select_related(None).prefetch_related(None).only("id", "display_name", "experiment_id")
             ]})
-        segmentations = (
+        segmentations = with_coverage(
             ImageSegmentation.objects.filter(asset__in=assets)
-            .select_related("segmentation_type")
+            .select_related("segmentation_type", "asset")
             .annotate(
                 confirmed_count=Count("segments", filter=Q(
                     segments__label_state="CONFIRMED", segments__superseded_at__isnull=True
@@ -65,35 +65,24 @@ class ExperimentWorkspaceView(APIView):
             )
         )
         by_asset = {}
-        latest = {}
-        for run in (
-            AnalysisRun.objects.filter(segmentation__in=segmentations)
-            .select_related("segmentation__asset")
-            .order_by("-created_at", "-id")
-        ):
-            latest.setdefault(run.segmentation_id, run)
+        analysis_counts = {}
+        for entry in experiment_history(experiment):
+            for asset_id in entry["completed_image_ids"]:
+                analysis_counts[asset_id] = analysis_counts.get(asset_id, 0) + 1
         for seg in segmentations:
-            run = latest.get(seg.id)
             by_asset.setdefault(str(seg.asset_id), []).append(
                 {
                     "id": str(seg.id),
                     "type_id": str(seg.segmentation_type_id),
                     "type": seg.segmentation_type.internal_name,
                     "name": seg.display_name or seg.segmentation_type.long_name,
+                    "short_name": seg.segmentation_type.short_name,
+                    **coverage(seg),
                     "measurement_mode": seg.segmentation_type.measurement_mode,
                     "stage": seg.status_stage,
                     "confirmed_count": seg.confirmed_count,
                     "review_complete": seg.status_stage == "COMPLETED",
                     "provenance": seg.final_result_provenance,
-                    "latest_analysis": {
-                        "id": str(run.id),
-                        "status": run.status,
-                        "current": run_is_current(run)
-                        if run.status == "SUCCESS" and run.input_fingerprint
-                        else None,
-                    }
-                    if run
-                    else None,
                 }
             )
         rows = []
@@ -105,6 +94,7 @@ class ExperimentWorkspaceView(APIView):
                     "name": asset.display_name,
                     "pixel_size_nm": asset.pixel_size_nm,
                     "stage": asset.preprocess_stage,
+                    "analysis_count": analysis_counts.get(str(asset.id), 0),
                     "datasets": [{"id": str(d.id), "name": d.name} for d in asset.datasets.all()],
                     **sample_identity(
                         asset.display_name or asset.original_filename, asset.id,

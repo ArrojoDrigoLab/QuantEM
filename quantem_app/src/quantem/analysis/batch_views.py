@@ -42,6 +42,7 @@ def item_body(item):
         "run_id": str(run.id) if run else None,
         "job_id": str(item.job_id) if item.job_id else None,
         "reused": item.reused,
+        "params": item.params,
         "current": run_is_current(run) if run and status == "SUCCESS" else None,
         "results": run.results if run and status == "SUCCESS" else None,
     }

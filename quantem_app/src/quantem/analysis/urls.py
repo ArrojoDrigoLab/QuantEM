@@ -15,9 +15,11 @@ from quantem.segmentation.api_views.analysis import (
 )
 
 from .batch_views import BatchDetailView, BatchExportView, ExperimentBatchesView
+from .history import ExperimentAnalysisHistoryView
 from .views import AnalysisGroupRollupView
 
 urlpatterns = [
+    path("experiments/<uuid:experiment_id>/analysis-history/", ExperimentAnalysisHistoryView.as_view()),
     path("experiments/<uuid:experiment_id>/analysis-batches/", ExperimentBatchesView.as_view()),
     path("analysis-batches/<uuid:batch_id>/", BatchDetailView.as_view()),
     path("analysis-batches/<uuid:batch_id>/export/", BatchExportView.as_view()),

@@ -2,12 +2,15 @@ import { apiRequest } from "./core/http";
 
 export interface WorkspaceSegmentation {
   id: string; type_id: string; type: string; name: string;
+  short_name?: string; coverage?: "whole" | "partial" | "none";
+  annotated_area_count?: number; annotated_percent?: number | null;
   measurement_mode: string; stage: string; confirmed_count: number;
   review_complete: boolean; provenance: Record<string, unknown>;
   latest_analysis?: { id: string; status: string; current: boolean | null } | null;
 }
 export interface WorkspaceImage {
   id: string; name: string; pixel_size_nm: number | null; stage: string;
+  analysis_count?: number;
   datasets: { id: string; name: string }[];
   sample_id: string; group: string; segmentations: WorkspaceSegmentation[];
 }

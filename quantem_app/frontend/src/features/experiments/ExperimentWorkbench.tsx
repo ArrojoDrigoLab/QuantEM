@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { getWorkspace, saveSample, type WorkspaceImage } from "@/shared/api/workspace";
+import { getWorkspace, type WorkspaceImage, type WorkspaceSegmentation } from "@/shared/api/workspace";
+import { getAssetNgffThumbnailUrl } from "@/shared/api/assets";
 import type { Experiment } from "@/shared/types/common";
 import { Button } from "@/shared/ui/design";
-import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import { SavedModelsPanel } from "@/features/models/SavedModelsPanel";
 import { BatchAnalysisPanel } from "./BatchAnalysisPanel";
+import { AnalysisHistory } from "./AnalysisHistory";
 import { readWorkspaceMemory as readMemory, rememberWorkspace as writeMemory } from "./workspaceMemory";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 
@@ -25,6 +26,32 @@ function ImageStatus({ stage }: { stage: string }) {
   </span>;
 }
 
+function ImageThumbnail({ image }: { image: WorkspaceImage }) {
+  const [failed, setFailed] = useState(false);
+  return <Link to={`/assets/${image.id}`} aria-label={`Open ${image.name}`} className="flex h-12 w-16 items-center justify-center overflow-hidden rounded bg-slate-100">
+    {failed ? <svg className="text-slate-400" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="m3 17 6-6 4 4 3-3 5 5" /><circle cx="16" cy="8" r="1" /></svg> :
+      <img className="h-full w-full object-contain" src={getAssetNgffThumbnailUrl(image.id)} alt="" loading="lazy" onError={() => setFailed(true)} />}
+  </Link>;
+}
+
+function StructureLinks({ image }: { image: WorkspaceImage }) {
+  const structures = new Map<string, WorkspaceSegmentation>();
+  for (const seg of image.segmentations) {
+    if (seg.type === "quantem_internal_analysis_mask" || !seg.coverage || seg.coverage === "none") continue;
+    const previous = structures.get(seg.type);
+    if (!previous || seg.coverage === "whole") structures.set(seg.type, seg);
+  }
+  return <div className="flex flex-wrap gap-x-3 gap-y-1">{[...structures.values()].map((seg) => {
+    const count = seg.annotated_area_count ?? 0;
+    const percent = seg.annotated_percent;
+    const tooltip = seg.coverage === "whole" ? "Whole-image segmentation" : count ?
+      `${count} annotated ${count === 1 ? "area" : "areas"}${percent != null ? ` (${percent.toLocaleString(undefined, { maximumFractionDigits: 1 })}% of image area)` : ""}` :
+      "Manual annotations; no annotated areas marked";
+    return <Link key={seg.type} className={`font-medium underline decoration-dotted underline-offset-4 ${seg.coverage === "partial" ? "text-yellow-700" : "text-cyan-800"}`}
+      title={tooltip} aria-label={`${seg.short_name || seg.name}: ${tooltip}`} to={`/assets/${image.id}/labeling/${seg.type}?seg=${seg.id}`}>{seg.short_name || seg.name}</Link>;
+  })}</div>;
+}
+
 export function ExperimentWorkbench({ experiment, children, refreshKey }: {
   experiment: Experiment; children: ReactNode; refreshKey: number;
 }) {
@@ -33,9 +60,9 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
   const [images, setImages] = useState<WorkspaceImage[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [sample, setSample] = useState("");
-  const [group, setGroup] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [newAnalysis, setNewAnalysis] = useState(false);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const historyChanged = useCallback(() => setHistoryRevision((value) => value + 1), []);
   const [page, setPage] = useState(() => readMemory<number>(`${experiment.id}.page`, 0));
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") ?? "images";
@@ -50,7 +77,7 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
     catch (cause) { setError(extractApiErrorMessage(cause, "The experiment's images could not be loaded.")); }
     finally { setLoading(false); }
   }, [experiment.id]);
-  useEffect(() => { void load(); }, [load, refreshKey]);
+  useEffect(() => { void load(); }, [load, refreshKey, historyRevision]);
   useEffect(() => { writeMemory(key, controls); }, [controls, key]);
   useEffect(() => { writeMemory(`${experiment.id}.page`, page); }, [page, experiment.id]);
   useEffect(() => {
@@ -77,20 +104,13 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
   const pageCount = Math.max(1, Math.ceil(filtered.length / 50));
   const visible = filtered.slice(Math.min(page, pageCount - 1) * 50, (Math.min(page, pageCount - 1) + 1) * 50);
   const selectedIds = useMemo(() => controls.selected.filter((id) => images.some((image) => image.id === id)), [controls.selected, images]);
-  const select = (ids: string[]) => change({ selected: [...new Set([...selectedIds, ...ids])] });
   const chooseTab = (next: string) => setParams(next === "images" ? {} : { tab: next });
-  const setMetadata = async () => {
-    setSaving(true); setError("");
-    try { for (const id of selectedIds) await saveSample(experiment.id, id, sample, group); await load(); }
-    catch (cause) { setError(extractApiErrorMessage(cause, "Some sample metadata could not be saved. Refresh and retry.")); }
-    finally { setSaving(false); }
-  };
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-2 border-b pb-3">
       <nav className="flex gap-2" aria-label="Experiment sections">{["images", "analysis", "models"].map((entry) =>
         <Button key={entry} variant={tab === entry ? "primary" : "secondary"} aria-current={tab === entry ? "page" : undefined}
           onClick={() => chooseTab(entry)}>{entry[0].toUpperCase() + entry.slice(1)}</Button>)}</nav>
-      <Button onClick={() => void load()}>Refresh status</Button>
+      <Button onClick={historyChanged}>Refresh status</Button>
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {tab === "images" && <>
@@ -107,39 +127,26 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
         <label>View <select className="block rounded border px-2 py-1" value={controls.layout} onChange={(e) => change({ layout: e.target.value })}>
           <option value="table">Workflow table</option><option value="cards">Dataset cards</option></select></label>
       </div>
-      {controls.layout === "table" && <div className="flex flex-wrap items-center gap-2">
-        <strong>{selectedIds.length} selected</strong>
-        <Button onClick={() => select(visible.map((image) => image.id))}>Select visible ({visible.length})</Button>
-        <Button onClick={() => select(filtered.map((image) => image.id))}>Select all matching ({filtered.length})</Button>
-        <Button onClick={() => change({ selected: [] })}>Clear selection</Button>
-        <Button variant="primary" disabled={!selectedIds.length} onClick={() => chooseTab("analysis")}>Analyze selection</Button>
-      </div>}
       {controls.layout === "cards" ? children :
         loading ? <p role="status">Loading workflow status…</p> :
         <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
-          <thead><tr>{["Select", "Image", "Dataset", "Resolution", "Prediction / review", "Measurements", "Sample / group"].map((label) => <th key={label} className="border-b p-3">{label}</th>)}</tr></thead>
+          <thead><tr><th scope="col" aria-label="Thumbnail" className="border-b p-3" />{["Image", "Dataset", "Resolution", "Segmentations", "Analyses"].map((label) => <th scope="col" key={label} className="border-b p-3">{label}</th>)}</tr></thead>
           <tbody>{visible.map((image) => <tr key={image.id}>
-            <td className="border-b p-3"><input aria-label={`Select ${image.name}`} type="checkbox" checked={selectedIds.includes(image.id)} onChange={(e) => e.target.checked ? select([image.id]) : change({ selected: selectedIds.filter((id) => id !== image.id) })} /></td>
+            <td className="border-b p-3"><ImageThumbnail image={image} /></td>
             <td className="border-b p-3"><div className="flex items-center gap-2"><Link className="font-medium text-cyan-800 underline" to={`/assets/${image.id}`}>{image.name}</Link><ImageStatus stage={image.stage} /></div></td>
             <td className="border-b p-3">{image.datasets.map((dataset) => dataset.name).join(", ") || "Ungrouped"}</td>
             <td className="border-b p-3">{image.pixel_size_nm ? `${image.pixel_size_nm.toFixed(2)} nm/px` : "Missing"}</td>
-            <td className="border-b p-3">{image.segmentations.filter((seg) => seg.type !== "quantem_internal_analysis_mask").map((seg) => <p key={seg.id}>
-              <Link className="text-cyan-800 underline" to={`/assets/${image.id}/labeling/${seg.type}?seg=${seg.id}`}>{seg.name}</Link>: {seg.stage.toLowerCase().replaceAll("_", " ")} · {seg.review_complete ? "review complete" : "review incomplete"}{seg.measurement_mode !== "global" ? ` · ${seg.confirmed_count} confirmed` : " · area only"}
-            </p>)}{!image.segmentations.length && "No segmentation"}</td>
-            <td className="border-b p-3">{image.segmentations.filter((seg) => seg.latest_analysis).map((seg) => <p key={seg.id}>{seg.name}: {seg.latest_analysis?.current === false ? "outdated" : seg.latest_analysis?.current === null ? "unverified" : seg.latest_analysis?.status.toLowerCase()}</p>)}
-              <Link className="text-cyan-800 underline" to={`/assets/${image.id}/analysis`}>Open analysis</Link></td>
-            <td className="border-b p-3">{image.sample_id || image.name} / {image.group || "Ungrouped"}</td>
+            <td className="border-b p-3"><StructureLinks image={image} /></td>
+            <td className="border-b p-3">{image.analysis_count ? <Link className="font-medium text-cyan-800 underline" aria-label={`${image.analysis_count} ${image.analysis_count === 1 ? "analysis" : "analyses"} for ${image.name}`} to={`/experiments/${experiment.id}?tab=analysis&image=${image.id}`}>{image.analysis_count}</Link> : 0}</td>
           </tr>)}</tbody>
         </table>{!visible.length && !error && <p className="p-4">No images match these filters.</p>}
         <div className="flex items-center justify-between p-3"><Button disabled={page === 0} onClick={() => setPage(page - 1)}>Previous page</Button><span>Page {Math.min(page, pageCount - 1) + 1} of {pageCount} · {filtered.length} images</span><Button disabled={page >= pageCount - 1} onClick={() => setPage(page + 1)}>Next page</Button></div></div>}
-      {controls.layout === "table" && selectedIds.length > 0 && <form className="flex flex-wrap items-end gap-3 rounded border bg-white p-4" onSubmit={(e) => { e.preventDefault(); void setMetadata(); }}>
-        <div className="flex w-full items-center gap-2"><strong>Group selected images</strong><HelpDisclosure label="sample IDs" title="Sample IDs">Images with the same sample ID are averaged together before calculating group statistics. By default, each image is a separate sample.</HelpDisclosure></div>
-        <label>Sample ID <input className="block rounded border px-2 py-1" maxLength={255} placeholder="Image name by default" value={sample} onChange={(e) => setSample(e.target.value)} /></label>
-        <label>Group <input className="block rounded border px-2 py-1" maxLength={255} value={group} onChange={(e) => setGroup(e.target.value)} /></label>
-        <Button type="submit" disabled={saving || !selectedIds.length}>Save for {selectedIds.length} images</Button>
-      </form>}
     </>}
-    {tab === "analysis" && <BatchAnalysisPanel experimentId={experiment.id} images={images} selectedIds={selectedIds} />}
+    {tab === "analysis" && <>
+      {!params.has("image") && <Button variant="primary" aria-expanded={newAnalysis} onClick={() => setNewAnalysis(!newAnalysis)}>{newAnalysis ? "Close new analysis" : "New analysis"}</Button>}
+      {newAnalysis && !params.has("image") && <BatchAnalysisPanel experimentId={experiment.id} images={images} selectedIds={selectedIds} onSelectionChange={(ids) => change({ selected: ids })} onHistoryChange={historyChanged} onMetadataSaved={historyChanged} />}
+      <AnalysisHistory experimentId={experiment.id} images={images} refreshKey={historyRevision} />
+    </>}
     {tab === "models" && <SavedModelsPanel experimentId={experiment.id} />}
   </div>;
 }

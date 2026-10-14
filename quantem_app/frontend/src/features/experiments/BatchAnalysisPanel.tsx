@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest, resolveApiUrl } from "@/shared/api/core/http";
 import type { WorkspaceImage } from "@/shared/api/workspace";
 import { Button } from "@/shared/ui/design";
 import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
+import type { AnalysisBatch as Batch, BatchItem as Item } from "@/shared/api/analysisHistory";
+import { AnalysisImageSelection } from "./AnalysisImageSelection";
 
-interface Identity { image: string; asset_id: string; organelle: string; sample_id: string; group: string; measurement_area: string; pixel_size_nm: number | null }
-interface Item { identity: Identity; reason: string; ready?: boolean; status?: string; current?: boolean | null; reused?: boolean; run_id?: string; metrics?: Record<string, number | null> }
-interface Batch { id: string; name: string; created_at: string; items: Item[] }
-interface History { id: string; name: string; created_at: string; count: number }
-export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { experimentId: string; images: WorkspaceImage[]; selectedIds: string[] }) {
+export function BatchAnalysisPanel({ experimentId, images, selectedIds, onSelectionChange, onHistoryChange, onMetadataSaved }: {
+  experimentId: string; images: WorkspaceImage[]; selectedIds: string[];
+  onSelectionChange: (ids: string[]) => void; onHistoryChange: () => void; onMetadataSaved: () => void;
+}) {
   const [types, setTypes] = useState<string[]>([]);
   const [name, setName] = useState("Experiment measurements");
   const [mask, setMask] = useState("");
@@ -20,7 +21,6 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
   const [preview, setPreview] = useState<Item[] | null>(null);
   const [previewKey, setPreviewKey] = useState("");
   const [batch, setBatch] = useState<Batch | null>(null);
-  const [history, setHistory] = useState<History[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [metric, setMetric] = useState("n_objects");
@@ -31,11 +31,6 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
   const payload = useMemo(() => ({ name, asset_ids: selectedIds, segmentation_types: types,
     mask_name: mask, require_complete: complete, reuse }), [name, selectedIds, types, mask, complete, reuse]);
   const payloadKey = JSON.stringify(payload);
-  const loadHistory = useCallback(async () => {
-    try { setHistory(await apiRequest<History[]>(`/api/experiments/${experimentId}/analysis-batches/`)); }
-    catch (cause) { setError(extractApiErrorMessage(cause, "Batch history could not be loaded.")); }
-  }, [experimentId]);
-  useEffect(() => { void loadHistory(); }, [loadHistory]);
   useEffect(() => { setPreview(null); }, [payload]);
   const active = batch?.items.some((item) => ["PENDING", "RUNNING"].includes(item.status ?? ""));
   const batchId = batch?.id;
@@ -47,6 +42,7 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
       try {
         const next = await apiRequest<Batch>(`/api/analysis-batches/${batchId}/`);
         if (!stopped) setBatch(next);
+        if (!stopped && !next.items.some((item) => ["PENDING", "RUNNING"].includes(item.status ?? ""))) onHistoryChange();
       } catch (cause) {
         if (!stopped) setError(extractApiErrorMessage(cause, "Could not refresh this batch. Use Refresh."));
       } finally {
@@ -55,7 +51,7 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
     };
     timer = window.setTimeout(() => void refresh(), 5000);
     return () => { stopped = true; clearTimeout(timer); };
-  }, [batchId, active]);
+  }, [batchId, active, onHistoryChange]);
   const run = async (check: boolean) => {
     setBusy(true); setError("");
     try {
@@ -64,7 +60,7 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
         setPreview(response.items); setPreviewKey(payloadKey);
       } else {
         setBatch(await apiRequest<Batch>(`/api/experiments/${experimentId}/analysis-batches/`, { method: "POST", body: JSON.stringify(payload) }));
-        setPreview(null); await loadHistory();
+        setPreview(null); onHistoryChange();
       }
     } catch (cause) { setError(extractApiErrorMessage(cause, "Measurements could not be started.")); }
     finally { setBusy(false); }
@@ -85,6 +81,7 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
   }, {});
   return <section className="space-y-4 rounded-lg border bg-white p-4" aria-label="Experiment analysis">
     <h2 className="text-lg font-semibold">Measure selected images ({selectedIds.length})</h2>
+    <AnalysisImageSelection experimentId={experimentId} images={images} selectedIds={selectedIds} onChange={onSelectionChange} onMetadataSaved={onMetadataSaved} />
     <div className="flex flex-wrap items-center gap-4">
       <label>Batch name <input className="rounded border px-2 py-1" value={name} onChange={(e) => setName(e.target.value)} /></label>
       <label>Measurement area <select className="rounded border px-2 py-1" value={mask} onChange={(e) => setMask(e.target.value)}>
@@ -112,9 +109,6 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
       <Button variant="primary" disabled={busy || previewKey !== payloadKey || !preview?.some((item) => item.ready)} onClick={() => void run(false)}>Run ready images</Button>
     </div>
     {error && <p className="text-red-700" role="alert">{error}</p>}
-    <label className="block">Reopen a batch <select className="ml-2 max-w-full rounded border p-1" value={batch?.id ?? ""} onChange={(e) => { if (e.target.value) void open(e.target.value); }}>
-      <option value="">Choose saved batch</option>{history.map((entry) => <option key={entry.id} value={entry.id}>{entry.name} · {new Date(entry.created_at).toLocaleString()} · {entry.count} measurements</option>)}
-    </select></label>
     {rows.length > 0 && <p role="status">{Object.entries(totals).map(([state, count]) => `${count} ${state.toLowerCase()}`).join(" · ")}</p>}
     {metricOptions.length > 0 && <label className="block">Compare metric <select className="ml-2 rounded border p-1" value={selectedMetric} onChange={(e) => setMetric(e.target.value)}>
       {metricOptions.map((entry) => <option key={entry} value={entry}>{entry.replaceAll("_", " ")}</option>)}</select></label>}
