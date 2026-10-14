@@ -1,32 +1,4 @@
-"""Head-only adaptation: freeze the encoder, train the neck + decoder.
-
-A direct port of ``gk_gold_seg/scripts/finetune_cv/train_qem_k2_deploy.py``, the
-152-line script behind the manuscript's guided fine-tuning result (base held-out
-Dice 0.817 -> 0.870 in 17.8 s on a GPU, from two annotated crops). The optimizer,
-loss, tiling, and augmentation follow the reference; the app scales the number
-of steps with the amount of training data:
-
-* freeze everything, then ``requires_grad_(True)`` on ``model.neck`` and
-  ``model.decoder`` — 5.775 M trainable parameters for the QuantEM ViT-B
-* AdamW, lr 1e-4, weight decay 1e-4, batch of one patch
-* 20 steps per training tile, clamped to 300--600 steps per round
-* tile ``t = round_up(tile_size, patch)`` — 512 for patch-16, 518 for patch-14
-* windows on a ``t // 2`` stride, kept only when at least 20 % of the window is
-  inside a completed ROI; the target is :data:`IGNORE` wherever it is not
-* random horizontal flip, vertical flip, and ``rot90`` with ``k`` in 0..3
-* loss = ``cross_entropy(ignore_index=255)`` + soft Dice over valid pixels only
-
-Why the encoder stays frozen: it is the published foundation model, and the
-whole claim being reproduced is that a *user's own* handful of crops is enough
-to move the decoder. Training the backbone on two crops overfits them, and it
-also turns a laptop-scale job into a GPU-scale one — the forward-only backbone
-is what keeps this viable without CUDA.
-
-Torch is imported lazily inside the functions that need it, so importing this
-module (and therefore the whole package, and therefore Django) works on an
-install with no torch at all. That is not a nicety: ``threshold_only``
-adaptation must stay available on such a machine.
-"""
+"""Masked head adaptation with complete annotation coverage and validation telemetry."""
 
 from __future__ import annotations
 
@@ -63,7 +35,8 @@ HEAD_FORMAT = "quantem-adapted-head/1"
 #: planner and the worker must use one policy.
 MIN_ADAPT_STEPS = 300
 STEPS_PER_TRAINING_TILE = 20
-MAX_ADAPT_STEPS = 600
+MAX_ADAPT_STEPS = 20000
+QUICK_ADAPT_STEPS = 600
 
 
 class HeadAdaptationUnavailable(RuntimeError):
@@ -108,10 +81,11 @@ class AdaptConfig:
     lr: float = 1e-4
     weight_decay: float = 1e-4
     seed: int = 0
-    #: Keep a training window only when this fraction of it is inside a
-    #: completed ROI. Below it the window is nearly all ``ignore`` and the step
-    #: is noise.
-    min_valid_fraction: float = 0.2
+    schedule: str = "quick"
+    validation_fraction: float = 0.0
+    eval_interval: int = 100
+    patience: int = 0
+    min_delta: float = 1e-4
     ignore_index: int = IGNORE
 
     def as_dict(self) -> dict[str, object]:
@@ -120,14 +94,19 @@ class AdaptConfig:
             "lr": self.lr,
             "weight_decay": self.weight_decay,
             "seed": self.seed,
-            "min_valid_fraction": self.min_valid_fraction,
+            "schedule": self.schedule,
+            "validation_fraction": self.validation_fraction,
+            "eval_interval": self.eval_interval,
+            "patience": self.patience,
+            "min_delta": self.min_delta,
         }
 
 
-def steps_for_training_tiles(tile_count: int) -> int:
+def steps_for_training_tiles(tile_count: int, *, schedule: str = "quick") -> int:
     """Optimizer steps for one round containing ``tile_count`` training tiles."""
     scaled = max(0, int(tile_count)) * STEPS_PER_TRAINING_TILE
-    return min(MAX_ADAPT_STEPS, max(MIN_ADAPT_STEPS, scaled))
+    ceiling = MAX_ADAPT_STEPS if schedule == "extended" else QUICK_ADAPT_STEPS
+    return max(int(tile_count), min(ceiling, max(MIN_ADAPT_STEPS, scaled)))
 
 
 @dataclass(frozen=True)
@@ -164,6 +143,12 @@ def tile_for(tile_size: int, patch_size: int) -> int:
     return round_up(int(tile_size), int(patch_size))
 
 
+def window_starts(length: int, tile: int, stride: int) -> list[int]:
+    """Include the final edge even when it does not land on the stride."""
+    end = max(0, length - tile)
+    return sorted(set(range(0, end + 1, stride)) | {end})
+
+
 def iter_windows(
     valid: np.ndarray, tile: int, *, config: AdaptConfig = AdaptConfig()
 ) -> Iterator[tuple[int, int]]:
@@ -179,14 +164,23 @@ def iter_windows(
     :func:`_pad_to_tile`.
     """
     stride = max(1, tile // 2)
-    min_valid = config.min_valid_fraction * tile * tile
     height, width = valid.shape[:2]
-    for y in range(0, max(1, height - tile + 1), stride):
-        for x in range(0, max(1, width - tile + 1), stride):
+    rows, cols = np.nonzero(valid)
+    if not len(rows):
+        return
+
+    def starts(low: int, high: int, length: int) -> list[int]:
+        span = high - low
+        if span <= tile:
+            return [max(0, min(length - tile, low - (tile - span) // 2))]
+        return [low + offset for offset in window_starts(span, tile, stride)]
+
+    for y in starts(int(rows.min()), int(rows.max()) + 1, height):
+        for x in starts(int(cols.min()), int(cols.max()) + 1, width):
             window = valid[y : y + tile, x : x + tile]
             if window.shape != (tile, tile):
                 continue
-            if window.sum() < min_valid:
+            if not window.any():
                 continue
             yield y, x
 
@@ -201,16 +195,8 @@ def build_patches(
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """Cut normalised ``(image, target)`` training windows out of the crops.
 
-    Windows are taken on a ``tile // 2`` stride and kept only when at least
-    ``min_valid_fraction`` of the window is inside a completed ROI. The target is
-    the confirmed-object mask with :data:`IGNORE` everywhere the user did not
-    annotate, so the loss never learns "background" from an unlabelled pixel.
-
-    A crop smaller than one tile is padded up to ``tile`` — reflected EM, and
-    ``valid = 0`` in the padding so it contributes nothing but shape. The
-    reference simply dropped such crops, which is right for its 2048 px research
-    crops and wrong for a user who drew a 400 px region; the 20 % rule still
-    rejects a region too small to be worth a step.
+    Every window containing an annotated pixel contributes, including empty
+    background regions. Unannotated image context and padding are ignored.
     """
     patches: list[tuple[np.ndarray, np.ndarray]] = []
 
@@ -322,6 +308,8 @@ def head_loss(logits: Any, target: Any, *, ignore_index: int = IGNORE) -> Any:
     torch = _torch()
     functional = torch.nn.functional
 
+    if not torch.any(target != ignore_index):
+        return logits.sum() * 0
     ce = functional.cross_entropy(logits, target[None], ignore_index=ignore_index)
     prob = torch.softmax(logits, 1)[:, 1]
     valid = (target != ignore_index).float()[None]
@@ -346,6 +334,10 @@ class HeadTrainingResult:
     tile: int
     seconds: float
     losses: list[float] = field(default_factory=list)
+    history: list[dict[str, float | int | None]] = field(default_factory=list)
+    selected_step: int = 0
+    stopped_early: bool = False
+    patches_seen: int = 0
 
     @property
     def final_loss(self) -> float | None:
@@ -359,6 +351,11 @@ class HeadTrainingResult:
             "tile": self.tile,
             "seconds": round(self.seconds, 2),
             "final_loss": self.final_loss,
+            "history": self.history,
+            "selected_step": self.selected_step,
+            "stopped_early": self.stopped_early,
+            "patches_seen": self.patches_seen,
+            "coverage_fraction": self.patches_seen / max(1, self.n_patches),
         }
 
 
@@ -368,6 +365,7 @@ def train_head(
     *,
     device: str = "cpu",
     config: AdaptConfig = AdaptConfig(),
+    validation_patches: Sequence[tuple[np.ndarray, np.ndarray]] = (),
     on_progress: ProgressCallback | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> HeadTrainingResult:
@@ -378,11 +376,7 @@ def train_head(
     rather than discarded, and the caller decides what to do with it.
     """
     if not patches:
-        raise HeadAdaptationUnavailable(
-            "No training window survived: every completed area is smaller than "
-            f"the model's {config.min_valid_fraction:.0%} coverage rule for one "
-            "tile. Annotate a larger region, or use threshold calibration."
-        )
+        raise HeadAdaptationUnavailable("No training window contains an annotated pixel.")
 
     torch = _torch()
     torch.manual_seed(config.seed)
@@ -399,14 +393,26 @@ def train_head(
         device,
     )
 
-    module.train()
+    # Frozen encoder buffers and stochastic layers must stay fixed, too.
+    module.eval()
+    for name in HEAD_MODULES:
+        getattr(module, name).train()
+    history = []
+    best_loss, best_state, selected_step, stale = float("inf"), None, 0, 0
+    order = rng.permutation(len(patches))
+    seen = set()
+    stopped_early = False
     losses: list[float] = []
     started = time.time()
     for step in range(config.steps):
         if should_cancel is not None and should_cancel():
             logger.info("Head adaptation cancelled at step %d", step)
             break
-        image, target = augment(*patches[int(rng.integers(len(patches)))], rng)
+        if step and step % len(patches) == 0:
+            order = rng.permutation(len(patches))
+        patch_index = int(order[step % len(patches)])
+        seen.add(patch_index)
+        image, target = augment(*patches[patch_index], rng)
         x = torch.from_numpy(image)[None, None].float().to(device)
         y = torch.from_numpy(target).to(device)
         loss = head_loss(module(x), y, ignore_index=config.ignore_index)
@@ -415,6 +421,47 @@ def train_head(
         optimizer.step()
 
         losses.append(float(loss.item()))
+        if (step + 1) % config.eval_interval == 0 or step + 1 == config.steps:
+            val_loss = None
+            val_dice = None
+            if validation_patches:
+                module.eval()
+                values, dice = [], []
+                with torch.no_grad():
+                    for vi, vt in validation_patches:
+                        vx = torch.from_numpy(vi)[None, None].float().to(device)
+                        vy = torch.from_numpy(vt).to(device)
+                        logits = module(vx)
+                        values.append(float(head_loss(logits, vy).item()))
+                        valid = vy != config.ignore_index
+                        pred = (logits.argmax(1)[0] == 1) & valid
+                        truth = (vy == 1) & valid
+                        denom = int(pred.sum() + truth.sum())
+                        if denom:
+                            dice.append(float(2 * (pred & truth).sum() / denom))
+                val_loss = float(np.mean(values))
+                val_dice = float(np.mean(dice)) if dice else None
+                if val_loss < best_loss - config.min_delta:
+                    best_loss, selected_step, stale = val_loss, step + 1, 0
+                    best_state = {
+                        name: {
+                            k: v.detach().cpu().clone()
+                            for k, v in getattr(module, name).state_dict().items()
+                        }
+                        for name in HEAD_MODULES
+                    }
+                else:
+                    stale += 1
+                for name in HEAD_MODULES:
+                    getattr(module, name).train()
+            history.append(
+                {
+                    "step": step + 1,
+                    "train_loss": float(np.mean(losses[-config.eval_interval :])),
+                    "validation_loss": val_loss,
+                    "validation_dice": val_dice,
+                }
+            )
         if on_progress is not None:
             on_progress(
                 AdaptProgress(
@@ -425,6 +472,19 @@ def train_head(
                 )
             )
 
+        if (
+            validation_patches
+            and config.patience
+            and stale >= config.patience
+            and len(seen) == len(patches)
+        ):
+            stopped_early = True
+            break
+
+    if best_state is not None:
+        for name in HEAD_MODULES:
+            getattr(module, name).load_state_dict(best_state[name])
+
     module.eval()
     return HeadTrainingResult(
         steps=len(losses),
@@ -433,6 +493,10 @@ def train_head(
         tile=tile,
         seconds=time.time() - started,
         losses=losses,
+        history=history,
+        selected_step=selected_step or len(losses),
+        stopped_early=stopped_early,
+        patches_seen=len(seen),
     )
 
 
@@ -523,20 +587,17 @@ def to_model_scale_crop(crop: CropArrays, *, canonical_nm: float | None) -> Scal
 def masks_to_model_scale(
     gt: np.ndarray, valid: np.ndarray, context: resample.ResampleContext
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Move the labels to the grid the model predicted on, NEAREST both ways.
+    """Resample supervision without treating unknown source pixels as background.
 
-    The alternative — upsampling the probability map to native and thresholding
-    it there — re-decides the boundary on interpolated values the model never
-    produced (see :mod:`quantem.inference.resample`). Scoring happens where the
-    prediction was made.
+    At reduced resolution a cell is valid if any annotated source area covers
+    it; its label is the majority of that annotated area only. This preserves
+    even subpixel completed areas. Upsampling uses nearest-neighbour labels.
     """
     if context.is_identity:
         return gt, valid
-    nearest = {
-        "downscale_interpolation": cv2.INTER_NEAREST,
-        "upscale_interpolation": cv2.INTER_NEAREST,
-    }
-    return (
-        resample.to_model_scale(gt, context, **nearest),
-        resample.to_model_scale(valid, context, **nearest),
-    )
+    interpolation = cv2.INTER_AREA if context.factor < 1 else cv2.INTER_NEAREST
+    opts = {"downscale_interpolation": interpolation, "upscale_interpolation": interpolation}
+    coverage = resample.to_model_scale(valid.astype(np.float32), context, **opts)
+    foreground = resample.to_model_scale((gt * valid).astype(np.float32), context, **opts)
+    present = coverage > 0
+    return ((foreground >= coverage * 0.5) & present).astype(np.uint8), present.astype(np.uint8)

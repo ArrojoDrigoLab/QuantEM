@@ -44,7 +44,7 @@ from quantem.finetune.adapt import (
     torch_available,
     train_head,
 )
-from quantem.finetune.preflight import check_head_size
+from quantem.finetune.options import parse_options, train_with_validation
 from quantem.finetune.scope import TrainingFold, count_tiles, plan_folds, plan_step_counts
 from quantem.finetune.storage import (
     adapter_head_path,
@@ -238,6 +238,7 @@ def _run(payload: dict, reporter: Any, cancel: Any, adapter_id: str | None) -> d
         crop_set = require_crops(
             segmentation,
             load_em=(mode == MODE_HEAD),
+            context_model=base_model if mode == MODE_HEAD else None,
             load_prob=(mode == MODE_THRESHOLD_ONLY),
             # Head training predicts its own maps; only calibration is stuck
             # without one already on disk.
@@ -436,26 +437,12 @@ def _run_head(
     patches = build_patches(
         [scaled[c.name] for c in train],
         tile,
-        image_mean=spec.image_mean,
-        image_std=spec.image_std,
+        image_mean=spec.input_mean,
+        image_std=spec.input_std,
         config=config,
     )
     if not patches:
-        # ``train_head`` refuses this too, but in terms of its own coverage
-        # rule -- "every completed area is smaller than the model's 20 %
-        # coverage rule for one tile" is true and tells a microscopist nothing
-        # they can act on. The pre-flight knows the two spans, so say them.
-        # Reaching here at all means the geometry changed between the check at
-        # the door and the run; both ends now give the same sentence.
-        verdict = check_head_size(train, base_model)
-        raise HeadAdaptationUnavailable(
-            f"{verdict.reason} No training window survived, so there would be "
-            "nothing to train on. Matching my cut-off to your marks works at "
-            "any size."
-            if verdict is not None and verdict.reason
-            else "No training window survived: every checked area is too small "
-            "for this model. Matching my cut-off to your marks works at any size."
-        )
+        raise HeadAdaptationUnavailable("No training window contains an annotated pixel.")
     reporter.update(
         progress=18.0,
         message=f"training on {len(patches)} window(s) from {len(train)} region(s)",
@@ -774,16 +761,21 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
     asset_ids = [str(value) for value in (payload.get("asset_ids") or [])]
     training_mode = str(payload.get("training_mode") or TRAINING_MODE_USE_ALL)
     cv_benchmark = bool(payload.get("cv_benchmark"))
-    config = AdaptConfig(
-        lr=_as_float(payload.get("lr"), AdaptConfig.lr),
-        seed=_as_int(payload.get("seed"), AdaptConfig.seed),
+    config = parse_options(
+        payload.get("training_options")
+        or {
+            "lr": _as_float(payload.get("lr"), AdaptConfig.lr),
+            "seed": _as_int(payload.get("seed"), AdaptConfig.seed),
+        }
     )
 
     _update_adapter(adapter_id, status="RUNNING", error="")
     _stage(reporter, STAGE_PREPARING, "reading the annotations you chose")
 
     try:
-        crop_set = require_crops_for_scope(segmentation_type_id, asset_ids, load_em=True)
+        crop_set = require_crops_for_scope(
+            segmentation_type_id, asset_ids, load_em=True, context_model=base_model
+        )
     except CompletedRoiRequired as exc:
         reporter.log("warning", str(exc))
         raise
@@ -810,7 +802,9 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         config=config,
     )
     training_tiles_by_round = [count_tiles(fold.train, base_model, config=config) for fold in folds]
-    total_steps = sum(steps_by_round)
+    budget_multiplier = 2 if config.validation_fraction > 0 else 1
+    total_steps = sum(steps_by_round) * budget_multiplier
+    training_rounds = []
 
     cancel.check_cancelled()
     _stage(reporter, STAGE_LOADING_MODEL, f"loading {base_model}")
@@ -839,21 +833,12 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         patches = build_patches(
             [scaled[c.name] for c in fold.train],
             tile,
-            image_mean=spec.image_mean,
-            image_std=spec.image_std,
+            image_mean=spec.input_mean,
+            image_std=spec.input_std,
             config=round_config,
         )
         if not patches:
-            verdict = check_head_size(fold.train, base_model)
-            raise HeadAdaptationUnavailable(
-                f"{verdict.reason} No training window survived, so there would be "
-                "nothing to train on. Matching my cut-off to your marks works at "
-                "any size."
-                if verdict is not None and verdict.reason
-                else "No training window survived: every checked area is too small "
-                "for this model. Matching my cut-off to your marks works at any "
-                "size."
-            )
+            raise HeadAdaptationUnavailable("No training window contains an annotated pixel.")
 
         base_units = completed_steps
         message = (
@@ -867,7 +852,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
             unit_window(base_units, total_steps),
             _unit_scope(
                 reporter,
-                total=round_config.steps,
+                total=round_config.steps * budget_multiplier,
                 label=UNIT_STEP,
                 stage=STAGE_TRAINING,
                 detail={
@@ -881,16 +866,33 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
             def on_progress(progress: AdaptProgress, sink=steps_done) -> None:
                 sink.set(progress.step + 1)
 
-            training = train_head(
-                model.module,
-                patches,
-                device=model.device,
-                config=round_config,
-                on_progress=on_progress,
-                should_cancel=lambda: _cancelled(cancel),
-            )
-
-        completed_steps += training.steps
+            if config.validation_fraction > 0:
+                training, selection = train_with_validation(
+                    model.module,
+                    fold.train,
+                    scaled,
+                    tile,
+                    image_mean=spec.input_mean,
+                    image_std=spec.input_std,
+                    device=model.device,
+                    config=round_config,
+                    on_progress=on_progress,
+                    should_cancel=lambda: _cancelled(cancel),
+                )
+            else:
+                training = train_head(
+                    model.module,
+                    patches,
+                    device=model.device,
+                    config=round_config,
+                    on_progress=on_progress,
+                    should_cancel=lambda: _cancelled(cancel),
+                )
+                selection = {}
+        training_rounds.append(
+            {"round": index + 1, "training": training.as_dict(), "checkpoint_selection": selection}
+        )
+        completed_steps += round_config.steps * budget_multiplier
 
         cancel.check_cancelled()
         _stage(
@@ -944,7 +946,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         "steps": training.steps,
         "steps_by_round": steps_by_round,
         "total_steps": total_steps,
-        "step_policy": "fixed" if fixed_steps is not None else "20_per_tile_clamped_300_600",
+        "step_policy": "fixed" if fixed_steps is not None else config.schedule,
         "rounds": total_rounds,
         "trainable_params": training.trainable_params,
         "train_seconds": round(training.seconds, 2),
@@ -953,6 +955,7 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         "annotation_count": crop_set.annotation_count,
         "tile_count": tile_count,
         "training_tiles_by_round": training_tiles_by_round,
+        "training_rounds": training_rounds,
         "train_crop_names": [c.name for c in shipped_fold.train],
         "heldout_crop_names": [c.name for c in shipped_fold.heldout],
         "sweep": sweep.as_dict(),
@@ -981,6 +984,8 @@ def _run_scoped(payload: dict, reporter: Any, cancel: Any, adapter_id: str | Non
         train_seconds=result["train_seconds"],
         cv_results=cv_results,
         params={
+            **config.as_dict(),
+            "training_rounds": training_rounds,
             "steps": training.steps,
             "steps_by_round": steps_by_round,
             "total_steps": total_steps,

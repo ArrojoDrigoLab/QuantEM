@@ -856,6 +856,32 @@ describe("FineTuneDialog", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("validates training controls and sends them with the selected parent", async () => {
+    const user = userEvent.setup();
+    const started = vi.fn<(payload: FineTuneRunPayload) => void>();
+    stubApi({ onStart: started });
+    openDialog();
+    await selectTheDataset(user);
+    await user.selectOptions(screen.getByLabelText("Continue a saved model"), "ad-old");
+    await user.click(screen.getByText("Training options"));
+    await user.clear(screen.getByLabelText("Learning rate"));
+    expect(screen.getByRole("button", { name: "Fine-tune" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Learning rate must");
+    await user.type(screen.getByLabelText("Learning rate"), "0.001");
+    await user.selectOptions(screen.getByLabelText("Duration"), "extended");
+    await user.type(screen.getByLabelText("Custom steps (blank for automatic)"), "1200");
+    await user.click(screen.getByLabelText("Select the training duration using validation"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Fine-tune" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+    await waitFor(() => expect(started).toHaveBeenCalledOnce());
+    expect(started.mock.calls[0][0]).toMatchObject({
+      name: "First attempt · next version", parent_adapter_id: "ad-old",
+      overwrite_adapter_id: null, include_previous_annotations: true,
+      schedule: "extended", steps: 1200, lr: 0.001, seed: 0,
+      validation_fraction: 0.2, eval_interval: 100, patience: 5,
+    });
+  });
+
   it("inherits labeling context without implicitly overwriting a saved model", async () => {
     const user = userEvent.setup();
     const started = vi.fn<(payload: FineTuneRunPayload) => void>();

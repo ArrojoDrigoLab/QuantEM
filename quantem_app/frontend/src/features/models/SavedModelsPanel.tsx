@@ -4,6 +4,7 @@ import { getSegmentationTypes } from "@/shared/api/assets";
 import type { FineTuneRunDetail } from "@/shared/types/finetune";
 import type { SegmentationType } from "@/shared/types/images";
 import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
+import { TrainingHistory } from "@/features/finetune/components/TrainingHistory";
 import { Button } from "@/shared/ui/design";
 import { ConfirmDialog } from "@/shared/ui/ConfirmDialog";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
@@ -62,6 +63,7 @@ export function SavedModelsPanel({ experimentId }: { experimentId?: string }) {
       <p className="my-2 text-xs text-slate-600">Created {new Date(model.created_at).toLocaleString()} · {model.asset_ids?.length ?? 0} training images
         {model.parent_id ? ` · Continued from ${models.find((row) => row.id === model.parent_id)?.name ?? model.parent_id}` : " · Pretrained starting point"}</p>
       {model.evaluation_note && <p className="text-sm text-amber-900">{model.evaluation_note}</p>}
+      <TrainingHistory rounds={model.training_rounds} />
       {rename?.id === model.id && <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); void update(model, { name: rename.name }); }}>
         <input aria-label="Model name" className="rounded border px-2" maxLength={255} value={rename.name} onChange={(event) => setRename({ ...rename, name: event.target.value })} />
         <Button disabled={busy || !rename.name.trim()} type="submit">Save name</Button><Button onClick={() => setRename(null)}>Cancel</Button>

@@ -90,7 +90,7 @@ export const TRAINING_MODE_HELP_TITLE = "How the annotations are used";
  */
 export const TRAINING_MODE_HELP: string[] = [
   "An annotated area larger than one training tile is cut into tiles, so the number of tiles is usually larger than the number of annotations. The choice below is about what happens to those tiles.",
-  "Each training round runs for 20 steps per tile, with a minimum of 300 steps and a maximum of 600. Up to 15 training tiles therefore uses 300 steps; 16 tiles uses 320; and 30 or more uses 600.",
+  "Quick runs use 20 steps per tile within 300–600 steps, extended runs allow up to 20,000, and both visit every tile at least once. Training options also provide a custom budget and validation-based duration selection.",
   "Use all — every tile is trained on. This gives the model the most to learn from, and leaves nothing to measure it against, so the run reports no score.",
   "Hold out one — one annotation is kept out of training and used to score the result. The score is honest but it rests on a single held-out annotation, so treat it as a rough reading.",
   "Hold out one, with cross-validation benchmarking — the hold-out is repeated with each annotation held back in turn. You get an average score and a result for each image, which is the only way to see that one image is dragging the average. It takes roughly as many training rounds as there are annotations.",

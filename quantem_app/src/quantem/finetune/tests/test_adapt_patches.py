@@ -77,15 +77,16 @@ class TestBuildPatches:
         assert len(patches) == 9
         assert all(image.shape == (512, 512) for image, _ in patches)
 
-    def test_windows_barely_inside_the_completed_area_are_dropped(self):
-        """The 20 % rule: a window that is almost all ``ignore`` is not a step,
-        it is noise."""
+    def test_windows_with_any_completed_pixels_are_used(self):
+        """Small completed regions still provide supervision."""
         crop = _crop(1024, valid_slice=(slice(0, 200), slice(0, 200)))
         patches = build_patches([crop], 512, image_mean=MEAN, image_std=STD)
-        assert patches == []
+        assert len(patches) == 1
+        assert (patches[0][1] != IGNORE).sum() == 200 * 200
 
     def test_unannotated_pixels_become_ignore_not_background(self):
         crop = _crop(1024, valid_slice=(slice(0, 700), slice(0, 700)))
+        crop.valid[300:350, 300:350] = 0
         patches = build_patches([crop], 512, image_mean=MEAN, image_std=STD)
         assert patches
         targets = np.concatenate([t.ravel() for _, t in patches])
@@ -103,7 +104,7 @@ class TestBuildPatches:
         patches = build_patches([crop], 512, image_mean=MEAN, image_std=STD)
         assert patches  # 600 px of valid data clears 20 % of a 512 tile
         crop_small = _crop(200)
-        assert build_patches([crop_small], 512, image_mean=MEAN, image_std=STD) == []
+        assert len(build_patches([crop_small], 512, image_mean=MEAN, image_std=STD)) == 1
 
     def test_a_crop_with_no_pixels_loaded_is_a_clear_error(self):
         crop = _crop(512)
@@ -111,14 +112,14 @@ class TestBuildPatches:
         with pytest.raises(ValueError, match="no EM pixels"):
             build_patches([crop], 512, image_mean=MEAN, image_std=STD)
 
-    def test_the_valid_fraction_rule_is_configurable(self):
+    def test_a_single_valid_pixel_is_not_discarded(self):
         crop = _crop(1024, valid_slice=(slice(0, 200), slice(0, 200)))
         patches = build_patches(
             [crop],
             512,
             image_mean=MEAN,
             image_std=STD,
-            config=AdaptConfig(min_valid_fraction=0.1),
+            config=AdaptConfig(),
         )
         assert len(patches) == 1
 

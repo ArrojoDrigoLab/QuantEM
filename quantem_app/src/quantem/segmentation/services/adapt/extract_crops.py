@@ -87,9 +87,8 @@ logger = logging.getLogger(__name__)
 #: ``torch.nn.functional.cross_entropy(ignore_index=...)``.
 IGNORE = 255
 
-#: Completed ROIs smaller than this on either edge are not training data; the
-#: reference used the same 16 px floor.
-MIN_CROP_PX = 16
+#: A completed region needs at least one source pixel.
+MIN_CROP_PX = 1
 
 #: The one label state that counts as ground truth. Not ``INFERRED`` (the model
 #: said so, the user did not) and not ``REFINED`` alone.
@@ -528,6 +527,7 @@ def _confirmed_objects_in(
     rows = SegmentObject.objects.filter(
         segmentation=segmentation,
         label_state=CONFIRMED,
+        superseded_at__isnull=True,
         bbox_minx__lt=x1,
         bbox_maxx__gt=x0,
         bbox_miny__lt=y1,
@@ -714,6 +714,7 @@ def _collect(
     load_prob: bool,
     require_probability: bool,
     nothing_annotated: str,
+    context_model: str | None = None,
 ) -> CropSet:
     """The one collection loop, over whatever set of segmentations it is given.
 
@@ -725,7 +726,6 @@ def _collect(
     names: set[str] = set()
 
     total_regions = 0
-    total_objects = 0
     seen_any_region = False
     from_primary = 0
 
@@ -782,6 +782,23 @@ def _collect(
 
             x0, y0 = region.x0, region.y0
             width, height = region.width, region.height
+            if context_model:
+                from quantem.inference.specs import MODEL_SPECS
+
+                if context_model not in MODEL_SPECS:
+                    raise ValueError(f"Unknown model: {context_model}")
+                spec = MODEL_SPECS[context_model]
+                # Half a model tile of real context on each side. Its labels
+                # remain invalid, even where a confirmed object extends out.
+                ratio = (
+                    spec.canonical_nm / float(asset.pixel_size_nm)
+                    if spec.canonical_nm and asset.pixel_size_nm
+                    else 1.0
+                )
+                margin = int(np.ceil(spec.tile_size * ratio / 2))
+                x0, y0 = max(0, x0 - margin), max(0, y0 - margin)
+                width = min(asset_w, region.x1 + margin) - x0
+                height = min(asset_h, region.y1 + margin) - y0
             shape = (height, width)
             valid = _rasterize([region.outline], x0, y0, shape)
             if region.source == SOURCE_DONE_ROI and polygons:
@@ -799,7 +816,6 @@ def _collect(
             inside = [p for p in objects if p.intersects(region.outline)]
             gt = _rasterize(inside, x0, y0, shape)
             np.bitwise_and(gt, valid, out=gt)  # GT only inside the annotated area
-            total_objects += len(inside)
 
             suffix = "done" if region.source == SOURCE_DONE_ROI else ""
             crop = AnnotatedCrop(
@@ -853,14 +869,8 @@ def _collect(
     elif not crop_set.crops:
         crop_set.blockers.append(
             f"{total_regions} annotated area(s) found, but none of them could be "
-            "used (too small, already covered by another area, or the image is "
+            "used (no rasterized pixels, already covered by another area, or the image is "
             "unavailable)."
-        )
-    elif total_objects == 0:
-        crop_set.blockers.append(
-            "No confirmed objects inside the annotated area. Confirm the objects "
-            "you want the model to learn — an empty region gives Dice nothing to "
-            "measure."
         )
     elif not crop_set.has_probability:
         if require_probability:
@@ -897,6 +907,7 @@ def collect_crops(
     load_em: bool = False,
     load_prob: bool = False,
     require_probability: bool = False,
+    context_model: str | None = None,
 ) -> CropSet:
     """Gather every annotated region reachable from ``segmentation`` as a crop.
 
@@ -927,6 +938,7 @@ def collect_crops(
         load_em=load_em,
         load_prob=load_prob,
         require_probability=require_probability,
+        context_model=context_model,
         nothing_annotated=NOTHING_ANNOTATED_HERE,
     )
 
@@ -938,6 +950,7 @@ def collect_crops_for_scope(
     load_em: bool = False,
     load_prob: bool = False,
     require_probability: bool = False,
+    context_model: str | None = None,
 ) -> CropSet:
     """Every annotated region for one organelle over an explicit set of images.
 
@@ -951,6 +964,7 @@ def collect_crops_for_scope(
         load_em=load_em,
         load_prob=load_prob,
         require_probability=require_probability,
+        context_model=context_model,
         nothing_annotated=NOTHING_ANNOTATED_IN_SCOPE,
     )
 
@@ -985,6 +999,7 @@ def require_crops(
     load_em: bool = False,
     load_prob: bool = False,
     require_probability: bool = False,
+    context_model: str | None = None,
 ) -> CropSet:
     """:func:`collect_crops`, but refusing when the data cannot support a score.
 
@@ -1001,6 +1016,7 @@ def require_crops(
             load_em=load_em,
             load_prob=load_prob,
             require_probability=require_probability,
+            context_model=context_model,
         )
     )
 
@@ -1012,6 +1028,7 @@ def require_crops_for_scope(
     load_em: bool = False,
     load_prob: bool = False,
     require_probability: bool = False,
+    context_model: str | None = None,
 ) -> CropSet:
     """:func:`collect_crops_for_scope`, refusing when the data cannot support one."""
     return _require(
@@ -1021,6 +1038,7 @@ def require_crops_for_scope(
             load_em=load_em,
             load_prob=load_prob,
             require_probability=require_probability,
+            context_model=context_model,
         )
     )
 

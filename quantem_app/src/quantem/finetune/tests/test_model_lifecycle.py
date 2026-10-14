@@ -58,6 +58,24 @@ class ModelLifecycleTests(TestCase):
         self.assertEqual(self.parent.status, "SUCCESS")
         self.assertEqual(self.parent.head_file.read_bytes(), b"test learned weights")
 
+    def test_continuation_cannot_overwrite_an_existing_version(self):
+        response = self.client.post(
+            "/api/finetune/runs/",
+            {
+                "name": "Child",
+                "segmentation_type": str(self.seg.segmentation_type_id),
+                "asset_ids": [str(self.seg.asset_id)],
+                "parent_adapter_id": str(self.parent.id),
+                "overwrite_adapter_id": str(self.parent.id),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("new version", response.data["detail"])
+        self.parent.refresh_from_db()
+        self.assertEqual(self.parent.status, "SUCCESS")
+        self.assertEqual(self.parent.head_file.read_bytes(), b"test learned weights")
+
     def test_training_initializes_every_round_from_parent_weights(self):
         engine = mock.Mock()
         engine.load_model.side_effect = [

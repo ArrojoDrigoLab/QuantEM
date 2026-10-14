@@ -64,6 +64,12 @@ models can be renamed, archived, restored to the list, applied to images, or use
 named model. Optionally include the parent's annotated images in the new training scope.
 Every validation round starts from that same parent checkpoint.
 
+**Training options** offers quick or extended schedules, custom step counts, learning rate,
+and optional validation to choose the duration. These controls work for both pretrained
+starting points and continued models. **Training history** in Models and completed runs
+shows checkpoint selection and the final refit separately. See [fine-tuning controls](docs/fine-tuning-controls.md)
+for annotation coverage, evaluation rules, and API options.
+
 Continued models retain their parent and cumulative training-image exposure. Their “before”
 score evaluates the parent. A new holdout split does not undo the parent's prior exposure,
 so these scores are not automatically independent validation.

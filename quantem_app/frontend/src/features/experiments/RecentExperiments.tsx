@@ -4,7 +4,7 @@ import { pinExperiment } from "@/shared/api/workspace";
 import { Button } from "@/shared/ui/design";
 import { useState } from "react";
 
-export function orderExperiments(experiments: Experiment[], sort: string) {
+function orderExperiments(experiments: Experiment[], sort: string) {
   return [...experiments].sort((a, b) =>
     Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
     (sort === "recent" ? (b.last_opened_at ?? "").localeCompare(a.last_opened_at ?? "") : 0) ||

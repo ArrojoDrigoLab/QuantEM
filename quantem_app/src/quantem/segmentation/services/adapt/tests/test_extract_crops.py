@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 from django.test import TestCase
+from django.utils import timezone
 from shapely.geometry import Polygon
 
 from quantem.segmentation.models import CompletedROI, ImageSegmentation, SegmentObject
@@ -78,15 +79,31 @@ class CropExtractionTests(TestCase):
             require_crops(self.segmentation)
         assert "marked as finished" in str(caught.exception)
 
-    def test_completed_roi_without_confirmed_objects_is_blocked(self):
+    def test_completed_roi_without_confirmed_objects_is_background_training_data(self):
         CompletedROI.objects.create(
             segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
         )
         self._segment(_square(30, 30, 70, 70), label_state="INFERRED")
 
         crop_set = collect_crops(self.segmentation)
-        assert not crop_set.ready
-        assert "confirmed objects" in crop_set.blockers[0]
+        assert crop_set.ready
+        assert crop_set.crops[0].foreground_px == 0
+        assert crop_set.crops[0].annotated_px > 0
+
+    def test_superseded_corrections_do_not_become_training_foreground(self):
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(20, 20, 140, 140)
+        )
+        old = self._segment(_square(30, 30, 70, 70))
+        old.superseded_at = timezone.now()
+        old.save(update_fields=["superseded_at"])
+        self._segment(_square(90, 90, 110, 110))
+
+        (crop,) = require_crops(self.segmentation).crops
+        assert crop.n_objects == 1
+        assert crop.foreground_px == 20 * 20
+        assert crop.gt[30, 30] == 0
+        assert crop.gt[80, 80] == 1
 
     def test_a_missing_probability_map_blocks_only_threshold_calibration(self):
         """Head training predicts its own maps, so it must stay reachable.
@@ -281,7 +298,7 @@ class CropExtractionTests(TestCase):
         assert crop.prob_is_composite
         assert any("composited from" in w for w in crop_set.warnings)
 
-    def test_tiny_completed_area_is_skipped_with_a_reason(self):
+    def test_tiny_completed_area_is_used(self):
         CompletedROI.objects.create(
             segmentation=self.segmentation, geometry=_square(10, 10, 20, 20)
         )
@@ -289,8 +306,27 @@ class CropExtractionTests(TestCase):
         self._prob_map()
 
         crop_set = collect_crops(self.segmentation)
-        assert crop_set.crops == []
-        assert any("too small" in w for w in crop_set.warnings)
+        assert len(crop_set.crops) == 1
+        assert crop_set.crops[0].annotated_px == 100
+
+    def test_real_image_context_does_not_expand_supervision(self):
+        CompletedROI.objects.create(
+            segmentation=self.segmentation, geometry=_square(40, 40, 60, 60)
+        )
+        self._segment(_square(45, 45, 55, 55))
+        plain = collect_crops(self.segmentation, load_em=True).crops[0]
+        expanded = collect_crops(
+            self.segmentation, load_em=True, context_model="quantem:mito"
+        ).crops[0]
+        assert expanded.width > plain.width
+        assert expanded.height > plain.height
+        assert expanded.annotated_px == plain.annotated_px == 400
+        assert expanded.foreground_px == plain.foreground_px == 100
+        assert np.all(expanded.target()[expanded.valid == 0] == IGNORE)
+        y, x = plain.y - expanded.y, plain.x - expanded.x
+        np.testing.assert_array_equal(
+            expanded.em[y:y + plain.height, x:x + plain.width], plain.em
+        )
 
 
 class SplitModeTests(TestCase):

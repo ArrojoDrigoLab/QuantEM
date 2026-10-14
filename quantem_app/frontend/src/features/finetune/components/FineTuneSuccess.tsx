@@ -1,5 +1,6 @@
 /** The completed fine-tune, its optional application targets, and live status. */
 
+import { TrainingHistory } from "./TrainingHistory";
 import { useEffect, useRef, useState } from "react";
 import { getFineTuneApplyProgress } from "@/shared/api/finetune";
 import { Badge, Button, Panel } from "@/shared/ui/design";
@@ -374,6 +375,7 @@ export function FineTuneSuccess({
         </p>
       </div>
 
+      <TrainingHistory rounds={run?.training_rounds} />
       {cv ? (
         <Panel className="p-3" data-testid="finetune-cv-results">
           <div className="flex flex-wrap items-center justify-between gap-2">
