@@ -57,8 +57,17 @@ describe("Experiment workbench", () => {
     await screen.findByText("Field 51");
     expect(screen.getByLabelText("Search images")).toHaveValue("Field 51");
     expect(screen.getByText("51 selected")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("View"), "cards");
+    expect(screen.getByText("Cards")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Search images")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Select all matching/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Sample ID")).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("View"), "table");
+    expect(screen.getByLabelText("Search images")).toHaveValue("Field 51");
+    expect(screen.getByText("51 selected")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Clear selection" }));
     expect(screen.getByText("0 selected")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Sample ID")).not.toBeInTheDocument();
   });
 
   it("requires a readiness check, queues the deduplicated selection and exports partial results", async () => {

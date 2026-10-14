@@ -1,13 +1,4 @@
-/**
- * The "?" beside a section, and what it says.
- *
- * The owner asked for help "on hover". Hover alone is help that does not exist
- * for anyone using a keyboard or a touch screen, so this is a real button: it
- * opens on hover *and* on focus, it toggles on click and on Enter or Space
- * because it is a button, it closes on Escape, and it is wired to its panel
- * with `aria-expanded` and `aria-controls` so a screen reader is told there is
- * something to open. Hover is the shortcut, not the mechanism.
- */
+/** Accessible contextual help, available on hover, focus, or click. */
 
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { cx } from "@/shared/ui/cx";

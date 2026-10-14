@@ -302,7 +302,7 @@ describe("ViewerScreen", () => {
     expect(
       await screen.findByRole("dialog", { name: "Export image or mask · Image 1" })
     ).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /canonical 8-bit PNG/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /8-bit PNG/i })).toBeChecked();
   });
 
   it("shows the experiment above the image name and returns to that experiment", async () => {

@@ -113,9 +113,6 @@ export function ExportDialog({
         <h2 id={titleId} className="m-0 text-xl font-semibold text-slate-950">
           Export image or mask · {asset.displayName}
         </h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Choose one source. The download is an 8-bit grayscale PNG.
-        </p>
 
         <fieldset className="mt-5 max-h-72 overflow-auto rounded-lg border border-slate-200 p-3">
           <legend className="px-1 text-sm font-semibold text-slate-800">Source</legend>
@@ -130,10 +127,7 @@ export function ExportDialog({
             />
             <span>
               <span className="block text-sm font-medium text-slate-900">
-                EM image (canonical 8-bit PNG)
-              </span>
-              <span className="block text-xs text-slate-500">
-                Canonical 8-bit grayscale pixels
+                EM image (8-bit PNG)
               </span>
             </span>
           </label>
@@ -192,8 +186,9 @@ export function ExportDialog({
           </p>
         ) : null}
 
-        <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-          This exports display rasters, not the original acquisition or measurement tables.
+        <details className="mt-4 text-xs leading-5 text-slate-600">
+          <summary className="cursor-pointer">About the exported PNG</summary>
+          <div className="mt-2">This exports display rasters, not the original acquisition or measurement tables.
           Background is 0. Object labels cycle from 1 through 255 and are not unique instance IDs.
           Use Analysis to export measurements and object IDs.
           {hasAnalysisMasks ? (
@@ -202,7 +197,8 @@ export function ExportDialog({
               the earlier object in the exported pixels.
             </span>
           ) : null}
-        </div>
+          </div>
+        </details>
 
         <div className="mt-6 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>

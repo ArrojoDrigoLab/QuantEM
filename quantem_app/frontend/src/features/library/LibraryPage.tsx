@@ -33,7 +33,6 @@ import {
 import { JobQueueSidebar } from "@/features/library/components/JobQueueSidebar";
 import { WorkflowGuide } from "@/features/library/components/WorkflowGuide";
 import {
-  hasSeenWorkflowGuide,
   rememberWorkflowGuideDismissed,
 } from "@/features/library/components/workflowGuideStorage";
 import { useExperiments } from "@/features/library/components/grouping/useExperiments";
@@ -241,7 +240,7 @@ export function LibraryPage() {
     useState<Experiment | null>(null);
   const [isQueueSidebarOpen, setIsQueueSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showHelp, setShowHelp] = useState(() => !hasSeenWorkflowGuide());
+  const [showHelp, setShowHelp] = useState(false);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [previewEntriesByExperiment, setPreviewEntriesByExperiment] = useState<
     Record<string, HomeEntry[]>
@@ -844,11 +843,6 @@ export function LibraryPage() {
             shownCount={previewEntries.length}
           />
         ) : null}
-        {selecting && selectedEntries.length === 0 ? (
-          <p className="m-0 text-sm text-slate-700">
-            Tick the images you want to put in an experiment or a dataset.
-          </p>
-        ) : null}
 
         {entriesLoading ? <PageState title="Loading images..." /> : null}
         {entriesError ? (
@@ -882,8 +876,7 @@ export function LibraryPage() {
                 ) : (
                   <div className="flex flex-col items-center gap-3">
                     <p className="m-0">
-                      QuantEM works on images you import from this machine. TIFF
-                      and PNG are accepted.
+                      TIFF and PNG images
                     </p>
                     <Button variant="primary" onClick={openFilePicker}>
                       Import an image

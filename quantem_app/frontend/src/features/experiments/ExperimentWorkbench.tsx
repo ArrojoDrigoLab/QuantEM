@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { getWorkspace, pinExperiment, saveSample, type WorkspaceImage } from "@/shared/api/workspace";
 import type { Experiment } from "@/shared/types/common";
 import { Button } from "@/shared/ui/design";
+import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import { SavedModelsPanel } from "@/features/models/SavedModelsPanel";
 import { BatchAnalysisPanel } from "./BatchAnalysisPanel";
 import { readWorkspaceMemory as readMemory, rememberWorkspace as writeMemory } from "./workspaceMemory";
@@ -81,6 +82,7 @@ export function ExperimentWorkbench({ experiment, children, refreshKey, onPin }:
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {tab === "images" && <>
       <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4">
+        {controls.layout === "table" && <>
         <label>Search images <input className="block rounded border px-2 py-1" type="search" value={controls.query} onChange={(e) => change({ query: e.target.value })} /></label>
         <label>Dataset <select className="block rounded border px-2 py-1" value={controls.dataset} onChange={(e) => change({ dataset: e.target.value })}>
           <option value="">All datasets</option><option value="ungrouped">Ungrouped</option>{experiment.datasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}</select></label>
@@ -88,18 +90,18 @@ export function ExperimentWorkbench({ experiment, children, refreshKey, onPin }:
           <option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="sample">Sample ID</option></select></label>
         <label>Readiness <select className="block rounded border px-2 py-1" value={controls.readiness} onChange={(e) => change({ readiness: e.target.value })}>
           <option value="">All images</option><option value="uncalibrated">Missing calibration</option><option value="reviewed">Has completed review</option><option value="unreviewed">No completed review</option></select></label>
+        </>}
         <label>View <select className="block rounded border px-2 py-1" value={controls.layout} onChange={(e) => change({ layout: e.target.value })}>
           <option value="table">Workflow table</option><option value="cards">Dataset cards</option></select></label>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      {controls.layout === "table" && <div className="flex flex-wrap items-center gap-2">
         <strong>{selectedIds.length} selected</strong>
         <Button onClick={() => select(visible.map((image) => image.id))}>Select visible ({visible.length})</Button>
         <Button onClick={() => select(filtered.map((image) => image.id))}>Select all matching ({filtered.length})</Button>
         <Button onClick={() => change({ selected: [] })}>Clear selection</Button>
         <Button variant="primary" disabled={!selectedIds.length} onClick={() => chooseTab("analysis")}>Analyze selection</Button>
-        <span className="text-xs text-slate-600">Selections persist across filters; each image is included once.</span>
-      </div>
-      {controls.layout === "cards" ? <><p className="text-sm text-slate-600">Dataset cards show the full experiment for editing. Search, readiness and selection above apply to the workflow table.</p>{children}</> :
+      </div>}
+      {controls.layout === "cards" ? children :
         loading ? <p role="status">Loading workflow status…</p> :
         <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
           <thead><tr>{["Select", "Image", "Dataset", "Calibration", "Prediction / review", "Measurements", "Sample / group"].map((label) => <th key={label} className="border-b p-3">{label}</th>)}</tr></thead>
@@ -117,12 +119,12 @@ export function ExperimentWorkbench({ experiment, children, refreshKey, onPin }:
           </tr>)}</tbody>
         </table>{!visible.length && !error && <p className="p-4">No images match these filters.</p>}
         <div className="flex items-center justify-between p-3"><Button disabled={page === 0} onClick={() => setPage(page - 1)}>Previous page</Button><span>Page {Math.min(page, pageCount - 1) + 1} of {pageCount} · {filtered.length} images</span><Button disabled={page >= pageCount - 1} onClick={() => setPage(page + 1)}>Next page</Button></div></div>}
-      <form className="flex flex-wrap items-end gap-3 rounded border bg-white p-4" onSubmit={(e) => { e.preventDefault(); void setMetadata(); }}>
-        <div className="w-full"><strong>Group selected images</strong><p className="text-sm text-slate-600">Sample IDs default to image names. Use a shared ID to average images from the same sample together.</p></div>
+      {controls.layout === "table" && selectedIds.length > 0 && <form className="flex flex-wrap items-end gap-3 rounded border bg-white p-4" onSubmit={(e) => { e.preventDefault(); void setMetadata(); }}>
+        <div className="flex w-full items-center gap-2"><strong>Group selected images</strong><HelpDisclosure label="sample IDs" title="Sample IDs">Images with the same sample ID are averaged together before calculating group statistics. By default, each image is a separate sample.</HelpDisclosure></div>
         <label>Sample ID <input className="block rounded border px-2 py-1" maxLength={255} placeholder="Image name by default" value={sample} onChange={(e) => setSample(e.target.value)} /></label>
         <label>Group <input className="block rounded border px-2 py-1" maxLength={255} value={group} onChange={(e) => setGroup(e.target.value)} /></label>
         <Button type="submit" disabled={saving || !selectedIds.length}>Save for {selectedIds.length} images</Button>
-      </form>
+      </form>}
     </>}
     {tab === "analysis" && <BatchAnalysisPanel experimentId={experiment.id} images={images} selectedIds={selectedIds} />}
     {tab === "models" && <SavedModelsPanel experimentId={experiment.id} />}

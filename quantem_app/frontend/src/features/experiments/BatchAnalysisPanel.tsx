@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiRequest, resolveApiUrl } from "@/shared/api/core/http";
 import type { WorkspaceImage } from "@/shared/api/workspace";
 import { Button } from "@/shared/ui/design";
+import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 
 interface Identity { image: string; asset_id: string; organelle: string; sample_id: string; group: string; measurement_area: string; pixel_size_nm: number | null }
@@ -98,10 +99,14 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds }: { expe
       {!options.length && <p>Run a segmentation on an image before measuring this experiment.</p>}
     </fieldset>
     <div className="flex flex-wrap gap-4">
-      <label><input type="checkbox" checked={complete} onChange={(e) => setComplete(e.target.checked)} /> Require review marked complete</label>
+      <div className="flex items-center gap-2">
+        <label><input type="checkbox" checked={complete} onChange={(e) => setComplete(e.target.checked)} /> Require review marked complete</label>
+        <HelpDisclosure label="review requirements" title="Unfinished reviews">
+          Only confirmed objects are counted. Including unfinished reviews may give lower counts.
+        </HelpDisclosure>
+      </div>
       <label><input type="checkbox" checked={reuse} onChange={(e) => setReuse(e.target.checked)} /> Reuse matching current results</label>
     </div>
-    {!complete && <p className="text-sm text-amber-900">Only confirmed objects are counted, so unfinished reviews may give lower counts.</p>}
     <div className="flex flex-wrap gap-2">
       <Button disabled={busy || !selectedIds.length || !types.length} onClick={() => void run(true)}>Check readiness</Button>
       <Button variant="primary" disabled={busy || previewKey !== payloadKey || !preview?.some((item) => item.ready)} onClick={() => void run(false)}>Run ready images</Button>

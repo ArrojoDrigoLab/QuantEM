@@ -63,9 +63,6 @@ describe("ModelsScreen", () => {
 
     expect(await screen.findByText("OmniEM (Large model)")).toBeInTheDocument();
     expect(screen.getByText("QuantEM (Basic model)")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Model weights are not included in the application/i)
-    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute(
       "href",
       "/"

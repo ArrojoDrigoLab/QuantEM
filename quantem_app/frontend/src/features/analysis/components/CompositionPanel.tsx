@@ -141,14 +141,17 @@ export function CompositionPanel({
         </table>
       </div>
 
-      <p className="mt-3 mb-0 text-xs text-slate-500">
+      <details className="mt-3 text-xs text-slate-500">
+        <summary className="cursor-pointer">How areas are measured</summary>
+        <p className="mt-2 mb-0">
         {wholeImageDenominator
           ? "Fractions are of the whole image because this run had no Analysis Mask."
           : "Each row is measured independently within that named Analysis Mask object."}
         {hasDerivedCytoplasm
           ? " Cytoplasm is derived as the analysis area minus nucleus; organelle compartments are subsets of it."
           : ""}
-      </p>
+        </p>
+      </details>
     </Panel>
   );
 }

@@ -518,7 +518,7 @@ describe("FineTuneDialog", () => {
     await selectTheDataset(user);
 
     const useAll = screen.getByRole("radio", { name: /^Use all/ });
-    const holdOut = screen.getByRole("radio", { name: /^Hold out one Keep one/ });
+    const holdOut = screen.getByRole("radio", { name: /^Hold out one$/ });
     const cv = screen.getByRole("radio", { name: /cross-validation benchmarking/ });
     expect([useAll, holdOut, cv]).toHaveLength(3);
 
@@ -538,7 +538,7 @@ describe("FineTuneDialog", () => {
     openDialog();
     await selectTheDataset(user);
 
-    expect(screen.getByRole("radio", { name: /^Hold out one Keep one/ })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: /^Hold out one$/ })).toBeEnabled();
     expect(
       screen.getByRole("radio", { name: /cross-validation benchmarking/ })
     ).toBeDisabled();
@@ -841,8 +841,10 @@ describe("FineTuneDialog", () => {
 
     expect(screen.getByLabelText("Name")).toHaveValue("First attempt · next version");
     expect(
-      screen.getByText(/Creates a new version from the saved weights/)
-    ).toBeInTheDocument();
+      screen.getByText(/Saves a new version. Images used by the parent model/)
+    ).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "About continued training" }));
+    expect(screen.getByText(/Saves a new version. Images used by the parent model/)).toBeVisible();
   });
 
   it("hides continuation controls when this organelle has no fine-tunes", async () => {

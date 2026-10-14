@@ -174,10 +174,6 @@ export function SettingsDialog({
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="m-0 text-lg font-semibold text-slate-950">Models</h2>
-              <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                Model weights are not included in the application. Select models here
-                to download / remove.
-              </p>
             </div>
           </div>
           <ModelManagementSection compact />

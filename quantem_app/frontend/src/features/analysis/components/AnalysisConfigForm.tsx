@@ -1,6 +1,7 @@
 /** Configure one analysis run with its measured compartments and analysis mask. */
 
 import { Button, Panel } from "@/shared/ui/design";
+import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import type { ImageSegmentation } from "@/shared/types/images";
 import { segmentationDisplayName } from "@/shared/segmentationNames";
 import {
@@ -95,9 +96,12 @@ export function AnalysisConfigForm({
       </fieldset>
 
       <div className="mt-4">
-        <label className={LABEL_CLASS} htmlFor="analysis-mask">
-          Analysis Mask
-        </label>
+        <div className="flex items-center gap-2">
+          <label className={LABEL_CLASS} htmlFor="analysis-mask">Analysis Mask</label>
+          {state.tissueSegmentationId && <HelpDisclosure label="masked measurements" title="Measuring within a mask">
+            An object is included when its centre is inside the mask; its full outline is measured. Compartment areas are clipped to the mask.
+          </HelpDisclosure>}
+        </div>
         <select
           id="analysis-mask"
           className={`${FIELD_CLASS} mt-1`}
@@ -112,7 +116,6 @@ export function AnalysisConfigForm({
             </option>
           ))}
         </select>
-        <p className="mt-2 text-xs text-slate-600">Counts and morphology use confirmed objects whose centroids fall inside the selected area. Outlines are measured in full; compartment areas are clipped to the mask.</p>
       </div>
 
       <div className="mt-4">

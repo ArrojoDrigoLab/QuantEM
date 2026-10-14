@@ -43,10 +43,9 @@ import {
 import { getSegmentationTypes } from "@/shared/api/assets";
 import { RunProgressList } from "@/shared/progress/RunProgressList";
 import { Button } from "@/shared/ui/design";
-import { TRAINING_ANNOTATION_SOURCES } from "@/shared/constants/confirmedArea";
 import { suggestBaseModel, toModelChoices } from "@/features/improve/modelChoices";
 import { FineTuneSuccess } from "@/features/finetune/components/FineTuneSuccess";
-import { HelpDisclosure } from "@/features/finetune/components/HelpDisclosure";
+import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import { ScopePicker } from "@/features/finetune/components/ScopePicker";
 import { fineTuneProgressRows } from "@/features/finetune/fineTuneProgressRows";
 import { parseTrainingInputs } from "@/features/finetune/trainingOptions";
@@ -663,8 +662,6 @@ function FineTuneDialogBody({
 
   // --- render ------------------------------------------------------------
 
-  const organelleLabel = resolvedType?.short_name || resolvedType?.long_name || "";
-
   return (
     <div
       className="finetune-dialog-overlay"
@@ -684,13 +681,6 @@ function FineTuneDialogBody({
             <h2 id={titleId} className="m-0 text-lg font-semibold text-slate-950">
               Fine-tune a model
             </h2>
-            <p className="m-0 mt-0.5 text-xs text-slate-600">
-              {dialogMode === "apply"
-                ? "Run a saved fine-tune and review its saved results."
-                : organelleLabel
-                  ? `Train on your own ${organelleLabel.toLowerCase()} annotations.`
-                  : "Train on your own annotations, one organelle at a time."}
-            </p>
           </div>
           {/* Not just "Close": the footer has a Close too, and two controls
               with one accessible name is a screen reader reading the same word
@@ -755,9 +745,6 @@ function FineTuneDialogBody({
                   >
                     Organelle
                   </label>
-                  <p className="m-0 mb-1 text-xs text-slate-600">
-                    One fine-tune trains one organelle.
-                  </p>
                   <select
                     id={organelleId}
                     className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
@@ -826,12 +813,13 @@ function FineTuneDialogBody({
                       ))}
                     </select>
                     {parentAdapterId ? (
-                      <p className="m-0 mt-1 text-xs text-slate-600">
-                        Creates a new version from the saved weights. Comparison is against the parent model.
-                        Previously seen images are not an independent test set.
-                        <label className="mt-2 block"><input type="checkbox" checked={includePrevious}
+                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                        <label><input type="checkbox" checked={includePrevious}
                           onChange={(event) => setIncludePrevious(event.target.checked)} /> Include the parent's annotated images</label>
-                      </p>
+                        <HelpDisclosure label="continued training" title="Continue a saved model">
+                          Saves a new version. Images used by the parent model cannot provide an independent test of improvement.
+                        </HelpDisclosure>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
@@ -877,11 +865,8 @@ function FineTuneDialogBody({
                     htmlFor={searchId}
                     className="text-sm font-semibold text-slate-900"
                   >
-                    Applies to
+                    Training images
                   </label>
-                  <span className="text-xs text-slate-600">
-                    Everything picked has to be in one experiment.
-                  </span>
                 </div>
                 <input
                   id={searchId}
@@ -926,9 +911,6 @@ function FineTuneDialogBody({
                     {annotationCount === 1 ? "annotation" : "annotations"} across{" "}
                     {imageCount} {imageCount === 1 ? "image" : "images"}
                   </p>
-                  <p className="m-0 mt-0.5 text-xs text-slate-600">
-                    {TRAINING_ANNOTATION_SOURCES}
-                  </p>
                   {livePreview ? (
                     <p className="m-0 mt-0.5 text-xs text-slate-600">
                       {livePreview.confirmed_areas} confirmed{" "}
@@ -947,11 +929,9 @@ function FineTuneDialogBody({
                   ) : null}
                 </div>
 
-                {livePreview?.coverage ? (
-                  <p className="text-xs text-slate-600">
-                    {livePreview.coverage.areas_with_tiles} of {annotationCount} areas contribute training pixels,
-                    including {livePreview.coverage.background_only_areas} background-only areas.
-                    Only completed pixels affect training; surrounding image context is ignored by the loss.
+                {livePreview?.coverage && livePreview.coverage.areas_with_tiles < annotationCount ? (
+                  <p className="text-xs text-amber-800">
+                    {annotationCount - livePreview.coverage.areas_with_tiles} selected areas contain no usable training pixels.
                   </p>
                 ) : null}
                 {livePreview?.warnings?.map((warning) => <p key={warning} className="text-xs text-amber-800">{warning}</p>)}
@@ -1014,9 +994,6 @@ function FineTuneDialogBody({
                         />
                         <span>
                           <span className="font-medium">{option.label}</span>
-                          <span className="block text-xs text-slate-600">
-                            {option.summary}
-                          </span>
                           {!available ? (
                             <span className="block text-xs text-slate-500">
                               Requires at least {minimum} annotations.
@@ -1047,7 +1024,12 @@ function FineTuneDialogBody({
                   <label>Random seed
                     <input type="number" min="0" max="4294967295" step="1" className="block w-full rounded border p-1" value={seed} onChange={(e) => setSeed(e.target.value)} />
                   </label>
-                  <label className="col-span-2"><input type="checkbox" checked={validation} onChange={(e) => setValidation(e.target.checked)} /> Select the training duration using validation</label>
+                  <div className="col-span-2 flex items-center gap-2">
+                    <label><input type="checkbox" checked={validation} onChange={(e) => setValidation(e.target.checked)} /> Select the training duration using validation</label>
+                    <HelpDisclosure label="validation" title="Training duration">
+                      Uses 20% of training images to choose the duration, then trains on all of them. Requires at least two images and can take twice as long. Held-out test images remain separate.
+                    </HelpDisclosure>
+                  </div>
                   <label>Evaluate every (steps)
                     <input type="number" min="1" max="20000" className="block w-full rounded border p-1" value={evalInterval} onChange={(e) => setEvalInterval(e.target.value)} />
                   </label>
@@ -1055,7 +1037,6 @@ function FineTuneDialogBody({
                     <input type="number" min="0" max="1000" disabled={!validation} className="block w-full rounded border p-1" value={patience} onChange={(e) => setPatience(e.target.value)} />
                   </label>
                 </div>
-                <p className="text-xs text-slate-600">Each pass visits every training tile before repeating. Validation reserves 20% of the training images to select the best loss, then refits all training areas for the selected duration. It needs at least two training images and can take up to twice the step budget. Final held-out images remain separate. Training and validation history is saved with the model.</p>
               </details>
               {trainingInputs.error && <p role="alert" className="text-sm text-red-700">{trainingInputs.error}</p>}
               {submitError ? (

@@ -525,10 +525,6 @@ export function FineTuneSuccess({
             {picked.size === scopedImages.length ? "Clear all" : "Select all"}
           </button>
         </div>
-        <p className="m-0 mt-1 text-xs text-slate-600">
-          Optional, and nothing has been queued. Anything you drew, confirmed or
-          removed on these images stays exactly as it is.
-        </p>
         <ul
           className="m-0 mt-2 max-h-40 list-none overflow-y-auto rounded-md border border-slate-200 p-2"
           data-testid="finetune-apply-images"
@@ -555,7 +551,7 @@ export function FineTuneSuccess({
         <div>
           <div className="flex items-baseline justify-between gap-2">
             <p className="m-0 text-sm font-semibold text-slate-900">
-              Or run it across a Dataset
+              Apply to all images in selected datasets
             </p>
             <button
               type="button"
@@ -573,11 +569,6 @@ export function FineTuneSuccess({
                 : "Select all datasets"}
             </button>
           </div>
-          <p className="m-0 mt-1 text-xs text-slate-600">
-            Datasets are the existing groups in this Experiment. Every active
-            image in a selected Dataset is queued, including images that were
-            not part of training.
-          </p>
           <ul
             className="m-0 mt-2 max-h-32 list-none overflow-y-auto rounded-md border border-slate-200 p-2"
             data-testid="finetune-apply-datasets"

@@ -46,7 +46,6 @@ export function SavedModelsPanel({ experimentId }: { experimentId?: string }) {
       <label><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived</label>
       <Button onClick={() => void load()}>Refresh</Button>
     </div>
-    <p className="my-2 text-sm text-slate-600">Each continued fine-tune creates a separate version. Archive hides a model from new selections; existing results retain their model history.</p>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {loading ? <p role="status">Loading models…</p> : !models.length && !error ? <p>No saved fine-tunes here yet. Use Fine-tune to create one.</p> : null}
     <div className="space-y-3">{models.map((model) => <article key={model.id} className="rounded border p-3">

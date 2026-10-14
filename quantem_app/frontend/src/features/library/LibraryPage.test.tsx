@@ -171,7 +171,9 @@ describe("LibraryPage", () => {
     const user = userEvent.setup();
     window.localStorage.clear();
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Hide guide" }));
+    expect(screen.queryByRole("button", { name: "Hide guide" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Guide" }));
+    await user.click(screen.getByRole("button", { name: "Hide guide" }));
     expect(window.localStorage.getItem("quantem-workflow-guide-dismissed-v1")).toBe("1");
   });
 

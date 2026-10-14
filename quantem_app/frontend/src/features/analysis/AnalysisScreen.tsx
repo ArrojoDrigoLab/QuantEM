@@ -341,14 +341,10 @@ export function AnalysisScreen() {
                 <h2 className="m-0 text-base font-semibold text-slate-950">
                   Foreground area
                 </h2>
-                <p className="mt-2 text-sm text-slate-600">
-                  Global masks report area only: foreground pixels divided by
-                  the whole image or by each selected analysis mask.
-                </p>
                 {availableAnalysisMasks.length > 0 ? (
                   <fieldset className="mt-3 space-y-2">
                     <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Analysis-mask denominators
+                      Measurement areas
                     </legend>
                     {availableAnalysisMasks.map((mask) => (
                       <label key={mask.id} className="flex items-center gap-2 text-sm">
@@ -543,8 +539,7 @@ export function AnalysisScreen() {
             {runState.status === null ? (
               <Panel className="p-6 text-center">
                 <p className="m-0 text-sm text-slate-600">
-                  Configure a run on the left, or pick one from the history to
-                  read its results.
+                  No run selected.
                 </p>
                 <div className="mt-3">
                   <Button
