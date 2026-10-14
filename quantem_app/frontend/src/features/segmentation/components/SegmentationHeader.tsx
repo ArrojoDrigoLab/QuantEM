@@ -18,7 +18,7 @@
  * * `header/AboutThisResult.tsx` — the provenance chips,
  *   the discard-and-re-run trigger, and the two route links;
  * * `header/notices.tsx` — every `role="status"` sentence under the controls;
- * * `header/CompletionDialogs.tsx` — Mark Image Done and delete-and-re-run,
+ * * `header/CompletionDialogs.tsx` — Lock segmentation and delete-and-re-run,
  *   with the state each of them needs in `header/completionDialogState.ts`.
  *
  * Nothing moved changed. The props of `SegmentationHeader` are what they were,
@@ -325,7 +325,7 @@ export function SegmentationHeader({
           }}
           disabled={!currentSegmentation}
         >
-          {isComplete ? "Unlock segmentation" : "Mark Image Done"}
+          {isComplete ? "Unlock segmentation" : "Lock segmentation"}
         </button>
       </div>
 
