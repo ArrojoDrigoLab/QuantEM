@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useModalLifecycle } from "@/shared/hooks/useModalLifecycle";
 import { createPortal } from "react-dom";
 import { getAnalysisExportUrl, getAnalysisRun } from "@/shared/api/analysis";
 import type { BatchItem } from "@/shared/api/analysisHistory";
@@ -25,32 +26,7 @@ export function ImageAnalysisResultsDialog({ item, images, onClose }: {
   const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
-  const onCloseRef = useRef(onClose);
-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
-
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeRef.current?.focus();
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); onCloseRef.current(); return; }
-      if (event.key !== "Tab") return;
-      const elements = [...(panelRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], select:not([disabled]), [tabindex="0"]') ?? [])]
-        .filter((element) => element.tabIndex >= 0 && !element.closest("[hidden]"));
-      const first = elements[0];
-      const last = elements.at(-1);
-      if (!panelRef.current?.contains(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first)?.focus(); }
-      else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("keydown", handleKey);
-      document.body.style.overflow = previousOverflow;
-      previousFocus?.focus({ preventScroll: true });
-    };
-  }, []);
+  useModalLifecycle(panelRef, onClose, { initialFocusRef: closeRef });
 
   useEffect(() => {
     if (!item.run_id) return;
@@ -62,7 +38,7 @@ export function ImageAnalysisResultsDialog({ item, images, onClose }: {
     return () => { cancelled = true; };
   }, [item.run_id, retry]);
 
-  const structure = images.flatMap((image) => image.segmentations).find((seg) => seg.type === item.identity.organelle)?.name ?? item.identity.organelle;
+  const structure = item.identity.structure ?? images.flatMap((image) => image.segmentations).find((seg) => seg.type === item.identity.organelle)?.name ?? item.identity.organelle;
   const metrics = Object.entries(item.metrics ?? {});
   return createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-3 sm:p-5" onClick={onClose}>
     <section ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} onClick={(event) => event.stopPropagation()}

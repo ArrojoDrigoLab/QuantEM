@@ -136,8 +136,14 @@ class NamedRunTests(TestCase):
         assert job.progress_units_total == 420
 
     def test_extended_options_are_validated_and_budget_selection_plus_refit(self):
-        response = self._start(steps=4000, lr=0.00003, schedule="extended",
-                               validation_fraction=0.2, eval_interval=200, patience=4)
+        response = self._start(
+            steps=4000,
+            lr=0.00003,
+            schedule="extended",
+            validation_fraction=0.2,
+            eval_interval=200,
+            patience=4,
+        )
         assert response.status_code == 202
         job = Job.objects.get(id=response.json()["job_id"])
         assert job.payload_json["training_options"]["lr"] == 0.00003
@@ -299,7 +305,11 @@ class NamedRunTests(TestCase):
         assert self._start().status_code == 202
         clash = self._start()
         assert clash.status_code == 409
-        assert "already called" in clash.json()["detail"]
+        assert (
+            clash.json()["detail"]
+            == "This name was used by a previous model and cannot be re-used. Make a new name."
+        )
+        assert clash.json()["code"] == "model_name_reserved"
 
     def test_the_same_name_for_another_organelle_is_a_different_fine_tune(self):
         from quantem.segmentation.type_service import get_or_create_er_type

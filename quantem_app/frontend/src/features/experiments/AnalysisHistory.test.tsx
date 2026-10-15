@@ -15,12 +15,30 @@ vi.mock("@/features/analysis/components/AnalysisResults", () => ({ AnalysisResul
 const entry: AnalysisHistoryEntry = { id: "batch", kind: "batch", name: "Donor comparison", created_at: "2026-10-14T12:00:00Z", status: "SUCCESS", images: [{ id: "a", name: "Field A" }, { id: "b", name: "Field B" }], structures: ["Mitos"], measurement_count: 2, measurement_area: "Whole image", completed_image_ids: ["a", "b"] };
 beforeEach(() => vi.clearAllMocks());
 
+it("loads older pages on demand and preserves the image filter", async () => {
+  vi.mocked(getAnalysisHistory).mockImplementation(async (_experiment, _image, offset = 0) => ({
+    results: [{ ...entry, id: offset ? "older" : "recent", name: offset ? "Older analysis" : "Recent analysis" }],
+    count: 26, limit: 25, offset, next_offset: offset ? null : 25,
+  }));
+  render(<MemoryRouter initialEntries={["/?image=a"]}><AnalysisHistory experimentId="exp" images={[]} /></MemoryRouter>);
+  await screen.findByRole("button", { name: /Recent analysis/ });
+  expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByRole("button", { name: /Older analysis/ });
+  expect(getAnalysisHistory).toHaveBeenLastCalledWith("exp", "a", 25);
+  expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: /Recent analysis/ })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Previous page" }));
+  await screen.findByRole("button", { name: /Recent analysis/ });
+  expect(getAnalysisHistory).toHaveBeenLastCalledWith("exp", "a", 0);
+});
+
 it("filters history by image but opens every image and saved setting in the original batch", async () => {
-  vi.mocked(getAnalysisHistory).mockResolvedValue([entry]);
+  vi.mocked(getAnalysisHistory).mockResolvedValue({ results: [entry], count: 1, offset: 0, limit: 25, next_offset: null });
   vi.mocked(getAnalysisBatch).mockResolvedValue({ id: "batch", name: entry.name, created_at: entry.created_at, settings: { require_complete: true, reuse: false }, items: entry.images.map((image) => ({ identity: { image: image.name, asset_id: image.id, organelle: "mitochondria", sample_id: image.name, group: "", pixel_size_nm: 2.5, measurement_area: "Whole image" }, status: "SUCCESS", reason: "", params: { seed: 42 }, metrics: { n_objects: 7, area_fraction_mito: 0.00000012345 }, notes: ["No tissue mask was supplied."], run_id: `run-${image.id}` })) });
   render(<MemoryRouter initialEntries={["/experiments/exp?tab=analysis&image=a"]}><AnalysisHistory experimentId="exp" images={[]} /></MemoryRouter>);
   const row = await screen.findByRole("button", { name: /Donor comparison/ });
-  expect(getAnalysisHistory).toHaveBeenCalledWith("exp", "a");
+  expect(getAnalysisHistory).toHaveBeenCalledWith("exp", "a", 0);
   expect(getAnalysisBatch).not.toHaveBeenCalled();
   await userEvent.click(row);
   expect(await screen.findByRole("cell", { name: "Field B" })).toBeInTheDocument();
@@ -63,7 +81,7 @@ it("filters history by image but opens every image and saved setting in the orig
 });
 
 it("opens older individual results and exposes their actual saved exports", async () => {
-  vi.mocked(getAnalysisHistory).mockResolvedValue([{ ...entry, id: "run", kind: "run", images: [entry.images[0]] }]);
+  vi.mocked(getAnalysisHistory).mockResolvedValue({ results: [{ ...entry, id: "run", kind: "run", images: [entry.images[0]] }], count: 1, offset: 0, limit: 25, next_offset: null });
   vi.mocked(getAnalysisRun).mockResolvedValue({ id: "run", params: { seed: 19 }, exports: ["objects.csv", "manifest.json"], status: "SUCCESS" } as unknown as AnalysisRun);
   render(<MemoryRouter><AnalysisHistory experimentId="exp" images={[]} /></MemoryRouter>);
   await userEvent.click(await screen.findByRole("button", { name: /Donor comparison/ }));

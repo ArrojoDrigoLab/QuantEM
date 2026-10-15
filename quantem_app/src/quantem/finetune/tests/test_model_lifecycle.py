@@ -105,6 +105,36 @@ class ModelLifecycleTests(TestCase):
             409,
         )
 
+    def test_deleted_name_stays_reserved_with_an_actionable_message(self):
+        self.assertEqual(self.client.delete(self.url).status_code, 204)
+        with installed_pack():
+            response = self.client.post(
+                "/api/finetune/runs/",
+                {
+                    "name": self.parent.name,
+                    "segmentation_type": str(self.seg.segmentation_type_id),
+                    "asset_ids": [str(self.seg.asset_id)],
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "model_name_reserved")
+        self.assertEqual(
+            response.data["detail"],
+            "This name was used by a previous model and cannot be re-used. Make a new name.",
+        )
+        other = Adapter.objects.create(
+            name="Other",
+            segmentation_type=self.seg.segmentation_type,
+            base_model="quantem:mito",
+            status="SUCCESS",
+        )
+        response = self.client.patch(
+            f"/api/finetune/models/{other.id}/", {"name": self.parent.name}, format="json"
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "model_name_reserved")
+
     def test_delete_refuses_active_inference_and_descendants(self):
         job = Job.objects.create(
             type="run_segmentation_full_task",

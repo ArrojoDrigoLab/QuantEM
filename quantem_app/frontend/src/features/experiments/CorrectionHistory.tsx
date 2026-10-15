@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useModalLifecycle } from "@/shared/hooks/useModalLifecycle";
 import { apiRequest } from "@/shared/api/core/http";
 import { getAssetSegmentations } from "@/shared/api/assets";
 import type { ImageSegmentation } from "@/shared/types";
@@ -8,6 +9,8 @@ import { extractApiErrorMessage } from "@/utils/apiErrors";
 
 interface Revision { id: string; name: string; created_at: string; object_count: number }
 export function CorrectionHistory({ assetId, onClose }: { assetId: string; onClose: () => void }) {
+  const panelRef = useRef<HTMLElement>(null);
+  useModalLifecycle(panelRef, onClose);
   const [segmentations, setSegmentations] = useState<ImageSegmentation[]>([]);
   const [segId, setSegId] = useState("");
   const [rows, setRows] = useState<Revision[]>([]);
@@ -40,7 +43,7 @@ export function CorrectionHistory({ assetId, onClose }: { assetId: string; onClo
     finally { setBusy(false); }
   };
   return <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 p-5">
-    <section role="dialog" aria-modal="true" aria-label="Correction history" className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-xl">
+    <section ref={panelRef} role="dialog" aria-modal="true" aria-label="Correction history" className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-xl">
       <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Correction history</h2><Button onClick={onClose}>Close</Button></div>
       <label>Segmentation <select className="rounded border p-2" value={segId} onChange={(e) => setSegId(e.target.value)}>
         {segmentations.map((seg) => <option key={seg.id} value={seg.id}>{seg.display_name || seg.segmentation_type.long_name}</option>)}</select></label>

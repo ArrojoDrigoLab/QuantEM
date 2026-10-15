@@ -57,7 +57,7 @@ function HistoryDetails({ entry, images, onChanged }: { entry: AnalysisHistoryEn
     <div className="overflow-x-auto"><table className="w-full text-left text-sm">
       <thead><tr>{["Image", "Structure", "Area", "Status", "Results"].map((name) => <th className="border-b p-2" key={name}>{name}</th>)}</tr></thead>
       <tbody>{detail.items.map((item, index) => {
-        const structure = images.flatMap((image) => image.segmentations).find((seg) => seg.type === item.identity.organelle)?.name ?? item.identity.organelle;
+        const structure = item.identity.structure ?? images.flatMap((image) => image.segmentations).find((seg) => seg.type === item.identity.organelle)?.name ?? item.identity.organelle;
         return <tr key={index}>
         <td className="border-b p-2">{item.identity.image}</td>
         <td className="border-b p-2">{structure}</td>
@@ -80,37 +80,46 @@ function HistoryDetails({ entry, images, onChanged }: { entry: AnalysisHistoryEn
 export function AnalysisHistory({ experimentId, images, refreshKey = 0 }: { experimentId: string; images: WorkspaceImage[]; refreshKey?: number }) {
   const [params] = useSearchParams();
   const imageId = params.get("image") ?? undefined;
+  return <HistoryPage key={`${experimentId}:${imageId ?? ""}`} experimentId={experimentId} images={images} refreshKey={refreshKey} imageId={imageId} />;
+}
+
+function HistoryPage({ experimentId, images, refreshKey, imageId }: {
+  experimentId: string; images: WorkspaceImage[]; refreshKey: number; imageId?: string;
+}) {
   const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [count, setCount] = useState(0);
+  const [limit, setLimit] = useState(25);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [revision, setRevision] = useState(0);
   const [open, setOpen] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const reload = () => { void getAnalysisHistory(experimentId, imageId).then(setEntries).catch((cause) => setError(extractApiErrorMessage(cause, "Analysis history could not be refreshed."))); };
+  const reload = () => setRevision((value) => value + 1);
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(""); setOpen("");
-    void getAnalysisHistory(experimentId, imageId).then((rows) => {
-      if (!cancelled) setEntries(rows);
-    }).catch((cause) => { if (!cancelled) setError(extractApiErrorMessage(cause, "Analysis history could not be loaded.")); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [experimentId, imageId, refreshKey]);
-  const active = entries.some((entry) => ["PENDING", "RUNNING"].includes(entry.status));
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    const timer = window.setInterval(() => {
-      void getAnalysisHistory(experimentId, imageId).then((rows) => { if (!cancelled) setEntries(rows); })
-        .catch((cause) => { if (!cancelled) setError(extractApiErrorMessage(cause, "Analysis history could not be refreshed.")); });
-    }, 5000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [active, experimentId, imageId]);
+    let timer: number | undefined;
+    setError("");
+    const refresh = async () => {
+      try {
+        const page = await getAnalysisHistory(experimentId, imageId, offset);
+        if (cancelled) return;
+        setEntries(page.results); setCount(page.count); setLimit(page.limit); setNextOffset(page.next_offset); setError("");
+        if (page.results.some((entry) => ["PENDING", "RUNNING"].includes(entry.status))) timer = window.setTimeout(() => void refresh(), 5000);
+      } catch (cause) {
+        if (!cancelled) setError(extractApiErrorMessage(cause, "Analysis history could not be loaded."));
+      } finally { if (!cancelled) setLoading(false); }
+    };
+    void refresh();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [experimentId, imageId, refreshKey, offset, revision]);
   const image = images.find((entry) => entry.id === imageId);
   return <section className="space-y-3" aria-label="Previous analyses">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold">{imageId ? `Analyses for ${image?.name ?? "image"}` : "Previous analyses"}</h2>
       {imageId && <Link className="text-cyan-800 underline" to={`/experiments/${experimentId}?tab=analysis`}>All experiment analyses</Link>}
     </div>
-    {error && <p role="alert" className="text-red-700">{error}</p>}
+    {error && <p role="alert" className="text-red-700">{error} <Button onClick={reload}>Retry</Button></p>}
     {loading ? <p role="status">Loading analyses…</p> : !entries.length && !error ? <p>No saved analyses.</p> :
       <div className="divide-y rounded border bg-white">{entries.map((entry) => {
         const key = `${entry.kind}:${entry.id}`;
@@ -124,5 +133,10 @@ export function AnalysisHistory({ experimentId, images, refreshKey = 0 }: { expe
           {open === key && <div className="space-y-3 border-t p-4"><h3 className="font-semibold">{entry.name}</h3><p className="text-sm">{entry.measurement_area} · {entry.measurement_count} measurements</p><HistoryDetails entry={entry} images={images} onChanged={reload} /></div>}
         </article>;
       })}</div>}
+    {count > 0 && <nav aria-label="Analysis history pages" className="flex items-center gap-3">
+      <Button disabled={loading || offset === 0} onClick={() => { setOpen(""); setLoading(true); setOffset(Math.max(0, offset - limit)); }}>Previous page</Button>
+      <span>{offset + 1}–{Math.min(offset + entries.length, count)} of {count}</span>
+      <Button disabled={loading || nextOffset === null} onClick={() => { if (nextOffset !== null) { setOpen(""); setLoading(true); setOffset(nextOffset); } }}>Next page</Button>
+    </nav>}
   </section>;
 }

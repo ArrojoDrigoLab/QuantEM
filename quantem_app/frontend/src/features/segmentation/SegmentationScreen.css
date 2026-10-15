@@ -66,6 +66,9 @@
 
 .header-info {
   min-width: 0;
+  cursor: default;
+  user-select: none;
+  caret-color: transparent;
   /* The one element allowed to give up space: its text ellipsises rather than
      pushing the controls on top of it. */
   flex: 1 1 auto;

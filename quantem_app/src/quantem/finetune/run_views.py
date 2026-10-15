@@ -52,6 +52,7 @@ from quantem.finetune.models import (
     TRAINING_MODES,
     Adapter,
 )
+from quantem.finetune.names import MODEL_NAME_RESERVED
 from quantem.finetune.options import parse_options
 from quantem.finetune.scope import (
     ResolvedScope,
@@ -349,7 +350,9 @@ def _parent_scope(data):
     parent = None
     if data.get("parent_adapter_id"):
         if data.get("overwrite_adapter_id"):
-            raise ValueError("Continuing a saved model creates a new version; it cannot overwrite one.")
+            raise ValueError(
+                "Continuing a saved model creates a new version; it cannot overwrite one."
+            )
         parent = get_object_or_404(
             Adapter,
             id=data["parent_adapter_id"],
@@ -463,10 +466,8 @@ class FineTuneRunsView(APIView):
             else None
         )
         if existing is not None and str(existing.id) != overwrite_id:
-            return _detail(
-                f"A fine-tune for this organelle is already called “{name}”. "
-                "Choose another name for the new version.",
-                status.HTTP_409_CONFLICT,
+            return Response(
+                {"detail": MODEL_NAME_RESERVED, "code": "model_name_reserved"}, status=409
             )
 
         adapter = None

@@ -1,5 +1,5 @@
 /**
- * Fine-tune a model on your own annotations. Owner ruling R13, end to end.
+ * Train on selected annotations, then optionally apply a saved model.
  *
  * One dialog, two ways in — a Fine-Tune button beside one organelle in the
  * labeling view, and one on the library header — and the same six decisions
@@ -17,8 +17,8 @@
  *   same-experiment rule is enforced with a 400, and re-implementing it here
  *   would be a second copy of it free to drift; the submit button is disabled
  *   unless the preview says `eligible`, and the blockers are printed as sent.
- * * **applying is opt-in.** Success offers to run the new model on the images
- *   it was scoped to. It queues nothing until the user picks and clicks.
+ * * **applying is opt-in.** Success offers all images in the model's experiment,
+ *   with its training images initially selected. Nothing is queued until asked.
  */
 
 import {
@@ -30,21 +30,22 @@ import {
   useState,
 } from "react";
 import {
-  applyFineTuneRun,
   fineTuneErrorMessage,
   getFineTuneRun,
   getFineTuneScope,
   getModelCatalogue,
   isFineTuneNameConflict,
+  MODEL_NAME_RESERVED,
   listFineTuneAdapters,
-  previewFineTuneScope,
   startFineTuneRun,
 } from "@/shared/api/finetune";
 import { getSegmentationTypes } from "@/shared/api/assets";
 import { RunProgressList } from "@/shared/progress/RunProgressList";
 import { Button } from "@/shared/ui/design";
 import { suggestBaseModel, toModelChoices } from "@/features/improve/modelChoices";
-import { FineTuneSuccess } from "@/features/finetune/components/FineTuneSuccess";
+import { ModelApplication } from "./ModelApplication";
+import { useTrainingPreview } from "./useTrainingPreview";
+import { useModalLifecycle } from "@/shared/hooks/useModalLifecycle";
 import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import { ScopePicker } from "@/features/finetune/components/ScopePicker";
 import { fineTuneProgressRows } from "@/features/finetune/fineTuneProgressRows";
@@ -64,7 +65,6 @@ import {
   emptySelection,
   filterScopeTree,
   isSelectionEmpty,
-  selectionKey,
   selectionTotals,
   setImageSelected,
   toSelectionPayload,
@@ -75,15 +75,9 @@ import type { SegmentationType } from "@/shared/types/images";
 import type {
   FineTuneAdapterSummary,
   FineTuneAppliedImageEvent,
-  FineTuneApplyResponse,
-  FineTunePreviewImage,
-  FineTunePreviewResponse,
-  FineTuneRunDetail,
   ModelCatalogue,
 } from "@/shared/types/finetune";
 import "./FineTuneDialog.css";
-
-const PREVIEW_DEBOUNCE_MS = 250;
 
 export interface FineTuneDialogProps {
   open: boolean;
@@ -135,8 +129,7 @@ function FineTuneDialogBody({
   const baseModelId = useId();
   const organelleId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
-  const onCloseRef = useRef(onClose);
+  useModalLifecycle(panelRef, onClose);
 
   const [types, setTypes] = useState<SegmentationType[] | null>(null);
   const [chosenTypeId, setChosenTypeId] = useState<string>(
@@ -160,11 +153,6 @@ function FineTuneDialogBody({
     return next;
   });
 
-  const [preview, setPreview] = useState<FineTunePreviewResponse | null>(null);
-  const [previewKey, setPreviewKey] = useState<string>("");
-  const [previewPending, setPreviewPending] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-
   const [name, setName] = useState("");
   const [parentAdapterId, setParentAdapterId] = useState(initialParentAdapterId ?? "");
   const [includePrevious, setIncludePrevious] = useState(true);
@@ -182,43 +170,15 @@ function FineTuneDialogBody({
     schedule, steps, lr, seed, validation, evalInterval, patience,
   }), [schedule, steps, lr, seed, validation, evalInterval, patience]);
   // A ref, rather than state, so a preview already in flight cannot overwrite
-  // a radio choice made before its response arrives. It also lets the preview
-  // and its server-selected default land in the same render.
+  // a radio choice made before its response arrives.
   const modeTouchedRef = useRef(false);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [adapterId, setAdapterId] = useState<string | null>(initialSavedAdapterId ?? null);
-  const [runDetail, setRunDetail] = useState<FineTuneRunDetail | null>(null);
-  const [applying, setApplying] = useState(false);
-  const [applyError, setApplyError] = useState<string | null>(null);
-  const [applyResult, setApplyResult] = useState<FineTuneApplyResponse | null>(null);
-
-  const { progress, settled } = useFineTuneProgress(adapterId);
+  const [trainingRunId, setTrainingRunId] = useState<string | null>(null);
+  const { progress, settled } = useFineTuneProgress(trainingRunId);
 
   // --- lifecycle ---------------------------------------------------------
-
-  // Focus restoration belongs to the dialog's actual unmount. Callers often
-  // pass an inline onClose callback, so depending on its identity would run
-  // the cleanup on ordinary parent rerenders and steal focus from Name.
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onCloseRef.current();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      restoreFocusRef.current?.focus();
-    };
-  }, []);
 
   useEffect(() => {
     if (segmentationType) return;
@@ -325,61 +285,14 @@ function FineTuneDialogBody({
     setName((current) => current || `${parent.name} · next version`);
   }, [adapters, parentAdapterId]);
 
-  const currentSelectionKey = chosenTypeId
-    ? `${selectionKey(chosenTypeId, selection)}|${baseModel}|${parentAdapterId}|${includePrevious}`
-    : "";
   const selectionEmpty = isSelectionEmpty(selection);
-
+  const { livePreview, previewPending, previewError } = useTrainingPreview({
+    typeId: chosenTypeId, selection, baseModel, parentId: parentAdapterId,
+    includePrevious, enabled: dialogMode === "train",
+  });
   useEffect(() => {
-    if (!chosenTypeId || selectionEmpty) {
-      setPreview(null);
-      setPreviewKey("");
-      setPreviewPending(false);
-      setPreviewError(null);
-      return undefined;
-    }
-    let cancelled = false;
-    setPreviewPending(true);
-    // Debounced: ticking a group is one intent and several state updates, and
-    // a request per tick would leave the count trailing the boxes.
-    const timer = window.setTimeout(() => {
-      void previewFineTuneScope({
-        ...toSelectionPayload(chosenTypeId, selection),
-        base_model: baseModel || undefined,
-        parent_adapter_id: parentAdapterId || undefined,
-        include_previous_annotations: includePrevious,
-      })
-        .then((response) => {
-          if (cancelled) return;
-          if (!modeTouchedRef.current) {
-            setModeChoice(modeChoiceFromDefault(response.default_mode));
-          }
-          setPreview(response);
-          setPreviewKey(currentSelectionKey);
-          setPreviewError(null);
-        })
-        .catch((error: unknown) => {
-          if (cancelled) return;
-          setPreview(null);
-          setPreviewKey(currentSelectionKey);
-          setPreviewError(
-            fineTuneErrorMessage(error, "Could not check this selection.")
-          );
-        })
-        .finally(() => {
-          if (!cancelled) setPreviewPending(false);
-        });
-    }, PREVIEW_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [chosenTypeId, selection, selectionEmpty, currentSelectionKey, baseModel, parentAdapterId, includePrevious]);
-
-  // The preview on screen is only about the selection on screen. Without this
-  // the count would keep showing the previous selection's total while the new
-  // request was out, which is the one moment a user is watching it change.
-  const livePreview = previewKey === currentSelectionKey ? preview : null;
+    if (livePreview && !modeTouchedRef.current) setModeChoice(modeChoiceFromDefault(livePreview.default_mode));
+  }, [livePreview]);
 
   const modelChoices = useMemo(
     () =>
@@ -429,19 +342,18 @@ function FineTuneDialogBody({
   }, [baseModel, resolvedType, compatibleModelChoices, initialBaseModel]);
 
   useEffect(() => {
-    if (!adapterId || !settled) return;
+    if (!trainingRunId || !settled) return;
     if (progress?.status !== "SUCCESS") return;
     let cancelled = false;
-    void getFineTuneRun(adapterId)
+    void getFineTuneRun(trainingRunId)
       .then((detail) => {
         if (cancelled) return;
-        setRunDetail(detail);
         setName((current) => detail.name || current);
         setAdapters((current) => {
-          if (current.some((adapter) => adapter.id === adapterId)) return current;
+          if (current.some((adapter) => adapter.id === trainingRunId)) return current;
           return [
             {
-              id: adapterId,
+              id: trainingRunId,
               name: detail.name || "Saved fine-tune",
               base_model: detail.base_model,
               status: "SUCCESS",
@@ -455,19 +367,17 @@ function FineTuneDialogBody({
         });
       })
       .catch(() => {
-        // The run succeeded; only the extra detail is missing. The success
-        // panel stands without it.
-        if (!cancelled) setRunDetail(null);
+        // The Apply panel loads details independently and offers a retry.
       })
       .finally(() => {
         if (cancelled) return;
-        setSavedAdapterId(adapterId);
+        setSavedAdapterId(trainingRunId);
         setDialogMode("apply");
       });
     return () => {
       cancelled = true;
     };
-  }, [adapterId, settled, progress?.status]);
+  }, [trainingRunId, settled, progress?.status]);
 
   // --- derived -----------------------------------------------------------
 
@@ -479,37 +389,6 @@ function FineTuneDialogBody({
     () => selectionTotals(scopeGroups, selection),
     [scopeGroups, selection]
   );
-  const applyDatasets = useMemo(() => {
-    const experimentId =
-      runDetail?.experiment?.id ??
-      livePreview?.experiment?.id ??
-      preview?.experiment?.id;
-    if (!experimentId) return [];
-    return scopeGroups.find((group) => group.key === experimentId)?.datasets ?? [];
-  }, [scopeGroups, runDetail, livePreview, preview]);
-  const applyImages = useMemo(() => {
-    const runAssetIds = new Set(runDetail?.asset_ids ?? []);
-    if (runAssetIds.size === 0) {
-      return livePreview?.per_image ?? preview?.per_image ?? [];
-    }
-    const images = new Map<string, FineTunePreviewImage>();
-    for (const group of scopeGroups) {
-      for (const image of [
-        ...group.images,
-        ...group.datasets.flatMap((dataset) => dataset.images),
-      ]) {
-        if (!runAssetIds.has(image.id) || images.has(image.id)) continue;
-        images.set(image.id, {
-          asset_id: image.id,
-          name: image.name,
-          confirmed_areas: image.confirmedAreas,
-          done_rois: image.doneRois,
-          tiles: 0,
-        });
-      }
-    }
-    return [...images.values()];
-  }, [scopeGroups, runDetail, livePreview, preview]);
   const annotationCount = livePreview
     ? livePreview.annotation_count
     : localTotals.annotationCount;
@@ -539,11 +418,10 @@ function FineTuneDialogBody({
     !nameTaken;
 
   const phase: "form" | "running" | "done" =
-    adapterId === null ? "form" : settled ? "done" : "running";
-  const selectedAdapter = adapters.find((adapter) => adapter.id === savedAdapterId);
+    trainingRunId === null ? "form" : settled ? "done" : "running";
   const hasSavedFineTune =
     adapters.some((adapter) => adapter.status === "SUCCESS") ||
-    progress?.status === "SUCCESS";
+    progress?.status === "SUCCESS" || Boolean(savedAdapterId);
 
   // --- actions -----------------------------------------------------------
 
@@ -556,21 +434,7 @@ function FineTuneDialogBody({
     }
   };
 
-  const selectSavedFineTune = (value: string) => {
-    setSavedAdapterId(value);
-    const chosen = adapters.find((adapter) => adapter.id === value);
-    if (!chosen) {
-      setAdapterId(null);
-      setRunDetail(null);
-      return;
-    }
-    if (!chosen || chosen.status !== "SUCCESS") return;
-    setName(chosen.name);
-    setRunDetail(null);
-    setApplyResult(null);
-    setApplyError(null);
-    setAdapterId(chosen.id);
-  };
+  const selectSavedFineTune = (value: string) => setSavedAdapterId(value);
 
   const showApplyMode = () => {
     setDialogMode("apply");
@@ -582,10 +446,8 @@ function FineTuneDialogBody({
 
   const showTrainMode = () => {
     setDialogMode("train");
-    setAdapterId(null);
-    setRunDetail(null);
-    setApplyResult(null);
-    setApplyError(null);
+    setTrainingRunId(null);
+    setSubmitError(null);
   };
 
   const submit = useCallback(async () => {
@@ -609,14 +471,11 @@ function FineTuneDialogBody({
         segmentation_id: segmentationId || undefined,
         ...trainingInputs.options,
       });
-      setAdapterId(response.adapter_id);
+      setTrainingRunId(response.adapter_id);
     } catch (error) {
       setSubmitError(
         isFineTuneNameConflict(error)
-          ? fineTuneErrorMessage(
-              error,
-              "A saved version already has that name. Choose another name for the new version."
-            )
+          ? MODEL_NAME_RESERVED
           : fineTuneErrorMessage(error, "Could not start the fine-tune.")
       );
     } finally {
@@ -632,33 +491,6 @@ function FineTuneDialogBody({
     baseModel,
     segmentationId, trainingInputs,
   ]);
-
-  const apply = useCallback(
-    (assetIds: string[], datasetIds: string[]) => {
-      if (!adapterId) return;
-      setApplying(true);
-      setApplyError(null);
-      void applyFineTuneRun(adapterId, assetIds, datasetIds)
-        .then((result) => {
-          setApplyResult(result);
-          for (const queued of result.queued) {
-            onAppliedImageQueued?.({
-              adapterId: result.adapter_id,
-              baseModel,
-              assetId: queued.asset_id,
-              segmentationId: queued.segmentation_id,
-            });
-          }
-        })
-        .catch((error: unknown) => {
-          setApplyError(
-            fineTuneErrorMessage(error, "Could not queue those runs.")
-          );
-        })
-        .finally(() => setApplying(false));
-    },
-    [adapterId, baseModel, onAppliedImageQueued]
-  );
 
   // --- render ------------------------------------------------------------
 
@@ -787,7 +619,7 @@ function FineTuneDialogBody({
                   />
                   {nameTaken ? (
                     <p className="m-0 mt-1 text-xs text-amber-800" role="status">
-                      A saved version already has that name. Choose another name.
+                      {MODEL_NAME_RESERVED}
                     </p>
                   ) : null}
                 </div>
@@ -1113,30 +945,10 @@ function FineTuneDialogBody({
                 </select>
               </div>
 
-              {adapterId && phase === "running" ? (
-                <p className="m-0 text-sm text-slate-600">Loading the saved fine-tuneâ€¦</p>
-              ) : null}
-              {adapterId && phase === "done" && progress?.status === "SUCCESS" ? (
-                <FineTuneSuccess
-                  adapterId={adapterId}
-                  name={runDetail?.name || selectedAdapter?.name || name}
-                  run={runDetail}
-                  baseModel={
-                    runDetail?.base_model || selectedAdapter?.base_model || baseModel
-                  }
-                  segmentationTypeName={
-                    resolvedType?.long_name || resolvedType?.short_name || ""
-                  }
-                  scopedImages={applyImages}
-                  availableDatasets={applyDatasets}
-                  applying={applying}
-                  applyError={applyError}
-                  applyResult={applyResult}
-                  onApply={apply}
-                  onClose={onClose}
-                  onAppliedImageCompleted={onAppliedImageCompleted}
-                />
-              ) : null}
+              {savedAdapterId && <ModelApplication key={savedAdapterId} adapterId={savedAdapterId}
+                typeId={chosenTypeId} typeName={resolvedType?.long_name || resolvedType?.short_name || ""}
+                onClose={onClose} onAppliedImageQueued={onAppliedImageQueued}
+                onAppliedImageCompleted={onAppliedImageCompleted} />}
             </div>
           ) : null}
         </div>

@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from quantem.finetune.models import Adapter, active_adapter_for
+from quantem.finetune.names import MODEL_NAME_RESERVED
 from quantem.finetune.run_views import serialize_run
 from quantem.jobs.models import Job
 
@@ -74,7 +75,9 @@ class SavedModelView(APIView):
                     .exclude(pk=adapter.pk)
                     .exists()
                 ):
-                    raise ValidationError("Another saved model already has that name.")
+                    return Response(
+                        {"detail": MODEL_NAME_RESERVED, "code": "model_name_reserved"}, status=409
+                    )
                 adapter.name = name
             if "archived" in request.data:
                 if not isinstance(request.data["archived"], bool):

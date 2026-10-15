@@ -20,19 +20,18 @@ from pathlib import Path
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from quantem.analysis.creation import create_analysis_run, prepare_analysis
 from quantem.analysis.export_files import open_export, spreadsheet_columns
 from quantem.analysis.global_area import global_area_report
 from quantem.analysis.models import AnalysisRun
 from quantem.analysis.serializers import (
-    AnalysisRunCreateSerializer,
     AnalysisRunSerializer,
     AnalysisRunSummarySerializer,
 )
-from quantem.jobs.constants import JOB_DEFAULTS, JOB_TYPE_RUN_ANALYSIS
-from quantem.jobs.models import Job
 from quantem.segmentation.models import ImageSegmentation
 
 logger = logging.getLogger(__name__)
@@ -66,74 +65,14 @@ class SegmentationAnalysisView(APIView):
 
     def post(self, request, seg_id):
         segmentation = _segmentation_or_404(seg_id)
-        if segmentation.segmentation_type.measurement_mode == "global":
-            from quantem.analysis.batches import enqueue_run
-            from quantem.analysis.identity import input_fingerprint
-
-            mask_ids = request.data.get("analysis_mask_ids", [])
-            if not isinstance(mask_ids, list):
-                return Response({"error": "Choose a list of analysis masks."}, status=400)
-            masks = ImageSegmentation.objects.filter(
-                id__in=mask_ids,
-                asset_id=segmentation.asset_id,
-                segmentation_type__internal_name="quantem_internal_analysis_mask",
-            )
-            if masks.count() != len(set(mask_ids)):
-                return Response({"error": "Choose analysis masks on this image."}, status=400)
-            params = {"global_area": True, "analysis_mask_ids": mask_ids}
-            run = AnalysisRun.objects.create(
-                segmentation=segmentation,
-                params=params,
-                input_fingerprint=input_fingerprint(segmentation, params),
-                input_identity={
-                    "asset_id": str(segmentation.asset_id),
-                    "image": segmentation.asset.display_name,
-                    "provenance": segmentation.final_result_provenance,
-                },
-            )
-            job = enqueue_run(run)
-            return Response({"job_id": str(job.id), "analysis_run_id": str(run.id)}, status=202)
-        serializer = AnalysisRunCreateSerializer(
-            data=request.data, context={"segmentation": segmentation}
-        )
-        if not serializer.is_valid():
+        try:
+            prepared = prepare_analysis(segmentation, request.data)
+        except ValidationError as exc:
             return Response(
-                {"error": _first_error(serializer.errors)},
+                {"error": _first_error(exc.detail)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        params = serializer.validated_data
-        from quantem.analysis.identity import input_fingerprint
-
-        run = AnalysisRun.objects.create(
-            segmentation=segmentation,
-            params=params,
-            group=params.get("group", ""),
-            input_fingerprint=input_fingerprint(segmentation, params),
-            input_identity={
-                "asset_id": str(segmentation.asset_id),
-                "image": segmentation.asset.display_name,
-            },
-        )
-
-        defaults = JOB_DEFAULTS[JOB_TYPE_RUN_ANALYSIS]
-        job = Job.enqueue(
-            job_type=JOB_TYPE_RUN_ANALYSIS,
-            payload={
-                "analysis_run_id": str(run.id),
-                # Carried so the queue screen can name the image and organelle
-                # this job belongs to (quantem.jobs.views._collect_context_maps).
-                "segmentation_id": str(segmentation.id),
-                "asset_id": str(segmentation.asset_id) if segmentation.asset_id else None,
-            },
-            priority=defaults["priority"],
-            resource_class=defaults["resource_class"],
-            queue_name=defaults["queue_name"],
-            tags=[
-                f"segmentation:{segmentation.id}",
-                f"analysis_run:{run.id}",
-            ],
-        )
+        run, job, _ = create_analysis_run(segmentation, prepared)
         return Response(
             {"job_id": str(job.id), "analysis_run_id": str(run.id)},
             status=status.HTTP_202_ACCEPTED,
@@ -252,14 +191,16 @@ class AnalysisRunTableView(AnalysisRunExportView):
                 rows = [[row[index] if index < len(row) else "" for index in keep] for row in rows]
         except (OSError, UnicodeError, csv.Error, OverflowError, ValueError):
             return Response({"error": "The saved table could not be read."}, status=400)
-        return Response({
-            "name": candidate.name,
-            "columns": columns,
-            "rows": rows[:limit],
-            "offset": offset,
-            "limit": limit,
-            "has_more": len(rows) > limit,
-        })
+        return Response(
+            {
+                "name": candidate.name,
+                "columns": columns,
+                "rows": rows[:limit],
+                "offset": offset,
+                "limit": limit,
+                "has_more": len(rows) > limit,
+            }
+        )
 
 
 def _is_within(candidate: Path, base: Path) -> bool:

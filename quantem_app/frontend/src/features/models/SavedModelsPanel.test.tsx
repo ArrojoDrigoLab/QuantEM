@@ -22,6 +22,21 @@ beforeEach(() => {
   vi.mocked(apiRequest).mockResolvedValue([model]);
 });
 
+it("shows the reserved-name explanation when a rename uses a deleted model's name", async () => {
+  const message = "This name was used by a previous model and cannot be re-used. Make a new name.";
+  vi.mocked(apiRequest).mockImplementation(async (_url, options) => {
+    if (options?.method === "PATCH") throw new Error(JSON.stringify({ code: "model_name_reserved", detail: message }));
+    return [model];
+  });
+  render(<SavedModelsPanel />);
+  await userEvent.click(await screen.findByRole("button", { name: "Rename" }));
+  await userEvent.clear(screen.getByLabelText("Model name"));
+  await userEvent.type(screen.getByLabelText("Model name"), "Deleted name");
+  await userEvent.click(screen.getByRole("button", { name: "Save name" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+  expect(screen.getByLabelText("Model name")).toHaveValue("Deleted name");
+});
+
 it("opens continuation and reuse with the saved model identity", async () => {
   const user = userEvent.setup();
   const view = render(<SavedModelsPanel experimentId="experiment" />);

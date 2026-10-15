@@ -219,6 +219,7 @@ export function FineTuneSuccess({
   baseModel,
   segmentationTypeName,
   scopedImages,
+  initialAssetIds,
   availableDatasets,
   applying,
   applyError,
@@ -233,6 +234,7 @@ export function FineTuneSuccess({
   baseModel: string;
   segmentationTypeName: string;
   scopedImages: FineTunePreviewImage[];
+  initialAssetIds?: string[];
   availableDatasets: ScopeDatasetNode[];
   applying: boolean;
   applyError: string | null;
@@ -242,7 +244,7 @@ export function FineTuneSuccess({
   onAppliedImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
 }) {
   const [picked, setPicked] = useState<Set<string>>(
-    () => new Set(scopedImages.map((image) => image.asset_id))
+    () => new Set(initialAssetIds ?? scopedImages.map((image) => image.asset_id))
   );
   const [pickedDatasets, setPickedDatasets] = useState<Set<string>>(
     () => new Set()
@@ -255,15 +257,6 @@ export function FineTuneSuccess({
   const notifiedJobsRef = useRef<Set<string>>(new Set());
   const cv = cvResultsOf(run);
   const cvRows = cvRowsOf(run, cv, scopedImages);
-
-  useEffect(() => {
-    if (scopedImages.length === 0) return;
-    setPicked((current) =>
-      current.size === 0
-        ? new Set(scopedImages.map((image) => image.asset_id))
-        : current
-    );
-  }, [scopedImages]);
 
   const toggle = (assetId: string, on: boolean) => {
     setPicked((current) => {

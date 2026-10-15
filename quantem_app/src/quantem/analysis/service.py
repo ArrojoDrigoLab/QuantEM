@@ -62,7 +62,7 @@ from .morphometrics import (
     derive,
     summarize,
 )
-from .notes import analysis_notes, partial_metric_note
+from .notes import analysis_notes, note, partial_metric_note, settings_notes
 from .settings import segmentation_settings
 
 if TYPE_CHECKING:  # pragma: no cover - the Django model is imported lazily below
@@ -217,9 +217,7 @@ IMAGE_SUMMARY_BASE_FIELDS: tuple[str, ...] = (
 #: ``manifest.json``. ``enrichment_mito = 9.456`` in a spreadsheet cell looks
 #: exactly like a result whether or not it is circular by construction, and the
 #: warning that says it is not was two files away.
-IMAGE_SUMMARY_LAST_FIELDS: tuple[str, ...] = (
-    "circular_columns",
-)
+IMAGE_SUMMARY_LAST_FIELDS: tuple[str, ...] = ("circular_columns",)
 
 COMPOSITION_CSV_BASE_FIELDS: tuple[str, ...] = (
     "image_key",
@@ -733,6 +731,7 @@ def run_analysis(
 ) -> dict[str, Any]:
     """Compute every enabled analysis for one image. Pure; writes nothing."""
     caveats: list[str] = []
+    notes = []
 
     def report(percent: float, message: str) -> None:
         if cancel_check is not None:
@@ -833,6 +832,12 @@ def run_analysis(
         if scale_caveat:
             caveats.append(scale_caveat)
     if inputs.compartments.tissue is None:
+        notes.append(
+            note(
+                "whole_image_area",
+                "No tissue mask was supplied: fractions are relative to the whole image, including any empty resin or background.",
+            )
+        )
         caveats.append(
             "No tissue mask was supplied: fractions are relative to the whole "
             "image, including any empty resin or background."
@@ -852,6 +857,12 @@ def run_analysis(
     # below rather than left to raise out of numpy.
     tissue_is_empty = areas.tissue_px == 0
     if tissue_is_empty:
+        notes.append(
+            note(
+                "empty_measurement_area",
+                "The measurement area is empty. Area fractions and point statistics are unavailable.",
+            )
+        )
         caveats.append(
             "The tissue mask is empty: the chosen segmentation has no confirmed "
             "objects, so there is no area to measure against. Every area and "
@@ -912,6 +923,7 @@ def run_analysis(
             ),
         },
         "caveats": caveats,
+        "notes": notes,
     }
     caveats.extend(_proofreading_caveats(result["proofreading"], inputs))
 
@@ -932,6 +944,7 @@ def run_analysis(
 
     partial_note = partial_metric_note(summary, len(metrics))
     if partial_note:
+        notes.append(note("partial_metrics", partial_note, total_objects=len(metrics)))
         caveats.append(partial_note)
 
     if inputs.points_xy is not None and len(inputs.points_xy):
@@ -948,6 +961,14 @@ def run_analysis(
             "enrichment": assignment.enrichment,
         }
         if assignment.n_off_tissue:
+            notes.append(
+                note(
+                    "points_outside_area",
+                    f"{assignment.n_off_tissue} of {assignment.n_total} points are outside the measurement area and were excluded from point fractions.",
+                    count=assignment.n_off_tissue,
+                    total=assignment.n_total,
+                )
+            )
             caveats.append(
                 f"{assignment.n_off_tissue} of {assignment.n_total} points fell "
                 "outside the tissue mask and were excluded from every fraction."
@@ -957,6 +978,14 @@ def run_analysis(
         # polygon, a notebook caller's own array -- and it is what stops an
         # unreadable coordinate becoming a real observation at pixel (0, 0).
         if assignment.n_unreadable:
+            notes.append(
+                note(
+                    "invalid_points",
+                    f"{assignment.n_unreadable} of {assignment.n_total} points have invalid coordinates and were excluded.",
+                    count=assignment.n_unreadable,
+                    total=assignment.n_total,
+                )
+            )
             caveats.append(
                 f"{assignment.n_unreadable} of {assignment.n_total} points had "
                 "a coordinate that is not a position (missing, or infinite) and "
@@ -966,6 +995,14 @@ def run_analysis(
                 "outside something."
             )
         if assignment.n_out_of_bounds:
+            notes.append(
+                note(
+                    "points_outside_image",
+                    f"{assignment.n_out_of_bounds} of {assignment.n_total} points are outside the image; counts and distances use their nearest image-border positions.",
+                    count=assignment.n_out_of_bounds,
+                    total=assignment.n_total,
+                )
+            )
             caveats.append(
                 f"{assignment.n_out_of_bounds} of {assignment.n_total} points "
                 "lie outside the image and were clipped onto its border, which "
@@ -984,6 +1021,12 @@ def run_analysis(
         # rather than reported as a statistic.
         no_points_on_tissue = assignment.n_on_tissue == 0
         if no_points_on_tissue and not tissue_is_empty:
+            notes.append(
+                note(
+                    "no_points_in_area",
+                    "No points are inside the measurement area. Enrichment and spatial statistics are unavailable.",
+                )
+            )
             caveats.append(
                 f"None of the {assignment.n_total} points is on the tissue "
                 "mask, so there is no point distribution to compare against "
@@ -1001,6 +1044,14 @@ def run_analysis(
         # generic pixel-size caveat to explain it (honesty rule 6).
         target = inputs.distance_target
         if target and target not in inputs.compartments.masks:
+            notes.append(
+                note(
+                    "distance_unavailable",
+                    f"Distance to {target} was not calculated: the target structure is unavailable.",
+                    target=target,
+                    reason="missing_target",
+                )
+            )
             caveats.append(
                 f"Distance-to-{target} was requested but skipped: {target!r} is "
                 "not one of the compartments that were loaded."
@@ -1053,6 +1104,14 @@ def run_analysis(
                     "coordinates, and every band and median below includes them."
                 )
         elif target:  # the compartment exists, so the missing piece is the scale
+            notes.append(
+                note(
+                    "distance_unavailable",
+                    f"Distance to {target} was not calculated: physical distances are unavailable with the saved resolution settings.",
+                    target=target,
+                    reason="resolution",
+                )
+            )
             if resample_was_skipped:
                 # The image *does* record a pixel size, so "this image is
                 # uncalibrated" would be a false sentence about a true refusal.
@@ -1115,7 +1174,24 @@ def run_analysis(
             )
             report(95.0, "checking spatial-null normalisation")
             caveats.extend(_flat_null_caveats(null, assignment.n_on_tissue))
+            undefined = sorted(key for key, sd in null.null_sd.items() if not sd)
+            if undefined:
+                notes.append(
+                    note(
+                        "null_no_variation",
+                        f"Monte Carlo variation could not be estimated for {', '.join(undefined)}; z-scores and p-values are unavailable.",
+                        metrics=undefined,
+                    )
+                )
     elif inputs.distance_target:
+        notes.append(
+            note(
+                "distance_unavailable",
+                f"Distance to {inputs.distance_target} was not calculated: no points were supplied.",
+                target=inputs.distance_target,
+                reason="no_points",
+            )
+        )
         caveats.append(
             f"Distance-to-{inputs.distance_target} was requested but skipped: "
             "the point set is empty, so there is nothing to measure a distance "
@@ -1340,6 +1416,7 @@ def write_bundle(
                 "points": r.get("points") or None,
                 "segmentation_settings": r.get("segmentation_settings") or [],
                 "caveats": r["caveats"],
+                **({"notes": r["notes"]} if "notes" in r else {}),
             }
             for r in results
         ],
@@ -1649,6 +1726,14 @@ def run_for_segmentation(
         circular = centroid_self_reference_caveat(analysis_run, loaded.params)
         if circular:
             result["caveats"].append(circular)
+            names = ", ".join(result["circular_compartments"])
+            result["notes"].append(
+                note(
+                    "circular_compartments",
+                    f"The points also define {names}. Enrichment against their own compartment is not an independent measurement.",
+                    compartments=result["circular_compartments"],
+                )
+            )
 
         # What the masks' provenance could not establish. These are produced by
         # the loader, where the objects are, and lifted here because the caveat
@@ -1658,7 +1743,9 @@ def run_for_segmentation(
             if caveat not in result["caveats"]:
                 result["caveats"].append(caveat)
 
+        result["notes"].extend(loaded.notes)
         result["segmentation_settings"] = segmentation_settings(loaded.provenance)
+        result["notes"].extend(settings_notes(result["segmentation_settings"]))
         result["caveats"] = analysis_notes(result)
 
         # Checked before anything reaches the disk. A single non-finite number

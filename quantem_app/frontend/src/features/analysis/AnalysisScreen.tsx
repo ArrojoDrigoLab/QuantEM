@@ -39,6 +39,12 @@ import {
 
 export function AnalysisScreen() {
   const { assetId } = useParams<{ assetId: string }>();
+  // Image navigation must reset selections, queries and job/result state together.
+  return <ImageAnalysisScreen key={assetId} />;
+}
+
+function ImageAnalysisScreen() {
+  const { assetId } = useParams<{ assetId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSegmentationId = searchParams.get("seg");
 
@@ -76,7 +82,7 @@ export function AnalysisScreen() {
     const requested = requestedSegmentationId
       ? segmentations.find((seg) => seg.id === requestedSegmentationId)?.id ?? null
       : null;
-    const next = requested ?? (segmentationId || segmentations[0].id);
+    const next = requested ?? segmentations.find((seg) => seg.id === segmentationId)?.id ?? segmentations[0].id;
     if (next === segmentationId) return;
     if (segmentationId) {
       // The screen was already showing another segmentation: the run panel

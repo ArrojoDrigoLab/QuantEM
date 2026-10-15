@@ -9,7 +9,25 @@ import json
 def global_settings(segmentation):
     from .loaders import _adapter_details
 
-    record = segmentation.global_mask
+    record = getattr(segmentation, "global_mask", None)
+    if record is None:
+        # The mask loader also accepts legacy confirmed polygons and an empty
+        # mask. Preserve that representation instead of inventing raster settings.
+        from .loaders import confirmed_objects
+
+        return [
+            {
+                "compartment": segmentation.segmentation_type.long_name,
+                "segmentation_id": str(segmentation.id),
+                "runs": [],
+                "global_mask": {
+                    "source": "legacy_vectors"
+                    if confirmed_objects(segmentation).exists()
+                    else "empty",
+                    "metadata": {},
+                },
+            }
+        ]
     metadata = copy.deepcopy(record.metadata or {})
     history = metadata.get("inference_runs") or ([metadata] if record.source == "model" else [])
     runs = [
@@ -41,7 +59,11 @@ def global_settings(segmentation):
 
 def segmentation_settings(provenance):
     settings = []
-    for block in [*provenance.get("compartments", []), provenance.get("tissue"), provenance.get("subject")]:
+    for block in [
+        *provenance.get("compartments", []),
+        provenance.get("tissue"),
+        provenance.get("subject"),
+    ]:
         if not block:
             continue
         runs = copy.deepcopy((block.get("run") or {}).get("runs") or [])

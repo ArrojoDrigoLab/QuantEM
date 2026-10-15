@@ -15,9 +15,11 @@ from quantem.segmentation.models import (
     CorrectionRevision,
     GlobalMask,
     ImageSegmentation,
+    RoiSegmentationStatus,
     SegmentationResultVersion,
     SegmentObject,
 )
+from quantem.segmentation.revision_rois import restore_roi_reviews, save_roi_reviews
 
 SNAPSHOT_MODELS = (SegmentObject, CompletedROI, AnalysisMaskObject, GlobalMask)
 
@@ -36,6 +38,7 @@ def save_revision(segmentation, name):
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{revision.id}.zip"
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        save_roi_reviews(archive, segmentation)
         for model in SNAPSHOT_MODELS:
             with archive.open(model._meta.model_name + ".jsonl", "w") as output:
                 for row in (
@@ -61,6 +64,7 @@ def has_revision_content(segmentation):
         SegmentObject.objects.filter(segmentation=segmentation).exists()
         or GlobalMask.objects.filter(segmentation=segmentation).exists()
         or CompletedROI.objects.filter(segmentation=segmentation).exists()
+        or RoiSegmentationStatus.objects.filter(segmentation=segmentation).exists()
     )
 
 
@@ -73,6 +77,7 @@ def restore_revision(revision):
     # A restore is reversible too; never throw away the work made since the snapshot.
     save_revision(segmentation, "Before restoring " + revision.name)
     with zipfile.ZipFile(path) as archive:
+        restore_roi_reviews(archive, segmentation)
         SegmentObject.objects.filter(segmentation=segmentation, superseded_at__isnull=True).update(
             superseded_at=timezone.now()
         )

@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from quantem.analysis.history import experiment_history
+from quantem.analysis.history import analysis_counts
 from quantem.assets.models import Asset
 from quantem.library.models import Experiment, ImageWorkflowMetadata
 from quantem.library.sample_identity import sample_identity
@@ -51,24 +51,30 @@ class ExperimentWorkspaceView(APIView):
             .order_by("display_name", "id")
         )
         if request.query_params.get("navigation") == "true":
-            return Response({"images": [
-                {"id": str(asset.id), "name": asset.display_name}
-                for asset in assets.select_related(None).prefetch_related(None).only("id", "display_name", "experiment_id")
-            ]})
+            return Response(
+                {
+                    "images": [
+                        {"id": str(asset.id), "name": asset.display_name}
+                        for asset in assets.select_related(None)
+                        .prefetch_related(None)
+                        .only("id", "display_name", "experiment_id")
+                    ]
+                }
+            )
         segmentations = with_coverage(
             ImageSegmentation.objects.filter(asset__in=assets)
             .select_related("segmentation_type", "asset")
             .annotate(
-                confirmed_count=Count("segments", filter=Q(
-                    segments__label_state="CONFIRMED", segments__superseded_at__isnull=True
-                )),
+                confirmed_count=Count(
+                    "segments",
+                    filter=Q(
+                        segments__label_state="CONFIRMED", segments__superseded_at__isnull=True
+                    ),
+                ),
             )
         )
         by_asset = {}
-        analysis_counts = {}
-        for entry in experiment_history(experiment):
-            for asset_id in entry["completed_image_ids"]:
-                analysis_counts[asset_id] = analysis_counts.get(asset_id, 0) + 1
+        completed_counts = analysis_counts(experiment)
         for seg in segmentations:
             by_asset.setdefault(str(seg.asset_id), []).append(
                 {
@@ -94,10 +100,11 @@ class ExperimentWorkspaceView(APIView):
                     "name": asset.display_name,
                     "pixel_size_nm": asset.pixel_size_nm,
                     "stage": asset.preprocess_stage,
-                    "analysis_count": analysis_counts.get(str(asset.id), 0),
+                    "analysis_count": completed_counts.get(str(asset.id), 0),
                     "datasets": [{"id": str(d.id), "name": d.name} for d in asset.datasets.all()],
                     **sample_identity(
-                        asset.display_name or asset.original_filename, asset.id,
+                        asset.display_name or asset.original_filename,
+                        asset.id,
                         meta.sample_id if meta else "",
                     ),
                     "group": meta.group if meta else "",
@@ -127,7 +134,11 @@ class ExperimentWorkspaceView(APIView):
                     )
                 values[key] = value.strip()
         metadata, _ = ImageWorkflowMetadata.objects.update_or_create(asset=asset, defaults=values)
-        return Response({
-            **sample_identity(asset.display_name or asset.original_filename, asset.id, metadata.sample_id),
-            "group": metadata.group,
-        })
+        return Response(
+            {
+                **sample_identity(
+                    asset.display_name or asset.original_filename, asset.id, metadata.sample_id
+                ),
+                "group": metadata.group,
+            }
+        )

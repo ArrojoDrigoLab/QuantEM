@@ -39,7 +39,8 @@ beforeEach(() => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
   vi.mocked(getWorkspace).mockResolvedValue({ images });
   vi.mocked(saveSample).mockResolvedValue({});
-  vi.mocked(apiRequest).mockResolvedValue([]);
+  vi.mocked(apiRequest).mockImplementation(async (url) => url.includes("/analysis-history/")
+    ? { results: [], count: 0, offset: 0, limit: 25, next_offset: null } : []);
 });
 
 describe("Experiment workbench", () => {
@@ -73,6 +74,7 @@ describe("Experiment workbench", () => {
   it("requires a readiness check, queues the deduplicated selection and exports partial results", async () => {
     const user = userEvent.setup();
     vi.mocked(apiRequest).mockImplementation(async (url, options) => {
+      if (url.includes("/analysis-history/")) return { results: [], count: 0, offset: 0, limit: 25, next_offset: null };
       if (url.includes("/analysis-batches/") && options?.method === "POST") {
         const data = JSON.parse(options.body as string);
         if (data.preview) return { items: [{ identity, ready: true, reason: "" }] };

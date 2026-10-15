@@ -55,7 +55,11 @@ def _manifest_export(path: Path, result: dict | None):
                 update_notes(item)
         elif isinstance(value, dict):
             if isinstance(value.get("caveats"), list):
-                value["caveats"] = analysis_notes({"objects": (result or {}).get("objects"), "caveats": value["caveats"]})
+                value["caveats"] = analysis_notes(
+                    value
+                    if "notes" in value
+                    else {"objects": (result or {}).get("objects"), "caveats": value["caveats"]}
+                )
             for item in value.values():
                 update_notes(item)
 
@@ -69,7 +73,11 @@ def _manifest_export(path: Path, result: dict | None):
             continue
         filename = entry.get("filename", "")
         candidate = (path.parent / filename).resolve()
-        if not candidate.is_relative_to(path.parent.resolve()) or candidate.suffix != ".csv" or not candidate.is_file():
+        if (
+            not candidate.is_relative_to(path.parent.resolve())
+            or candidate.suffix != ".csv"
+            or not candidate.is_file()
+        ):
             continue
         with _csv_export(candidate) as content:
             digest = hashlib.file_digest(content, "sha256").hexdigest()
@@ -80,7 +88,9 @@ def _manifest_export(path: Path, result: dict | None):
         changed = True
     if changed:
         outputs["encoding"] = "UTF-8 with a byte-order mark. Read CSV files as utf-8-sig."
-        outputs["note"] = "Join objects.csv to image_summary.csv on image_key. Notes are shown in the analysis summary."
+        outputs["note"] = (
+            "Join objects.csv to image_summary.csv on image_key. Notes are shown in the analysis summary."
+        )
     if data == original:
         return path.open("rb")
     return io.BytesIO(json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))

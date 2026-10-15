@@ -134,6 +134,7 @@ class LoadedAnalysis:
     #: threshold that might not be the one that ran is exactly the kind of thing
     #: a reader has to be told in the yellow box rather than left to find.
     caveats: tuple[str, ...] = ()
+    notes: tuple[dict[str, Any], ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -1316,7 +1317,10 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
                     stamp["ran_at_nm"] is not None
                     and stamp["native_pixel_size_nm"] is not None
                     and abs(stamp["ran_at_nm"] - stamp["native_pixel_size_nm"]) > 1e-6
-                    if "ran_at_nm" in stamp and "native_pixel_size_nm" in stamp and stamp.get("resolution_recorded", True) else None
+                    if "ran_at_nm" in stamp
+                    and "native_pixel_size_nm" in stamp
+                    and stamp.get("resolution_recorded", True)
+                    else None
                 ),
                 "scope": stamp.get("scope"),
                 "include_level": stamp.get("include_level"),
@@ -1334,8 +1338,7 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
     run_count = len({run["run_id"] for run in runs})
     if run_count > 1:
         report.caveat(
-            f"The objects in {report.where} come from {run_count} different "
-            "inference runs."
+            f"The objects in {report.where} come from {run_count} different inference runs."
         )
     return runs
 
@@ -2570,8 +2573,12 @@ def load_inputs(
         tissue_provenance = None
 
     subject_provenance = (
-        _mask_provenance("Objects", segmentation, confirmed_objects(segmentation).count(), shape=shape)
-        if not any(block["segmentation_id"] == str(segmentation.id) for block in compartment_provenance)
+        _mask_provenance(
+            "Objects", segmentation, confirmed_objects(segmentation).count(), shape=shape
+        )
+        if not any(
+            block["segmentation_id"] == str(segmentation.id) for block in compartment_provenance
+        )
         else None
     )
 
@@ -2629,6 +2636,25 @@ def load_inputs(
     # Provenance caveats belong beside the numbers, not three levels down in the
     # JSON: "this threshold may not be the one that ran" is precisely what a
     # reader has to be told before they quote the object count.
+    from .notes import note
+
+    provenance_notes = []
+    if parsed_points and parsed_points.n_unreadable:
+        count = parsed_points.n_unreadable
+        total = int(parsed_points.xy.shape[0]) + count
+        lines = "; ".join(
+            f"line {line} ({text})"
+            for line, text in parsed_points.unreadable[:MAX_NAMED_BAD_POINT_LINES]
+        )
+        provenance_notes.append(
+            note(
+                "invalid_imported_points",
+                f"{count} of {total} imported points have invalid coordinates and were excluded (CSV {lines}).",
+                count=count,
+                total=total,
+                lines=lines,
+            )
+        )
     provenance_caveats: list[str] = []
     if points_caveat:
         provenance_caveats.append(points_caveat)
@@ -2674,6 +2700,12 @@ def load_inputs(
                 inside.add(str(object_id))
         features = {key: value for key, value in features.items() if str(key) in inside}
         sources = {key: value for key, value in sources.items() if str(key) in inside}
+        provenance_notes.append(
+            note(
+                "objects_by_centroid",
+                "Object counts and morphology include confirmed objects whose centroids lie in the selected measurement area. Object outlines are measured in full; compartment area is clipped to the mask.",
+            )
+        )
         provenance_caveats.append(
             "Object counts and morphology include confirmed objects whose centroids lie in the selected measurement area. "
             "Object outlines are measured in full; compartment area is clipped to the mask."
@@ -2716,6 +2748,7 @@ def load_inputs(
         params=params,
         provenance=loaded_provenance,
         caveats=tuple(provenance_caveats),
+        notes=tuple(provenance_notes),
     )
 
 

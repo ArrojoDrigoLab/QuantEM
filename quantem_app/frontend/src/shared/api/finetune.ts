@@ -247,12 +247,15 @@ export function getFineTuneApplyProgress(
  * of the app's errors are already sentences. These are JSON, so a dialog that
  * printed `err.message` would put a brace and a key in front of the user.
  */
+export const MODEL_NAME_RESERVED = "This name was used by a previous model and cannot be re-used. Make a new name.";
+
 export function fineTuneErrorMessage(error: unknown, fallback: string): string {
   const raw =
     error instanceof ApiRequestError || error instanceof Error ? error.message : "";
   if (!raw) return fallback;
   try {
-    const parsed = JSON.parse(raw) as { detail?: unknown } | null;
+    const parsed = JSON.parse(raw) as { detail?: unknown; code?: unknown } | null;
+    if (parsed?.code === "model_name_reserved") return MODEL_NAME_RESERVED;
     const detail = parsed && typeof parsed.detail === "string" ? parsed.detail : "";
     if (detail) return detail;
   } catch {
@@ -261,7 +264,13 @@ export function fineTuneErrorMessage(error: unknown, fallback: string): string {
   return raw.trim().startsWith("{") ? fallback : raw;
 }
 
-/** A 409 from `POST /runs/`: this name is taken and overwrite was not asked for. */
+/** Distinguish name reservations from active-job conflicts. */
 export function isFineTuneNameConflict(error: unknown): boolean {
-  return error instanceof ApiRequestError && error.status === 409;
+  if (!(error instanceof ApiRequestError) || error.status !== 409) return false;
+  try {
+    const parsed = JSON.parse(error.message) as { code?: string } | null;
+    return parsed?.code === "model_name_reserved";
+  } catch {
+    return false;
+  }
 }

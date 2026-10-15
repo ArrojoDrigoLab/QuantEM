@@ -330,6 +330,19 @@ async function selectTheDataset(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("FineTuneDialog", () => {
+  it.each([
+    { code: "model_name_reserved", detail: "Name unavailable", expected: "This name was used by a previous model and cannot be re-used. Make a new name." },
+    { code: "active_job", detail: "This model is in use by a task.", expected: "This model is in use by a task." },
+  ])("shows the specific server conflict: $code", async ({ code, detail, expected }) => {
+    stubApi();
+    server.use(http.post(`${API}/api/finetune/runs/`, () => HttpResponse.json({ code, detail }, { status: 409 })));
+    openDialog();
+    const user = userEvent.setup();
+    await selectTheDataset(user);
+    await user.type(screen.getByLabelText("Name"), "Previously deleted name");
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(expected);
+  });
   it("keeps the Name input focused across ordinary parent rerenders", async () => {
     const user = userEvent.setup();
     const firstClose = vi.fn();
@@ -642,7 +655,7 @@ describe("FineTuneDialog", () => {
     expect(applied).not.toHaveBeenCalled();
 
     const images = within(screen.getByTestId("finetune-apply-images"));
-    expect(images.getAllByRole("checkbox")).toHaveLength(3);
+    expect(images.getAllByRole("checkbox")).toHaveLength(10);
     // "Some or all": untick one and the button says so.
     await user.click(images.getByRole("checkbox", { name: "liver_03.tif" }));
     const run = screen.getByRole("button", { name: "Run on 2 images" });
@@ -718,7 +731,7 @@ describe("FineTuneDialog", () => {
         within(screen.getByTestId("finetune-apply-images")).getAllByRole(
           "checkbox"
         )
-      ).toHaveLength(3)
+      ).toHaveLength(10)
     );
     expect(screen.getByTestId("finetune-apply-datasets")).toHaveTextContent(
       "Liver 24h"
@@ -933,8 +946,25 @@ describe("FineTuneDialog", () => {
     await user.type(screen.getByLabelText("Name"), "First attempt");
 
     expect(
-      screen.getByText(/saved version already has that name/)
+      screen.getByText(/This name was used by a previous model and cannot be re-used. Make a new name./)
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Fine-tune" })).toBeDisabled();
   });
+});
+
+it("offers ungrouped non-training images as saved-model application targets", async () => {
+  const applied = vi.fn();
+  const previewed = vi.fn();
+  stubApi({progress: {status: "SUCCESS"}, runDetail: {asset_ids: ["img-1"]}, applyProgress: {total: 0, images: []}, onApply: applied, onPreview: previewed});
+  server.use(http.get(`${API}/api/finetune/scope/`, () => HttpResponse.json({experiments: [{
+    ...SCOPE.experiments[0], datasets: [], ungrouped_images: [image("img-1", "Training image", 1, 0), image("img-target", "New target image", 0, 0)]
+  }]})));
+  openDialog(() => {}, {initialSavedAdapterId: "ad-old", initialExperimentId: "exp-fasted", initialAssetIds: ["img-1"]});
+  await screen.findByTestId("finetune-success");
+  const target = within(screen.getByTestId("finetune-apply-images")).getByRole("checkbox", {name: "New target image"});
+  expect(target).not.toBeChecked();
+  await userEvent.click(target);
+  await userEvent.click(screen.getByRole("button", { name: "Run on 2 images" }));
+  await waitFor(() => expect(applied).toHaveBeenCalledWith(["img-1", "img-target"]));
+  expect(previewed).not.toHaveBeenCalled();
 });

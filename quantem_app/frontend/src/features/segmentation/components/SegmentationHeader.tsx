@@ -237,7 +237,7 @@ export function SegmentationHeader({
             Back to Viewer
           </button>
         </div>
-        <div className="header-info">
+        <div className="header-info" contentEditable={false}>
           <h2>{image.display_name}</h2>
         </div>
       </div>

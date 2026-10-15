@@ -5,35 +5,18 @@ from django.db import transaction
 from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 
-from quantem.analysis.identity import input_fingerprint
-from quantem.analysis.models import AnalysisBatch, AnalysisBatchItem, AnalysisRun
+from quantem.analysis.creation import (
+    PreparedAnalysis,
+    create_analysis_run,
+    image_identity,
+    prepare_analysis,
+)
+from quantem.analysis.models import AnalysisBatch, AnalysisBatchItem
 from quantem.assets.models import Asset
 from quantem.jobs.constants import (
     ACTIVE_SEGMENTATION_JOB_TYPES,
-    JOB_DEFAULTS,
-    JOB_TYPE_RUN_ANALYSIS,
 )
-from quantem.jobs.models import Job
-from quantem.library.sample_identity import sample_identity
 from quantem.segmentation.api_views.shared import active_segmentation_job
-
-
-def enqueue_run(run, *, batch_id=""):
-    defaults = JOB_DEFAULTS[JOB_TYPE_RUN_ANALYSIS]
-    return Job.enqueue(
-        job_type=JOB_TYPE_RUN_ANALYSIS,
-        payload={
-            "analysis_run_id": str(run.id),
-            "segmentation_id": str(run.segmentation_id),
-            "asset_id": str(run.segmentation.asset_id),
-        },
-        priority=defaults["priority"],
-        resource_class=defaults["resource_class"],
-        queue_name=defaults["queue_name"],
-        max_attempts=1,
-        batch_id=batch_id,
-        tags=[f"analysis_run:{run.id}", f"segmentation:{run.segmentation_id}"],
-    )
 
 
 def preview_batch(experiment, data):
@@ -55,7 +38,7 @@ def preview_batch(experiment, data):
                 experiment=experiment,
                 lifecycle_status="ACTIVE",
             )
-            .select_related("workflow_metadata")
+            .select_related("workflow_metadata", "experiment")
             .prefetch_related("datasets")
             .distinct()
             .order_by("id")
@@ -78,19 +61,7 @@ def preview_batch(experiment, data):
         raise ValidationError("Unsupported advanced measurement settings.")
     rows = []
     for asset in assets:
-        meta = getattr(asset, "workflow_metadata", None)
-        identity = {
-            "asset_id": str(asset.id),
-            "image": asset.display_name,
-            "experiment_id": str(experiment.id),
-            "experiment": experiment.name,
-            "datasets": [d.name for d in asset.datasets.all()],
-            **sample_identity(
-                asset.display_name or asset.original_filename, asset.id, meta.sample_id if meta else "",
-            ),
-            "group": meta.group if meta else "",
-            "pixel_size_nm": asset.pixel_size_nm,
-        }
+        identity = image_identity(asset)
         segs = list(asset.segmentations.select_related("segmentation_type"))
         masks = [
             s
@@ -125,34 +96,44 @@ def preview_batch(experiment, data):
                 reason = "The selected analysis mask is missing or ambiguous."
             mask = masks[0] if len(masks) == 1 else None
             params = {"group": identity["group"]}
-            if seg:
+            prepared = None
+            if seg and not reason:
                 if seg.segmentation_type.measurement_mode == "global":
-                    params.update(
-                        global_area=True, analysis_mask_ids=[str(mask.id)] if mask else []
-                    )
+                    raw = {
+                        "analysis_mask_ids": [str(mask.id)] if mask else [],
+                        "group": identity["group"],
+                    }
                 else:
-                    from quantem.analysis.loaders import normalise_params
-
                     raw = {
                         "objects_in_measurement_area": True,
                         "tissue_segmentation_id": str(mask.id) if mask else None,
                         "group": identity["group"],
                     }
                     raw.update(advanced)
-                    try:
-                        params = normalise_params(raw, segmentation=seg)
-                    except ValueError as exc:
-                        reason = str(exc)
-            key = input_fingerprint(seg, params) if seg and not reason else ""
+                try:
+                    prepared = prepare_analysis(seg, raw)
+                    params = prepared.params
+                except ValidationError as exc:
+                    reason = str(exc.detail)
+            key = prepared.fingerprint if prepared else ""
             rows.append(
                 {
                     "segmentation": seg,
                     "params": params,
                     "fingerprint": key,
                     "reason": reason,
-                    "identity": {
+                    "identity": prepared.identity
+                    if prepared
+                    else {
                         **identity,
                         "organelle": internal,
+                        "structure": (
+                            seg.display_name
+                            or seg.segmentation_type.short_name
+                            or seg.segmentation_type.long_name
+                        )
+                        if seg
+                        else internal,
                         "segmentation_id": str(seg.id) if seg else None,
                         "measurement_area": mask_name or "Whole image",
                         "review_complete": bool(seg and seg.status_stage == "COMPLETED"),
@@ -178,29 +159,12 @@ def start_batch(experiment, data):
             run = job = None
             reused = False
             if not row["reason"]:
-                if data.get("reuse", True):
-                    run = (
-                        AnalysisRun.objects.filter(
-                            segmentation=row["segmentation"],
-                            status="SUCCESS",
-                            input_fingerprint=row["fingerprint"],
-                            input_identity=row["identity"],
-                        )
-                        .order_by("-created_at")
-                        .first()
-                    )
-                    if run and (not run.export_path or not run.export_path.is_dir()):
-                        run = None
-                reused = run is not None
-                if run is None:
-                    run = AnalysisRun.objects.create(
-                        segmentation=row["segmentation"],
-                        params=row["params"],
-                        group=row["params"].get("group", ""),
-                        input_fingerprint=row["fingerprint"],
-                        input_identity=row["identity"],
-                    )
-                    job = enqueue_run(run, batch_id=f"analysis-batch:{batch.id}")
+                run, job, reused = create_analysis_run(
+                    row["segmentation"],
+                    PreparedAnalysis(row["params"], row["identity"], row["fingerprint"]),
+                    batch_id=f"analysis-batch:{batch.id}",
+                    reuse=data.get("reuse", True),
+                )
             AnalysisBatchItem.objects.create(
                 batch=batch,
                 segmentation=row["segmentation"],
