@@ -213,12 +213,19 @@ def handle_reextract_at_include_level(
             mask = full_mask
 
         metadata = {
+            **stored_metadata,
             "include_level": include_level,
+            "threshold": include_level,
             "close_radius": close_radius,
             "hole_fill": False,
             "source_model": source_model or getattr(segmenter, "source_model", ""),
-            **stored_metadata,
         }
+        previous = getattr(segmentation, "global_mask", None)
+        history = list((previous.metadata or {}).get("inference_runs", [])) if previous and roi is not None else []
+        if previous and roi is not None and not history and previous.metadata:
+            history.append(dict(previous.metadata))
+        history.append({**metadata, "scope": "patch" if roi is not None else "full"})
+        metadata["inference_runs"] = history
         save_global_mask(segmentation, mask, source="model", metadata=metadata)
         segmentation.include_level = include_level
         segmentation.save(update_fields=["include_level", "updated_at"])
@@ -262,6 +269,10 @@ def handle_reextract_at_include_level(
     if "device" in stored_metadata:
         device = stored_metadata.get("device")
         run_identity["device"] = str(device) if device else None
+    # Replay changes the threshold, not the image scale the saved model saw.
+    run_identity["native_pixel_size_nm"] = stored_metadata.get("native_pixel_size_nm")
+    run_identity["ran_at_nm"] = stored_metadata.get("ran_at_nm")
+    run_identity["resolution_recorded"] = stored_metadata.get("resolution_recorded", False)
 
     segment_count = extract_and_save_segments(
         segmenter,

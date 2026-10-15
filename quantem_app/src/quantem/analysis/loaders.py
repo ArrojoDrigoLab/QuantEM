@@ -134,6 +134,7 @@ class LoadedAnalysis:
     #: threshold that might not be the one that ran is exactly the kind of thing
     #: a reader has to be told in the yellow box rather than left to find.
     caveats: tuple[str, ...] = ()
+    notes: tuple[dict[str, Any], ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -186,9 +187,9 @@ def pixel_size_nm(segmentation: ImageSegmentation) -> float | None:
 
 def confirmed_objects(segmentation: ImageSegmentation) -> QuerySet[SegmentObject]:
     """The confirmed ``SegmentObject`` rows of a segmentation, oldest first."""
-    return SegmentObject.objects.filter(segmentation=segmentation, label_state=CONFIRMED).order_by(
-        "created_at", "id"
-    )
+    return SegmentObject.objects.filter(
+        segmentation=segmentation, label_state=CONFIRMED, superseded_at__isnull=True
+    ).order_by("created_at", "id")
 
 
 def object_features(segmentation: ImageSegmentation) -> dict[str, dict[str, Any]]:
@@ -885,6 +886,7 @@ def normalise_params(raw: dict[str, Any], *, segmentation: ImageSegmentation) ->
         "replicates": replicates,
         "seed": seed,
         "group": str(raw.get("group") or ""),
+        "objects_in_measurement_area": raw.get("objects_in_measurement_area") is True,
     }
 
 
@@ -953,6 +955,13 @@ def _mask_provenance(
     }
     if mask_storage is not None:
         result["mask_storage"] = mask_storage
+    scores = {}
+    for features in confirmed_objects(segmentation).values_list("features", flat=True):
+        source = (features or {}).get("probability_source")
+        if source:
+            entry = scores.setdefault(str(source.get("map_id")), {**source, "n_objects": 0})
+            entry["n_objects"] += 1
+    result["probability_measurements"] = list(scores.values())
     return result
 
 
@@ -1283,13 +1292,14 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
     the segmentation today and need not be the one that made these objects. The
     lookup is memoised because runs share adapters far more often than not.
     """
-    by_id: dict[str, dict[str, Any]] = {}
+    by_id: dict[tuple[str, ...], dict[str, Any]] = {}
     adapters: dict[str, dict[str, Any]] = {}
     for stamp in report.stamps.stamps:
         run_id = str(stamp.get("id") or "")
         adapter_id = stamp.get("adapter_id")
+        identity = tuple(str(stamp.get(key)) for key in RUN_STAMP_FIELDS if key != "finished_at")
         entry = by_id.setdefault(
-            run_id,
+            identity,
             {
                 "run_id": run_id or None,
                 "finished_at": stamp.get("finished_at"),
@@ -1302,6 +1312,21 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
                     else None
                 ),
                 "ran_at_nm": stamp.get("ran_at_nm"),
+                "native_pixel_size_nm": stamp.get("native_pixel_size_nm"),
+                "resampled": (
+                    stamp["ran_at_nm"] is not None
+                    and stamp["native_pixel_size_nm"] is not None
+                    and abs(stamp["ran_at_nm"] - stamp["native_pixel_size_nm"]) > 1e-6
+                    if "ran_at_nm" in stamp
+                    and "native_pixel_size_nm" in stamp
+                    and stamp.get("resolution_recorded", True)
+                    else None
+                ),
+                "scope": stamp.get("scope"),
+                "include_level": stamp.get("include_level"),
+                "run_version": stamp.get("run_version"),
+                "prob_map_grid": stamp.get("prob_map_grid"),
+                "device": stamp.get("device"),
                 "min_area": stamp.get("min_area"),
                 "n_objects": 0,
             },
@@ -1310,12 +1335,10 @@ def _runs_seen(report: _RunReport) -> list[dict[str, Any]]:
     runs = sorted(
         by_id.values(), key=lambda r: (str(r["finished_at"] or ""), str(r["run_id"] or ""))
     )
-    if len(runs) > 1:
+    run_count = len({run["run_id"] for run in runs})
+    if run_count > 1:
         report.caveat(
-            f"The objects in {report.where} come from {len(runs)} different "
-            "inference runs, so no single threshold, adapter or scale describes "
-            "all of them. Each run is listed separately in the manifest with the "
-            "number of objects it produced."
+            f"The objects in {report.where} come from {run_count} different inference runs."
         )
     return runs
 
@@ -2035,12 +2058,6 @@ def _run_scale(report: _RunReport) -> dict[str, Any]:
             "pixel size and resample to it, and a run at 8 nm on a 5 nm image "
             "resolves different objects than a native one."
         )
-        report.caveat(
-            f"The scale inference ran at in {report.where} is unknown, not "
-            f"native: {why}. The manifest cannot say whether the image was "
-            "resampled before inference, and this compartment must not be read "
-            "as having run at the image's own resolution."
-        )
         values["ran_at"] = SCALE_UNKNOWN
         for key in ("ran_at_nm", "resampled"):
             unavailable[key] = reason
@@ -2535,6 +2552,9 @@ def load_inputs(
         cancel_check=cancel_check,
         on_progress=on_feature_progress,
     )
+    from quantem.segmentation.features.probability import fill_missing_outline_probabilities
+
+    fill_missing_outline_probabilities(segmentation, cancel_check=cancel_check)
     features = object_features(segmentation)
     sources = object_sources(segmentation)
 
@@ -2552,12 +2572,22 @@ def load_inputs(
     else:
         tissue_provenance = None
 
+    subject_provenance = (
+        _mask_provenance(
+            "Objects", segmentation, confirmed_objects(segmentation).count(), shape=shape
+        )
+        if not any(
+            block["segmentation_id"] == str(segmentation.id) for block in compartment_provenance
+        )
+        else None
+    )
+
     # Every distinct model behind any mask in this run, so the manifest can
     # carry each one's digests once rather than per compartment.
     pack_ids = sorted(
         {
             source
-            for block in [*compartment_provenance, tissue_provenance]
+            for block in [*compartment_provenance, tissue_provenance, subject_provenance]
             if block
             for source in block["n_confirmed_by_source"]
             if source not in {SOURCE_MODEL_MANUAL, SOURCE_MODEL_UNKNOWN}
@@ -2591,6 +2621,7 @@ def load_inputs(
         "image_shape": [shape[0], shape[1]],
         "subject_segmentation_id": str(segmentation.id),
         "compartments": compartment_provenance,
+        "subject": subject_provenance,
         "tissue": tissue_provenance,
         "points_source": params["points_source"],
         "points": _points_provenance(params["points_source"], points_xy, parsed_points),
@@ -2605,6 +2636,25 @@ def load_inputs(
     # Provenance caveats belong beside the numbers, not three levels down in the
     # JSON: "this threshold may not be the one that ran" is precisely what a
     # reader has to be told before they quote the object count.
+    from .notes import note
+
+    provenance_notes = []
+    if parsed_points and parsed_points.n_unreadable:
+        count = parsed_points.n_unreadable
+        total = int(parsed_points.xy.shape[0]) + count
+        lines = "; ".join(
+            f"line {line} ({text})"
+            for line, text in parsed_points.unreadable[:MAX_NAMED_BAD_POINT_LINES]
+        )
+        provenance_notes.append(
+            note(
+                "invalid_imported_points",
+                f"{count} of {total} imported points have invalid coordinates and were excluded (CSV {lines}).",
+                count=count,
+                total=total,
+                lines=lines,
+            )
+        )
     provenance_caveats: list[str] = []
     if points_caveat:
         provenance_caveats.append(points_caveat)
@@ -2641,6 +2691,25 @@ def load_inputs(
         _geom_values["n_regions"] = n_review_regions
         reviewed_regions = provenance.section(_geom_values, _geom_unavailable)
 
+    if params.get("objects_in_measurement_area") and comp.tissue is not None:
+        inside = set()
+        for object_id, x, y in confirmed_objects(segmentation).values_list(
+            "id", "centroid_x", "centroid_y"
+        ):
+            if 0 <= x < shape[1] and 0 <= y < shape[0] and comp.tissue[int(y), int(x)]:
+                inside.add(str(object_id))
+        features = {key: value for key, value in features.items() if str(key) in inside}
+        sources = {key: value for key, value in sources.items() if str(key) in inside}
+        provenance_notes.append(
+            note(
+                "objects_by_centroid",
+                "Object counts and morphology include confirmed objects whose centroids lie in the selected measurement area. Object outlines are measured in full; compartment area is clipped to the mask.",
+            )
+        )
+        provenance_caveats.append(
+            "Object counts and morphology include confirmed objects whose centroids lie in the selected measurement area. "
+            "Object outlines are measured in full; compartment area is clipped to the mask."
+        )
     inputs = AnalysisInputs(
         image_key=str(asset.id),
         segmentation_id=str(segmentation.id),
@@ -2679,6 +2748,7 @@ def load_inputs(
         params=params,
         provenance=loaded_provenance,
         caveats=tuple(provenance_caveats),
+        notes=tuple(provenance_notes),
     )
 
 

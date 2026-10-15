@@ -522,6 +522,10 @@ def _run_segmentation(
 
     try:
         on_status("RUNNING_INFERENCE", 0)
+        from quantem.segmentation.revisions import has_revision_content, save_revision
+
+        if has_revision_content(segmentation):
+            save_revision(segmentation, "Before rerunning segmentation")
         if on_detail is not None:
             on_detail("Preparing inference workload")
         result, _img_array = run_inference_for_segmentation(

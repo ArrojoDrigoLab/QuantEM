@@ -120,11 +120,10 @@ class TestSweep:
         with pytest.raises(ValueError, match="at least one annotated region"):
             sweep_threshold([])
 
-    def test_all_empty_annotations_is_a_clear_error(self):
+    def test_all_empty_annotations_keep_the_default_threshold(self):
         valid = np.ones((H, W), np.uint8)
         blank = Crop("b", np.zeros((H, W)), np.zeros((H, W), np.uint8), valid)
-        with pytest.raises(ValueError, match="Dice is undefined"):
-            sweep_threshold([blank])
+        assert sweep_threshold([blank]).calibrated_threshold == 0.5
 
 
 class TestSplit:

@@ -113,9 +113,7 @@ class HeadModeJobTests(TestCase):
         # the user never applied.
         assert engine.cached_model_keys() == []
 
-    def test_a_region_too_small_for_one_tile_is_refused_not_silently_skipped(self):
-        from quantem.finetune.adapt import HeadAdaptationUnavailable
-
+    def test_a_small_region_trains_successfully(self):
         segmentation = annotated_segmentation("Head tiny region", organelle="er")
         payload = {
             "segmentation_id": str(segmentation.id),
@@ -124,5 +122,6 @@ class HeadModeJobTests(TestCase):
             "steps": 2,
         }
         with mock.patch.object(engine, "load_model", side_effect=_loader):
-            with pytest.raises(HeadAdaptationUnavailable, match="No training window"):
-                adapter_job(payload, FakeReporter(), FakeCancel())
+            result = adapter_job(payload, FakeReporter(), FakeCancel())
+        assert result["steps"] == 2
+        assert result["training"]["n_patches"] >= 1

@@ -38,7 +38,7 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
   );
   const thresholdCanvas = useMemo(
     () =>
-      thresholdOverlay
+      thresholdOverlay && !props.workflow.readOnly
           ? colorizeProb(thresholdOverlay, threshold, thresholdOpacity, {
             // The threshold map is a raw model view beneath accepted work.
             // Erase confirmed pixels from the bitmap itself as well as drawing
@@ -57,6 +57,7 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
       props.completedRoi.items,
       confirmedMasks,
       props.roi.completedRois,
+      props.workflow.readOnly,
       threshold,
       thresholdOpacity,
       thresholdOverlay,
@@ -85,16 +86,20 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
 
   return (
     <section className="seg-left">
-      <LeftPanelStatusMessage
-        workflow={props.workflow}
-        uncertain={props.uncertain}
-        tooMany={props.segments.tooMany}
-      />
-      <LeftPanelDrawingActions
-        drawing={props.drawing}
-        completedRoi={props.completedRoi}
-      />
-      <LeftPanelRoiSection workflow={props.workflow} roi={props.roi} />
+      {!props.workflow.readOnly && (
+        <>
+          <LeftPanelStatusMessage
+            workflow={props.workflow}
+            uncertain={props.uncertain}
+            tooMany={props.segments.tooMany}
+          />
+          <LeftPanelDrawingActions
+            drawing={props.drawing}
+            completedRoi={props.completedRoi}
+          />
+          <LeftPanelRoiSection workflow={props.workflow} roi={props.roi} />
+        </>
+      )}
       <div className="left-viewer-stage">
         <ImageViewer {...viewerProps} />
         <OverlayLayerMenu

@@ -186,7 +186,26 @@ export interface AnalysisRunParams {
   [key: string]: unknown;
 }
 
+export interface SegmentationSettingsSnapshot {
+  compartment: string;
+  segmentation_id?: string | null;
+  manual_objects?: number;
+  runs: Array<{
+    run_id?: string | null; pack_id?: string | null; adapter_id?: string | null;
+    adapter?: { name?: string; [key: string]: unknown } | null;
+    n_objects?: number; threshold?: number | null; min_area?: number | null;
+    native_pixel_size_nm?: number | null; ran_at_nm?: number | null;
+    resampled?: boolean | null; scope?: string | null; device?: string | null;
+    prob_map_grid?: string | null;
+  }>;
+  global_mask?: Record<string, unknown> | null;
+  probability_measurements?: Record<string, unknown>[];
+}
+
 export interface AnalysisRun {
+  segmentation_settings?: SegmentationSettingsSnapshot[];
+  global_area?: GlobalAreaReport | null;
+  current?: boolean | null;
   id: string;
   segmentation_id: string;
   status: AnalysisRunStatus;
@@ -227,6 +246,8 @@ export interface AnalysisRunSummary {
 }
 
 export interface AnalysisRunCreatePayload {
+  objects_in_measurement_area?: boolean;
+  analysis_mask_ids?: string[];
   /** organelle name -> segmentation id, e.g. `{"mito": "<uuid>"}`. */
   compartments?: Record<string, string>;
   tissue_segmentation_id?: string | null;
@@ -245,4 +266,4 @@ export interface AnalysisRunCreateResponse {
 }
 
 /** The three files `write_bundle` produces. */
-export type AnalysisExportName = "objects.csv" | "image_summary.csv" | "manifest.json";
+export type AnalysisExportName = "objects.csv" | "image_summary.csv" | "manifest.json" | "area.csv" | "composition.csv";

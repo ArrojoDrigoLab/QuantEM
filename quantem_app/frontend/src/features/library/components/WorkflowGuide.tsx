@@ -4,7 +4,7 @@
  * There was previously nothing in the app that said what the five screens are
  * for or in what order to use them, so a first-time user met a library, a
  * collapsed import panel and an empty state that pointed at a button that was
- * not visible. This shows on first launch and can be reopened from the header.
+ * not visible. This guide is available on request from the header.
  *
  * One line per step, naming the step and nothing else. Caveats that used to
  * live here -- what happens without a pixel size, which device inference picks,

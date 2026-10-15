@@ -48,17 +48,36 @@ def run_job(payload: dict[str, Any], reporter: JobReporter, cancel: CancelToken)
         reporter.update(progress=percent, message=message)
 
     try:
-        result = run_for_segmentation(
+        from quantem.analysis.global_runs import run_global_area
+        from quantem.analysis.identity import input_fingerprint
+
+        if (
+            run.input_fingerprint
+            and input_fingerprint(run.segmentation, run.params) != run.input_fingerprint
+        ):
+            raise ValueError("Inputs changed while this analysis was queued. Start a new batch.")
+        runner = run_global_area if run.params.get("global_area") else run_for_segmentation
+        result = runner(
             run,
             progress=progress,
             cancel_check=cancel.check_cancelled,
         )
+        if (
+            run.input_fingerprint
+            and input_fingerprint(run.segmentation, run.params) != run.input_fingerprint
+        ):
+            raise ValueError(
+                "Inputs changed during measurement. Re-run to measure one consistent version."
+            )
     except JobCancelledError:
         # The service has already marked the run FAILED with the cancellation
         # exception's text; replace it with something a user asked for.
         AnalysisRun.objects.filter(id=run.id).update(
             error="Cancelled before the analysis finished."
         )
+        raise
+    except Exception as exc:
+        AnalysisRun.objects.filter(id=run.id).update(status="FAILED", error=str(exc), export_dir="")
         raise
 
     reporter.log(
@@ -70,7 +89,7 @@ def run_job(payload: dict[str, Any], reporter: JobReporter, cancel: CancelToken)
         "segmentation_id": str(run.segmentation_id),
         "status": run.status,
         "export_dir": run.export_dir,
-        "n_objects": result["objects"]["n"],
+        "n_objects": (result.get("objects") or {}).get("n"),
         "calibrated": result["calibrated"],
         "caveats": result["caveats"],
     }

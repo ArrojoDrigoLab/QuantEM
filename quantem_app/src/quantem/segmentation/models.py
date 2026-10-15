@@ -172,6 +172,18 @@ class ImageSegmentation(TimeStampedModel):
         return f"{target_name} - {name}"
 
 
+class CorrectionRevision(TimeStampedModel):
+    """Recoverable objects, reviewed areas and masks before a destructive action."""
+
+    segmentation = models.ForeignKey(
+        ImageSegmentation, on_delete=models.CASCADE, related_name="correction_revisions"
+    )
+    name = models.CharField(max_length=255)
+    archive_path = models.CharField(max_length=1024)
+    object_count = models.PositiveIntegerField(default=0)
+    include_level = models.FloatField(null=True, blank=True)
+
+
 class GlobalMask(TimeStampedModel):
     """The one binary foreground mask for a global-mode segmentation.
 

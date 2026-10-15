@@ -32,10 +32,8 @@ What is produced is the union of what the two existing extractors produce:
 Everything is in PIXELS; :mod:`quantem.analysis.morphometrics` converts to
 physical units and needs ``Asset.pixel_size_nm`` to do it.
 
-``mean_prob`` is deliberately **not** invented for a drawn object. There is no
-model probability behind a polygon a person traced, and writing ``0.0`` would
-put a number in a paper's table that means "the model was confident this is
-background".
+``mean_prob`` is the mean of a saved model probability map inside the outline.
+When no matching map covers the outline, it remains absent.
 
 **A measurement that fails removes the old one.** Every key this module owns
 describes the outline it was measured on, so once that outline changes the
@@ -75,6 +73,7 @@ from shapely.geometry import Polygon
 from quantem.assets.asset_openable import get_asset_openable
 from quantem.assets.task_utils import load_image_array, load_image_roi_array
 from quantem.segmentation.features.extraction import compute_segment_features
+from quantem.segmentation.features.probability import OutlineProbability
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
 
 logger = logging.getLogger(__name__)
@@ -110,10 +109,8 @@ MEASURED_MARKER_KEY = "area"
 
 #: The probability of the *outline*, under the names the extractor writes it
 #: under: ``mean_prob`` plus one ``mean_prob_<map>`` per named probability map
-#: (:mod:`quantem.seg_core.extraction`). This module cannot recompute them --
-#: the run's probability array is not kept -- so on a geometry edit they are
-#: removed, exactly as ``tasks._apply_prob_map_stats`` removes ``prob_<map>_*``
-#: for the same event.
+#: (:mod:`quantem.seg_core.extraction`). A geometry edit clears them before
+#: measuring against a matching saved map; unavailable maps leave them absent.
 OUTLINE_PROBABILITY_KEY = "mean_prob"
 OUTLINE_PROBABILITY_KEY_PREFIX = "mean_prob_"
 
@@ -179,12 +176,12 @@ def drop_outline_probability(existing: object) -> dict:
     the parent's ``mean_prob`` -- one number, measured over an outline twice
     their size, reported for each of them in ``objects.csv`` and used as the
     ``confidence_score`` fallback (:mod:`quantem.segmentation.confidence`). It
-    is not recoverable here, so it is removed rather than reattributed.
+    is cleared before measuring the new outline against its saved map.
     """
     features = dict(existing) if isinstance(existing, dict) else {}
     for key in list(features):
         name = str(key)
-        if name == OUTLINE_PROBABILITY_KEY or name.startswith(OUTLINE_PROBABILITY_KEY_PREFIX):
+        if name in {OUTLINE_PROBABILITY_KEY, "probability_source"} or name.startswith(OUTLINE_PROBABILITY_KEY_PREFIX):
             features.pop(key, None)
     return features
 
@@ -372,8 +369,8 @@ def measure_segments(
         geometry_changed: True when the caller has just reshaped these outlines.
             The probability measured over the previous outline
             (``mean_prob``/``mean_prob_<map>``, and the ``confidence_score``
-            column derived from it) is then dropped as well: it cannot be
-            recomputed from a polygon, and it described a different shape.
+            column derived from it) is replaced using the matching saved map,
+            or cleared when that map is unavailable.
     """
     segments = [segment for segment in segments if segment is not None]
     if not segments:
@@ -412,6 +409,7 @@ def measure_segments(
 
     updated = 0
     unmeasured: list[str] = []
+    probability = OutlineProbability(segmentation)
     for segment in segments:
         polygon = segment.geometry
         measurements: dict[str, float] = {}
@@ -447,10 +445,14 @@ def measure_segments(
         if geometry_changed:
             features = drop_outline_probability(features)
 
+        if geometry_changed or features.get("mean_prob") is None:
+            features = probability.measure(segment, features)
+
         _write_features(segment, features, clear_confidence=geometry_changed)
         if measured:
             updated += 1
 
+    probability.close()
     return MeasurementOutcome(
         updated=updated,
         unmeasured=tuple(unmeasured),

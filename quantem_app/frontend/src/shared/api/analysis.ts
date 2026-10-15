@@ -52,6 +52,22 @@ export function getAnalysisRun(runId: string): Promise<AnalysisRun> {
   return apiRequest<AnalysisRun>(`/api/analysis/${runId}/`);
 }
 
+export interface AnalysisTablePage {
+  name: string;
+  columns: string[];
+  rows: string[][];
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export function getAnalysisTable(runId: string, name: string, offset = 0, signal?: AbortSignal): Promise<AnalysisTablePage> {
+  return apiRequest<AnalysisTablePage>(
+    `/api/analysis/${runId}/table/${encodeURIComponent(name)}?offset=${offset}&limit=100`,
+    { signal },
+  );
+}
+
 /**
  * Download URL for one file of a run's export bundle.
  *

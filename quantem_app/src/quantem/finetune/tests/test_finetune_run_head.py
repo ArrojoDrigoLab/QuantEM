@@ -115,6 +115,26 @@ class ScopedRunTests(TestCase):
 
     # -- use all ------------------------------------------------------------
 
+    def test_checkpoint_selection_is_separate_from_outer_holdout_and_refits_all(self):
+        third = _big("selection_third.tif")
+        self.asset_ids.append(str(third.asset_id))
+        result, _ = self._run(
+            training_mode=TRAINING_MODE_HOLDOUT_1,
+            steps=8,
+            training_options={"validation_fraction": 0.5, "eval_interval": 2, "patience": 2},
+        )
+        trace = result["training_rounds"][0]
+        selected = trace["checkpoint_selection"]
+        assert selected["selection"]["history"]
+        validation = set(selected["validation_crop_names"])
+        fit = set(selected["selection_train_crop_names"])
+        test = set(result["heldout_crop_names"])
+        assert not validation & fit and not (validation | fit) & test
+        assert validation | fit == set(result["train_crop_names"])
+        assert trace["training"]["coverage_fraction"] == 1
+        self.adapter.refresh_from_db()
+        assert self.adapter.params["training_rounds"] == result["training_rounds"]
+
     def test_use_all_trains_on_every_area_in_one_round(self):
         result, reporter = self._run()
         assert result["rounds"] == 1
@@ -135,7 +155,74 @@ class ScopedRunTests(TestCase):
         assert (MODELS_DIR / result["head_path"]).resolve() == live.resolve()
         assert Adapter.objects.get(id=self.adapter.id).head_path == result["head_path"]
 
+    def test_continuation_loads_the_parent_for_every_real_training_round(self):
+        from quantem.finetune.adapt import load_head
+
+        self._run()
+        parent = Adapter.objects.get(id=self.adapter.id)
+        parent_bytes = parent.head_file.read_bytes()
+        self.adapter = Adapter.objects.create(
+            parent=parent, base_model=parent.base_model, name="Continued",
+            mode="head", segmentation_type=parent.segmentation_type,
+            training_exposure=self.asset_ids,
+        )
+        self.adapter.scope_assets.set(self.asset_ids)
+        with mock.patch("quantem.finetune.job.load_head", wraps=load_head) as loaded:
+            result, _ = self._run(
+                parent_adapter_id=str(parent.id),
+                training_mode=TRAINING_MODE_HOLDOUT_1,
+                cv_benchmark=True,
+            )
+        assert loaded.call_count == 2
+        assert all(call.args[1] == parent.head_file for call in loaded.call_args_list)
+        assert result["status"] == "SUCCESS"
+        assert result["rounds"] == 2
+        assert parent.head_file.read_bytes() == parent_bytes
+        self.adapter.refresh_from_db()
+        assert self.adapter.head_file != parent.head_file
+        assert any("not independent" in note for note in self.adapter.caveats())
+
     # -- hold out one -------------------------------------------------------
+
+    def test_continuation_resets_to_parent_before_validation_refit(self):
+        from quantem.finetune.adapt import HEAD_MODULES, train_head
+
+        self._run()
+        parent = Adapter.objects.get(id=self.adapter.id)
+        parent_bytes = parent.head_file.read_bytes()
+        self.adapter = Adapter.objects.create(
+            parent=parent, base_model=parent.base_model, name="Validated child",
+            mode="head", segmentation_type=parent.segmentation_type,
+            training_exposure=self.asset_ids,
+        )
+        self.adapter.scope_assets.set(self.asset_ids)
+        starting_states = []
+
+        def train(module, *args, **kwargs):
+            starting_states.append({
+                f"{name}.{key}": value.detach().clone()
+                for name in HEAD_MODULES
+                for key, value in getattr(module, name).state_dict().items()
+            })
+            return train_head(module, *args, **kwargs)
+
+        with mock.patch("quantem.finetune.options.train_head", side_effect=train):
+            result, _ = self._run(
+                parent_adapter_id=str(parent.id),
+                steps=8,
+                training_options={"validation_fraction": 0.5, "eval_interval": 2, "patience": 2},
+            )
+        assert len(starting_states) == 2  # inner selection and all-area refit
+        for key, value in starting_states[0].items():
+            assert torch.equal(value, starting_states[1][key]), key
+        trace = result["training_rounds"][0]
+        assert trace["checkpoint_selection"]["selection"]["history"]
+        assert trace["training"]["coverage_fraction"] == 1
+        assert parent.head_file.read_bytes() == parent_bytes
+        self.adapter.refresh_from_db()
+        assert self.adapter.head_file != parent.head_file
+        assert self.adapter.params["training_rounds"] == result["training_rounds"]
+        assert any("not independent" in note for note in self.adapter.caveats())
 
     def test_holding_one_image_out_gives_an_image_disjoint_score(self):
         result, _reporter = self._run(training_mode=TRAINING_MODE_HOLDOUT_1)

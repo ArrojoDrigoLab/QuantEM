@@ -16,6 +16,8 @@ from .distances import DEFAULT_BAND_EDGES_NM
 from .loaders import POINT_SOURCES, AnalysisInputError, normalise_params
 from .models import AnalysisRun
 from .montecarlo import DEFAULT_REPLICATES, DEFAULT_SEED
+from .notes import analysis_notes
+from .settings import saved_segmentation_settings
 
 
 class AnalysisRunCreateSerializer(serializers.Serializer):
@@ -33,6 +35,7 @@ class AnalysisRunCreateSerializer(serializers.Serializer):
     compartments = serializers.DictField(
         child=serializers.CharField(), required=False, default=dict
     )
+    objects_in_measurement_area = serializers.BooleanField(required=False, default=False)
     tissue_segmentation_id = serializers.CharField(
         required=False, allow_null=True, allow_blank=True, default=None
     )
@@ -102,7 +105,7 @@ class AnalysisRunSummarySerializer(serializers.ModelSerializer):
         return (obj.results or {}).get("calibrated")
 
     def get_n_caveats(self, obj: AnalysisRun) -> int:
-        return len((obj.results or {}).get("caveats") or [])
+        return len(analysis_notes(obj.results))
 
 
 class AnalysisRunSerializer(serializers.ModelSerializer):
@@ -127,6 +130,9 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
     monte_carlo_self_check = serializers.SerializerMethodField()
     caveats = serializers.SerializerMethodField()
     exports = serializers.SerializerMethodField()
+    global_area = serializers.SerializerMethodField()
+    current = serializers.SerializerMethodField()
+    segmentation_settings = serializers.SerializerMethodField()
 
     class Meta:
         model = AnalysisRun
@@ -140,6 +146,10 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
             "started_at",
             "finished_at",
             "params",
+            "segmentation_settings",
+            "global_area",
+            "current",
+            "input_identity",
             "pixel_size_nm",
             "calibrated",
             "composition",
@@ -157,6 +167,17 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
 
     def _section(self, obj: AnalysisRun, key: str) -> Any:
         return (obj.results or {}).get(key)
+
+    def get_global_area(self, obj):
+        return self._section(obj, "global_area")
+
+    def get_segmentation_settings(self, obj):
+        return saved_segmentation_settings(obj)
+
+    def get_current(self, obj):
+        from quantem.analysis.identity import run_is_current
+
+        return run_is_current(obj) if obj.input_fingerprint else None
 
     def get_segmentation_deleted(self, obj: AnalysisRun) -> bool:
         """True when the segmentation this run measured has since been deleted.
@@ -195,7 +216,7 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
         return self._section(obj, "monte_carlo_self_check")
 
     def get_caveats(self, obj: AnalysisRun) -> list[str]:
-        return self._section(obj, "caveats") or []
+        return analysis_notes(obj.results)
 
     def get_exports(self, obj: AnalysisRun) -> list[str]:
         """Bundle files that actually exist on disk, newest run state first."""

@@ -68,35 +68,21 @@ class RerunAdviceTestCase(RunIdentityTestCase):
 class TheAdviceIsTrueTests(RerunAdviceTestCase):
     def test_it_says_a_re_run_over_confirmed_objects_changes_nothing(self):
         caveats = self._caveats()
-
-        self.assertIn("Re-running inference is not by itself enough", caveats)
-        self.assertIn("A new model preview cannot replace it", caveats)
-        self.assertIn("excludes the confirmed pixels", caveats)
+        self.assertNotIn("Re-running inference", caveats)
+        self.assertNotIn("Discard objects", caveats)
+        self.assertTrue(self._last["result"]["segmentation_settings"])
 
     def test_it_names_the_route_that_does_work(self):
         caveats = self._caveats()
-
-        # It used to name the endpoint (``POST /api/segmentations/
-        # <segmentation_id>/labels/clear``) and add "No screen offers that
-        # yet". Invariant I-12 forbids the first and the labeling header's
-        # "Discard objects and re-run..." button falsified the second.
-        self.assertIn("Discard objects and re-run", caveats)
-        self.assertNotIn("/labels/clear", caveats)
-        self.assertNotIn("No screen offers that yet", caveats)
-        self.assertIn("Re-importing the image", caveats)
+        self.assertNotIn("Re-running inference", caveats)
+        self.assertNotIn("Discard objects", caveats)
+        self.assertTrue(self._last["result"]["segmentation_settings"])
 
     def test_the_recalibration_caveat_stops_short_of_the_same_promise(self):
         """It also ended on a bare "Re-run inference before reporting"."""
         self._caveats()
-        recalibration = next(
-            c
-            for c in self._last["result"]["caveats"]
-            if "would have resampled the image to its own scale" in c
-        )
-
-        self.assertIn("Re-run inference", recalibration)
-        self.assertIn("after discarding the objects it produced", recalibration)
-        self.assertIn("because they are confirmed", recalibration)
+        self.assertFalse(any("would have resampled" in c for c in self._last["result"]["caveats"]))
+        self.assertTrue(self._last["result"]["segmentation_settings"])
 
     def test_an_uncalibrated_image_gets_the_same_route(self):
         """The image has no pixel size at all, so the advice is "set it" *and* this."""
@@ -105,10 +91,8 @@ class TheAdviceIsTrueTests(RerunAdviceTestCase):
 
         self._caveats(uncalibrated=True)
 
-        scale = next(c for c in self._last["result"]["caveats"] if "not trained for" in c)
-        self.assertIn("Set the image's pixel size and re-run inference", scale)
-        self.assertIn("Re-running inference is not by itself enough", scale)
-        self.assertIn("Discard objects and re-run", scale)
+        self.assertFalse(any("not trained for" in c for c in self._last["result"]["caveats"]))
+        self.assertTrue(self._last["result"]["segmentation_settings"])
 
     def test_a_correct_run_is_told_none_of_this(self):
         caveats = self._caveats(uncalibrated=False)

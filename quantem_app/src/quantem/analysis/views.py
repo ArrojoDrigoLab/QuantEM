@@ -17,10 +17,9 @@ Three things this endpoint refuses to do quietly:
   group-level number is never shown without saying it is an unweighted mean over
   units. The rule travels with the number rather than living in a UI string that
   can be dropped in a redesign.
-* **It counts its own units.** Two runs of the same image are two analyses, not
-  two experimental observations, and rolling them up as if they were is exactly
-  the pseudo-replication the unweighted rule exists to prevent. When it happens,
-  the group carries a warning naming it.
+* **It counts each image once.** Only its latest successful, current run is
+  included. Incompatible measurement recipes must be compared in separate
+  batches rather than silently pooled.
 * **It carries the runs' caveats up with their numbers.** Averaging is not a
   way of making a qualified number unqualified. Every run whose points are a
   compartment's own centroids says ``enrichment in that compartment is circular
@@ -34,6 +33,7 @@ Three things this endpoint refuses to do quietly:
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -42,14 +42,16 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .identity import run_is_current
 from .models import AnalysisRun
+from .notes import analysis_notes
 from .rollup import rollup
 from .service import circular_columns, image_summary_row
 
 #: The aggregation rule, returned with every payload. Same words as the export
 #: manifest, for the same reason.
 AGGREGATION_RULE = (
-    "Unweighted mean over experimental units, one unit per analysis run, with "
+    "Unweighted mean over images (descriptive), using the latest successful run per image, with "
     "the sample SD (ddof=1) and SEM across units. Never weighted by point count "
     "— doing so produced a random-data enrichment of 0.73 instead of 1.0 in the "
     "reference implementation."
@@ -68,7 +70,7 @@ IDENTITY_FIELDS = frozenset(
 
 #: What one row of the rollup represents. Stated in the payload because "n = 3"
 #: is meaningless without it.
-UNIT_DESCRIPTION = "one analysis run (one image)"
+UNIT_DESCRIPTION = "one image (latest successful run); biological independence is not assumed"
 
 #: Said beside every circular metric in the payload, in the metric entry itself
 #: rather than only in the group's warnings, because a client that reads
@@ -79,6 +81,31 @@ CIRCULAR_NOTE = (
     "value is 1 / area fraction and says nothing about the biology. Averaging "
     "it does not make it a measurement — it must not be reported as a result."
 )
+
+
+def _recipe(run):
+    """Compare scientific settings without requiring image-specific mask IDs to match."""
+    from quantem.segmentation.models import ImageSegmentation
+
+    params = run.params or {}
+    mask_id = params.get("tissue_segmentation_id")
+    mask = (
+        ImageSegmentation.objects.select_related("segmentation_type").filter(id=mask_id).first()
+        if mask_id
+        else None
+    )
+    values = {
+        "organelle": str(run.segmentation.segmentation_type_id) if run.segmentation_id else None,
+        "compartments": sorted((params.get("compartments") or {}).keys()),
+        "measurement_area": (mask.segmentation_type.internal_name, mask.display_name or "")
+        if mask
+        else None,
+        "points_source": params.get("points_source"),
+        "distance_target": params.get("distance_target"),
+        "band_edges_nm": params.get("band_edges_nm"),
+        "objects_in_measurement_area": params.get("objects_in_measurement_area", False),
+    }
+    return json.dumps(values, sort_keys=True)
 
 
 def _is_metric(value: Any) -> bool:
@@ -197,7 +224,10 @@ class AnalysisGroupRollupView(APIView):
         # to change what a column means there.
         caveats_by_run: dict[str, list[str]] = {}
         circular_by_run: dict[str, list[str]] = {}
-        for run in runs.order_by("created_at", "id"):
+        seen_images = set()
+        recipes = set()
+        omitted_stale = []
+        for run in runs.select_related("segmentation__asset").order_by("-created_at", "-id"):
             if not run.results:
                 continue
             try:
@@ -206,11 +236,31 @@ class AnalysisGroupRollupView(APIView):
                 # A run stored by an older build with a different result shape.
                 # Skipping it is right -- guessing at its columns is not.
                 continue
+            image_key = (
+                str(run.segmentation.asset_id)
+                if run.segmentation_id
+                else str(row.get("image_key") or run.id)
+            )
+            if image_key in seen_images:
+                continue
+            seen_images.add(image_key)
+            if run.input_fingerprint and not run_is_current(run):
+                omitted_stale.append(str(run.id))
+                continue
+            recipes.add(_recipe(run))
             row["run_id"] = str(run.id)
-            caveats_by_run[str(run.id)] = [str(c) for c in (run.results.get("caveats") or [])]
+            caveats_by_run[str(run.id)] = analysis_notes(run.results)
             circular_by_run[str(run.id)] = circular_columns(run.results, row)
             rows.append(row)
 
+        if len(recipes) > 1:
+            return Response(
+                {
+                    "error": "These images use different organelles, masks or measurement settings. Use an experiment analysis batch to compare a consistent recipe.",
+                    "omitted_outdated_runs": omitted_stale,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         metrics = sorted(
             {
                 key
@@ -243,6 +293,7 @@ class AnalysisGroupRollupView(APIView):
                 "group": wanted_group,
                 "status": AnalysisRun.STATUS_SUCCESS,
                 "n_runs": len(rows),
+                "omitted_outdated_runs": omitted_stale,
             },
             "metrics": metrics,
             # The union over every group in this response, so a client that

@@ -1,5 +1,5 @@
 /**
- * Fine-tune a model on your own annotations. Owner ruling R13, end to end.
+ * Train on selected annotations, then optionally apply a saved model.
  *
  * One dialog, two ways in — a Fine-Tune button beside one organelle in the
  * labeling view, and one on the library header — and the same six decisions
@@ -17,8 +17,8 @@
  *   same-experiment rule is enforced with a 400, and re-implementing it here
  *   would be a second copy of it free to drift; the submit button is disabled
  *   unless the preview says `eligible`, and the blockers are printed as sent.
- * * **applying is opt-in.** Success offers to run the new model on the images
- *   it was scoped to. It queues nothing until the user picks and clicks.
+ * * **applying is opt-in.** Success offers all images in the model's experiment,
+ *   with its training images initially selected. Nothing is queued until asked.
  */
 
 import {
@@ -30,25 +30,26 @@ import {
   useState,
 } from "react";
 import {
-  applyFineTuneRun,
   fineTuneErrorMessage,
   getFineTuneRun,
   getFineTuneScope,
   getModelCatalogue,
   isFineTuneNameConflict,
+  MODEL_NAME_RESERVED,
   listFineTuneAdapters,
-  previewFineTuneScope,
   startFineTuneRun,
 } from "@/shared/api/finetune";
 import { getSegmentationTypes } from "@/shared/api/assets";
 import { RunProgressList } from "@/shared/progress/RunProgressList";
 import { Button } from "@/shared/ui/design";
-import { TRAINING_ANNOTATION_SOURCES } from "@/shared/constants/confirmedArea";
 import { suggestBaseModel, toModelChoices } from "@/features/improve/modelChoices";
-import { FineTuneSuccess } from "@/features/finetune/components/FineTuneSuccess";
-import { HelpDisclosure } from "@/features/finetune/components/HelpDisclosure";
+import { ModelApplication } from "./ModelApplication";
+import { useTrainingPreview } from "./useTrainingPreview";
+import { useModalLifecycle } from "@/shared/hooks/useModalLifecycle";
+import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import { ScopePicker } from "@/features/finetune/components/ScopePicker";
 import { fineTuneProgressRows } from "@/features/finetune/fineTuneProgressRows";
+import { parseTrainingInputs } from "@/features/finetune/trainingOptions";
 import {
   FINE_TUNE_MODE_OPTIONS,
   TRAINING_MODE_HELP,
@@ -64,7 +65,6 @@ import {
   emptySelection,
   filterScopeTree,
   isSelectionEmpty,
-  selectionKey,
   selectionTotals,
   setImageSelected,
   toSelectionPayload,
@@ -75,15 +75,9 @@ import type { SegmentationType } from "@/shared/types/images";
 import type {
   FineTuneAdapterSummary,
   FineTuneAppliedImageEvent,
-  FineTuneApplyResponse,
-  FineTunePreviewImage,
-  FineTunePreviewResponse,
-  FineTuneRunDetail,
   ModelCatalogue,
 } from "@/shared/types/finetune";
 import "./FineTuneDialog.css";
-
-const PREVIEW_DEBOUNCE_MS = 250;
 
 export interface FineTuneDialogProps {
   open: boolean;
@@ -95,6 +89,9 @@ export interface FineTuneDialogProps {
   segmentationType?: SegmentationType | null;
   /** Images to start with ticked — the one the labeling view was open on. */
   initialAssetIds?: string[];
+  initialExperimentId?: string;
+  initialParentAdapterId?: string;
+  initialSavedAdapterId?: string;
   /** The released pack selected in the labeling view's model picker. */
   initialBaseModel?: string | null;
   /** Labeling-view origin retained on the resulting adapter for compatibility. */
@@ -116,6 +113,9 @@ function FineTuneDialogBody({
   onClose,
   segmentationType = null,
   initialAssetIds,
+  initialExperimentId,
+  initialParentAdapterId,
+  initialSavedAdapterId,
   initialBaseModel = null,
   segmentationId = null,
   onAppliedImageCompleted,
@@ -129,17 +129,17 @@ function FineTuneDialogBody({
   const baseModelId = useId();
   const organelleId = useId();
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
-  const onCloseRef = useRef(onClose);
+  useModalLifecycle(panelRef, onClose);
 
   const [types, setTypes] = useState<SegmentationType[] | null>(null);
   const [chosenTypeId, setChosenTypeId] = useState<string>(
     segmentationType?.id ?? ""
   );
   const [catalogue, setCatalogue] = useState<ModelCatalogue | null>(null);
+  const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [adapters, setAdapters] = useState<FineTuneAdapterSummary[]>([]);
-  const [adaptersLoadedFor, setAdaptersLoadedFor] = useState("");
-  const [dialogMode, setDialogMode] = useState<"train" | "apply">("train");
+  const [dialogMode, setDialogMode] = useState<"train" | "apply">(initialSavedAdapterId ? "apply" : "train");
   const [scopeGroups, setScopeGroups] = useState(() => buildScopeTree(null));
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
@@ -153,55 +153,32 @@ function FineTuneDialogBody({
     return next;
   });
 
-  const [preview, setPreview] = useState<FineTunePreviewResponse | null>(null);
-  const [previewKey, setPreviewKey] = useState<string>("");
-  const [previewPending, setPreviewPending] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-
   const [name, setName] = useState("");
-  const [overwriteAdapterId, setOverwriteAdapterId] = useState("");
-  const [savedAdapterId, setSavedAdapterId] = useState("");
+  const [parentAdapterId, setParentAdapterId] = useState(initialParentAdapterId ?? "");
+  const [includePrevious, setIncludePrevious] = useState(true);
+  const [savedAdapterId, setSavedAdapterId] = useState(initialSavedAdapterId ?? "");
   const [baseModel, setBaseModel] = useState(initialBaseModel ?? "");
   const [modeChoice, setModeChoice] = useState<FineTuneModeChoice>("use_all");
+  const [schedule, setSchedule] = useState<"quick" | "extended">("quick");
+  const [steps, setSteps] = useState("");
+  const [lr, setLr] = useState("0.0001");
+  const [seed, setSeed] = useState("0");
+  const [validation, setValidation] = useState(false);
+  const [evalInterval, setEvalInterval] = useState("100");
+  const [patience, setPatience] = useState("5");
+  const trainingInputs = useMemo(() => parseTrainingInputs({
+    schedule, steps, lr, seed, validation, evalInterval, patience,
+  }), [schedule, steps, lr, seed, validation, evalInterval, patience]);
   // A ref, rather than state, so a preview already in flight cannot overwrite
-  // a radio choice made before its response arrives. It also lets the preview
-  // and its server-selected default land in the same render.
+  // a radio choice made before its response arrives.
   const modeTouchedRef = useRef(false);
-  const overwriteTouchedRef = useRef(false);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [adapterId, setAdapterId] = useState<string | null>(null);
-  const [runDetail, setRunDetail] = useState<FineTuneRunDetail | null>(null);
-  const [applying, setApplying] = useState(false);
-  const [applyError, setApplyError] = useState<string | null>(null);
-  const [applyResult, setApplyResult] = useState<FineTuneApplyResponse | null>(null);
-
-  const { progress, settled } = useFineTuneProgress(adapterId);
+  const [trainingRunId, setTrainingRunId] = useState<string | null>(null);
+  const { progress, settled } = useFineTuneProgress(trainingRunId);
 
   // --- lifecycle ---------------------------------------------------------
-
-  // Focus restoration belongs to the dialog's actual unmount. Callers often
-  // pass an inline onClose callback, so depending on its identity would run
-  // the cleanup on ordinary parent rerenders and steal focus from Name.
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onCloseRef.current();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      restoreFocusRef.current?.focus();
-    };
-  }, []);
 
   useEffect(() => {
     if (segmentationType) return;
@@ -210,13 +187,16 @@ function FineTuneDialogBody({
       .then((rows) => {
         if (!cancelled) setTypes(rows);
       })
-      .catch(() => {
-        if (!cancelled) setTypes([]);
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setTypes([]);
+          setLoadErrors((current) => ({ ...current, types: fineTuneErrorMessage(error, "Organelles could not be loaded.") }));
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [segmentationType]);
+  }, [segmentationType, loadAttempt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -224,15 +204,18 @@ function FineTuneDialogBody({
       .then((next) => {
         if (!cancelled) setCatalogue(next);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // Fine-tuning must never offer a pack whose downloaded state cannot be
         // verified, so a failed catalogue request leaves the picker empty.
-        if (!cancelled) setCatalogue(null);
+        if (!cancelled) {
+          setCatalogue(null);
+          setLoadErrors((current) => ({ ...current, catalogue: fineTuneErrorMessage(error, "Model availability could not be checked.") }));
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
     if (!chosenTypeId) {
@@ -245,7 +228,16 @@ function FineTuneDialogBody({
     void getFineTuneScope(chosenTypeId)
       .then((response) => {
         if (cancelled) return;
-        setScopeGroups(buildScopeTree(response));
+        const groups = buildScopeTree(response);
+        setScopeGroups(initialExperimentId ? groups.filter((group) => group.key === initialExperimentId) : groups);
+        if (!initialAssetIds?.length && initialExperimentId) {
+          const group = groups.find((entry) => entry.key === initialExperimentId);
+          let next = emptySelection();
+          for (const image of [...(group?.images ?? []), ...(group?.datasets.flatMap((dataset) => dataset.images) ?? [])]) {
+            next = setImageSelected(next, image.id, true);
+          }
+          setSelection(next);
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -260,109 +252,47 @@ function FineTuneDialogBody({
     return () => {
       cancelled = true;
     };
-  }, [chosenTypeId]);
+  }, [chosenTypeId, initialExperimentId, initialAssetIds, loadAttempt]);
 
   useEffect(() => {
     if (!chosenTypeId) {
       setAdapters([]);
-      setAdaptersLoadedFor("");
       return undefined;
     }
     let cancelled = false;
     setAdapters([]);
-    setAdaptersLoadedFor("");
     void listFineTuneAdapters(chosenTypeId)
       .then((rows) => {
         if (!cancelled) {
-          setAdapters(rows);
-          setAdaptersLoadedFor(chosenTypeId);
+          setAdapters(initialExperimentId ? rows.filter((row) => typeof row.experiment === "object" && row.experiment?.id === initialExperimentId) : rows);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
           setAdapters([]);
-          setAdaptersLoadedFor(chosenTypeId);
+          setLoadErrors((current) => ({ ...current, adapters: fineTuneErrorMessage(error, "Saved fine-tunes could not be loaded.") }));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [chosenTypeId]);
+  }, [chosenTypeId, initialExperimentId, loadAttempt]);
 
   useEffect(() => {
-    setOverwriteAdapterId("");
-    overwriteTouchedRef.current = false;
-  }, [chosenTypeId]);
+    const parent = adapters.find((adapter) => adapter.id === parentAdapterId);
+    if (!parent) return;
+    setBaseModel(parent.base_model);
+    setName((current) => current || `${parent.name} · next version`);
+  }, [adapters, parentAdapterId]);
 
-  useEffect(() => {
-    if (
-      adaptersLoadedFor !== chosenTypeId ||
-      overwriteTouchedRef.current ||
-      !initialAssetIds?.length
-    ) {
-      return;
-    }
-    const matching = adapters.find((adapter) =>
-      initialAssetIds.some((assetId) => (adapter.asset_ids ?? []).includes(assetId))
-    );
-    if (!matching) return;
-    setOverwriteAdapterId(matching.id);
-    setName(matching.name);
-  }, [adapters, adaptersLoadedFor, chosenTypeId, initialAssetIds]);
-
-  const currentSelectionKey = chosenTypeId
-    ? `${selectionKey(chosenTypeId, selection)}|${baseModel}`
-    : "";
   const selectionEmpty = isSelectionEmpty(selection);
-
+  const { livePreview, previewPending, previewError } = useTrainingPreview({
+    typeId: chosenTypeId, selection, baseModel, parentId: parentAdapterId,
+    includePrevious, enabled: dialogMode === "train",
+  });
   useEffect(() => {
-    if (!chosenTypeId || selectionEmpty) {
-      setPreview(null);
-      setPreviewKey("");
-      setPreviewPending(false);
-      setPreviewError(null);
-      return undefined;
-    }
-    let cancelled = false;
-    setPreviewPending(true);
-    // Debounced: ticking a group is one intent and several state updates, and
-    // a request per tick would leave the count trailing the boxes.
-    const timer = window.setTimeout(() => {
-      void previewFineTuneScope({
-        ...toSelectionPayload(chosenTypeId, selection),
-        base_model: baseModel || undefined,
-      })
-        .then((response) => {
-          if (cancelled) return;
-          if (!modeTouchedRef.current) {
-            setModeChoice(modeChoiceFromDefault(response.default_mode));
-          }
-          setPreview(response);
-          setPreviewKey(currentSelectionKey);
-          setPreviewError(null);
-        })
-        .catch((error: unknown) => {
-          if (cancelled) return;
-          setPreview(null);
-          setPreviewKey(currentSelectionKey);
-          setPreviewError(
-            fineTuneErrorMessage(error, "Could not check this selection.")
-          );
-        })
-        .finally(() => {
-          if (!cancelled) setPreviewPending(false);
-        });
-    }, PREVIEW_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [chosenTypeId, selection, selectionEmpty, currentSelectionKey, baseModel]);
-
-  // The preview on screen is only about the selection on screen. Without this
-  // the count would keep showing the previous selection's total while the new
-  // request was out, which is the one moment a user is watching it change.
-  const livePreview = previewKey === currentSelectionKey ? preview : null;
+    if (livePreview && !modeTouchedRef.current) setModeChoice(modeChoiceFromDefault(livePreview.default_mode));
+  }, [livePreview]);
 
   const modelChoices = useMemo(
     () =>
@@ -412,19 +342,18 @@ function FineTuneDialogBody({
   }, [baseModel, resolvedType, compatibleModelChoices, initialBaseModel]);
 
   useEffect(() => {
-    if (!adapterId || !settled) return;
+    if (!trainingRunId || !settled) return;
     if (progress?.status !== "SUCCESS") return;
     let cancelled = false;
-    void getFineTuneRun(adapterId)
+    void getFineTuneRun(trainingRunId)
       .then((detail) => {
         if (cancelled) return;
-        setRunDetail(detail);
         setName((current) => detail.name || current);
         setAdapters((current) => {
-          if (current.some((adapter) => adapter.id === adapterId)) return current;
+          if (current.some((adapter) => adapter.id === trainingRunId)) return current;
           return [
             {
-              id: adapterId,
+              id: trainingRunId,
               name: detail.name || "Saved fine-tune",
               base_model: detail.base_model,
               status: "SUCCESS",
@@ -438,19 +367,17 @@ function FineTuneDialogBody({
         });
       })
       .catch(() => {
-        // The run succeeded; only the extra detail is missing. The success
-        // panel stands without it.
-        if (!cancelled) setRunDetail(null);
+        // The Apply panel loads details independently and offers a retry.
       })
       .finally(() => {
         if (cancelled) return;
-        setSavedAdapterId(adapterId);
+        setSavedAdapterId(trainingRunId);
         setDialogMode("apply");
       });
     return () => {
       cancelled = true;
     };
-  }, [adapterId, settled, progress?.status]);
+  }, [trainingRunId, settled, progress?.status]);
 
   // --- derived -----------------------------------------------------------
 
@@ -462,37 +389,6 @@ function FineTuneDialogBody({
     () => selectionTotals(scopeGroups, selection),
     [scopeGroups, selection]
   );
-  const applyDatasets = useMemo(() => {
-    const experimentId =
-      runDetail?.experiment?.id ??
-      livePreview?.experiment?.id ??
-      preview?.experiment?.id;
-    if (!experimentId) return [];
-    return scopeGroups.find((group) => group.key === experimentId)?.datasets ?? [];
-  }, [scopeGroups, runDetail, livePreview, preview]);
-  const applyImages = useMemo(() => {
-    const runAssetIds = new Set(runDetail?.asset_ids ?? []);
-    if (runAssetIds.size === 0) {
-      return livePreview?.per_image ?? preview?.per_image ?? [];
-    }
-    const images = new Map<string, FineTunePreviewImage>();
-    for (const group of scopeGroups) {
-      for (const image of [
-        ...group.images,
-        ...group.datasets.flatMap((dataset) => dataset.images),
-      ]) {
-        if (!runAssetIds.has(image.id) || images.has(image.id)) continue;
-        images.set(image.id, {
-          asset_id: image.id,
-          name: image.name,
-          confirmed_areas: image.confirmedAreas,
-          done_rois: image.doneRois,
-          tiles: 0,
-        });
-      }
-    }
-    return [...images.values()];
-  }, [scopeGroups, runDetail, livePreview, preview]);
   const annotationCount = livePreview
     ? livePreview.annotation_count
     : localTotals.annotationCount;
@@ -506,7 +402,6 @@ function FineTuneDialogBody({
 
   const blockers = livePreview && !livePreview.eligible ? livePreview.blockers : [];
   const nameTaken =
-    !overwriteAdapterId &&
     adapters.some(
       (adapter) => adapter.name.trim().toLowerCase() === name.trim().toLowerCase()
     );
@@ -519,39 +414,27 @@ function FineTuneDialogBody({
     modeChoiceIsAvailable(modeChoice, annotationCount) &&
     !previewPending &&
     !starting &&
+    !trainingInputs.error &&
     !nameTaken;
 
   const phase: "form" | "running" | "done" =
-    adapterId === null ? "form" : settled ? "done" : "running";
-  const selectedAdapter = adapters.find((adapter) => adapter.id === savedAdapterId);
+    trainingRunId === null ? "form" : settled ? "done" : "running";
   const hasSavedFineTune =
     adapters.some((adapter) => adapter.status === "SUCCESS") ||
-    progress?.status === "SUCCESS";
+    progress?.status === "SUCCESS" || Boolean(savedAdapterId);
 
   // --- actions -----------------------------------------------------------
 
-  const pickOverwrite = (value: string) => {
-    overwriteTouchedRef.current = true;
-    setOverwriteAdapterId(value);
+  const pickParent = (value: string) => {
+    setParentAdapterId(value);
     const chosen = adapters.find((adapter) => adapter.id === value);
-    if (chosen) setName(chosen.name);
+    if (chosen) {
+      setName(`${chosen.name} · next version`);
+      setBaseModel(chosen.base_model);
+    }
   };
 
-  const selectSavedFineTune = (value: string) => {
-    setSavedAdapterId(value);
-    const chosen = adapters.find((adapter) => adapter.id === value);
-    if (!chosen) {
-      setAdapterId(null);
-      setRunDetail(null);
-      return;
-    }
-    if (!chosen || chosen.status !== "SUCCESS") return;
-    setName(chosen.name);
-    setRunDetail(null);
-    setApplyResult(null);
-    setApplyError(null);
-    setAdapterId(chosen.id);
-  };
+  const selectSavedFineTune = (value: string) => setSavedAdapterId(value);
 
   const showApplyMode = () => {
     setDialogMode("apply");
@@ -563,14 +446,12 @@ function FineTuneDialogBody({
 
   const showTrainMode = () => {
     setDialogMode("train");
-    setAdapterId(null);
-    setRunDetail(null);
-    setApplyResult(null);
-    setApplyError(null);
+    setTrainingRunId(null);
+    setSubmitError(null);
   };
 
   const submit = useCallback(async () => {
-    if (!chosenTypeId) return;
+    if (!chosenTypeId || !trainingInputs.options) return;
     setStarting(true);
     setSubmitError(null);
     const { mode, cv_benchmark } = modeChoicePayload(modeChoice);
@@ -578,7 +459,9 @@ function FineTuneDialogBody({
     try {
       const response = await startFineTuneRun({
         name: name.trim(),
-        overwrite_adapter_id: overwriteAdapterId || null,
+        overwrite_adapter_id: null,
+        parent_adapter_id: parentAdapterId || undefined,
+        include_previous_annotations: includePrevious,
         segmentation_type: chosenTypeId,
         base_model: baseModel,
         asset_ids: scope.asset_ids,
@@ -586,15 +469,13 @@ function FineTuneDialogBody({
         mode,
         cv_benchmark,
         segmentation_id: segmentationId || undefined,
+        ...trainingInputs.options,
       });
-      setAdapterId(response.adapter_id);
+      setTrainingRunId(response.adapter_id);
     } catch (error) {
       setSubmitError(
         isFineTuneNameConflict(error)
-          ? fineTuneErrorMessage(
-              error,
-              "A fine-tune of this organelle already has that name. Pick it from “Overwrite an existing fine-tune”, or choose another name."
-            )
+          ? MODEL_NAME_RESERVED
           : fineTuneErrorMessage(error, "Could not start the fine-tune.")
       );
     } finally {
@@ -605,41 +486,13 @@ function FineTuneDialogBody({
     modeChoice,
     selection,
     name,
-    overwriteAdapterId,
+    parentAdapterId,
+    includePrevious,
     baseModel,
-    segmentationId,
+    segmentationId, trainingInputs,
   ]);
 
-  const apply = useCallback(
-    (assetIds: string[], datasetIds: string[]) => {
-      if (!adapterId) return;
-      setApplying(true);
-      setApplyError(null);
-      void applyFineTuneRun(adapterId, assetIds, datasetIds)
-        .then((result) => {
-          setApplyResult(result);
-          for (const queued of result.queued) {
-            onAppliedImageQueued?.({
-              adapterId: result.adapter_id,
-              baseModel,
-              assetId: queued.asset_id,
-              segmentationId: queued.segmentation_id,
-            });
-          }
-        })
-        .catch((error: unknown) => {
-          setApplyError(
-            fineTuneErrorMessage(error, "Could not queue those runs.")
-          );
-        })
-        .finally(() => setApplying(false));
-    },
-    [adapterId, baseModel, onAppliedImageQueued]
-  );
-
   // --- render ------------------------------------------------------------
-
-  const organelleLabel = resolvedType?.short_name || resolvedType?.long_name || "";
 
   return (
     <div
@@ -660,13 +513,6 @@ function FineTuneDialogBody({
             <h2 id={titleId} className="m-0 text-lg font-semibold text-slate-950">
               Fine-tune a model
             </h2>
-            <p className="m-0 mt-0.5 text-xs text-slate-600">
-              {dialogMode === "apply"
-                ? "Run a saved fine-tune and review its saved results."
-                : organelleLabel
-                  ? `Train on your own ${organelleLabel.toLowerCase()} annotations.`
-                  : "Train on your own annotations, one organelle at a time."}
-            </p>
           </div>
           {/* Not just "Close": the footer has a Close too, and two controls
               with one accessible name is a screen reader reading the same word
@@ -717,6 +563,10 @@ function FineTuneDialogBody({
         ) : null}
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {Object.keys(loadErrors).length > 0 && <div role="alert" className="mb-4 rounded border border-red-300 p-3 text-red-800">
+            {Object.entries(loadErrors).map(([key, message]) => <p key={key}>{message}</p>)}
+            <Button onClick={() => { setLoadErrors({}); setLoadAttempt((attempt) => attempt + 1); }}>Retry loading</Button>
+          </div>}
           {dialogMode === "train" && phase === "form" ? (
             <div className="flex flex-col gap-5">
               {!segmentationType ? (
@@ -727,9 +577,6 @@ function FineTuneDialogBody({
                   >
                     Organelle
                   </label>
-                  <p className="m-0 mb-1 text-xs text-slate-600">
-                    One fine-tune trains one organelle.
-                  </p>
                   <select
                     id={organelleId}
                     className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
@@ -738,6 +585,8 @@ function FineTuneDialogBody({
                       setChosenTypeId(event.target.value);
                       setSelection(emptySelection());
                       setBaseModel("");
+                      setParentAdapterId("");
+                      setName("");
                     }}
                   >
                     <option value="">Choose an organelle…</option>
@@ -770,8 +619,7 @@ function FineTuneDialogBody({
                   />
                   {nameTaken ? (
                     <p className="m-0 mt-1 text-xs text-amber-800" role="status">
-                      A fine-tune of this organelle is already called that. Pick it
-                      below to replace it, or choose another name.
+                      {MODEL_NAME_RESERVED}
                     </p>
                   ) : null}
                 </div>
@@ -781,26 +629,29 @@ function FineTuneDialogBody({
                       htmlFor={overwriteId}
                       className="block text-sm font-semibold text-slate-900"
                     >
-                      Overwrite an existing fine-tune
+                      Continue a saved model
                     </label>
                     <select
                       id={overwriteId}
                       className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
-                      value={overwriteAdapterId}
-                      onChange={(event) => pickOverwrite(event.target.value)}
+                      value={parentAdapterId}
+                      onChange={(event) => pickParent(event.target.value)}
                     >
-                      <option value="">Make a new one</option>
-                      {adapters.map((adapter) => (
+                      <option value="">Start from a pretrained model</option>
+                      {adapters.filter((adapter) => adapter.status === "SUCCESS").map((adapter) => (
                         <option key={adapter.id} value={adapter.id}>
                           {adapter.name}
                         </option>
                       ))}
                     </select>
-                    {overwriteAdapterId ? (
-                      <p className="m-0 mt-1 text-xs text-slate-600">
-                        The old weights stay in place until this run succeeds. If it
-                        fails, nothing is lost.
-                      </p>
+                    {parentAdapterId ? (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                        <label><input type="checkbox" checked={includePrevious}
+                          onChange={(event) => setIncludePrevious(event.target.checked)} /> Include the parent's annotated images</label>
+                        <HelpDisclosure label="continued training" title="Continue a saved model">
+                          Saves a new version. Images used by the parent model cannot provide an independent test of improvement.
+                        </HelpDisclosure>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
@@ -817,6 +668,7 @@ function FineTuneDialogBody({
                   id={baseModelId}
                   className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
                   value={baseModel}
+                  disabled={Boolean(parentAdapterId)}
                   onChange={(event) => setBaseModel(event.target.value)}
                 >
                   {compatibleModelChoices.length === 0 ? (
@@ -845,11 +697,8 @@ function FineTuneDialogBody({
                     htmlFor={searchId}
                     className="text-sm font-semibold text-slate-900"
                   >
-                    Applies to
+                    Training images
                   </label>
-                  <span className="text-xs text-slate-600">
-                    Everything picked has to be in one experiment.
-                  </span>
                 </div>
                 <input
                   id={searchId}
@@ -894,9 +743,6 @@ function FineTuneDialogBody({
                     {annotationCount === 1 ? "annotation" : "annotations"} across{" "}
                     {imageCount} {imageCount === 1 ? "image" : "images"}
                   </p>
-                  <p className="m-0 mt-0.5 text-xs text-slate-600">
-                    {TRAINING_ANNOTATION_SOURCES}
-                  </p>
                   {livePreview ? (
                     <p className="m-0 mt-0.5 text-xs text-slate-600">
                       {livePreview.confirmed_areas} confirmed{" "}
@@ -915,6 +761,12 @@ function FineTuneDialogBody({
                   ) : null}
                 </div>
 
+                {livePreview?.coverage && livePreview.coverage.areas_with_tiles < annotationCount ? (
+                  <p className="text-xs text-amber-800">
+                    {annotationCount - livePreview.coverage.areas_with_tiles} selected areas contain no usable training pixels.
+                  </p>
+                ) : null}
+                {livePreview?.warnings?.map((warning) => <p key={warning} className="text-xs text-amber-800">{warning}</p>)}
                 {previewError ? (
                   <p className="m-0 mt-1 text-sm text-red-700" role="alert">
                     {previewError}
@@ -974,9 +826,6 @@ function FineTuneDialogBody({
                         />
                         <span>
                           <span className="font-medium">{option.label}</span>
-                          <span className="block text-xs text-slate-600">
-                            {option.summary}
-                          </span>
                           {!available ? (
                             <span className="block text-xs text-slate-500">
                               Requires at least {minimum} annotations.
@@ -989,6 +838,39 @@ function FineTuneDialogBody({
                 </div>
               </fieldset>
 
+              <details className="rounded border border-slate-200 p-3">
+                <summary className="cursor-pointer text-sm font-semibold">Training options</summary>
+                <div className="mt-2 grid grid-cols-2 gap-3 text-sm">
+                  <label>Duration
+                    <select className="block w-full rounded border p-1" value={schedule} onChange={(e) => setSchedule(e.target.value as "quick" | "extended")}>
+                      <option value="quick">Quick (300–600 steps, or one complete pass)</option>
+                      <option value="extended">Extended (20 steps per tile, up to 20,000)</option>
+                    </select>
+                  </label>
+                  <label>Custom steps (blank for automatic)
+                    <input type="number" min="1" max="20000" className="block w-full rounded border p-1" value={steps} onChange={(e) => setSteps(e.target.value)} />
+                  </label>
+                  <label>Learning rate
+                    <input type="number" min="0.0000001" max="0.01" step="any" className="block w-full rounded border p-1" value={lr} onChange={(e) => setLr(e.target.value)} />
+                  </label>
+                  <label>Random seed
+                    <input type="number" min="0" max="4294967295" step="1" className="block w-full rounded border p-1" value={seed} onChange={(e) => setSeed(e.target.value)} />
+                  </label>
+                  <div className="col-span-2 flex items-center gap-2">
+                    <label><input type="checkbox" checked={validation} onChange={(e) => setValidation(e.target.checked)} /> Select the training duration using validation</label>
+                    <HelpDisclosure label="validation" title="Training duration">
+                      Uses 20% of training images to choose the duration, then trains on all of them. Requires at least two images and can take twice as long. Held-out test images remain separate.
+                    </HelpDisclosure>
+                  </div>
+                  <label>Evaluate every (steps)
+                    <input type="number" min="1" max="20000" className="block w-full rounded border p-1" value={evalInterval} onChange={(e) => setEvalInterval(e.target.value)} />
+                  </label>
+                  <label>Stop after unimproved evaluations (0 disables)
+                    <input type="number" min="0" max="1000" disabled={!validation} className="block w-full rounded border p-1" value={patience} onChange={(e) => setPatience(e.target.value)} />
+                  </label>
+                </div>
+              </details>
+              {trainingInputs.error && <p role="alert" className="text-sm text-red-700">{trainingInputs.error}</p>}
               {submitError ? (
                 <p className="m-0 text-sm text-red-700" role="alert">
                   {submitError}
@@ -1021,9 +903,9 @@ function FineTuneDialogBody({
                   {progress?.error ||
                     "The fine-tune did not finish. Nothing on your images was changed."}
                 </p>
-                {overwriteAdapterId ? (
+                {parentAdapterId ? (
                   <p className="m-0 text-xs text-slate-600">
-                    The fine-tune you were replacing is untouched and still usable.
+                    The parent model remains available.
                   </p>
                 ) : null}
               </div>
@@ -1063,30 +945,10 @@ function FineTuneDialogBody({
                 </select>
               </div>
 
-              {adapterId && phase === "running" ? (
-                <p className="m-0 text-sm text-slate-600">Loading the saved fine-tuneâ€¦</p>
-              ) : null}
-              {adapterId && phase === "done" && progress?.status === "SUCCESS" ? (
-                <FineTuneSuccess
-                  adapterId={adapterId}
-                  name={runDetail?.name || selectedAdapter?.name || name}
-                  run={runDetail}
-                  baseModel={
-                    runDetail?.base_model || selectedAdapter?.base_model || baseModel
-                  }
-                  segmentationTypeName={
-                    resolvedType?.long_name || resolvedType?.short_name || ""
-                  }
-                  scopedImages={applyImages}
-                  availableDatasets={applyDatasets}
-                  applying={applying}
-                  applyError={applyError}
-                  applyResult={applyResult}
-                  onApply={apply}
-                  onClose={onClose}
-                  onAppliedImageCompleted={onAppliedImageCompleted}
-                />
-              ) : null}
+              {savedAdapterId && <ModelApplication key={savedAdapterId} adapterId={savedAdapterId}
+                typeId={chosenTypeId} typeName={resolvedType?.long_name || resolvedType?.short_name || ""}
+                onClose={onClose} onAppliedImageQueued={onAppliedImageQueued}
+                onAppliedImageCompleted={onAppliedImageCompleted} />}
             </div>
           ) : null}
         </div>

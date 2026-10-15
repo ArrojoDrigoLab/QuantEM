@@ -330,6 +330,19 @@ async function selectTheDataset(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("FineTuneDialog", () => {
+  it.each([
+    { code: "model_name_reserved", detail: "Name unavailable", expected: "This name was used by a previous model and cannot be re-used. Make a new name." },
+    { code: "active_job", detail: "This model is in use by a task.", expected: "This model is in use by a task." },
+  ])("shows the specific server conflict: $code", async ({ code, detail, expected }) => {
+    stubApi();
+    server.use(http.post(`${API}/api/finetune/runs/`, () => HttpResponse.json({ code, detail }, { status: 409 })));
+    openDialog();
+    const user = userEvent.setup();
+    await selectTheDataset(user);
+    await user.type(screen.getByLabelText("Name"), "Previously deleted name");
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(expected);
+  });
   it("keeps the Name input focused across ordinary parent rerenders", async () => {
     const user = userEvent.setup();
     const firstClose = vi.fn();
@@ -518,7 +531,7 @@ describe("FineTuneDialog", () => {
     await selectTheDataset(user);
 
     const useAll = screen.getByRole("radio", { name: /^Use all/ });
-    const holdOut = screen.getByRole("radio", { name: /^Hold out one Keep one/ });
+    const holdOut = screen.getByRole("radio", { name: /^Hold out one$/ });
     const cv = screen.getByRole("radio", { name: /cross-validation benchmarking/ });
     expect([useAll, holdOut, cv]).toHaveLength(3);
 
@@ -538,7 +551,7 @@ describe("FineTuneDialog", () => {
     openDialog();
     await selectTheDataset(user);
 
-    expect(screen.getByRole("radio", { name: /^Hold out one Keep one/ })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: /^Hold out one$/ })).toBeEnabled();
     expect(
       screen.getByRole("radio", { name: /cross-validation benchmarking/ })
     ).toBeDisabled();
@@ -642,7 +655,7 @@ describe("FineTuneDialog", () => {
     expect(applied).not.toHaveBeenCalled();
 
     const images = within(screen.getByTestId("finetune-apply-images"));
-    expect(images.getAllByRole("checkbox")).toHaveLength(3);
+    expect(images.getAllByRole("checkbox")).toHaveLength(10);
     // "Some or all": untick one and the button says so.
     await user.click(images.getByRole("checkbox", { name: "liver_03.tif" }));
     const run = screen.getByRole("button", { name: "Run on 2 images" });
@@ -718,7 +731,7 @@ describe("FineTuneDialog", () => {
         within(screen.getByTestId("finetune-apply-images")).getAllByRole(
           "checkbox"
         )
-      ).toHaveLength(3)
+      ).toHaveLength(10)
     );
     expect(screen.getByTestId("finetune-apply-datasets")).toHaveTextContent(
       "Liver 24h"
@@ -828,35 +841,63 @@ describe("FineTuneDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("names an existing fine-tune when it is picked for overwrite", async () => {
+  it("creates a new named version when continuing a saved fine-tune", async () => {
     const user = userEvent.setup();
     stubApi();
     openDialog();
     await screen.findByTestId("scope-tree");
 
     await user.selectOptions(
-      await screen.findByLabelText("Overwrite an existing fine-tune"),
+      await screen.findByLabelText("Continue a saved model"),
       "ad-old"
     );
 
-    expect(screen.getByLabelText("Name")).toHaveValue("First attempt");
+    expect(screen.getByLabelText("Name")).toHaveValue("First attempt · next version");
     expect(
-      screen.getByText(/old weights stay in place until this run succeeds/)
-    ).toBeInTheDocument();
+      screen.getByText(/Saves a new version. Images used by the parent model/)
+    ).not.toBeVisible();
+    await user.click(screen.getByRole("button", { name: "About continued training" }));
+    expect(screen.getByText(/Saves a new version. Images used by the parent model/)).toBeVisible();
   });
 
-  it("hides overwrite controls when this organelle has no fine-tunes", async () => {
+  it("hides continuation controls when this organelle has no fine-tunes", async () => {
     stubApi({ adapters: [] });
     openDialog();
 
     await screen.findByTestId("scope-tree");
     await screen.findByLabelText("Starting from");
     expect(
-      screen.queryByLabelText("Overwrite an existing fine-tune")
+      screen.queryByLabelText("Continue a saved model")
     ).not.toBeInTheDocument();
   });
 
-  it("inherits labeling model and defaults to a fine-tune scoped to this image", async () => {
+  it("validates training controls and sends them with the selected parent", async () => {
+    const user = userEvent.setup();
+    const started = vi.fn<(payload: FineTuneRunPayload) => void>();
+    stubApi({ onStart: started });
+    openDialog();
+    await selectTheDataset(user);
+    await user.selectOptions(screen.getByLabelText("Continue a saved model"), "ad-old");
+    await user.click(screen.getByText("Training options"));
+    await user.clear(screen.getByLabelText("Learning rate"));
+    expect(screen.getByRole("button", { name: "Fine-tune" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Learning rate must");
+    await user.type(screen.getByLabelText("Learning rate"), "0.001");
+    await user.selectOptions(screen.getByLabelText("Duration"), "extended");
+    await user.type(screen.getByLabelText("Custom steps (blank for automatic)"), "1200");
+    await user.click(screen.getByLabelText("Select the training duration using validation"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Fine-tune" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+    await waitFor(() => expect(started).toHaveBeenCalledOnce());
+    expect(started.mock.calls[0][0]).toMatchObject({
+      name: "First attempt · next version", parent_adapter_id: "ad-old",
+      overwrite_adapter_id: null, include_previous_annotations: true,
+      schedule: "extended", steps: 1200, lr: 0.001, seed: 0,
+      validation_fraction: 0.2, eval_interval: 100, patience: 5,
+    });
+  });
+
+  it("inherits labeling context without implicitly overwriting a saved model", async () => {
     const user = userEvent.setup();
     const started = vi.fn<(payload: FineTuneRunPayload) => void>();
     stubApi({ onStart: started });
@@ -876,10 +917,11 @@ describe("FineTuneDialog", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getByLabelText("Overwrite an existing fine-tune")
-      ).toHaveValue("ad-old")
+        screen.getByLabelText("Continue a saved model")
+      ).toHaveValue("")
     );
-    expect(screen.getByLabelText("Name")).toHaveValue("First attempt");
+    expect(screen.getByLabelText("Name")).toHaveValue("");
+    await user.type(screen.getByLabelText("Name"), "New model");
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Fine-tune" })).toBeEnabled()
@@ -888,7 +930,7 @@ describe("FineTuneDialog", () => {
 
     await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
     expect(started.mock.calls[0][0]).toMatchObject({
-      overwrite_adapter_id: "ad-old",
+      overwrite_adapter_id: null,
       base_model: "omniem:mito",
       asset_ids: ["img-2"],
       segmentation_id: "seg-img-2",
@@ -904,8 +946,25 @@ describe("FineTuneDialog", () => {
     await user.type(screen.getByLabelText("Name"), "First attempt");
 
     expect(
-      screen.getByText(/already called that. Pick it below to replace it/)
+      screen.getByText(/This name was used by a previous model and cannot be re-used. Make a new name./)
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Fine-tune" })).toBeDisabled();
   });
+});
+
+it("offers ungrouped non-training images as saved-model application targets", async () => {
+  const applied = vi.fn();
+  const previewed = vi.fn();
+  stubApi({progress: {status: "SUCCESS"}, runDetail: {asset_ids: ["img-1"]}, applyProgress: {total: 0, images: []}, onApply: applied, onPreview: previewed});
+  server.use(http.get(`${API}/api/finetune/scope/`, () => HttpResponse.json({experiments: [{
+    ...SCOPE.experiments[0], datasets: [], ungrouped_images: [image("img-1", "Training image", 1, 0), image("img-target", "New target image", 0, 0)]
+  }]})));
+  openDialog(() => {}, {initialSavedAdapterId: "ad-old", initialExperimentId: "exp-fasted", initialAssetIds: ["img-1"]});
+  await screen.findByTestId("finetune-success");
+  const target = within(screen.getByTestId("finetune-apply-images")).getByRole("checkbox", {name: "New target image"});
+  expect(target).not.toBeChecked();
+  await userEvent.click(target);
+  await userEvent.click(screen.getByRole("button", { name: "Run on 2 images" }));
+  await waitFor(() => expect(applied).toHaveBeenCalledWith(["img-1", "img-target"]));
+  expect(previewed).not.toHaveBeenCalled();
 });

@@ -45,6 +45,12 @@ class UploadNotesTests(TestCase):
         asset = Asset.objects.get(id=body["id"])
         self.assertEqual(asset.notes, "PV, day 14")
 
+    def test_blank_image_name_uses_the_uploaded_filename(self):
+        body = self._upload(display_name="   ")
+        asset = Asset.objects.get(id=body["id"])
+        self.assertTrue(asset.original_filename.strip())
+        self.assertEqual(asset.display_name, asset.original_filename)
+
     def test_the_library_search_finds_the_image_by_its_notes(self):
         """The whole point of typing a word there.
 

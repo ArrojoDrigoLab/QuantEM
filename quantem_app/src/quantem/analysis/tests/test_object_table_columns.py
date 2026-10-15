@@ -182,7 +182,6 @@ class TwoPixelSizeColumnsTests(ObjectTableTestCase):
                 "group",
                 "segmentation_id",
                 "analysis_run_id",
-                "n_caveats",
                 "calibrated",
             },
             "pixel_size_nm was in both, meaning something different in each",

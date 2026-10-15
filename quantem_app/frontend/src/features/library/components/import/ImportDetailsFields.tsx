@@ -44,12 +44,13 @@ export function ImportDetailsFields({
 }) {
   const { singleFile, scaleCensus } = scale;
   const unresolvedMetadataCount =
-    scaleCensus.silent + scaleCensus.unreadable + scaleCensus.pending;
+    scaleCensus.silent + scaleCensus.unreadable;
+  const missingPixelSize = unresolvedMetadataCount > 0 && !pixelSizeText.trim();
 
   return (
     <fieldset className="rounded-md border border-slate-200 p-3">
       <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Import details
+        Import details{files.length > 1 ? ` (${files.length} images)` : ""}
       </legend>
 
       {singleFile ? (
@@ -69,11 +70,7 @@ export function ImportDetailsFields({
             placeholder="Enter display name..."
           />
         </div>
-      ) : (
-        <p className="m-0 text-sm text-slate-700">
-          Each image keeps its own file name. You can rename any of them later.
-        </p>
-      )}
+      ) : null}
 
       <div className="mt-3 flex flex-col gap-1">
         <div className="flex items-center gap-1">
@@ -102,14 +99,11 @@ export function ImportDetailsFields({
           value={pixelSizeText}
           onChange={(event) => onPixelSizeTextChange(event.target.value)}
           placeholder="e.g. 4.2"
-          aria-describedby="upload-pixel-size-help"
+          aria-describedby={missingPixelSize ? "upload-pixel-size-help" : undefined}
         />
-        <span className="text-sm text-slate-700" id="upload-pixel-size-help">
-          Could not parse {unresolvedMetadataCount}{" "}
-          {unresolvedMetadataCount === 1 ? "image resolution" : "images resolutions"}{" "}
-          from {unresolvedMetadataCount === 1 ? "its" : "their"} metadata.
-          Enter value here if known.
-        </span>
+        {missingPixelSize ? <span className="text-sm text-slate-700" id="upload-pixel-size-help">
+          Pixel size is missing for {unresolvedMetadataCount} {plural(unresolvedMetadataCount, "image", "images")}.
+        </span> : null}
         {!singleFile && scaleCensus.declared > 0 ? (
           <label className="mt-1 flex items-start gap-2 text-sm text-slate-800">
             <input
@@ -143,9 +137,6 @@ export function ImportDetailsFields({
           onExperimentChange={onExperimentChoiceChange}
           onDatasetChange={onDatasetChoiceChange}
         />
-        <span className="text-xs text-slate-600">
-          Applied to {files.length === 1 ? "this image" : `all ${files.length} images`}.
-        </span>
       </div>
 
       <div className="mt-3 flex flex-col gap-1">
@@ -159,12 +150,7 @@ export function ImportDetailsFields({
           value={notesText}
           onChange={(event) => onNotesTextChange(event.target.value)}
           placeholder="e.g. PV, day 14, control"
-          aria-describedby="notes-help"
         />
-        <span className="text-xs text-slate-600" id="notes-help">
-          Saved with {files.length === 1 ? "the image" : `all ${files.length} images`}.
-          The library&apos;s search box matches notes as well as names and filenames.
-        </span>
       </div>
     </fieldset>
   );

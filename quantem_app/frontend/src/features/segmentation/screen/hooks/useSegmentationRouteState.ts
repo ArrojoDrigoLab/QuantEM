@@ -392,6 +392,8 @@ export function useSegmentationRouteState(
     visibleSegmentations,
     currentSegmentation,
     currentSegmentationId,
+    isLocked: currentSegmentation?.status_stage === "COMPLETED" ||
+      currentSegmentation?.is_complete === true,
     segmentationInternalName,
     isTissueSegmentation,
     isErSegmentation,

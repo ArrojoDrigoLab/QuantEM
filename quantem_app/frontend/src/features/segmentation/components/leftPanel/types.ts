@@ -41,6 +41,7 @@ export interface LeftPanelViewerState {
 }
 
 export interface LeftPanelWorkflowState {
+  readOnly?: boolean;
   mode: WorkflowMode;
   leftMode: LeftMode;
   reviewPhase: "model" | "correction";

@@ -279,15 +279,12 @@ export function describeDisplayedObjects({
     };
   }
 
-  // Reached only when `run_notice` is absent, which for this segmentation means
-  // other models have produced objects here and this one has not -- i.e. it
-  // genuinely has not been run. The server owns that distinction (the notice is
-  // derived from the stage *and* the object count), so this branch does not
-  // re-derive it from `status_stage` and risk disagreeing.
+  // A zero count does not establish whether inference has run. The header's
+  // separate run control uses the selected model's saved-result availability.
   if (count === 0) {
     return {
-      summary: `No objects from ${label} yet`,
-      detail: `No successful empty result from ${label} is displayed on this image. Run model to produce one, or choose another model.${staleNote}`,
+      summary: `0 objects · ${label}`,
+      detail: `No objects are attributed to ${label}.${staleNote}`,
       tone: "warning",
     };
   }

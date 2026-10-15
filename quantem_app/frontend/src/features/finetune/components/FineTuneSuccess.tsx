@@ -1,5 +1,6 @@
 /** The completed fine-tune, its optional application targets, and live status. */
 
+import { TrainingHistory } from "./TrainingHistory";
 import { useEffect, useRef, useState } from "react";
 import { getFineTuneApplyProgress } from "@/shared/api/finetune";
 import { Badge, Button, Panel } from "@/shared/ui/design";
@@ -218,6 +219,7 @@ export function FineTuneSuccess({
   baseModel,
   segmentationTypeName,
   scopedImages,
+  initialAssetIds,
   availableDatasets,
   applying,
   applyError,
@@ -232,6 +234,7 @@ export function FineTuneSuccess({
   baseModel: string;
   segmentationTypeName: string;
   scopedImages: FineTunePreviewImage[];
+  initialAssetIds?: string[];
   availableDatasets: ScopeDatasetNode[];
   applying: boolean;
   applyError: string | null;
@@ -241,7 +244,7 @@ export function FineTuneSuccess({
   onAppliedImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
 }) {
   const [picked, setPicked] = useState<Set<string>>(
-    () => new Set(scopedImages.map((image) => image.asset_id))
+    () => new Set(initialAssetIds ?? scopedImages.map((image) => image.asset_id))
   );
   const [pickedDatasets, setPickedDatasets] = useState<Set<string>>(
     () => new Set()
@@ -254,15 +257,6 @@ export function FineTuneSuccess({
   const notifiedJobsRef = useRef<Set<string>>(new Set());
   const cv = cvResultsOf(run);
   const cvRows = cvRowsOf(run, cv, scopedImages);
-
-  useEffect(() => {
-    if (scopedImages.length === 0) return;
-    setPicked((current) =>
-      current.size === 0
-        ? new Set(scopedImages.map((image) => image.asset_id))
-        : current
-    );
-  }, [scopedImages]);
 
   const toggle = (assetId: string, on: boolean) => {
     setPicked((current) => {
@@ -366,6 +360,7 @@ export function FineTuneSuccess({
 
   return (
     <div className="flex flex-col gap-4" data-testid="finetune-success">
+      {run?.evaluation_note && <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{run.evaluation_note}</p>}
       <div className="flex items-center gap-2">
         <Badge tone="good">Finished</Badge>
         <p className="m-0 text-sm text-slate-800">
@@ -373,6 +368,7 @@ export function FineTuneSuccess({
         </p>
       </div>
 
+      <TrainingHistory rounds={run?.training_rounds} />
       {cv ? (
         <Panel className="p-3" data-testid="finetune-cv-results">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -522,10 +518,6 @@ export function FineTuneSuccess({
             {picked.size === scopedImages.length ? "Clear all" : "Select all"}
           </button>
         </div>
-        <p className="m-0 mt-1 text-xs text-slate-600">
-          Optional, and nothing has been queued. Anything you drew, confirmed or
-          removed on these images stays exactly as it is.
-        </p>
         <ul
           className="m-0 mt-2 max-h-40 list-none overflow-y-auto rounded-md border border-slate-200 p-2"
           data-testid="finetune-apply-images"
@@ -552,7 +544,7 @@ export function FineTuneSuccess({
         <div>
           <div className="flex items-baseline justify-between gap-2">
             <p className="m-0 text-sm font-semibold text-slate-900">
-              Or run it across a Dataset
+              Apply to all images in selected datasets
             </p>
             <button
               type="button"
@@ -570,11 +562,6 @@ export function FineTuneSuccess({
                 : "Select all datasets"}
             </button>
           </div>
-          <p className="m-0 mt-1 text-xs text-slate-600">
-            Datasets are the existing groups in this Experiment. Every active
-            image in a selected Dataset is queued, including images that were
-            not part of training.
-          </p>
           <ul
             className="m-0 mt-2 max-h-32 list-none overflow-y-auto rounded-md border border-slate-200 p-2"
             data-testid="finetune-apply-datasets"

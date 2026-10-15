@@ -157,7 +157,7 @@ describe("LibraryPage", () => {
     expect(await screen.findByRole("heading", { name: "QuantEM" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Library" })).not.toBeInTheDocument();
     expect(screen.queryByText("Running on CPU")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Models" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Models" })).toHaveAttribute("href", "/models");
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
@@ -171,7 +171,9 @@ describe("LibraryPage", () => {
     const user = userEvent.setup();
     window.localStorage.clear();
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Hide guide" }));
+    expect(screen.queryByRole("button", { name: "Hide guide" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Guide" }));
+    await user.click(screen.getByRole("button", { name: "Hide guide" }));
     expect(window.localStorage.getItem("quantem-workflow-guide-dismissed-v1")).toBe("1");
   });
 

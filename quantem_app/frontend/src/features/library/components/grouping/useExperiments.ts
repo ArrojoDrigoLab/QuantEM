@@ -5,11 +5,7 @@
  * sends and because every consumer wants both halves at once: the library's
  * filter, the import form's two pickers, and the selection bar.
  *
- * **A failure here is silent on purpose.** Organising is optional; if the list
- * cannot be fetched, the screens that use it fall back to "no experiments yet",
- * which is a state they already have to render correctly. An error banner over
- * the library because an optional catalogue did not load would be worse than
- * the missing feature.
+ * Retains the last loaded catalogue on failures and exposes a retryable error.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,12 +16,14 @@ export interface ExperimentCatalogue {
   experiments: Experiment[];
   /** True until the first attempt settles, either way. */
   loading: boolean;
+  error: string | null;
   reload: () => Promise<void>;
 }
 
 export function useExperiments(): ExperimentCatalogue {
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -40,11 +38,10 @@ export function useExperiments(): ExperimentCatalogue {
       const rows = await getExperiments();
       if (!mountedRef.current) return;
       setExperiments(rows);
+      setError(null);
     } catch {
-      // See the module docstring: an unreachable optional catalogue is "there
-      // are no experiments", not an error the library has to report.
       if (!mountedRef.current) return;
-      setExperiments([]);
+      setError("Experiments could not be loaded. Your saved images have not been removed.");
     } finally {
       if (mountedRef.current) setLoading(false);
     }
@@ -54,7 +51,7 @@ export function useExperiments(): ExperimentCatalogue {
     void reload();
   }, [reload]);
 
-  return { experiments, loading, reload };
+  return { experiments, loading, error, reload };
 }
 
 /** The datasets of one shared experiment, or none for per-image experiments. */

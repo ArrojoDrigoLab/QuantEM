@@ -21,10 +21,6 @@
  * renders as a fragment, so it adds no element of its own.
  */
 
-import {
-  formatThreshold,
-  type AppliedAdapterState,
-} from "@/features/models/appliedAdapter";
 import type { ImageSegmentation } from "@/shared/types";
 import {
   failureCopy,
@@ -126,48 +122,6 @@ export function LatestAttemptNotice({ message }: { message: string }) {
 }
 
 /**
- * That an adapted model is in play, on the screen where the run is started.
- *
- * Two states, and the second is the one worth the pixels: an adapter applied to
- * this segmentation is only used when the selected source model is the one it
- * was fitted on. Pick anything else and `apply_active_adapter` falls back to
- * the released pack at its published threshold, with nothing on screen to say
- * so -- your numbers change and the header still reads the same.
- */
-export function AppliedAdapterNotice({
-  state,
-  selectedLabel,
-}: {
-  state: AppliedAdapterState;
-  selectedLabel: string;
-}) {
-  const { adapter, active, publishedThreshold } = state;
-  const calibrated = formatThreshold(adapter.calibrated_threshold);
-  const published = formatThreshold(publishedThreshold);
-  const name = adapter.name || adapter.base;
-
-  if (!active) {
-    return (
-      <span className="header-adapter-notice is-inactive" role="status">
-        <strong>Adapter not in use.</strong> "{name}" was fitted on{" "}
-        {adapter.base}, and this run is set to {selectedLabel}, so it will use
-        the published model
-        {published ? ` at threshold ${published}` : ""}.
-      </span>
-    );
-  }
-
-  return (
-    <span className="header-adapter-notice" role="status">
-      <strong>Adapted model: {name}.</strong>{" "}
-      {calibrated
-        ? `Run model will use the calculated threshold of ${calibrated} for this image.`
-        : "Run model will use this fine-tuned model for this image."}
-    </span>
-  );
-}
-
-/**
  * The completion lock, made visible.
  *
  * The same reasoning as the blocked-model notice: a disabled control with no
@@ -193,15 +147,9 @@ export function LockedNotice() {
  */
 export function HeaderNotices({
   currentSegmentation,
-  isOrganelle,
-  appliedAdapter,
-  runTargetLabel,
   isComplete,
 }: {
   currentSegmentation: ImageSegmentation | null;
-  isOrganelle: boolean;
-  appliedAdapter: AppliedAdapterState | null;
-  runTargetLabel: string;
   isComplete: boolean;
 }) {
   // Read defensively rather than off a declared field: an `error_code` reaches
@@ -227,12 +175,6 @@ export function HeaderNotices({
         // about the newest attempt -- see `LatestAttemptNotice`.
         <LatestAttemptNotice message={currentSegmentation.status_error.trim()} />
       ) : null}
-      {isOrganelle && appliedAdapter && (
-        <AppliedAdapterNotice
-          state={appliedAdapter}
-          selectedLabel={runTargetLabel}
-        />
-      )}
       {isComplete && <LockedNotice />}
     </>
   );

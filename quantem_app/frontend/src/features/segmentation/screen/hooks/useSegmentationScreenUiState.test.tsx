@@ -4,6 +4,19 @@ import { useSegmentationScreenUiState } from "@/features/segmentation/screen/hoo
 import { TOAST_AUTO_DISMISS_MS } from "@/shared/ui/toast";
 
 describe("useSegmentationScreenUiState", () => {
+  it("shows confirmed overlays and enables navigation when a result becomes locked", () => {
+    const { result, rerender } = renderHook(
+      ({ readOnly }) => useSegmentationScreenUiState({ currentSegmentationId: "seg-1", readOnly }),
+      { initialProps: { readOnly: false } },
+    );
+    act(() => result.current.setShowConfirmedPanel(false));
+    rerender({ readOnly: true });
+    expect(result.current.leftNavigateMode).toBe(true);
+    expect(result.current.showConfirmedPanel).toBe(true);
+    act(() => result.current.setShowConfirmedPanel(false));
+    expect(result.current.showConfirmedPanel).toBe(false);
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });

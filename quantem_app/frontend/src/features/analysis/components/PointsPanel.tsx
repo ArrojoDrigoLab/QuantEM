@@ -188,13 +188,16 @@ export function PointsPanel({ points, composition, pointsSource }: PointsPanelPr
         </table>
       </div>
 
-      <p className="mt-3 mb-0 text-xs text-slate-500">
+      <details className="mt-3 text-xs text-slate-500">
+        <summary className="cursor-pointer">How enrichment is calculated</summary>
+        <p className="mt-2 mb-0">
         Enrichment is the point fraction divided by the area fraction: 1.0 is
         chance, and an em dash means the compartment has no area, so the ratio is
         undefined rather than infinite. These are one image&apos;s values — a
         group value is the unweighted mean over experimental units, never a
         pooled count weighted by how many points each image contributed.
-      </p>
+        </p>
+      </details>
     </Panel>
   );
 }

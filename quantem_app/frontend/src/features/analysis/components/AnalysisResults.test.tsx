@@ -159,7 +159,7 @@ describe("AnalysisResults distance section", () => {
 });
 
 describe("AnalysisResults caveats", () => {
-  it("does not render the read-before-quoting section", () => {
+  it("shows run notes under Notes without the read-before-quoting heading", () => {
     const legacyEssay = "legacy estimator essay";
     render(
       <AnalysisResults
@@ -184,10 +184,11 @@ describe("AnalysisResults caveats", () => {
       />
     );
 
-    expect(screen.queryByText(/legacy estimator essay/)).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Notes" })).toBeInTheDocument();
+    expect(screen.getByText(/legacy estimator essay/)).toBeInTheDocument();
     expect(
       screen.queryByText("Pixel size was unavailable for physical-unit measurements.")
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Read before quoting/)).not.toBeInTheDocument();
   });
 

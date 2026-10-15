@@ -3,6 +3,28 @@ import { buildLeftPanelViewerConfig } from "@/features/segmentation/components/l
 import { makeLeftPanelProps } from "@/features/segmentation/components/leftPanel/leftPanelTestUtils";
 
 describe("buildLeftPanelViewerConfig", () => {
+  it("keeps overlays and navigation while blocking stale editing tools in a locked view", () => {
+    const props = makeLeftPanelProps();
+    props.workflow = {
+      ...props.workflow, readOnly: true, navigateMode: false,
+      leftMode: "draw", reviewPhase: "correction", correctionTool: "draw",
+      groupConfirmActive: true, roiPlacementActive: true, samBoxActive: true,
+    };
+    const config = buildLeftPanelViewerConfig({
+      ...props,
+      overlayScene: { persistent: [], transient: [] },
+    });
+    expect(config.overlays?.idMapOverlays).toEqual(props.viewer.idMapOverlays ?? []);
+    expect(config.viewport?.disablePan).toBe(false);
+    expect(config.interactions?.onImageClick).toBeUndefined();
+    expect(config.interactions?.onImagePress).toBeUndefined();
+    expect(config.interactions?.onImageDrag).toBeUndefined();
+    expect(config.interactions?.onImageRelease).toBeUndefined();
+    expect(config.interactions?.draw?.enabled).toBe(false);
+    expect(config.interactions?.brush?.enabled).toBe(false);
+    expect(config.highlighting?.hoverCursor).toBe(false);
+  });
+
   it("preserves transient fit bounds", () => {
     const props = makeLeftPanelProps({
       workflow: {

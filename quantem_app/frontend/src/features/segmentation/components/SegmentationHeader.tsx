@@ -18,7 +18,7 @@
  * * `header/AboutThisResult.tsx` — the provenance chips,
  *   the discard-and-re-run trigger, and the two route links;
  * * `header/notices.tsx` — every `role="status"` sentence under the controls;
- * * `header/CompletionDialogs.tsx` — Mark Image Done and delete-and-re-run,
+ * * `header/CompletionDialogs.tsx` — Lock segmentation and delete-and-re-run,
  *   with the state each of them needs in `header/completionDialogState.ts`.
  *
  * Nothing moved changed. The props of `SegmentationHeader` are what they were,
@@ -45,7 +45,7 @@ import {
   useCompletionConfirm,
 } from "@/features/segmentation/components/header/completionDialogState";
 import { describeObjectsPixelSize } from "@/shared/objectsPixelSize";
-import type { AppliedAdapterState } from "@/features/models/appliedAdapter";
+import type { ReactNode } from "react";
 import type {
   AssetDetail,
   ImageSegmentation,
@@ -96,12 +96,7 @@ interface SegmentationHeaderProps {
   hasQueuedOrRunningOrganelleTask?: boolean;
   /** Download state for the two released choices in the model picker. */
   modelCatalogue?: ModelCatalogue | null;
-  /**
-   * The adapter applied to this segmentation, and whether the selected source
-   * model means the next run will actually go through it. Null when there is
-   * none, or when the catalogue has not answered.
-   */
-  appliedAdapter?: AppliedAdapterState | null;
+  modelRunControl?: ReactNode;
   /**
    * Delete every reviewed object on this segmentation and queue a fresh run.
    *
@@ -136,7 +131,7 @@ export function SegmentationHeader({
   isApplyingActiveRoi = false,
   hasQueuedOrRunningOrganelleTask = false,
   modelCatalogue = null,
-  appliedAdapter = null,
+  modelRunControl,
   onClearMislabeledObjects,
 }: SegmentationHeaderProps) {
   const segmentationId = currentSegmentation?.id ?? null;
@@ -242,13 +237,13 @@ export function SegmentationHeader({
             Back to Viewer
           </button>
         </div>
-        <div className="header-info">
+        <div className="header-info" contentEditable={false}>
           <h2>{image.display_name}</h2>
         </div>
       </div>
 
       <div className="header-controls">
-        {sourceModelPickerOptions.length > 0 && (
+        {!isComplete && sourceModelPickerOptions.length > 0 && (
           <div className="header-source-model">
             {/* "Model" and "Objects shown" are separated on purpose: the
                 picker chooses which model the next run uses *and* which
@@ -295,20 +290,18 @@ export function SegmentationHeader({
             </div>
           </div>
         )}
-        <AboutThisResult
+        {!isComplete && <AboutThisResult
           isOrganelle={isOrganelle}
           displayedObjects={displayedObjects}
+          modelRunControl={modelRunControl}
           objectsPixelSize={objectsPixelSize}
           currentSegmentation={currentSegmentation}
           isBusy={isBusy}
           isComplete={isComplete}
           onOpenClearRerun={onClearMislabeledObjects ? clearRerun.open : undefined}
-        />
+        />}
         <HeaderNotices
           currentSegmentation={currentSegmentation}
-          isOrganelle={isOrganelle}
-          appliedAdapter={appliedAdapter}
-          runTargetLabel={runTargetLabel}
           isComplete={isComplete}
         />
         <HeaderRouteLinks
@@ -332,7 +325,7 @@ export function SegmentationHeader({
           }}
           disabled={!currentSegmentation}
         >
-          {isComplete ? "Unlock segmentation" : "Mark Image Done"}
+          {isComplete ? "Unlock segmentation" : "Lock segmentation"}
         </button>
       </div>
 

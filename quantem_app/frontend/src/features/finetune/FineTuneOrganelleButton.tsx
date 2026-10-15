@@ -1,16 +1,9 @@
 /**
  * The labeling view's way in, for the organelle on screen.
  *
- * Owner R13 puts one condition on it: it is enabled only once this organelle
- * has **at least one confirmed area or one ROI marked done** on this image. The
- * condition is answered by `POST /api/finetune/preview/` over this one asset —
- * the same count the dialog shows and the same rule the run endpoint enforces,
- * rather than a second guess assembled from whatever the labeling screen
- * happens to have loaded.
- *
- * Until that answer arrives the button is present and disabled, and it says
- * why. A control that appears only once a condition is met teaches nobody what
- * the condition was.
+ * Always opens the dialog so users can choose other annotations or apply a
+ * saved model. The preview informs the tooltip; training eligibility is
+ * enforced when submitting the selected scope.
  */
 
 import { useEffect, useState } from "react";
@@ -70,7 +63,7 @@ export function FineTuneOrganelleButton({
   const enabled = (annotationCount ?? 0) > 0;
   const tooltip = enabled
     ? `Train a ${organelle.toLowerCase()} model on your own annotations.`
-    : "Mark an ROI as Done to enable fine-tuning";
+    : "Open fine-tuning to choose annotated images or apply a saved model.";
 
   return (
     <>
@@ -79,7 +72,6 @@ export function FineTuneOrganelleButton({
           type="button"
           className="header-route-link finetune-header-button"
           data-testid="finetune-organelle-button"
-          disabled={!enabled}
           title={tooltip}
           onClick={() => setOpen(true)}
         >

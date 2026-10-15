@@ -2,7 +2,8 @@
  * Confirmation dialog component for destructive actions.
  */
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
+import { useModalLifecycle } from "@/shared/hooks/useModalLifecycle";
 import "./ConfirmDialog.css";
 
 export interface ConfirmDialogProps {
@@ -40,38 +41,15 @@ export function ConfirmDialog({
   const messageId = useId();
   const detailsId = useId();
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
-  const onCancelRef = useRef(onCancel);
-
-  useEffect(() => {
-    onCancelRef.current = onCancel;
-  }, [onCancel]);
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    cancelButtonRef.current?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancelRef.current();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      restoreFocusRef.current?.focus();
-    };
-  }, [isOpen]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalLifecycle(panelRef, onCancel, { open: isOpen, initialFocusRef: cancelButtonRef });
 
   if (!isOpen) return null;
 
   return (
     <div className="confirm-dialog-overlay" onClick={onCancel}>
       <div
+        ref={panelRef}
         className="confirm-dialog"
         role="dialog"
         aria-modal="true"

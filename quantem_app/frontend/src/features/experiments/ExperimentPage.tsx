@@ -18,6 +18,8 @@ import { Button, PageState, Panel } from "@/shared/ui/design";
 import { ExportDialog } from "@/features/export/ExportDialog";
 import { ImageCard } from "@/features/library/components/ImageCard";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
+import { ExperimentWorkbench } from "./ExperimentWorkbench";
+import { readWorkspaceMemory, rememberWorkspace } from "./workspaceMemory";
 
 const PREVIEW_LIMIT = 5;
 const PAGE_LIMIT = 200;
@@ -184,8 +186,10 @@ function DatasetSection({
   onExportImage: (image: HomeEntry) => void;
   onDeleteImage: (image: HomeEntry) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const datasetId = dataset?.id ?? UNASSIGNED_FILTER;
+  const expandedKey = `${experimentId}.dataset.${datasetId}.expanded`;
+  const [expanded, setExpanded] = useState(() => readWorkspaceMemory(expandedKey, false));
+  useEffect(() => { rememberWorkspace(expandedKey, expanded); }, [expandedKey, expanded]);
   const { data, loading, error } = useApiQuery(
     () => getGroupEntries(experimentId, datasetId, expanded),
     [datasetId, expanded, experimentId, refreshKey]
@@ -481,6 +485,7 @@ export function ExperimentPage() {
           </p>
         ) : null}
 
+        <ExperimentWorkbench key={experiment.id} experiment={experiment} refreshKey={refreshKey}>
         {experiment.datasets.map((dataset) => (
           <DatasetSection
             key={dataset.id}
@@ -521,6 +526,7 @@ export function ExperimentPage() {
           onDeleteImage={setDeleteImage}
         />
 
+        </ExperimentWorkbench>
         <ImageEditDialog
           image={editingImage}
           experiment={experiment}

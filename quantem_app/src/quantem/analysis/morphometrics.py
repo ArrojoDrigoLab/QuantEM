@@ -469,8 +469,7 @@ def _coverage_note(
 
     ``n_unreportable`` are the blanks this module *created*: the value was
     computed and refused (:attr:`ObjectMetrics.unreportable`). They are named
-    apart from the ones that were simply never stored, because "the model does
-    not produce a probability for a hand-drawn outline" and "the estimator
+    apart from the ones that were simply never stored, because "no saved probability map was available" and "the estimator
     returned a number the metric cannot take" are different things for a reader
     to do something about.
     """
@@ -495,8 +494,6 @@ def _coverage_note(
     )
     if n_unreportable and unreportable_reason:
         note += f" {unreportable_reason}"
-    if key == "mean_prob":
-        note += " User-drawn or defined objects have no model probability behind them."
     return note
 
 

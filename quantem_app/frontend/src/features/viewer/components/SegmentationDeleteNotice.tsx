@@ -89,7 +89,7 @@ export function SegmentationDeleteNotice({
         {refusal}
         <p>
           {previewError} Deleting will still remove every object, overlay
-          raster, probability map and adapted model this segmentation holds.
+          raster and probability map this segmentation holds. Saved models are kept.
         </p>
       </>
     );
@@ -121,13 +121,6 @@ export function SegmentationDeleteNotice({
       }`
     );
   }
-  if (preview.adapter_count > 0) {
-    alsoDeleted.push(
-      `${preview.adapter_count} adapted model${
-        preview.adapter_count === 1 ? "" : "s"
-      } (including any trained weights)`
-    );
-  }
 
   return (
     <>
@@ -154,6 +147,8 @@ export function SegmentationDeleteNotice({
           negative examples, and deleting them deletes that record.
         </p>
       ) : null}
+      <p>Correction history for this segmentation is deleted too.</p>
+      {preview.adapter_count > 0 && <p>Saved fine-tuned models and their trained weights are kept. Manage them in Models.</p>}
       {preview.analysis_run_count > 0 ? (
         <p>
           The {preview.analysis_run_count} analysis run

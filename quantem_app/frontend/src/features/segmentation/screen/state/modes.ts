@@ -16,20 +16,24 @@
  * not need a mode at all.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export function useSegmentationModes({
   currentSegmentationId,
+  readOnly = false,
 }: {
   currentSegmentationId: string | null;
+  readOnly?: boolean;
 }) {
-  const [leftNavigateMode, setLeftNavigateMode] = useState(false);
+  const [leftNavigateMode, setLeftNavigateMode] = useState(readOnly);
   const [showConfirmedPanel, setShowConfirmedPanel] = useState(true);
   const [uncertainLimit, setUncertainLimit] = useState(50);
-  // Read so the signature stays honest about what this hook is scoped to, and
-  // so the next state that genuinely must reset per segmentation has somewhere
-  // to hang. Nothing resets today; see below.
-  void currentSegmentationId;
+  // Opening or locking a result always starts with its saved objects visible.
+  useEffect(() => {
+    if (!readOnly) return;
+    setLeftNavigateMode(true);
+    setShowConfirmedPanel(true);
+  }, [currentSegmentationId, readOnly]);
 
   const toggleLeftNavigateMode = useCallback(() => {
     setLeftNavigateMode((previous) => !previous);
@@ -47,7 +51,7 @@ export function useSegmentationModes({
   }, []);
 
   /*
-   * Switching organelle deliberately changes nothing here.
+   * Switching between unlocked organelles preserves the chosen editing modes.
    *
    * There used to be an effect that forced Navigate back on whenever
    * `currentSegmentationId` changed. Picking mitochondria after nucleus is not

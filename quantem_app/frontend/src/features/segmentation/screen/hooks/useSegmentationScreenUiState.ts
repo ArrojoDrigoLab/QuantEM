@@ -15,12 +15,14 @@ import { useSegmentationToast } from "@/features/segmentation/screen/state/toast
 
 interface UseSegmentationScreenUiStateArgs {
   currentSegmentationId: string | null;
+  readOnly?: boolean;
 }
 
 export function useSegmentationScreenUiState({
   currentSegmentationId,
+  readOnly = false,
 }: UseSegmentationScreenUiStateArgs) {
-  const modes = useSegmentationModes({ currentSegmentationId });
+  const modes = useSegmentationModes({ currentSegmentationId, readOnly });
   const toast = useSegmentationToast({ currentSegmentationId });
 
   return {

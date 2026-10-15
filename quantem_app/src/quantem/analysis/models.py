@@ -17,6 +17,7 @@ from pathlib import Path
 
 from django.db import models
 
+from quantem.analysis.batch_models import AnalysisBatch, AnalysisBatchItem  # noqa: F401
 from quantem.assets.models import TimeStampedModel
 
 
@@ -69,6 +70,8 @@ class AnalysisRun(TimeStampedModel):
     #: The validated, normalised request. See
     #: :func:`quantem.analysis.loaders.normalise_params`.
     params = models.JSONField(default=dict, blank=True)
+    input_fingerprint = models.CharField(max_length=64, blank=True)
+    input_identity = models.JSONField(default=dict, blank=True)
     #: What :func:`quantem.analysis.service.run_analysis` returned, minus the
     #: per-object rows -- those are in ``objects.csv``, which is the file a paper
     #: should cite. Keeping tens of thousands of rows in a JSON column would make

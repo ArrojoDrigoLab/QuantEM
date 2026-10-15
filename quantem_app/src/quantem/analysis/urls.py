@@ -10,13 +10,20 @@ from django.urls import path
 from quantem.segmentation.api_views.analysis import (
     AnalysisRunDetailView,
     AnalysisRunExportView,
+    AnalysisRunTableView,
     GlobalAreaAnalysisView,
     SegmentationAnalysisView,
 )
 
+from .batch_views import BatchDetailView, BatchExportView, ExperimentBatchesView
+from .history import ExperimentAnalysisHistoryView
 from .views import AnalysisGroupRollupView
 
 urlpatterns = [
+    path("experiments/<uuid:experiment_id>/analysis-history/", ExperimentAnalysisHistoryView.as_view()),
+    path("experiments/<uuid:experiment_id>/analysis-batches/", ExperimentBatchesView.as_view()),
+    path("analysis-batches/<uuid:batch_id>/", BatchDetailView.as_view()),
+    path("analysis-batches/<uuid:batch_id>/export/", BatchExportView.as_view()),
     path(
         "segmentations/<uuid:seg_id>/analysis/global-area/",
         GlobalAreaAnalysisView.as_view(),
@@ -42,6 +49,11 @@ urlpatterns = [
     ),
     # <str:...> cannot contain "/", and the view still resolves the name inside
     # the run's own directory before opening anything.
+    path(
+        "analysis/<uuid:run_id>/table/<str:name>",
+        AnalysisRunTableView.as_view(),
+        name="analysis-run-table",
+    ),
     path(
         "analysis/<uuid:run_id>/export/<str:name>",
         AnalysisRunExportView.as_view(),

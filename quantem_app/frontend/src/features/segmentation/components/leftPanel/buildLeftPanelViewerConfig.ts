@@ -42,6 +42,7 @@ export function buildLeftPanelViewerConfig({
   // Box-to-object owns the entire drag. In particular, the normal draw brush
   // must be off or it consumes pointer-up before the box tool can submit.
   const samBoxActive = workflow.samBoxActive;
+  const interactionsDisabled = workflow.readOnly || workflow.navigateMode;
   // Being active controls which ROI receives labeling actions; it is not a
   // camera command. Only an explicit Open action supplies transient bounds.
   // This keeps a freshly entered labeling view fitted to the whole image.
@@ -65,6 +66,7 @@ export function buildLeftPanelViewerConfig({
       state: viewer.viewport ?? undefined,
       onChange: viewer.onViewportChange,
       disablePan:
+        !workflow.readOnly &&
         !workflow.navigateMode &&
         Boolean(disablePanForGroup || roiPlacementActive || samBoxActive),
       fitBounds,
@@ -83,14 +85,15 @@ export function buildLeftPanelViewerConfig({
     interactions: {
       mode: workflow.navigateMode ? "navigate" : undefined,
       onImageClick:
-        workflow.navigateMode || samBoxActive ? undefined : segments.onClick,
-      onImageMouseMove: workflow.navigateMode ? undefined : segments.onMouseMove,
-      onImageMouseLeave: workflow.navigateMode ? undefined : segments.onMouseLeave,
-      onImagePress: workflow.navigateMode ? undefined : segments.onPress,
-      onImageDrag: workflow.navigateMode ? undefined : segments.onDrag,
-      onImageRelease: workflow.navigateMode ? undefined : segments.onRelease,
+        interactionsDisabled || samBoxActive ? undefined : segments.onClick,
+      onImageMouseMove: interactionsDisabled ? undefined : segments.onMouseMove,
+      onImageMouseLeave: interactionsDisabled ? undefined : segments.onMouseLeave,
+      onImagePress: interactionsDisabled ? undefined : segments.onPress,
+      onImageDrag: interactionsDisabled ? undefined : segments.onDrag,
+      onImageRelease: interactionsDisabled ? undefined : segments.onRelease,
       draw: {
         enabled:
+          !workflow.readOnly &&
           !roiPlacementActive &&
           !samBoxActive &&
           !workflow.navigateMode &&
@@ -105,6 +108,7 @@ export function buildLeftPanelViewerConfig({
       },
       brush: {
         enabled:
+          !workflow.readOnly &&
           !roiPlacementActive &&
           !samBoxActive &&
           !workflow.navigateMode &&
@@ -149,10 +153,10 @@ export function buildLeftPanelViewerConfig({
       },
     },
     highlighting: {
-      highlightedSegmentId: viewerHighlightedId,
-      hoverCursor: !workflow.navigateMode && !samBoxActive && showHoverCursor,
-      cursorMode: !workflow.navigateMode && workflow.targetCursorActive ? "target" : undefined,
-      hoverBadge: workflow.navigateMode
+      highlightedSegmentId: workflow.readOnly ? null : viewerHighlightedId,
+      hoverCursor: !interactionsDisabled && !samBoxActive && showHoverCursor,
+      cursorMode: !interactionsDisabled && workflow.targetCursorActive ? "target" : undefined,
+      hoverBadge: interactionsDisabled
         ? undefined
         : { point: segments.hoverPoint, count: segments.hoverCount },
     },

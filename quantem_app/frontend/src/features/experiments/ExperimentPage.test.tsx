@@ -14,6 +14,8 @@ import {
 } from "@/shared/api/assets";
 import type { Dataset, Experiment } from "@/shared/types/common";
 import type { HomeEntry, HomeEntryPage } from "@/shared/types/images";
+import { getWorkspace } from "@/shared/api/workspace";
+vi.mock("@/shared/api/workspace", () => ({ getWorkspace: vi.fn(), saveSample: vi.fn() }));
 
 vi.mock("@/shared/api/assets", async () => {
   const actual = await vi.importActual<typeof import("@/shared/api/assets")>(
@@ -105,6 +107,10 @@ function renderPage() {
 describe("ExperimentPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
+    sessionStorage.setItem("quantem.workspace.experiment-1.controls", JSON.stringify({ layout: "cards" }));
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    vi.mocked(getWorkspace).mockResolvedValue({ images: [] });
     vi.mocked(getExperiment).mockResolvedValue(EXPERIMENT);
     vi.mocked(getHomeEntryPage).mockImplementation(async (params) =>
       params?.dataset === DATASET_A.id ? page([IMAGE]) : page([])
@@ -174,7 +180,7 @@ describe("ExperimentPage", () => {
     await user.click(screen.getByRole("menuitem", { name: "Export" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Export Liver 01" })
+      await screen.findByRole("dialog", { name: "Export image or mask · Liver 01" })
     ).toBeInTheDocument();
     expect(getAssetSegmentations).toHaveBeenCalledWith(IMAGE.id);
   });

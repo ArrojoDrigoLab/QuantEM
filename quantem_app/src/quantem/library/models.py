@@ -18,9 +18,11 @@ from __future__ import annotations
 from django.db import IntegrityError, models, transaction
 
 from quantem.assets.models import TimeStampedModel
+from quantem.library.workflow_models import ImageWorkflowMetadata
 
 __all__ = [
     "Experiment",
+    "ImageWorkflowMetadata",
     "Dataset",
     "create_default_dataset",
     "create_image_experiment",
@@ -33,6 +35,11 @@ class Experiment(TimeStampedModel):
 
     name = models.CharField(max_length=255, unique=True)
     notes = models.TextField(blank=True, default="")
+
+    # Legacy preference retained for database compatibility; navigation ignores it.
+    pinned = models.BooleanField(default=False)
+    last_opened_at = models.DateTimeField(null=True, blank=True)
+    last_route = models.CharField(max_length=1024, blank=True, default="")
 
     class Meta:
         ordering = ["name", "created_at"]

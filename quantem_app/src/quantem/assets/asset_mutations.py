@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import os
 import uuid
 from pathlib import Path
@@ -473,8 +474,8 @@ def parse_pixel_size_nm(value) -> float | None:
         parsed = float(text)
     except ValueError as exc:
         raise ValueError(f"Pixel size must be a number, got {value!r}") from exc
-    if parsed <= 0:
-        raise ValueError("Pixel size must be greater than zero.")
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise ValueError("Resolution must be a finite number greater than zero.")
     return parsed
 
 
@@ -528,7 +529,7 @@ def create_uploaded_asset(
     )
     asset_id = uuid.uuid4()
     original_filename = uploaded_file.name
-    display_name = display_name or original_filename
+    display_name = (display_name or "").strip() or original_filename
     file_ext = (
         uploaded_file.name.rsplit(".", 1)[-1] if "." in uploaded_file.name else "tif"
     ).lower()
@@ -740,6 +741,13 @@ def _json_safe_metadata(metadata: dict) -> dict:
 def update_asset(asset: Asset, payload: dict, *, inside_transaction: bool = False) -> dict:
     allowed = {"display_name", "notes", *PIXEL_SIZE_FIELDS}
     updates = {key: payload[key] for key in allowed if key in payload}
+    if "display_name" in updates:
+        name = updates["display_name"]
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Enter an image name.")
+        if len(name.strip()) > 255:
+            raise ValueError("Image names must be 255 characters or fewer.")
+        updates["display_name"] = name.strip()
     for field in PIXEL_SIZE_FIELDS:
         if field in updates:
             updates[field] = parse_pixel_size_nm(updates[field])

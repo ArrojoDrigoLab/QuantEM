@@ -279,7 +279,7 @@ describe("describeDisplayedObjects", () => {
     it("says nothing extra when the server sent no notice", () => {
       const described = describeEmptyRun({ run_notice: null });
 
-      expect(described.summary).toBe("No objects from QuantEM yet");
+      expect(described.summary).toBe("0 objects · QuantEM");
     });
 
     it("renders the server's summary verbatim when it sends one", () => {
@@ -406,7 +406,7 @@ describe("describeDisplayedObjects", () => {
       });
 
       expect(described.summary).toBe("Last run failed · no objects");
-      // Not "No objects from QuantEM yet", which reads as "press the button"
+      // Not "0 objects · QuantEM", which reads as "press the button"
       // and is what the `count === 0` branch would have produced.
       expect(described.summary).not.toContain("yet");
       expect(described.tone).toBe("error");
@@ -447,10 +447,10 @@ describe("describeDisplayedObjects", () => {
       activeSourceModel: "omniem:mito",
     });
 
-    expect(described.summary).toBe("No objects from OmniEM yet");
+    expect(described.summary).toBe("0 objects · OmniEM");
     expect(described.tone).toBe("warning");
     expect(described.detail).toContain(
-      "No successful empty result from OmniEM is displayed"
+      "No objects are attributed to OmniEM."
     );
   });
 

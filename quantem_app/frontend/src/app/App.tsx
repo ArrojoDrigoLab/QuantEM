@@ -16,6 +16,7 @@ import { DesktopUpdateBanner } from "@/features/update/DesktopUpdateBanner";
 import { DesktopUpdateProvider } from "@/features/update/DesktopUpdateProvider";
 import { RestartGuardProvider } from "@/features/update/restartGuard";
 import "./App.css";
+import { WorkspaceBar } from "./WorkspaceBar";
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
       <DesktopUpdateProvider>
         <div className="app">
           <DesktopUpdateBanner />
+          <WorkspaceBar />
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               {APP_ROUTES.map((route) => (

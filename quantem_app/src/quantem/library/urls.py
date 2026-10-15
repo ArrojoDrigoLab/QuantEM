@@ -20,8 +20,11 @@ from quantem.library.views import (
     ExperimentDetailView,
     ExperimentListCreateView,
 )
+from quantem.library.workflow_views import ExperimentNavigationView, ExperimentWorkspaceView
 
 urlpatterns = [
+    path("experiments/<uuid:experiment_id>/navigation/", ExperimentNavigationView.as_view()),
+    path("experiments/<uuid:experiment_id>/workspace/", ExperimentWorkspaceView.as_view()),
     path(
         "assets/<uuid:asset_id>/library-edit/",
         AssetLibraryEditView.as_view(),

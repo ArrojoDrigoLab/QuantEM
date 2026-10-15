@@ -227,6 +227,7 @@ export function buildAnalysisPayload(state: AnalysisFormState): PayloadResult {
     payload: {
       compartments,
       tissue_segmentation_id: state.tissueSegmentationId || null,
+      objects_in_measurement_area: true,
       points_source: pointsSource,
       points_csv: pointsSource === "csv" ? state.pointsCsv : "",
       distance_target: distanceTarget || null,

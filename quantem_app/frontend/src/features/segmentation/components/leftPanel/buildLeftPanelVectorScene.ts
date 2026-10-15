@@ -25,7 +25,7 @@ type LeftPanelSceneArgs = Pick<
   | "completedRoi"
   | "feedback"
   | "overlays"
->;
+> & { workflow?: SegmentationLeftPanelProps["workflow"] };
 
 export function buildLeftPanelVectorScene({
   viewer,
@@ -35,6 +35,7 @@ export function buildLeftPanelVectorScene({
   completedRoi,
   feedback,
   overlays,
+  workflow,
 }: LeftPanelSceneArgs) {
   const groupHighlightedSet = new Set(segments.groupHighlightedSegmentIds);
   const persistentOverlays = generateLeftPanelOverlays(
@@ -50,6 +51,12 @@ export function buildLeftPanelVectorScene({
     roi.activeRoi?.id === overlays.hideRoiOverlayId ? null : roi.activeRoi;
   const visibleRois = roi.rois.filter((item) => item.id !== overlays.hideRoiOverlayId);
   const roiOverlays = generateRoiOverlays(visibleActiveRoi, visibleRois);
+  if (workflow?.readOnly) {
+    return composeOverlayScene({
+      persistentLayers: [persistentOverlays],
+      transientLayers: [generateRoiOverlays(roi.activeRoi, roi.rois)],
+    });
+  }
   const transientLayers = [
     roiOverlays,
     generateRoiStrokeOverlays(roi.roiStrokes),

@@ -135,9 +135,25 @@ class NamedRunTests(TestCase):
         assert job.payload_json["planned_steps"] == [420]
         assert job.progress_units_total == 420
 
+    def test_extended_options_are_validated_and_budget_selection_plus_refit(self):
+        response = self._start(
+            steps=4000,
+            lr=0.00003,
+            schedule="extended",
+            validation_fraction=0.2,
+            eval_interval=200,
+            patience=4,
+        )
+        assert response.status_code == 202
+        job = Job.objects.get(id=response.json()["job_id"])
+        assert job.payload_json["training_options"]["lr"] == 0.00003
+        assert job.payload_json["planned_steps"] == [8000]
+        assert job.progress_units_total == 8000
+        assert self._start(name="bad rate", lr="nan").status_code == 400
+
     def test_an_explicit_step_override_cannot_bypass_the_bounds(self):
-        too_few = self._start(name="Too few", steps=299)
-        too_many = self._start(name="Too many", steps=601)
+        too_few = self._start(name="Too few", steps=0)
+        too_many = self._start(name="Too many", steps=20001)
         assert too_few.status_code == 400
         assert too_many.status_code == 400
         assert Job.objects.count() == 0
@@ -289,7 +305,11 @@ class NamedRunTests(TestCase):
         assert self._start().status_code == 202
         clash = self._start()
         assert clash.status_code == 409
-        assert "already called" in clash.json()["detail"]
+        assert (
+            clash.json()["detail"]
+            == "This name was used by a previous model and cannot be re-used. Make a new name."
+        )
+        assert clash.json()["code"] == "model_name_reserved"
 
     def test_the_same_name_for_another_organelle_is_a_different_fine_tune(self):
         from quantem.segmentation.type_service import get_or_create_er_type
@@ -313,6 +333,7 @@ class NamedRunTests(TestCase):
 
     def test_naming_the_run_to_overwrite_is_accepted(self):
         first = self._start().json()["adapter_id"]
+        Job.objects.filter(payload_json__adapter_id=first).update(status="SUCCESS")
         again = self._start(overwrite_adapter_id=first)
         assert again.status_code == 202
         assert again.json()["adapter_id"] == first
@@ -335,6 +356,7 @@ class NamedRunTests(TestCase):
     def test_an_overwrite_resets_the_results_but_keeps_the_weights(self):
         """An unused old head stays on disk until its replacement is safe."""
         adapter_id = self._start().json()["adapter_id"]
+        Job.objects.filter(payload_json__adapter_id=adapter_id).update(status="SUCCESS")
         Adapter.objects.filter(id=adapter_id).update(
             status="SUCCESS",
             head_path="adapters/keep/head.pt",
@@ -352,6 +374,7 @@ class NamedRunTests(TestCase):
 
     def test_an_overwrite_keeps_the_live_version_and_its_targets_routable(self):
         adapter_id = self._start().json()["adapter_id"]
+        Job.objects.filter(payload_json__adapter_id=adapter_id).update(status="SUCCESS")
         adapter = Adapter.objects.get(id=adapter_id)
         adapter.status = "SUCCESS"
         adapter.applied_at = timezone.now()
@@ -401,6 +424,7 @@ class NamedRunTests(TestCase):
         from quantem.finetune.tests.fixtures import FakeCancel, FakeReporter
 
         adapter_id = self._start().json()["adapter_id"]
+        Job.objects.filter(payload_json__adapter_id=adapter_id).update(status="SUCCESS")
         adapter = Adapter.objects.get(id=adapter_id)
         adapter.status = "SUCCESS"
         adapter.applied_at = timezone.now()

@@ -29,6 +29,9 @@ is looking at and is a deliberate single gesture rather than a stream.
 
 from __future__ import annotations
 
+from django.db import transaction
+
+from quantem.segmentation.revisions import save_revision
 from quantem.segmentation.segment_status import status_for_segment_lifecycle
 from quantem.segmentation.source_models import normalize_source_model
 
@@ -277,19 +280,30 @@ class SegmentBatchLabelUpdateView(APIView):
 class SegmentationClearManualLabelsView(APIView):
     """Delete confirmed/excluded segments for a segmentation."""
 
+    @transaction.atomic
     def post(self, request, seg_id):
         segmentation = get_object_or_404(
-            ImageSegmentation.objects.select_related("asset"),
+            ImageSegmentation.objects.select_related("asset").select_for_update(),
             id=seg_id,
         )
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked
+        from quantem.segmentation.api_views.shared import active_segmentation_job
+
+        if active_segmentation_job(segmentation) is not None:
+            return Response(
+                {"detail": "Wait for the active image task before clearing corrections."},
+                status=409,
+            )
         manual_qs = SegmentObject.objects.filter(
             segmentation=segmentation,
             label_state__in=["CONFIRMED", "EXCLUDED"],
         )
         manual_bboxes = [segment.bbox for segment in manual_qs.only(*_BBOX_ONLY_FIELDS)]
+        revision = (
+            save_revision(segmentation, "Before clearing corrections") if manual_bboxes else None
+        )
         deleted, _ = manual_qs.delete()
         if deleted > 0:
             _invalidate_tiles_for_segmentation(str(segmentation.id))
@@ -302,4 +316,11 @@ class SegmentationClearManualLabelsView(APIView):
             )
         else:
             overlay = None
-        return Response({"deleted": deleted, "overlay": overlay}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "deleted": deleted,
+                "overlay": overlay,
+                "revision_id": str(revision.id) if revision else None,
+            },
+            status=status.HTTP_200_OK,
+        )

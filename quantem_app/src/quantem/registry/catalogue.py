@@ -508,7 +508,11 @@ def adapted_entries() -> list[dict[str, Any]]:
         return []
 
     try:
-        rows = list(Adapter.objects.filter(status=STATUS_SUCCESS))
+        rows = list(
+            Adapter.objects.filter(
+                status=STATUS_SUCCESS, deleted_at__isnull=True, archived_at__isnull=True
+            )
+        )
     except Exception:  # table missing on an install that never migrated
         logger.debug("Adapter table unavailable", exc_info=True)
         return []

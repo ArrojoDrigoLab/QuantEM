@@ -123,7 +123,7 @@ export function SegmentationCreatePanel({
   existingSegmentationTypes,
   existingSegmentationTypeIds,
   title = "Create a Segmentation Type",
-  description = "Choose a preset workflow or create a custom segmentation name.",
+  description,
   imageSizeBytes,
 }: SegmentationCreatePanelProps) {
   const [newCustomSegmentationName, setNewCustomSegmentationName] = useState("");
@@ -412,7 +412,7 @@ export function SegmentationCreatePanel({
         onCancel={() => setCustomDialogOpen(false)}
       />
       <h3>{title}</h3>
-      <p>{description}</p>
+      {description ? <p>{description}</p> : null}
       <div className="segmentation-quick-groups">
         {filteredQuickOptions.length > 0 ? (
           <div className="segmentation-quick-group">

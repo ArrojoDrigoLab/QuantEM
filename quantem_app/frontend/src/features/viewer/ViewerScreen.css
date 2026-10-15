@@ -1,7 +1,7 @@
 .viewer-screen {
   display: flex;
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - var(--workspace-bar-height, 0px));
+  height: calc(100dvh - var(--workspace-bar-height, 0px));
   min-height: 0;
   background: #0f0f0f;
   color: #f5f5f5;

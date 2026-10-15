@@ -195,9 +195,9 @@ describe("SegmentationHeader", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "← Back to Home" }));
-    // "Mark Image Done" can throw away a whole inference pass, so it goes
+    // "Lock segmentation" can throw away a whole inference pass, so it goes
     // through a confirmation; see the dedicated tests below.
-    await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+    await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
     await user.click(await screen.findByRole("button", { name: "Mark done" }));
     expect(onBackToHome).toHaveBeenCalledTimes(1);
     expect(onMarkDone).toHaveBeenCalledTimes(1);
@@ -394,13 +394,13 @@ describe("SegmentationHeader", () => {
    * payload that can be a poll behind, and (c) keep the deletion a separate,
    * opt-in decision from locking.
    */
-  describe("Mark Image Done", () => {
+  describe("Lock segmentation", () => {
     it("does not destroy anything on the first click", async () => {
       const user = userEvent.setup();
       const onMarkDone = vi.fn();
       renderHeader({ onToggleSegmentationComplete: onMarkDone });
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
 
       expect(await screen.findByRole("dialog")).toBeInTheDocument();
       expect(onMarkDone).not.toHaveBeenCalled();
@@ -414,7 +414,7 @@ describe("SegmentationHeader", () => {
       usePreview({ discard_count: 32, confirmed_count: 3 });
       renderHeader();
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
 
       expect(
         await screen.findByText(/holds 32 objects nobody has confirmed/)
@@ -428,7 +428,7 @@ describe("SegmentationHeader", () => {
       usePreview({ discard_count: 7, confirmed_count: 1 });
       renderHeader({ onToggleSegmentationComplete: onMarkDone });
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
       await user.click(await screen.findByRole("button", { name: "Mark done" }));
 
       expect(onMarkDone).toHaveBeenCalledWith(undefined);
@@ -440,7 +440,7 @@ describe("SegmentationHeader", () => {
       usePreview({ discard_count: 32, confirmed_count: 0 });
       renderHeader({ onToggleSegmentationComplete: onMarkDone });
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
       await user.click(
         await screen.findByRole("checkbox", {
           name: /Also delete the 32 objects nobody confirmed/,
@@ -472,7 +472,7 @@ describe("SegmentationHeader", () => {
       });
       renderHeader();
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
 
       expect(
         await screen.findByText(
@@ -496,7 +496,7 @@ describe("SegmentationHeader", () => {
       });
       renderHeader();
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
 
       expect(
         await screen.findByRole("checkbox", {
@@ -518,7 +518,7 @@ describe("SegmentationHeader", () => {
       });
       renderHeader();
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
 
       expect(await screen.findByText(/32 from QuantEM/)).toBeInTheDocument();
     });
@@ -528,7 +528,7 @@ describe("SegmentationHeader", () => {
       usePreview({ discard_count: 7, confirmed_count: 1, restorable: true });
       renderHeader();
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
       await user.click(await screen.findByRole("checkbox"));
 
       expect(
@@ -546,7 +546,7 @@ describe("SegmentationHeader", () => {
       });
       renderHeader();
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
       await user.click(await screen.findByRole("checkbox"));
 
       expect(
@@ -560,7 +560,7 @@ describe("SegmentationHeader", () => {
       usePreview({ discard_count: 7, confirmed_count: 1 });
       renderHeader({ onToggleSegmentationComplete: onMarkDone });
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
       await user.click(await screen.findByRole("button", { name: "Cancel" }));
 
       expect(onMarkDone).not.toHaveBeenCalled();
@@ -572,7 +572,7 @@ describe("SegmentationHeader", () => {
       usePreview({ discard_count: 0, confirmed_count: 4 });
       renderHeader();
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
 
       expect(
         await screen.findByText(/nothing here is unconfirmed/i)
@@ -597,7 +597,7 @@ describe("SegmentationHeader", () => {
       );
       renderHeader({ onToggleSegmentationComplete: onMarkDone });
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
       await user.click(await screen.findByRole("checkbox"));
       await user.click(
         screen.getByRole("button", { name: "Mark done and delete 7 objects" })
@@ -635,7 +635,7 @@ describe("SegmentationHeader", () => {
       );
       renderHeader();
 
-      await user.click(screen.getByRole("button", { name: "Mark Image Done" }));
+      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
 
       expect(
         await screen.findByText(/will still lock the segmentation/)
@@ -669,20 +669,8 @@ describe("SegmentationHeader", () => {
       trainedHead: true,
     };
 
-    it("says the run will use the calculated threshold for this image", () => {
-      renderHeader({ appliedAdapter: APPLIED });
-
-      expect(screen.getByText(/Adapted model: mito @ liver_HFD2/)).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /Run model will use the calculated threshold of 0\.45 for this image/
-        )
-      ).toBeInTheDocument();
-    });
-
     it("keeps the base and fine-tuned models as separate picker options", () => {
       renderHeader({
-        appliedAdapter: APPLIED,
         activeModelValue: "adapted:a1",
         modelOptions: [
           {
@@ -707,6 +695,7 @@ describe("SegmentationHeader", () => {
       expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue(
         "adapted:a1"
       );
+      expect(screen.queryByText(/Adapted model:|calculated threshold|Adapter not in use/)).not.toBeInTheDocument();
       expect(screen.getByRole("option", { name: "QuantEM" })).toBeInTheDocument();
       expect(
         screen.getByRole("option", {
@@ -715,45 +704,14 @@ describe("SegmentationHeader", () => {
       ).toBeInTheDocument();
     });
 
-    it("warns when the selected model means the adapter will be skipped", () => {
-      // The silent case: the run falls back to the released pack at its
-      // published threshold and nothing on screen changes.
-      renderHeader({
-        activeSourceModel: "omniem:mito",
-        appliedAdapter: {
-          ...APPLIED,
-          active: false,
-          selectedSourceModel: "omniem:mito",
-        },
-      });
+  });
 
-      expect(screen.getByText(/Adapter not in use/)).toBeInTheDocument();
-      expect(
-        screen.getByText(/will use the published model at threshold 0\.50/)
-      ).toBeInTheDocument();
-    });
-
-    it("says nothing when no adapter is applied", () => {
-      renderHeader();
-
-      expect(screen.queryByText(/Adapted model:/)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Adapter not in use/)).not.toBeInTheDocument();
-      const picker = screen.getByRole("combobox", { name: "Model" });
-      expect(picker.textContent).not.toContain("(adapted)");
-    });
-
-    it("does not claim a head when only the threshold was calibrated", () => {
-      renderHeader({
-        appliedAdapter: {
-          ...APPLIED,
-          adapter: { ...APPLIED.adapter, mode: "threshold_only" },
-          trainedHead: false,
-        },
-      });
-
-      expect(screen.getByText(/calculated threshold of 0\.45/)).toBeInTheDocument();
-      expect(screen.queryByText(/fine-tuned head/)).not.toBeInTheDocument();
-    });
+  it("places the model run control where the object count would appear", async () => {
+    const run = vi.fn();
+    renderHeader({ modelRunControl: <button onClick={run}>Run model</button> });
+    expect(screen.queryByTestId("displayed-objects-provenance")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Run model" }));
+    expect(run).toHaveBeenCalledOnce();
   });
 
   it("offers routes back to the library, experiment, and viewer", async () => {
@@ -1109,7 +1067,7 @@ describe("SegmentationHeader", () => {
       ).toBeInTheDocument();
     });
 
-    it("is disabled while the segmentation is locked, and says why", () => {
+    it("hides the rerun action and model picker while locked", () => {
       renderHeader({
         currentSegmentation: makeSegmentation({
           ...PREDATES,
@@ -1119,9 +1077,8 @@ describe("SegmentationHeader", () => {
         onClearMislabeledObjects: vi.fn(),
       });
 
-      const button = screen.getByTestId("clear-rerun-button");
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute("title", expect.stringContaining("locked"));
+      expect(screen.queryByTestId("clear-rerun-button")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
     });
   });
 
@@ -1135,7 +1092,7 @@ describe("SegmentationHeader", () => {
       "omniem:mito"
     );
     expect(screen.getByTestId("displayed-objects-provenance")).toHaveTextContent(
-      "No objects from OmniEM yet"
+      "0 objects · OmniEM"
     );
   });
 

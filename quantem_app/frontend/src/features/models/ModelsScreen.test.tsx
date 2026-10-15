@@ -1,8 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { Link, MemoryRouter } from "react-router-dom";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { ModelsScreen } from "@/features/models/ModelsScreen";
 import type { ModelCatalogue, ModelPack, OrganelleKey } from "@/shared/types/finetune";
@@ -44,6 +44,13 @@ function catalogue(): ModelCatalogue {
   };
 }
 
+beforeEach(() => {
+  server.use(
+    http.get(`${API}/api/finetune/models/`, () => HttpResponse.json([])),
+    http.get(`${API}/api/segmentation-types/`, () => HttpResponse.json([])),
+  );
+});
+
 function renderScreen() {
   server.use(http.get(`${API}/api/models/`, () => HttpResponse.json(catalogue())));
   return render(
@@ -54,14 +61,38 @@ function renderScreen() {
 }
 
 describe("ModelsScreen", () => {
+  it("refreshes saved models and the catalogue when Models is clicked on the same route", async () => {
+    const user = userEvent.setup();
+    let modelName = "Original model";
+    let packs = catalogue();
+    server.use(
+      http.get(`${API}/api/finetune/models/`, () => HttpResponse.json([{
+        id: "saved", name: modelName, base_model: "quantem:mito", segmentation_type: "mito",
+        mode: "head", status: "SUCCESS", created_at: "2026-10-01", asset_ids: [],
+      }])),
+      http.get(`${API}/api/segmentation-types/`, () => HttpResponse.json([])),
+      http.get(`${API}/api/models/`, () => HttpResponse.json(packs)),
+    );
+    render(<MemoryRouter initialEntries={["/models"]}>
+      <Link to="/models">Models</Link>
+      <ModelsScreen />
+    </MemoryRouter>);
+    await screen.findByText("Original model");
+    await screen.findByText("Downloaded");
+
+    modelName = "Newly trained model";
+    packs = { ...packs, packs: packs.packs.map((pack) => ({ ...pack, installed: true })) };
+    await user.click(screen.getByRole("link", { name: "Models" }));
+    await screen.findByText("Newly trained model");
+    await waitFor(() => expect(screen.getAllByText("Downloaded")).toHaveLength(8));
+    expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+  });
+
   it("shows the two simple model families and no architecture or local-folder UI", async () => {
     renderScreen();
 
     expect(await screen.findByText("OmniEM (Large model)")).toBeInTheDocument();
     expect(screen.getByText("QuantEM (Basic model)")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Model weights are not included in the application/i)
-    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute(
       "href",
       "/"

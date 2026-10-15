@@ -8,6 +8,7 @@ import { BandHistogram } from "@/features/analysis/components/BandHistogram";
 import { CompositionPanel } from "@/features/analysis/components/CompositionPanel";
 import { MonteCarloPanel } from "@/features/analysis/components/MonteCarloPanel";
 import { ObjectsPanel } from "@/features/analysis/components/ObjectsPanel";
+import { AnalysisNotes } from "./AnalysisNotes";
 
 export interface AnalysisResultsProps {
   run: AnalysisRun;
@@ -84,9 +85,22 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
   // Defensive: rendering half-written numbers from a run that has not finished
   // would be worse than rendering nothing, and the caller already shows why.
   if (run.status !== "SUCCESS") return null;
+  if (run.global_area) return <Panel className="space-y-3 p-4">
+    <h2 className="text-lg font-semibold">Foreground area measurements</h2>
+    {run.current === false && <p role="status" className="text-amber-900">Outdated: inputs changed after this run. These are the saved results; run the analysis again to measure the current version.</p>}
+    <p className="text-sm text-slate-600">Saved {formatTimestamp(run.created_at)} · area measurements only</p>
+    {[run.global_area.whole_image, ...run.global_area.analysis_masks].map((row) => <div key={row.segmentation_id ?? "whole"} className="border-t pt-2">
+      <strong>{row.name}</strong><p>{row.foreground_percent === null ? "Undefined (empty denominator)" : `${row.foreground_percent.toFixed(3)}%`}</p>
+      <p className="text-xs text-slate-600">{row.foreground_pixels.toLocaleString()} foreground pixels / {row.denominator_pixels.toLocaleString()} denominator pixels</p>
+    </div>)}
+    <div className="flex gap-4"><a className="text-cyan-800 underline" href={getAnalysisExportUrl(run.id, "area.csv")}>Export area measurements CSV</a>
+      <a className="text-cyan-800 underline" href={getAnalysisExportUrl(run.id, "manifest.json")}>Export manifest</a></div>
+  </Panel>;
 
   return (
     <div className="flex flex-col gap-4">
+      {run.current === false && <p role="status" className="rounded border border-amber-200 bg-amber-50 p-3 text-amber-900">Outdated: inputs changed after this run. These are the saved results; run the analysis again to measure the current version.</p>}
+      {run.current === null && <p className="text-sm text-slate-600">This older result has no recorded input fingerprint; its freshness cannot be verified.</p>}
       <Panel className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -102,6 +116,8 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
           </div>
         </div>
       </Panel>
+
+      <AnalysisNotes notes={run.caveats} />
 
       {run.composition ? (
         <CompositionPanel

@@ -168,16 +168,17 @@ describe("ImageUploadPanel", () => {
     expect(uploadAsset).toHaveBeenCalledTimes(2);
   });
 
-  it("puts the metadata explanation under pixel size and exposes its tooltip", async () => {
+  it("shows missing pixel size only until a value is provided", async () => {
     const user = userEvent.setup();
     render(<ImageUploadPanel />);
 
     await user.upload(await openPanelWithServerFormats(), pngFile());
 
     const pixelSize = screen.getByLabelText("Pixel size, nm per pixel");
-    expect(pixelSize.nextElementSibling).toHaveTextContent(
-      "Could not parse 1 image resolution from its metadata. Enter value here if known."
-    );
+    expect(await screen.findByText("Pixel size is missing for 1 image.")).toBeInTheDocument();
+    await user.type(pixelSize, "4.2");
+    expect(screen.queryByText(/Pixel size is missing/)).not.toBeInTheDocument();
+    expect(pixelSize).not.toHaveAttribute("aria-describedby");
     expect(
       screen.getByTitle(
         "Optional, you can change or set these later. Required for some analysis measurements"

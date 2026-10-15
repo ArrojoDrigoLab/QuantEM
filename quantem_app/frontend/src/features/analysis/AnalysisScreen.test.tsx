@@ -365,3 +365,26 @@ describe("AnalysisScreen", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+it("switches analysis segmentation when next-image navigation changes asset", async () => {
+  install({ runStatus: "SUCCESS", jobStatus: "SUCCESS" });
+  const posted: string[] = [];
+  server.use(
+    http.get(`${API}/api/assets/asset-2/`, () => HttpResponse.json({id: "asset-2", display_name: "Liver 02", pixel_size_nm: 5})),
+    http.get(`${API}/api/assets/asset-2/segmentations/`, () => HttpResponse.json([{...segmentation(), id: "seg-2", asset: "asset-2"}])),
+    http.get(`${API}/api/segmentations/seg-2/analysis/`, () => HttpResponse.json([])),
+    http.post(`${API}/api/segmentations/:id/analysis/`, ({params}) => { posted.push(String(params.id)); return HttpResponse.json({job_id: JOB_ID, analysis_run_id: RUN_ID}); }),
+  );
+  render(<MemoryRouter initialEntries={[`/assets/${ASSET_ID}/analysis`]}>
+    <Link to="/assets/asset-2/analysis">Next image</Link>
+    <Routes><Route path="/assets/:assetId/analysis" element={<AnalysisScreen />} /></Routes>
+  </MemoryRouter>);
+  const user = userEvent.setup();
+  await screen.findByRole("button", {name: "Run Analysis"});
+  await user.click(screen.getByRole("link", {name: "Next image"}));
+  await screen.findByText("Liver 02");
+  const compartment = await screen.findByRole("checkbox", {name: "Mitochondria"});
+  if (!(compartment as HTMLInputElement).checked) await user.click(compartment);
+  await user.click(await screen.findByRole("button", {name: "Run Analysis"}));
+  await waitFor(() => expect(posted).toEqual(["seg-2"]));
+});

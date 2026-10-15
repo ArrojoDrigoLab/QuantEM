@@ -31,12 +31,14 @@ import {
   type ImportBatchPosition,
 } from "@/features/library/components/ImageUploadPanel";
 import { JobQueueSidebar } from "@/features/library/components/JobQueueSidebar";
+import { TaskQueueButton } from "@/features/library/components/TaskQueueButton";
 import { WorkflowGuide } from "@/features/library/components/WorkflowGuide";
 import {
-  hasSeenWorkflowGuide,
   rememberWorkflowGuideDismissed,
 } from "@/features/library/components/workflowGuideStorage";
 import { useExperiments } from "@/features/library/components/grouping/useExperiments";
+import { RecentExperiments } from "@/features/experiments/RecentExperiments";
+import { Link } from "react-router-dom";
 import { LibrarySelectionBar } from "@/features/library/components/grouping/LibrarySelectionBar";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
@@ -239,7 +241,7 @@ export function LibraryPage() {
     useState<Experiment | null>(null);
   const [isQueueSidebarOpen, setIsQueueSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showHelp, setShowHelp] = useState(() => !hasSeenWorkflowGuide());
+  const [showHelp, setShowHelp] = useState(false);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [previewEntriesByExperiment, setPreviewEntriesByExperiment] = useState<
     Record<string, HomeEntry[]>
@@ -272,7 +274,12 @@ export function LibraryPage() {
   /** Selecting mode, and what is selected in it. Off until asked for. */
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const { experiments, reload: reloadExperiments } = useExperiments();
+  const { experiments, error: experimentsError, reload: reloadExperiments } = useExperiments();
+  const [experimentSort, setExperimentSort] = useState(() => {
+    try { return window.localStorage.getItem("quantem.experimentSort") ?? "recent"; }
+    catch { return "recent"; }
+  });
+  const [experimentSearch, setExperimentSearch] = useState("");
   const entriesRequestIdRef = useRef(0);
   const entriesInFlightKeyRef = useRef<string | null>(null);
   /** Read inside `loadEntries` without making it depend on the entry list. */
@@ -512,12 +519,17 @@ export function LibraryPage() {
           });
         }
       });
-      const rows = [...headers.values()];
+      const rows = [...headers.values()].filter((row) => row.name.toLowerCase().includes(experimentSearch.toLowerCase())).sort((a, b) => {
+        const first = experiments.find((row) => row.id === a.id);
+        const second = experiments.find((row) => row.id === b.id);
+        return (experimentSort === "recent" ? (Date.parse(second?.last_opened_at ?? "") || 0) - (Date.parse(first?.last_opened_at ?? "") || 0) : 0) ||
+          a.name.localeCompare(b.name);
+      });
       return experimentFilter
         ? rows.filter((experiment) => experiment.id === experimentFilter)
         : rows;
     },
-    [experimentFilter, experiments, justImported]
+    [experimentFilter, experiments, justImported, experimentSort, experimentSearch]
   );
   const activePreviewGroupIds = useMemo(
     () => new Set(shownExperiments.map((experiment) => experiment.id)),
@@ -670,7 +682,7 @@ export function LibraryPage() {
               {showHelp ? "Hide guide" : "Guide"}
             </Button>
             <FineTuneMenuButton />
-            <Button onClick={() => setIsQueueSidebarOpen(true)}>Tasks & Queues</Button>
+            <TaskQueueButton isOpen={isQueueSidebarOpen} onClick={() => setIsQueueSidebarOpen(true)} />
             <Button
               size="icon"
               variant="secondary"
@@ -696,6 +708,18 @@ export function LibraryPage() {
         </header>
 
         {showHelp ? <WorkflowGuide onDismiss={dismissWorkflowGuide} /> : null}
+
+        {experimentsError ? <p role="alert">Experiments could not be loaded. <Button onClick={() => void reloadExperiments()}>Retry</Button></p> : null}
+        <RecentExperiments experiments={experiments} />
+        <div className="flex flex-wrap items-center gap-3">
+          <label>Find experiment <input aria-label="Find experiment" type="search" className="rounded border px-2 py-1"
+            value={experimentSearch} onChange={(event) => setExperimentSearch(event.target.value)} /></label>
+          <label>Experiment order <select className="rounded border px-2 py-1" value={experimentSort} onChange={(event) => {
+            setExperimentSort(event.target.value);
+            try { window.localStorage.setItem("quantem.experimentSort", event.target.value); } catch { /* Session controls remain usable. */ }
+          }}><option value="recent">Recently opened</option><option value="name">Name</option></select></label>
+          <Link to="/models" className="text-cyan-800 underline">Models</Link>
+        </div>
 
         <ImageUploadPanel
           ref={uploadPanelRef}
@@ -819,11 +843,6 @@ export function LibraryPage() {
             shownCount={previewEntries.length}
           />
         ) : null}
-        {selecting && selectedEntries.length === 0 ? (
-          <p className="m-0 text-sm text-slate-700">
-            Tick the images you want to put in an experiment or a dataset.
-          </p>
-        ) : null}
 
         {entriesLoading ? <PageState title="Loading images..." /> : null}
         {entriesError ? (
@@ -857,8 +876,7 @@ export function LibraryPage() {
                 ) : (
                   <div className="flex flex-col items-center gap-3">
                     <p className="m-0">
-                      QuantEM works on images you import from this machine. TIFF
-                      and PNG are accepted.
+                      TIFF and PNG images
                     </p>
                     <Button variant="primary" onClick={openFilePicker}>
                       Import an image

@@ -94,7 +94,7 @@ class TestLoss:
 
         baseline = head_loss(logits, target).item()
         shifted = logits.clone()
-        shifted[:, :, :4] += 5.0  # only inside the ignored band
+        shifted[:, 1, :4] += 5.0  # only inside the ignored band
         assert head_loss(shifted, target).item() == pytest.approx(baseline, abs=1e-6)
 
     def test_a_perfect_prediction_scores_better_than_an_inverted_one(self):

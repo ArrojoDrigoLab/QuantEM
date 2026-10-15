@@ -126,7 +126,9 @@ export function MonteCarloPanel({
           `_p_two_sided` returns None for that case now, so the sentence that
           covered z has to cover p as well -- a blank with no explanation is
           read as a rendering fault, and a wrong 0.048 was read as a finding. */}
-      <p className="mt-3 mb-0 text-xs text-slate-500">
+      <details className="mt-3 text-xs text-slate-500">
+        <summary className="cursor-pointer">How statistics are calculated</summary>
+        <p className="mt-2 mb-0">
         The null is complete spatial randomness inside the analysis mask, seeded
         per (image, replicate) so it does not depend on processing order. The
         p-value is empirical with the +1 correction, so with{" "}
@@ -136,7 +138,8 @@ export function MonteCarloPanel({
         neither statistic. An empirical p against a flat null is not a test — it
         would be {formatNumber(pFloor, 3)} whenever the observed value differed
         from the null at all, and 1.000 when it did not, whatever the data are.
-      </p>
+        </p>
+      </details>
 
       {selfCheck ? (
         <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">

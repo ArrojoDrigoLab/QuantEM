@@ -177,9 +177,15 @@ def sweep_threshold(
     curve = [mean_dice(train_crops, t) for t in thrs]
 
     scored = [(t, d) for t, d in zip(thrs, curve, strict=True) if d is not None]
-    if not scored:
-        raise ValueError("no annotated region contains foreground; Dice is undefined everywhere")
-    best_thr, best_train = max(scored, key=lambda kv: kv[1])
+    if not any((c.gt[c.valid > 0] > 0).any() for c in train_crops):
+        # Negative-only data teaches suppression, but cannot estimate recall or
+        # a useful foreground threshold. Keep the default and report Dice as is.
+        best_thr = default_threshold
+        best_train = mean_dice(train_crops, best_thr)
+    elif scored:
+        best_thr, best_train = max(scored, key=lambda kv: kv[1])
+    else:
+        raise ValueError("No valid pixels are available for calibration")
 
     heldout_cal = mean_dice(heldout_crops, best_thr) if heldout_crops else None
     heldout_def = mean_dice(heldout_crops, default_threshold) if heldout_crops else None

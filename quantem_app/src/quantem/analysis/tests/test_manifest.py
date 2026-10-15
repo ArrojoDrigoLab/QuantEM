@@ -181,7 +181,7 @@ class ObjectProvenanceTests(ManifestTestCase):
         note = stats["note"]
         assert f"{self.n_model} of {self.n_model + self.n_manual}" in note
         assert "hand-drawn" in note
-        assert "no model probability" in note
+        assert "no stored value" in note
 
     def test_a_fully_measured_metric_carries_no_excuse(self):
         _, _, got = self._run()
@@ -193,8 +193,9 @@ class ObjectProvenanceTests(ManifestTestCase):
     def test_the_caveat_list_names_the_partly_measured_metrics(self):
         _, _, got = self._run()
         caveats = " ".join(got["result"]["caveats"])
-        assert "mean_prob" in caveats
-        assert "whole-image number" in caveats
+        assert "mean_prob" not in caveats
+        assert "model probability" not in caveats
+        assert "whole-image number" not in caveats
 
     def test_the_manifest_repeats_the_reason_where_the_numbers_live(self):
         _, _, got = self._run()
@@ -496,24 +497,19 @@ class DimensionlessNumbersEscapeTheUnitsGuardTests(UncalibratedImageTestCase):
     def _caveats(self, got: dict) -> str:
         return " ".join(got["result"]["caveats"])
 
-    def test_the_units_caveat_is_still_there(self):
+    def test_generic_units_note_is_absent(self):
         _, _, got = self._run()
-        assert "Pixel size is not set for this image" in self._caveats(got)
+        assert "Pixel size is not set for this image" not in self._caveats(got)
 
-    def test_the_scale_caveat_names_the_packs_own_canonical_nm(self):
+    def test_model_identity_is_saved_without_a_scale_note(self):
         _, _, got = self._run()
-        scale = [c for c in got["result"]["caveats"] if "not trained for" in c]
+        assert not any("not trained for" in c for c in got["result"]["caveats"])
+        assert got["result"]["segmentation_settings"][0]["runs"][0]["pack_id"] == "quantem:mito"
 
-        assert scale, got["result"]["caveats"]
-        assert "quantem:mito is applied at 8.0 nm/px" in scale[0]
-
-    def test_the_scale_caveat_names_the_columns_the_units_guard_does_not_blank(self):
+    def test_scale_details_are_saved_without_generic_rerun_advice(self):
         _, _, got = self._run()
-        scale = next(c for c in got["result"]["caveats"] if "not trained for" in c)
-
-        for column in ("n_objects", "area_fraction_*", "enrichment_*", "z_*"):
-            assert column in scale, column
-        assert "re-run inference" in scale
+        assert not any("not trained for" in c for c in got["result"]["caveats"])
+        assert got["result"]["segmentation_settings"][0]["runs"][0]["pack_id"] == "quantem:mito"
 
     def test_those_columns_are_in_fact_populated_while_the_micron_ones_are_blank(self):
         """The caveat has to exist because the numbers do."""
@@ -543,13 +539,14 @@ class DimensionlessNumbersEscapeTheUnitsGuardTests(UncalibratedImageTestCase):
         _, _, got = self._run()
 
         assert not [c for c in got["result"]["caveats"] if "not trained for" in c]
-        assert "Pixel size is not set" in self._caveats(got)
+        assert "Pixel size is not set" not in self._caveats(got)
 
-    def test_the_scale_caveat_reaches_the_spreadsheet_too(self):
-        _, out, _ = self._run()
+    def test_scale_details_do_not_become_summary_or_spreadsheet_notes(self):
+        _, out, got = self._run()
         row = self._rows(out, "image_summary.csv")[0]
 
-        assert "not trained for" in row["caveats"]
+        assert "not trained for" not in self._caveats(got)
+        assert "caveats" not in row
 
 
 class ProofreadingRecordTests(ManifestTestCase):
@@ -584,13 +581,12 @@ class ProofreadingRecordTests(ManifestTestCase):
         assert block["n_by_label_state"]["EXCLUDED"] == 14
         assert block["n_by_label_state"]["CONFIRMED"] == self.n_model + self.n_manual
 
-    def test_rejections_are_a_caveat_because_they_are_in_no_number_above(self):
+    def test_rejected_count_is_saved_without_a_note(self):
         self._reject(14)
         _, _, got = self._run()
 
-        named = [c for c in got["result"]["caveats"] if "reviewed and rejected" in c]
-        assert named, got["result"]["caveats"]
-        assert "14 candidate objects" in named[0]
+        assert not any("reviewed" in c or "rejected" in c for c in got["result"]["caveats"])
+        assert got["result"]["proofreading"]
 
     def test_nothing_rejected_is_zero_and_reads_as_a_measurement(self):
         _, out, got = self._run()
@@ -612,13 +608,12 @@ class ProofreadingRecordTests(ManifestTestCase):
         row = self._rows(out, "image_summary.csv")[0]
         assert 0.7 < float(row["reviewed_fraction"]) < 0.8
 
-    def test_a_partly_reviewed_image_says_so_beside_its_whole_image_counts(self):
+    def test_review_coverage_is_saved_without_a_note(self):
         self._review(self.ROI)
         _, _, got = self._run()
 
-        named = [c for c in got["result"]["caveats"] if "marked 77%" in c]
-        assert named, got["result"]["caveats"]
-        assert "over the whole image" in named[0]
+        assert not any("reviewed" in c or "rejected" in c for c in got["result"]["caveats"])
+        assert got["result"]["proofreading"]
 
     def test_no_completed_area_is_unknown_with_a_reason_and_never_zero(self):
         """ "Nobody marked a region" and "a person reviewed none of it" are
@@ -629,25 +624,25 @@ class ProofreadingRecordTests(ManifestTestCase):
         assert reviewed["reviewed_px"] is None
         assert "unknown rather than zero" in reviewed["unavailable"]["reviewed_px"]
         assert self._rows(out, "image_summary.csv")[0]["reviewed_fraction"] == ""
-        assert [c for c in got["result"]["caveats"] if "recorded as reviewed" in c]
+        assert not [c for c in got["result"]["caveats"] if "recorded as reviewed" in c]
 
 
 class SpreadsheetCaveatTests(ManifestTestCase):
     """People open ``image_summary.csv`` in Excel and quote what they find."""
 
-    def test_the_caveats_are_in_the_file_the_numbers_are_in(self):
+    def test_the_spreadsheet_has_no_note_columns(self):
         _, out, got = self._run()
         row = self._rows(out, "image_summary.csv")[0]
 
-        assert int(row["n_caveats"]) == len(got["result"]["caveats"])
-        for caveat in got["result"]["caveats"]:
-            assert caveat in row["caveats"]
+        assert "n_caveats" not in row
+        assert "caveats" not in row
+        assert got["result"]["caveats"]
 
-    def test_the_caveat_columns_come_after_every_number(self):
+    def test_the_circular_columns_annotation_remains_last(self):
         _, out, _ = self._run()
         columns = list(self._rows(out, "image_summary.csv")[0])
 
-        assert columns[-3:] == ["circular_columns", "n_caveats", "caveats"]
+        assert columns[-1] == "circular_columns"
 
     def test_a_circular_enrichment_names_the_exact_columns_it_condemns(self):
         _, out, _ = self._run(points_source="centroids")
@@ -655,7 +650,7 @@ class SpreadsheetCaveatTests(ManifestTestCase):
 
         assert row["enrichment_mito"], "the number is there to be quoted"
         assert row["circular_columns"] == "enrichment_mito z_enrichment_mito"
-        assert "circular" in row["caveats"]
+        assert "caveats" not in row
 
     def test_the_area_fraction_is_not_condemned_with_them(self):
         """It is a real measurement, and the denominator that makes the others
@@ -670,12 +665,12 @@ class SpreadsheetCaveatTests(ManifestTestCase):
 
         assert self._rows(out, "image_summary.csv")[0]["circular_columns"] == ""
 
-    def test_the_caveat_cell_survives_a_round_trip_as_one_field(self):
+    def test_the_image_summary_keeps_one_row_per_image(self):
         _, out, _ = self._run(points_source="centroids")
         rows = self._rows(out, "image_summary.csv")
 
-        assert len(rows) == 1, "a newline in the caveats would split the record"
-        assert "\n" not in rows[0]["caveats"]
+        assert len(rows) == 1
+        assert "caveats" not in rows[0]
 
 
 class ImpossibleCalibrationTests(TestCase):
@@ -697,14 +692,12 @@ class ImpossibleCalibrationTests(TestCase):
         assert not any("Pixel size is not set" in c for c in caveats), (
             "an impossible calibration is a different problem from an absent one"
         )
-        named = [c for c in caveats if "-5.0 nm/px" in c]
-        assert named, caveats
-        assert "not a length" in named[0]
+        assert not any("not a length" in c for c in caveats)
 
-    def test_an_absent_pixel_size_still_gets_its_own_sentence(self):
+    def test_absent_resolution_does_not_generate_a_note(self):
         caveats = service.run_analysis(self._inputs(None))["caveats"]
 
-        assert any("Pixel size is not set" in c for c in caveats)
+        assert not any("Pixel size is not set" in c for c in caveats)
         assert not any("not a length" in c for c in caveats)
 
     def test_the_bad_value_is_reported_rather_than_hidden(self):
@@ -831,12 +824,12 @@ class FabricatedPointObservationTests(ManifestTestCase):
     def test_the_dropped_rows_are_named_by_line_in_the_caveats(self):
         _, _, got = self._junk_run()
 
-        named = [c for c in got["result"]["caveats"] if "not a position" in c]
+        named = [c for c in got["result"]["caveats"] if "invalid coordinates" in c]
         assert named, got["result"]["caveats"]
-        assert "3 of 4 rows" in named[0]
+        assert "3 of 4 imported points" in named[0]
         assert "line 3 (nan,nan)" in named[0]
         assert "line 4 (inf,0)" in named[0]
-        assert "not (0, 0)" in named[0]
+        assert "were excluded" in named[0]
 
     def test_the_manifest_records_the_rows_it_could_not_read(self):
         _, _, got = self._junk_run()
@@ -911,9 +904,9 @@ class NoPointOnTissueBundleTests(ManifestTestCase):
     def test_the_reader_is_told_why_in_words(self):
         _, _, got = self._off_tissue_run()
 
-        named = [c for c in got["result"]["caveats"] if "undefined rather than zero" in c]
+        named = [c for c in got["result"]["caveats"] if "No points are inside" in c]
         assert named, got["result"]["caveats"]
-        assert "None of the 3 points is on the tissue mask" in named[0]
+        assert "Enrichment and spatial statistics are unavailable" in named[0]
 
 
 class ObjectsCsvTraceabilityTests(ManifestTestCase):
@@ -921,8 +914,8 @@ class ObjectsCsvTraceabilityTests(ManifestTestCase):
 
     ROI = _square(0, 0, side=120.0)
 
-    def test_every_row_names_its_run_its_segmentation_and_its_caveat_count(self):
-        run, out, got = self._run()
+    def test_every_row_names_its_run_and_segmentation_without_a_caveat_count(self):
+        run, out, _ = self._run()
         rows = self._rows(out, "objects.csv")
 
         assert rows
@@ -930,7 +923,7 @@ class ObjectsCsvTraceabilityTests(ManifestTestCase):
             assert row["analysis_run_id"] == str(run.id)
             assert row["segmentation_id"] == str(self.segmentation.id)
             assert row["image_key"] == str(self.asset.id)
-            assert int(row["n_caveats"]) == len(got["result"]["caveats"])
+            assert "n_caveats" not in row
 
     def test_the_reviewed_and_the_unreviewed_are_distinguishable(self):
         """The caveat said in so many words that they were not."""
@@ -952,7 +945,7 @@ class ObjectsCsvTraceabilityTests(ManifestTestCase):
         assert sum(value == "False" for value in flags.values()) == 2
 
         partly = [c for c in got["result"]["caveats"] if "never gone through" in c]
-        assert partly, "this is the caveat the column answers"
+        assert not partly, "review coverage remains a column, not a note"
 
     def test_no_completed_area_leaves_the_column_blank_not_false(self):
         _, out, _ = self._run()
@@ -1160,15 +1153,15 @@ class SizeFloorAppliesToOneProvenanceTests(ManifestTestCase):
         assert len(small) == 1
         assert small[0]["source_model"] == "manual"
 
-    def test_the_hazard_reaches_the_top_level_caveats(self):
+    def test_small_manual_objects_do_not_generate_a_note(self):
         """Four levels down in the JSON is not a qualification."""
         self._draw_one_below_the_floor()
         _, _, got = self._run(compartments={"mito": str(self.segmentation.id)})
         caveats = " ".join(got["result"]["caveats"])
 
-        assert "applies to model-produced objects only" in caveats
-        assert "left-truncated" in caveats
-        assert "source_model column" in caveats
+        assert "applies to model-produced objects only" not in caveats
+        assert "left-truncated" not in caveats
+        assert "source_model column" not in caveats
 
     def test_it_stays_quiet_when_no_drawn_object_is_below_the_floor(self):
         """MANUAL_FEATURES is 400 px, well above 60. Crying wolf is a defect."""
