@@ -79,9 +79,14 @@ class ExperimentBatchTests(AnalysisRunTestCase):
         self.assertFalse(start_batch(self.experiment, self.payload).items.get().reused)
 
     def test_queued_prediction_is_not_ready_to_measure(self):
-        Job.objects.create(type="run_segmentation_full_task", status="PENDING",
-                           payload_json={"segmentation_id": str(self.segmentation.id)})
-        self.assertIn("queued or running", preview_batch(self.experiment, self.payload)[0]["reason"])
+        Job.objects.create(
+            type="run_segmentation_full_task",
+            status="PENDING",
+            payload_json={"segmentation_id": str(self.segmentation.id)},
+        )
+        self.assertIn(
+            "queued or running", preview_batch(self.experiment, self.payload)[0]["reason"]
+        )
 
     def test_changed_queued_inputs_fail_without_publishing_measurements(self):
         item = start_batch(self.experiment, self.payload).items.get()
@@ -154,7 +159,9 @@ class ExperimentBatchTests(AnalysisRunTestCase):
             self.assertTrue(any(entry["notes"] for entry in manifest["items"]))
             for name in archive.namelist():
                 if name.endswith(".csv"):
-                    columns = next(csv.reader(io.StringIO(archive.read(name).decode("utf-8-sig"))), [])
+                    columns = next(
+                        csv.reader(io.StringIO(archive.read(name).decode("utf-8-sig"))), []
+                    )
                     self.assertNotIn("caveats", columns)
                     self.assertNotIn("n_caveats", columns)
                 elif name.startswith("runs/") and name.endswith("manifest.json"):
@@ -222,8 +229,12 @@ class ExperimentBatchTests(AnalysisRunTestCase):
 
     def test_unnamed_samples_contribute_and_duplicate_filenames_stay_separate(self):
         common = {
-            "status": "SUCCESS", "current": True, "group": "",
-            "organelle": "mito", "measurement_area": "Whole image", "image": "scan.tif",
+            "status": "SUCCESS",
+            "current": True,
+            "group": "",
+            "organelle": "mito",
+            "measurement_area": "Whole image",
+            "image": "scan.tif",
         }
         rows = [
             {**common, "asset_id": "one", "sample_id": "", "n_objects": 10},
@@ -252,16 +263,38 @@ class ExperimentBatchTests(AnalysisRunTestCase):
 
     def test_missing_scale_does_not_exclude_available_metrics(self):
         common = {
-            "status": "SUCCESS", "current": True, "sample_id": "", "group": "",
-            "organelle": "mito", "measurement_area": "Whole image",
+            "status": "SUCCESS",
+            "current": True,
+            "sample_id": "",
+            "group": "",
+            "organelle": "mito",
+            "measurement_area": "Whole image",
         }
         rows = [
-            {**common, "asset_id": "one", "image": "One", "pixel_size_nm": None,
-             "n_objects": 10, "mean_area_um2": None},
-            {**common, "asset_id": "two", "image": "Two", "pixel_size_nm": 4,
-             "n_objects": 20, "mean_area_um2": 0.5},
+            {
+                **common,
+                "asset_id": "one",
+                "image": "One",
+                "pixel_size_nm": None,
+                "n_objects": 10,
+                "mean_area_um2": None,
+            },
+            {
+                **common,
+                "asset_id": "two",
+                "image": "Two",
+                "pixel_size_nm": 4,
+                "n_objects": 20,
+                "mean_area_um2": 0.5,
+            },
             {**common, "asset_id": "old", "image": "Old", "current": False, "n_objects": 1000},
-            {**common, "asset_id": "failed", "image": "Failed", "status": "FAILED", "n_objects": 1000},
+            {
+                **common,
+                "asset_id": "failed",
+                "image": "Failed",
+                "status": "FAILED",
+                "n_objects": 1000,
+            },
         ]
         _, groups = sample_summary(rows)
         counts = next(row for row in groups if row["metric"] == "n_objects")

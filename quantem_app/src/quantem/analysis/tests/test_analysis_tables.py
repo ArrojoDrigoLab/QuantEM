@@ -36,8 +36,12 @@ def test_preview_pages_exact_saved_values_without_changing_the_export(saved_tabl
     first = APIClient().get(url, {"limit": 2})
     assert first.status_code == 200
     assert first.data == {
-        "name": "objects.csv", "columns": ["object_id", "area (µm²)", "note"],
-        "rows": rows[:2], "offset": 0, "limit": 2, "has_more": True,
+        "name": "objects.csv",
+        "columns": ["object_id", "area (µm²)", "note"],
+        "rows": rows[:2],
+        "offset": 0,
+        "limit": 2,
+        "has_more": True,
     }
     last = APIClient().get(url, {"offset": 2, "limit": 2})
     assert last.data["rows"] == rows[2:]
@@ -65,9 +69,16 @@ def test_preview_of_an_empty_table_keeps_its_headers(saved_table):
     assert response.data["has_more"] is False
 
 
-@pytest.mark.parametrize("query", [
-    {"offset": -1}, {"offset": "bad"}, {"limit": 0}, {"limit": 501}, {"limit": "1.5"},
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        {"offset": -1},
+        {"offset": "bad"},
+        {"limit": 0},
+        {"limit": 501},
+        {"limit": "1.5"},
+    ],
+)
 def test_preview_rejects_invalid_pagination(saved_table, query):
     run, _path, _rows = saved_table
     response = APIClient().get(f"/api/analysis/{run.id}/table/objects.csv", query)

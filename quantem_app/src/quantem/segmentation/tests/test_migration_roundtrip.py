@@ -43,7 +43,6 @@ from quantem.testing import create_small_test_image
 
 BEFORE = ("segmentation", "0002_segmentationcompletionarchive")
 AFTER = ("segmentation", "0003_v2_push")
-LATEST = ("segmentation", "0008_analysis_mask_objects")
 
 
 def _migrate_to(target) -> None:
@@ -108,7 +107,8 @@ class MigrationRoundTripTests(TransactionTestCase):
         # Leave the database where the rest of the suite expects it, whatever
         # happened above. Idempotent: migrating to a target already applied is
         # an empty plan.
-        _migrate_to(LATEST)
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
 
     @staticmethod
     def _segmentation_columns() -> set[str]:

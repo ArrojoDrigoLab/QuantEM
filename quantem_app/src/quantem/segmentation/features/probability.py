@@ -5,12 +5,14 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PIL import Image
 
 from quantem.core.local_storage import StorageError
 from quantem.segmentation.models import ProbabilityMap, SegmentObject
 from quantem.segmentation.prob_maps.features import rasterize_polygon_in_bbox
-from quantem.segmentation.prob_maps.io import resolve_probability_map_path
+from quantem.segmentation.prob_maps.io import (
+    open_probability_map_image,
+    resolve_probability_map_path,
+)
 from quantem.segmentation.run_identity import read_run_identity
 
 
@@ -56,7 +58,7 @@ class OutlineProbability:
             try:
                 if self.map_id != prob_map.id:
                     self.close()
-                    self.image = Image.open(resolve_probability_map_path(prob_map))
+                    self.image = open_probability_map_image(resolve_probability_map_path(prob_map))
                     self.map_id = prob_map.id
                 width, height = self.image.size
                 if self.image.mode != "L":

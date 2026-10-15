@@ -17,13 +17,16 @@ PARTIAL = "1 of 21 metrics is measured on fewer than the 52 confirmed objects (m
 
 @pytest.fixture
 def saved_results():
-    return {"caveats": [TISSUE, REVIEW, PARTIAL, SCALE], "objects": {
-        "n": 52,
-        "summary": {
-            **{f"metric_{index}": {"n": 52} for index in range(20)},
-            "mean_prob": {"n": 0, "n_missing": 52, "missing_by_source": {"manual": 52}},
+    return {
+        "caveats": [TISSUE, REVIEW, PARTIAL, SCALE],
+        "objects": {
+            "n": 52,
+            "summary": {
+                **{f"metric_{index}": {"n": 52} for index in range(20)},
+                "mean_prob": {"n": 0, "n_missing": 52, "missing_by_source": {"manual": 52}},
+            },
         },
-    }}
+    }
 
 
 def test_saved_notes_remove_unwanted_messages_and_explain_partial_metrics(saved_results):
@@ -34,7 +37,8 @@ def test_saved_notes_remove_unwanted_messages_and_explain_partial_metrics(saved_
 
 def test_other_notes_and_actual_missing_metric_reasons_are_retained(saved_results):
     saved_results["objects"]["summary"]["area_px"] = {
-        "n": 50, "n_missing": 2,
+        "n": 50,
+        "n_missing": 2,
         "note": "Measured on 50 of 52 confirmed objects; 2 carry no stored value. Missing sources: 2 model objects.",
     }
     other = "The scale inference ran at in compartment 'mito' is unknown: an unrecognised model produced these objects."
@@ -46,7 +50,11 @@ def test_other_notes_and_actual_missing_metric_reasons_are_retained(saved_result
 
 
 def test_identical_missing_metric_reasons_are_not_repeated(saved_results):
-    stats = {"n": 51, "n_missing": 1, "note": "Measured on 51 of 52 confirmed objects; 1 object has no saved measurements."}
+    stats = {
+        "n": 51,
+        "n_missing": 1,
+        "note": "Measured on 51 of 52 confirmed objects; 1 object has no saved measurements.",
+    }
     saved_results["objects"]["summary"] = {"area_px": stats, "perimeter_px": stats}
     note = analysis_notes(saved_results)[1]
     assert "2 metrics: 1 object has no saved measurements." in note
@@ -59,16 +67,33 @@ def test_saved_csv_preview_download_and_manifest_use_the_same_columns(tmp_path, 
     with path.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(["image_key", "caveats", "area_um2", "n_caveats"])
-        writer.writerow(["9007199254740993", " | ".join(saved_results["caveats"]), "0.00000012345", "4"])
+        writer.writerow(
+            ["9007199254740993", " | ".join(saved_results["caveats"]), "0.00000012345", "4"]
+        )
     original = path.read_bytes()
     manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(json.dumps({
-        "images": [{"caveats": saved_results["caveats"]}],
-        "outputs": {"files": [{"filename": path.name, "sha256": hashlib.sha256(original).hexdigest(),
-                               "size_bytes": len(original), "columns": ["image_key", "caveats", "area_um2", "n_caveats"]}]},
-    }), encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "images": [{"caveats": saved_results["caveats"]}],
+                "outputs": {
+                    "files": [
+                        {
+                            "filename": path.name,
+                            "sha256": hashlib.sha256(original).hexdigest(),
+                            "size_bytes": len(original),
+                            "columns": ["image_key", "caveats", "area_um2", "n_caveats"],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     original_manifest = manifest_path.read_bytes()
-    run = AnalysisRun.objects.create(status="SUCCESS", export_dir=str(tmp_path), results=saved_results)
+    run = AnalysisRun.objects.create(
+        status="SUCCESS", export_dir=str(tmp_path), results=saved_results
+    )
     client = APIClient()
     preview = client.get(f"/api/analysis/{run.id}/table/image_summary.csv").data
     assert preview["columns"] == ["image_key", "area (µm²)"]
@@ -76,7 +101,10 @@ def test_saved_csv_preview_download_and_manifest_use_the_same_columns(tmp_path, 
     response = client.get(f"/api/analysis/{run.id}/export/image_summary.csv")
     downloaded = b"".join(response.streaming_content)
     response.close()
-    assert list(csv.reader(io.StringIO(downloaded.decode("utf-8-sig")))) == [preview["columns"], *preview["rows"]]
+    assert list(csv.reader(io.StringIO(downloaded.decode("utf-8-sig")))) == [
+        preview["columns"],
+        *preview["rows"],
+    ]
     response = client.get(f"/api/analysis/{run.id}/export/manifest.json")
     manifest = json.loads(b"".join(response.streaming_content))
     response.close()

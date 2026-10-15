@@ -181,7 +181,9 @@ def drop_outline_probability(existing: object) -> dict:
     features = dict(existing) if isinstance(existing, dict) else {}
     for key in list(features):
         name = str(key)
-        if name in {OUTLINE_PROBABILITY_KEY, "probability_source"} or name.startswith(OUTLINE_PROBABILITY_KEY_PREFIX):
+        if name in {OUTLINE_PROBABILITY_KEY, "probability_source"} or name.startswith(
+            OUTLINE_PROBABILITY_KEY_PREFIX
+        ):
             features.pop(key, None)
     return features
 

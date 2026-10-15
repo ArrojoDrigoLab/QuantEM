@@ -352,7 +352,7 @@ class CropExtractionTests(TestCase):
         assert np.all(expanded.target()[expanded.valid == 0] == IGNORE)
         y, x = plain.y - expanded.y, plain.x - expanded.x
         np.testing.assert_array_equal(
-            expanded.em[y:y + plain.height, x:x + plain.width], plain.em
+            expanded.em[y : y + plain.height, x : x + plain.width], plain.em
         )
 
 

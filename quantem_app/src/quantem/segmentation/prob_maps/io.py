@@ -22,14 +22,21 @@ from quantem.segmentation.models import ImageSegmentation, ProbabilityMap
 from quantem.segmentation.utils import convert_probability_map_to_uint8_png
 
 
+def open_probability_map_image(file_path: Path) -> Image.Image:
+    """Open probability pixels without intensity scaling; the caller must close them."""
+    return Image.open(file_path)
+
+
 def _load_prob_map_data(file_path: Path, channel_index: int) -> np.ndarray:
     if file_path.suffix.lower() in [".tif", ".tiff"]:
         data = tifffile.imread(str(file_path))
     else:
-        pil_image = Image.open(file_path)
-        if pil_image.mode != "L":
-            pil_image = pil_image.convert("L")
-        data = np.array(pil_image)
+        with open_probability_map_image(file_path) as pil_image:
+            if pil_image.mode != "L":
+                with pil_image.convert("L") as grayscale:
+                    data = np.array(grayscale)
+            else:
+                data = np.array(pil_image)
 
     if data.ndim == 3:
         if data.shape[0] < data.shape[2]:

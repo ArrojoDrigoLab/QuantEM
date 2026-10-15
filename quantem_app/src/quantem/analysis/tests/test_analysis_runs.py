@@ -1048,18 +1048,19 @@ class AnalysisApiTests(AnalysisRunTestCase):
     def test_a_non_finite_band_edge_is_a_bad_request_not_a_database_error(self):
         """The user's own route in, not just the validator.
 
-        ``"nan"`` and ``"inf"`` pass DRF's ``FloatField`` (it calls ``float()``
-        and catches only TypeError/ValueError), passed the monotonic check, and
-        went into ``AnalysisRun.objects.create(params=...)``, which raised
+        Older DRF versions accept ``"nan"`` and ``"inf"`` in ``FloatField``.
+        These values previously passed the monotonic check and went into
+        ``AnalysisRun.objects.create(params=...)``, which raised
         ``IntegrityError: CHECK constraint failed: JSON_VALID("params")`` -- an
         HTTP 500 quoting a database constraint at someone who typed a bad band
-        edge. The frontend refuses these already; the documented API did not.
+        edge. Newer DRF versions reject them before our validator. Either path
+        must identify the invalid field and avoid creating a run.
         """
         for edges in ([0, "nan"], [0, "inf"], ["-inf", 0]):
             with self.subTest(edges=edges):
                 response = self._start(band_edges_nm=edges, replicates=5)
                 self.assertEqual(response.status_code, 400, response.data)
-                self.assertIn("finite", response.data["error"])
+                self.assertIn("band_edges_nm", response.data["error"])
         self.assertFalse(AnalysisRun.objects.exists())
 
     def test_a_json_number_that_overflows_to_infinity_is_refused_too(self):
@@ -1072,7 +1073,7 @@ class AnalysisApiTests(AnalysisRunTestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 400, response.data)
-        self.assertIn("finite", response.data["error"])
+        self.assertIn("band_edges_nm", response.data["error"])
         self.assertFalse(AnalysisRun.objects.exists())
 
     def test_detail_returns_the_flat_contract_shape(self):
@@ -1344,7 +1345,9 @@ class GroupRollupApiTests(AnalysisRunTestCase):
         self.assertTrue(texts, "a group mean carries the caveats of its runs")
         for caveat in run.results["caveats"]:
             self.assertIn(caveat, texts)
-        circular = next(entry for entry in group["caveats"] if "not an independent measurement" in entry["text"])
+        circular = next(
+            entry for entry in group["caveats"] if "not an independent measurement" in entry["text"]
+        )
         self.assertEqual(circular["run_ids"], [str(run.id)])
         self.assertEqual(circular["n_runs"], 1)
 

@@ -6,8 +6,6 @@ from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
-from quantem.assets.models import Asset
-
 BEFORE = ("assets", "0005_asset_datasets_asset_experiment")
 AFTER = ("assets", "0006_active_assets_require_experiment")
 
@@ -22,7 +20,9 @@ class ActiveAssetExperimentMigrationTests(TransactionTestCase):
     available_apps = None
 
     def tearDown(self):
-        _executor().migrate([AFTER])
+        # Reversing this migration also unapplies dependent app migrations.
+        executor = _executor()
+        executor.migrate(executor.loader.graph.leaf_nodes())
 
     def test_upgrade_creates_unique_display_name_experiments_and_enforces_them(self):
         executor = _executor()
@@ -39,7 +39,10 @@ class ActiveAssetExperimentMigrationTests(TransactionTestCase):
             lifecycle_status="DELETED",
         )
 
-        _executor().migrate([AFTER])
+        executor = _executor()
+        executor.migrate([AFTER])
+        new_apps = executor.loader.project_state([AFTER]).apps
+        Asset = new_apps.get_model("assets", "Asset")
 
         names = [
             Asset.objects.get(id=first.id).experiment.name,

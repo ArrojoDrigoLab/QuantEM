@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
@@ -95,7 +96,19 @@ def test_tiff_bytes(*, width: int = 512, height: int = 512, seed: int = 0) -> by
         write_test_tiff(tmp, width=width, height=height, seed=seed)
         return tmp.read_bytes()
     finally:
-        tmp.unlink(missing_ok=True)
+        _unlink_fixture(tmp)
+
+
+def _unlink_fixture(path: Path) -> None:
+    """Retry brief Windows sharing locks without hiding cleanup failures."""
+    for attempt in range(6):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in {32, 33} or attempt == 5:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def build_test_upload_file(filename: str | None = None) -> SimpleUploadedFile:
@@ -134,7 +147,7 @@ def create_image_from_test_tiff(
             pixel_size_nm=metadata.get("pixel_size_nm") or TEST_PIXEL_SIZE_NM,
         )
     finally:
-        source.unlink(missing_ok=True)
+        _unlink_fixture(source)
 
 
 def create_small_test_image(

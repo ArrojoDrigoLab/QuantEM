@@ -355,7 +355,9 @@ class NumbersNotOnlySentencesTests(RunIdentityTestCase):
 
         self.assertFalse(got["result"]["calibrated"])
         self.assertEqual(self._summary_row(run)["objects_per_um2"], "")
-        settings = next(s for s in got["result"]["segmentation_settings"] if s["compartment"] == "mito")
+        settings = next(
+            s for s in got["result"]["segmentation_settings"] if s["compartment"] == "mito"
+        )
         self.assertIsNone(settings["runs"][0]["native_pixel_size_nm"])
 
     def test_a_genuinely_calibrated_run_keeps_every_column(self):

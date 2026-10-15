@@ -49,7 +49,8 @@ class WorkspaceTests(TestCase):
         )
         response = self.client.patch(
             self.url + "workspace/",
-            {"asset_id": str(self.asset.id), "sample_id": "   "}, format="json",
+            {"asset_id": str(self.asset.id), "sample_id": "   "},
+            format="json",
         )
         self.assertEqual(response.data["sample_id"], self.asset.display_name)
         self.assertFalse(response.data["sample_is_explicit"])
@@ -60,7 +61,8 @@ class WorkspaceTests(TestCase):
             for name in ("", " \t ", None):
                 response = self.client.patch(
                     f"/api/assets/{self.asset.id}/{suffix}",
-                    {"display_name": name, "notes": "Should not be saved"}, format="json",
+                    {"display_name": name, "notes": "Should not be saved"},
+                    format="json",
                 )
                 self.assertEqual(response.status_code, 400, response.data)
                 self.asset.refresh_from_db()
@@ -70,9 +72,9 @@ class WorkspaceTests(TestCase):
     def test_navigation_listing_avoids_loading_measurements(self):
         with self.assertNumQueries(2):
             response = self.client.get(self.url + "workspace/?navigation=true")
-        self.assertEqual(response.data["images"], [
-            {"id": str(self.asset.id), "name": self.asset.display_name}
-        ])
+        self.assertEqual(
+            response.data["images"], [{"id": str(self.asset.id), "name": self.asset.display_name}]
+        )
 
     def test_malformed_image_ids_return_bad_requests(self):
         response = self.client.patch(

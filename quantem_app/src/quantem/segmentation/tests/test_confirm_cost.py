@@ -25,6 +25,7 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
 from shapely.geometry import Polygon
 
+from quantem.jobs.models import Job
 from quantem.segmentation.models import (
     ImageSegmentation,
     SegmentationOverlayState,
@@ -141,12 +142,30 @@ class ConfirmDefersTheRasterTests(TestCase):
         self.assertFalse(response.data["overlay"]["sync_applied"])
 
     def test_clearing_manual_labels_defers_the_raster_too(self):
-        self.client.post(
+        response = self.client.post(
             "/api/segments/labels/batch/",
             {"labels": [{"id": str(self.segment.id), "label_state": "CONFIRMED"}]},
             format="json",
         )
+        self.assertEqual(response.status_code, 200)
         mutations.run_overlay_rebuild_job(self.segmentation, mode="partial")
+
+        response = self.client.post(
+            f"/api/segmentations/{self.segmentation.id}/labels/clear",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.segment.refresh_from_db()
+        self.assertEqual(self.segment.label_state, "CONFIRMED")
+
+        # Calling the overlay handler directly does not finish its queued job
+        # or the feature refresh. Simulate the worker settling those records
+        # before testing the clear operation's deferred raster write.
+        Job.objects.filter(
+            payload_json__segmentation_id=str(self.segmentation.id),
+            status__in=["PENDING", "RUNNING", "RETRY"],
+        ).update(status="COMPLETED")
 
         with patch.object(
             mutations,

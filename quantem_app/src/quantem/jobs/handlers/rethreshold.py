@@ -221,7 +221,11 @@ def handle_reextract_at_include_level(
             "source_model": source_model or getattr(segmenter, "source_model", ""),
         }
         previous = getattr(segmentation, "global_mask", None)
-        history = list((previous.metadata or {}).get("inference_runs", [])) if previous and roi is not None else []
+        history = (
+            list((previous.metadata or {}).get("inference_runs", []))
+            if previous and roi is not None
+            else []
+        )
         if previous and roi is not None and not history and previous.metadata:
             history.append(dict(previous.metadata))
         history.append({**metadata, "scope": "patch" if roi is not None else "full"})

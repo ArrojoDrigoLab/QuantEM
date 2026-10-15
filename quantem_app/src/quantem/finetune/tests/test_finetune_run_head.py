@@ -162,8 +162,11 @@ class ScopedRunTests(TestCase):
         parent = Adapter.objects.get(id=self.adapter.id)
         parent_bytes = parent.head_file.read_bytes()
         self.adapter = Adapter.objects.create(
-            parent=parent, base_model=parent.base_model, name="Continued",
-            mode="head", segmentation_type=parent.segmentation_type,
+            parent=parent,
+            base_model=parent.base_model,
+            name="Continued",
+            mode="head",
+            segmentation_type=parent.segmentation_type,
             training_exposure=self.asset_ids,
         )
         self.adapter.scope_assets.set(self.asset_ids)
@@ -191,19 +194,24 @@ class ScopedRunTests(TestCase):
         parent = Adapter.objects.get(id=self.adapter.id)
         parent_bytes = parent.head_file.read_bytes()
         self.adapter = Adapter.objects.create(
-            parent=parent, base_model=parent.base_model, name="Validated child",
-            mode="head", segmentation_type=parent.segmentation_type,
+            parent=parent,
+            base_model=parent.base_model,
+            name="Validated child",
+            mode="head",
+            segmentation_type=parent.segmentation_type,
             training_exposure=self.asset_ids,
         )
         self.adapter.scope_assets.set(self.asset_ids)
         starting_states = []
 
         def train(module, *args, **kwargs):
-            starting_states.append({
-                f"{name}.{key}": value.detach().clone()
-                for name in HEAD_MODULES
-                for key, value in getattr(module, name).state_dict().items()
-            })
+            starting_states.append(
+                {
+                    f"{name}.{key}": value.detach().clone()
+                    for name in HEAD_MODULES
+                    for key, value in getattr(module, name).state_dict().items()
+                }
+            )
             return train_head(module, *args, **kwargs)
 
         with mock.patch("quantem.finetune.options.train_head", side_effect=train):

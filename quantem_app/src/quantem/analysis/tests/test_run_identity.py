@@ -169,7 +169,12 @@ class SavedSettingsTests(RunIdentityTestCase):
     def test_settings_include_the_measured_objects_when_compartments_use_other_segmentations(self):
         subject = self._segmentation(get_or_create_mitochondria_type)
         target = self._segmentation(get_or_create_er_type)
-        self._object(subject, _square(20, 20), source_model="quantem:mito", stamp=_stamp(pack_id="quantem:mito"))
+        self._object(
+            subject,
+            _square(20, 20),
+            source_model="quantem:mito",
+            stamp=_stamp(pack_id="quantem:mito"),
+        )
         self._object(target, _square(50, 50), source_model="quantem:er", stamp=_stamp())
         _run, saved = self._run(subject, compartments={"ER": str(target.id)})
         settings = saved["result"]["segmentation_settings"]
@@ -180,13 +185,20 @@ class SavedSettingsTests(RunIdentityTestCase):
 
         seg = self._segmentation(get_or_create_mitochondria_type)
         for index, threshold in enumerate([0.4, 0.6]):
-            self._object(seg, _square(20 + 30 * index, 20), source_model="quantem:mito",
-                         stamp=_stamp(pack_id="quantem:mito", threshold=threshold, ran_at_nm=8.0))
+            self._object(
+                seg,
+                _square(20 + 30 * index, 20),
+                source_model="quantem:mito",
+                stamp=_stamp(pack_id="quantem:mito", threshold=threshold, ran_at_nm=8.0),
+            )
         run, saved = self._run(seg, compartments={"mito": str(seg.id)})
         snapshot = saved["result"]["segmentation_settings"]
         assert sorted(entry["threshold"] for entry in snapshot[0]["runs"]) == [0.4, 0.6]
         assert all(entry["resampled"] is True for entry in snapshot[0]["runs"])
-        assert len([note for note in run.results["caveats"] if "multiple models and settings" in note]) == 1
+        assert (
+            len([note for note in run.results["caveats"] if "multiple models and settings" in note])
+            == 1
+        )
         assert not any("different inference runs" in note for note in run.results["caveats"])
         self.asset.pixel_size_nm = 99.0
         self.asset.save(update_fields=["pixel_size_nm"])
@@ -198,8 +210,12 @@ class SavedSettingsTests(RunIdentityTestCase):
         from quantem.analysis.serializers import AnalysisRunSerializer
 
         seg = self._segmentation(get_or_create_mitochondria_type)
-        self._object(seg, _square(20, 20), source_model="quantem:mito",
-                     stamp=_stamp(pack_id="quantem:mito", native_pixel_size_nm=None))
+        self._object(
+            seg,
+            _square(20, 20),
+            source_model="quantem:mito",
+            stamp=_stamp(pack_id="quantem:mito", native_pixel_size_nm=None),
+        )
         run, saved = self._run(seg, compartments={"mito": str(seg.id)})
         expected = run.results.pop("segmentation_settings")
         run.save(update_fields=["results"])
@@ -530,7 +546,10 @@ class ThresholdProvenanceTests(RunIdentityTestCase):
             "were segmented under multiple models and settings" in c
             for c in got["result"]["caveats"]
         )
-        assert any("were segmented under multiple models and settings" in c for c in got["result"]["caveats"])
+        assert any(
+            "were segmented under multiple models and settings" in c
+            for c in got["result"]["caveats"]
+        )
         assert any("2 different inference runs" in c for c in got["result"]["caveats"])
 
     def test_legacy_objects_have_unknown_settings_without_a_note(self):
