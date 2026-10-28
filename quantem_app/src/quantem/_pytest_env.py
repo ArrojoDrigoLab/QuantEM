@@ -40,6 +40,10 @@ TEST_TMP_DIR = _SCRATCH / "pytest_tmp"
 
 ENV_VAR = "QUANTEM_DATA_DIR"
 
+# The ordinary unit suite stays self-contained and fast. PostgreSQL behavior is
+# covered by the marked integration workflow against the bundled server.
+os.environ.setdefault("QUANTEM_DATABASE_ENGINE", "sqlite")
+
 
 def _redirect_data_dir() -> None:
     if os.environ.get(ENV_VAR, "").strip():

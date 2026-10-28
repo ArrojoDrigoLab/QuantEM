@@ -385,6 +385,13 @@ class Rendition(TimeStampedModel):
         indexes = [
             models.Index(fields=["asset", "type"], name="asset_rend_asset_type_idx"),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["asset", "type"],
+                condition=models.Q(type="NGFF"),
+                name="unique_ngff_rendition_per_asset",
+            )
+        ]
 
     def __str__(self):
         return f"{self.asset_id} {self.type}"

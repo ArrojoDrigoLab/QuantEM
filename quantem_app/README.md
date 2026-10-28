@@ -108,7 +108,7 @@ and it will be used by the app. CUDA-enabled builds run much faster, especially 
 
 ```bash
 pip install quantem-app
-quantem-app
+QUANTEM_POSTGRES_BIN_DIR=/path/to/postgresql/bin quantem-app
 ```
 
 `quantem-app` starts the local server and opens the application in your browser, or in a native
@@ -118,6 +118,17 @@ Everything QuantEM writes lives in one directory. `quantem-app --data-dir PATH �
 does `quantem-app … --data-dir PATH` after the subcommand; `$QUANTEM_DATA_DIR` sets it for a whole
 shell.
 
+QuantEM starts its own PostgreSQL 17.11 server inside that directory. It binds only to loopback,
+uses per-install random credentials, and stops with the application. PostgreSQL is bundled by the
+desktop installers; it is not a machine-wide service and does not require Docker or a separately
+administered database.
+
+The pip and conda developer channels do not duplicate the server payload. A checkout or
+environment launch must point `QUANTEM_POSTGRES_BIN_DIR` at the `bin/` directory of the pinned
+runtime staged by `packaging/postgresql/stage_runtime.py`. Explicitly setting
+`QUANTEM_DATABASE_ENGINE=sqlite` keeps the legacy backend available for tests and migration
+comparisons; it is never selected as a fallback when PostgreSQL cannot start.
+
 
 ### From a checkout (development)
 
@@ -126,6 +137,10 @@ conda env create -f environment.yml
 conda activate quantem-app
 pip install -e ".[dev,desktop]"
 (cd frontend && npm install && npm run build)
+python packaging/postgresql/stage_runtime.py \
+  --download-cache .scratch/postgresql-download \
+  --output .scratch/postgresql-runtime
+export QUANTEM_POSTGRES_BIN_DIR="$PWD/.scratch/postgresql-runtime/bin"
 quantem-app
 ```
 
@@ -153,7 +168,8 @@ normally every time after that.
 
 ### Storage directory
 
-Everything QuantEM writes — the database, imported images, model packs, caches, exports and logs —
+Everything QuantEM writes — the private database cluster, imported images, model packs, caches,
+exports and logs —
 lives in one directory:
 
 | install | location |
@@ -163,6 +179,54 @@ lives in one directory:
 | macOS | `~/Library/Application Support/QuantEM` |
 
 `$QUANTEM_DATA_DIR` overrides all of them, and `--data-dir PATH` overrides it for one command.
+
+### Database migration and recovery
+
+An existing SQLite installation is migrated only when you request it. The destination PostgreSQL
+database must contain no user data:
+
+```bash
+quantem-app --data-dir PATH database migrate-sqlite --source PATH/quantem.sqlite3
+```
+
+The command reads through SQLite's online backup API, verifies the snapshot, copies primary keys,
+relationships, WKB geometry, JSON, timestamps and file references, resets PostgreSQL sequences,
+and compares canonical field content after the copy. Queued, retrying, or running jobs are retained
+as records but marked failed; jobs from another application instance are never resumed. The source
+SQLite file and the verified snapshot are retained.
+
+After migration, PostgreSQL becomes the writable database. Opening the retained SQLite snapshot
+later does not include any edits made in PostgreSQL. Moving back therefore requires an explicit
+data transfer; QuantEM never silently falls back to SQLite.
+
+Create a PostgreSQL backup with:
+
+```bash
+quantem-app --data-dir PATH database backup --output PATH/quantem.dump
+```
+
+The adjacent JSON manifest records the archive SHA-256 and database version. Restore is
+non-destructive and always targets a new, inactive database:
+
+```bash
+quantem-app --data-dir PATH database restore PATH/quantem.dump \
+  --target-database quantem_restore_20261028
+```
+
+Inspect the restored database before selecting it for a later controlled cutover. The active
+database is not dropped or overwritten.
+
+PostgreSQL minor releases keep the same on-disk format. A QuantEM update may replace the bundled
+17.x binaries after taking a verified pre-migration backup, then restart the existing cluster.
+Whenever an app launch detects pending database-schema migrations, QuantEM automatically creates
+and verifies that backup before changing the schema. By default it retains only the newest
+pre-migration backup and removes it after 30 days. Both limits are editable under **Settings →
+Database upgrade backups**; cleanup runs at startup, after a new migration backup, and when the
+policy is saved. This policy does not remove backups created explicitly with `database backup`.
+A future PostgreSQL major upgrade is a separate release operation: back up with the old QuantEM
+version, create a fresh cluster with the new major version, restore and validate it, and retain the
+old cluster until acceptance. QuantEM refuses to start a cluster whose major version differs from
+the bundled server; it does not attempt an in-place major upgrade or SQLite fallback.
 
 ## Models
 

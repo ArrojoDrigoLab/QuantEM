@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "postgresql_version": "17.11",
+  "platforms": {
+    "windows-x64": {
+      "archive_bytes": 381531864,
+      "archive_root": "pgsql",
+      "sha256": "80379b2c04d51c30225532e0ae04509899141e9957ed096fe749d7fd9df8f82f",
+      "url": "https://get.enterprisedb.com/postgresql/postgresql-17.11-5-windows-x64-binaries.zip"
+    },
+    "macos-universal": {
+      "archive_bytes": 437679230,
+      "archive_root": "pgsql",
+      "sha256": "b03ce3cad02625acd1d4e1929e38822446cdcf7596e2f49f337ff97851289714",
+      "url": "https://get.enterprisedb.com/postgresql/postgresql-17.11-5-osx-binaries.zip"
+    }
+  }
+}

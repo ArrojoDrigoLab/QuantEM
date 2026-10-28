@@ -69,7 +69,7 @@ def bbox_width_annotation(prefix: str = "bbox") -> ExpressionWrapper:
     """Queryset annotation for bbox width.
 
     Was ``RawSQL("ST_XMax(bbox) - ST_XMin(bbox)")``; the bounds are stored columns
-    now, so this is plain ORM arithmetic that works on SQLite.
+    now, so this is plain cross-backend ORM arithmetic.
     """
     return ExpressionWrapper(
         F(f"{prefix}_maxx") - F(f"{prefix}_minx"),

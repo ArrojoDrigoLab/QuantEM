@@ -30,7 +30,7 @@ def _state(statuses):
 
 
 def _key(expression):
-    # SQLite stores UUID columns without hyphens; JSON snapshots use strings.
+    # Normalize UUID text across the SQLite migration source and PostgreSQL.
     return Replace(Cast(expression, CharField()), Value("-"), Value(""))
 
 

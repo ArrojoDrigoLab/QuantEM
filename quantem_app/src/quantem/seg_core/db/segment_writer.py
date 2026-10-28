@@ -12,8 +12,8 @@ Why the write is batched
 ------------------------
 Saving one row at a time measured **8.97 ms per object**, so a dense run's tail
 spent close to a minute writing rows it had already computed. Each
-``SegmentObject.objects.create`` is its own transaction, and on SQLite that is
-a commit -- an fsync -- per object.
+``SegmentObject.objects.create`` is its own transaction, so it also incurs one
+database commit and client round trip per object.
 
 Rows go out in batches of :data:`DEFAULT_BATCH_SIZE` = 150. The batch size is a
 measurement, not a round number: 500-row batches were faster still, but one of
@@ -30,11 +30,10 @@ batch size exists to avoid. Committing per batch also matches the old
 per-row behaviour if the process dies mid-write: the work already done is
 already on disk.
 
-So 150 is the **transaction** size, not the statement size. Django caps a
-multi-row INSERT at 999 bind parameters, which for this model's 18 columns is
-55 rows, so each 150-row batch reaches SQLite as three INSERTs inside one
-transaction. That is the right split: the statement count is Django's business,
-the lock-hold duration is ours.
+So 150 is the **transaction** size, not the statement size. SQLite compatibility
+mode splits that into smaller statements to stay under its bind-parameter cap;
+PostgreSQL may use a different statement split. That is the right boundary:
+the statement count is Django's business, the lock-hold duration is ours.
 
 Why the model's ``save`` is reproduced here
 -------------------------------------------

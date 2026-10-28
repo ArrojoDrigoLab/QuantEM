@@ -259,6 +259,11 @@ jobs:
           pip install -e .
           pip install pyinstaller
 
+      - name: Stage the pinned PostgreSQL runtime
+        run: |
+          python packaging/postgresql/stage_runtime.py --platform macos-universal --download-cache "${RUNNER_TEMP}/quantem-postgresql-download" --output "${RUNNER_TEMP}/quantem-postgresql-17.11"
+          echo "QUANTEM_POSTGRES_RUNTIME_DIR=${RUNNER_TEMP}/quantem-postgresql-17.11" >> "$GITHUB_ENV"
+
       - name: Build the sidecar
         env:
           PYTHONPATH: ${{ github.workspace }}/quantem_app/src

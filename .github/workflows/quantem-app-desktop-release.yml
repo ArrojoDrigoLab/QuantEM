@@ -88,6 +88,14 @@ jobs:
           python -m pip install -e . pyinstaller pyinstaller-hooks-contrib
           python -c "import torch; print(torch.__version__, torch.version.cuda)"
 
+      - name: Stage the pinned PostgreSQL runtime
+        shell: pwsh
+        run: |
+          $runtime = Join-Path $env:RUNNER_TEMP "quantem-postgresql-17.11"
+          $cache = Join-Path $env:RUNNER_TEMP "quantem-postgresql-download"
+          python packaging/postgresql/stage_runtime.py --platform windows-x64 --download-cache $cache --output $runtime
+          "QUANTEM_POSTGRES_RUNTIME_DIR=$runtime" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Freeze and verify the server
         shell: pwsh
         run: |
@@ -226,6 +234,9 @@ jobs:
           python -m pip install "torch==${{ matrix.torch }}" "torchvision==${{ matrix.torchvision }}" --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -e . pyinstaller pyinstaller-hooks-contrib
           python -c "import platform, sys, torch, torchvision; print(platform.machine(), sys.version, torch.__version__, torchvision.__version__); assert torch.__version__.split('+')[0] == '${{ matrix.torch }}'; assert torchvision.__version__.split('+')[0] == '${{ matrix.torchvision }}'"
+          python packaging/postgresql/stage_runtime.py --platform macos-universal --download-cache "$RUNNER_TEMP/quantem-postgresql-download" --output "$RUNNER_TEMP/quantem-postgresql-17.11"
+          export QUANTEM_POSTGRES_RUNTIME_DIR="$RUNNER_TEMP/quantem-postgresql-17.11"
+          echo "QUANTEM_POSTGRES_RUNTIME_DIR=$RUNNER_TEMP/quantem-postgresql-17.11" >> "$GITHUB_ENV"
           python -m PyInstaller packaging/pyinstaller/quantem-server.spec --noconfirm --workpath "$RUNNER_TEMP/quantem-pyinstaller" --distpath packaging/pyinstaller/dist
       - name: Build ad-hoc signed macOS bundles
         working-directory: quantem_app/desktop

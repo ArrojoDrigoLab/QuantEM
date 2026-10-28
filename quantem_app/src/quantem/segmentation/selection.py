@@ -15,7 +15,7 @@ from .source_models import source_model_queryset_filter
 def bbox_overlap_filter(geometry: BaseGeometry, prefix: str = "bbox") -> Q:
     """Rows whose stored bbox overlaps ``geometry``'s bounds.
 
-    This is the SQLite replacement for ``bbox__intersects=geom``: a pure numeric
+    This is the portable replacement for ``bbox__intersects=geom``: a pure numeric
     range filter over the indexed bbox columns. It is a *prefilter* -- callers
     that need true intersection must refine the survivors with shapely.
     """

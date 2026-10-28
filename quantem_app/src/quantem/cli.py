@@ -22,9 +22,10 @@ type. ``$QUANTEM_DATA_DIR`` is honoured too, and the flag wins over it.
 
 Commands
 --------
-``run`` (the default), ``serve``, and ``models`` -- downloading model packs
-from the QuantEM Hugging Face repository (or installing them offline from a
-downloaded release bundle), listing what is installed, and re-verifying it.
+``run`` (the default), ``serve``, ``database``, and ``models`` -- downloading
+model packs from the QuantEM Hugging Face repository (or installing them
+offline from a downloaded release bundle), listing what is installed, and
+re-verifying it.
 Models are the one thing a fresh install cannot do without and the one thing not
 shipped with the application, so obtaining them is a first-class command rather
 than a module path a user has to be told.
@@ -32,8 +33,10 @@ than a module path a user has to be told.
 
 from __future__ import annotations
 
+import _thread
 import argparse
 import contextlib
+import hmac
 import json
 import os
 import socket
@@ -291,6 +294,31 @@ def _waitress_options() -> dict[str, object]:
     }
 
 
+class _ShutdownApplication:
+    """Private shell-to-sidecar shutdown handshake around the Django WSGI app."""
+
+    path = "/__quantem_shutdown__"
+
+    def __init__(self, application, token: str) -> None:
+        self.application = application
+        self.token = token
+
+    def __call__(self, environ, start_response):
+        if environ.get("PATH_INFO") != self.path:
+            return self.application(environ, start_response)
+        supplied = environ.get("HTTP_X_QUANTEM_SHUTDOWN_TOKEN", "")
+        if environ.get("REQUEST_METHOD") != "POST" or not self.token or not hmac.compare_digest(
+            supplied, self.token
+        ):
+            start_response("404 Not Found", [("Content-Type", "text/plain")])
+            return [b"Not found"]
+        start_response("202 Accepted", [("Content-Type", "text/plain")])
+        # Let waitress flush the response, then raise KeyboardInterrupt on its
+        # main thread. cmd_serve's finally block stops PostgreSQL cleanly.
+        threading.Timer(0.15, _thread.interrupt_main).start()
+        return [b"Shutting down"]
+
+
 def _keep_temp_files_with_the_data(tmp_dir: Path) -> None:
     """Point this process's temp directory at the data directory's own.
 
@@ -335,6 +363,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # inherits this process's environment.
     _keep_temp_files_with_the_data(TMP_DIR)
 
+    # Django reads its database mapping while settings are imported, so the
+    # private server must choose its loopback port and publish credentials
+    # first. SQLite is available only when explicitly selected for a migration
+    # comparison or test run.
+    from quantem.core.postgres import start_managed_postgres
+
+    database_server = start_managed_postgres()
+
     # Announced before Django wakes up, and flushed. This used to print after
     # the migrations and without a flush, which had two failure modes: on a
     # first launch the user stared at a silent terminal for the whole migrate,
@@ -345,6 +381,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
     port = args.port or free_port()
     print(f"{APP_NAME} serving on http://127.0.0.1:{port}", flush=True)
     print(f"data dir: {os.environ[DATA_DIR_ENV_VAR]}", flush=True)
+    if database_server is not None and database_server.endpoint is not None:
+        print(
+            "database: private PostgreSQL "
+            f"{database_server.endpoint.host}:{database_server.endpoint.port}",
+            flush=True,
+        )
+    else:
+        print("database: SQLite compatibility mode", flush=True)
     # Only when this process is really going to write it. Promising a path that
     # stays empty sends whoever is debugging to the wrong place.
     if file_logging_enabled():
@@ -432,7 +476,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     options = _waitress_options()
     _install_readable_oversize_error(int(options["max_request_body_size"]))
-    waitress_serve(get_wsgi_application(), host="127.0.0.1", port=port, **options)
+    application = get_wsgi_application()
+    shutdown_token = os.environ.get("QUANTEM_SHUTDOWN_TOKEN", "")
+    if shutdown_token:
+        application = _ShutdownApplication(application, shutdown_token)
+    try:
+        waitress_serve(application, host="127.0.0.1", port=port, **options)
+    except KeyboardInterrupt:
+        logging.getLogger("quantem.serve").info("Desktop shell requested shutdown.")
+    finally:
+        from quantem.core.postgres import stop_managed_postgres
+
+        stop_managed_postgres()
     return 0
 
 
@@ -639,6 +694,102 @@ def cmd_models_verify(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+# --- Database lifecycle ----------------------------------------------------
+
+
+def _prepare_database_command(args: argparse.Namespace, *, migrate_schema: bool) -> None:
+    """Start the private server for a finite database-management command."""
+
+    _prepare_env(_resolve_data_dir(args))
+    os.environ["QUANTEM_DATABASE_ENGINE"] = "postgresql"
+    os.environ["QUANTEM_AUTOSTART_JOBS"] = "0"
+    os.environ["QUANTEM_DISABLE_JOB_AUTOSTART"] = "1"
+    from quantem.core.config import TMP_DIR
+
+    _keep_temp_files_with_the_data(TMP_DIR)
+    from quantem.core.postgres import start_managed_postgres
+
+    start_managed_postgres()
+    if migrate_schema:
+        import django
+
+        django.setup()
+        from django.core.management import call_command
+
+        call_command("migrate", interactive=False, verbosity=0)
+
+
+def cmd_database_migrate_sqlite(args: argparse.Namespace) -> int:
+    """Copy a consistent SQLite snapshot into an empty private PostgreSQL database."""
+
+    _prepare_database_command(args, migrate_schema=True)
+    from quantem.core.config import DB_PATH
+    from quantem.core.postgres import stop_managed_postgres
+    from quantem.core.sqlite_migration import SQLiteMigrationError, migrate_sqlite_to_postgres
+
+    source = Path(args.source).expanduser() if args.source else DB_PATH
+    backup_root = Path(args.backup_dir).expanduser() if args.backup_dir else None
+    try:
+        report = migrate_sqlite_to_postgres(source, backup_root=backup_root)
+    except (OSError, SQLiteMigrationError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        stop_managed_postgres()
+    print(json.dumps(report, indent=2, sort_keys=True))
+    print(
+        "The SQLite source and its verified snapshot were retained. Reverting to either "
+        "after PostgreSQL receives new edits would lose those newer edits.",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def cmd_database_backup(args: argparse.Namespace) -> int:
+    """Create a checksummed custom-format backup of the active database."""
+
+    _prepare_database_command(args, migrate_schema=False)
+    from quantem.core.postgres import stop_managed_postgres
+    from quantem.core.postgres_backup import BackupError, create_postgres_backup
+
+    destination = Path(args.output).expanduser() if args.output else None
+    try:
+        archive, manifest = create_postgres_backup(destination)
+    except BackupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        stop_managed_postgres()
+    print(f"backup:   {archive}")
+    print(f"manifest: {manifest}")
+    return 0
+
+
+def cmd_database_restore(args: argparse.Namespace) -> int:
+    """Restore a backup into a new database, leaving the active one unchanged."""
+
+    _prepare_database_command(args, migrate_schema=False)
+    from quantem.core.postgres import stop_managed_postgres
+    from quantem.core.postgres_backup import BackupError, restore_postgres_backup
+
+    try:
+        result = restore_postgres_backup(
+            Path(args.archive), target_database=args.target_database
+        )
+    except (BackupError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        stop_managed_postgres()
+    print(json.dumps(result, indent=2, sort_keys=True, default=str))
+    print(
+        "The restored database is separate and inactive. The currently active database was "
+        "not overwritten.",
+        file=sys.stderr,
+    )
+    return 0
+
+
 # --- Argument parsing -------------------------------------------------------
 
 
@@ -749,6 +900,45 @@ def build_parser() -> argparse.ArgumentParser:
     mv.add_argument("packs", nargs="*")
     mv.set_defaults(func=cmd_models_verify)
 
+    db = sub.add_parser(
+        "database",
+        parents=[dd],
+        help="migrate, back up, and restore the private application database",
+    )
+    dbsub = db.add_subparsers(dest="database_command")
+
+    dm = dbsub.add_parser(
+        "migrate-sqlite",
+        parents=[dd],
+        help="copy a verified SQLite snapshot into an empty PostgreSQL database",
+    )
+    dm.add_argument(
+        "--source",
+        metavar="PATH",
+        help="SQLite database to read; defaults to <data-dir>/quantem.sqlite3",
+    )
+    dm.add_argument(
+        "--backup-dir",
+        metavar="PATH",
+        help="new directory for the immutable SQLite snapshot and migration report",
+    )
+    dm.set_defaults(func=cmd_database_migrate_sqlite)
+
+    dbb = dbsub.add_parser("backup", parents=[dd], help="create a verified PostgreSQL backup")
+    dbb.add_argument("--output", metavar="PATH", help="new .dump path")
+    dbb.set_defaults(func=cmd_database_backup)
+
+    dbr = dbsub.add_parser(
+        "restore",
+        parents=[dd],
+        help="restore a backup into a new, inactive database",
+    )
+    dbr.add_argument("archive", metavar="DUMP")
+    dbr.add_argument("--target-database", required=True, metavar="NAME")
+    dbr.set_defaults(func=cmd_database_restore)
+
+    db.set_defaults(_group_parser=db)
+
     # `quantem-app models` with no action is a help request, not an error with a
     # stack trace; the subparser is kept so main() can print its help.
     m.set_defaults(_group_parser=m)
@@ -759,6 +949,9 @@ def main(argv: list[str] | None = None) -> int:
     p = build_parser()
     args = p.parse_args(argv)
     if args.command == "models" and not getattr(args, "models_command", None):
+        args._group_parser.print_help()
+        return 2
+    if args.command == "database" and not getattr(args, "database_command", None):
         args._group_parser.print_help()
         return 2
     if not getattr(args, "func", None):

@@ -155,8 +155,7 @@ class AdaptLatestView(APIView):
         adapter = Adapter.objects.filter(segmentation=segmentation).order_by("-created_at").first()
         if adapter is None:
             return Response({"adapter": None, "job_id": None}, status=status.HTTP_200_OK)
-        # Matched on the payload, not on ``tags``: ``JSONField.__contains`` is
-        # unsupported on SQLite, which is the shipped database.
+        # Matched on the indexed payload key rather than scanning the tags list.
         job = (
             Job.objects.filter(
                 type=JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,

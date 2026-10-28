@@ -9,8 +9,9 @@
 //!    webview to `http://127.0.0.1:N/`;
 //! 4. guarantee the sidecar dies with the window.
 //!
-//! **Storage (owner ruling 2026-08-09).** Everything the app stores -- sqlite
-//! DB, models, HF cache, exports, logs, and the WebView2 profile -- lives with
+//! **Storage (owner ruling 2026-08-09).** Everything the app stores -- its
+//! private PostgreSQL cluster, models, HF cache, exports, logs, and the
+//! WebView2 profile -- lives with
 //! the installation: `QUANTEM_DATA_DIR` if set (the one explicit override),
 //! otherwise `<exe dir>\data`. The shell resolves that directory before doing
 //! anything else, exports it as `QUANTEM_DATA_DIR` so the sidecar and its
@@ -117,6 +118,8 @@ mod job {
 /// Everything the exit handler needs to tear the sidecar down.
 struct Sidecar {
     child: Option<Child>,
+    port: Option<u16>,
+    shutdown_token: Option<String>,
     #[cfg(windows)]
     _job: Option<job::Job>,
 }
@@ -124,12 +127,38 @@ struct Sidecar {
 impl Sidecar {
     fn kill(&mut self) {
         if let Some(child) = self.child.as_mut() {
-            // Best-effort explicit kill; the job object (dropped right after,
-            // when `self` goes) sweeps the whole tree including workers.
-            let _ = child.kill();
+            // Ask the sidecar to stop waitress and PostgreSQL first. The Job
+            // Object remains the recovery path for a hung or crashed server.
+            if let (Some(port), Some(token)) = (self.port, self.shutdown_token.as_ref()) {
+                let result = reqwest::blocking::Client::builder()
+                    .timeout(Duration::from_secs(3))
+                    .build()
+                    .and_then(|client| {
+                        client
+                            .post(format!("http://127.0.0.1:{port}/__quantem_shutdown__"))
+                            .header("X-QuantEM-Shutdown-Token", token)
+                            .send()
+                            .and_then(|response| response.error_for_status())
+                    });
+                if result.is_ok() {
+                    let deadline = Instant::now() + Duration::from_secs(12);
+                    while Instant::now() < deadline {
+                        if matches!(child.try_wait(), Ok(Some(_))) {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+            let still_running = !matches!(child.try_wait(), Ok(Some(_)));
+            if still_running {
+                let _ = child.kill();
+            }
             let _ = child.wait();
         }
         self.child = None;
+        self.port = None;
+        self.shutdown_token = None;
         #[cfg(windows)]
         {
             // Dropping the job handle fires KILL_ON_JOB_CLOSE for anything left.
@@ -598,6 +627,8 @@ fn main() {
 
     let sidecar: Arc<Mutex<Sidecar>> = Arc::new(Mutex::new(Sidecar {
         child: None,
+        port: None,
+        shutdown_token: None,
         #[cfg(windows)]
         _job: None,
     }));
@@ -674,6 +705,16 @@ fn main() {
             };
 
             let port = free_port().unwrap_or(8722);
+            let shutdown_token = tempfile::Builder::new()
+                .prefix(".quantem-shutdown-")
+                .tempfile_in(storage.as_ref().expect("storage checked above"))
+                .ok()
+                .and_then(|file| {
+                    file.path()
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| format!("quantem-{}-{port}", std::process::id()));
             log_line(&format!(
                 "[shell] launching {} serve --port {port}",
                 server_exe.display()
@@ -683,6 +724,7 @@ fn main() {
             cmd.arg("serve")
                 .arg("--port")
                 .arg(port.to_string())
+                .env("QUANTEM_SHUTDOWN_TOKEN", &shutdown_token)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
@@ -739,6 +781,8 @@ fn main() {
             {
                 let mut guard = sidecar_for_setup.lock().unwrap();
                 guard.child = Some(child);
+                guard.port = Some(port);
+                guard.shutdown_token = Some(shutdown_token);
                 #[cfg(windows)]
                 {
                     guard._job = job;

@@ -1,6 +1,6 @@
 """Shapely/WKB storage helpers for the geometry columns.
 
-QuantEM ships plain SQLite with no spatial extension, so pixel-space geometry
+QuantEM uses no spatial database extension, so pixel-space geometry
 lives in ordinary columns:
 
 * ``<name>_wkb`` -- a ``BinaryField`` holding shapely WKB (image pixel space),

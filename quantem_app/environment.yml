@@ -8,8 +8,8 @@
 # scientific-Python stack (libvips, imagecodecs, torch) installs far more reliably
 # from conda-forge than from wheels on Windows.
 #
-# There is no PostgreSQL, no PostGIS, no GDAL, no GEOS, no mod_spatialite and no
-# Redis here. That is deliberate: everything lives in one SQLite file.
+# The desktop build stages PostgreSQL's server separately from this development
+# environment. PostGIS, GDAL, SpatiaLite, and Redis are not used.
 name: quantem-app
 channels:
   - conda-forge

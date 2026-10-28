@@ -12,7 +12,7 @@ existing data root remains in place:
   `QUANTEM_DATA_DIR` explicitly selects another absolute directory.
 - macOS: `~/Library/Application Support/QuantEM`, unless overridden.
 
-That root contains the SQLite database, images, segmentations, annotations,
+That root contains the private PostgreSQL cluster, images, segmentations, annotations,
 analysis outputs, models, caches, logs, and WebView profile. The NSIS update
 path runs the old uninstaller with `/UPDATE`; its hooks deliberately skip all
 data removal in that mode.
@@ -33,15 +33,15 @@ Configure the protected environment with:
 
 The updater key is free and is not an Apple or Microsoft code-signing
 certificate. Generate and configure it from PowerShell without putting the
-private key on C: or in Git:
+private key in Git:
 
 ```powershell
-. D:\Chris\QuantEM_repo\.scratch\quantem_env.ps1
-$KeyDir = "D:\Chris\QuantEM_repo\.scratch\tauri-updater-key"
+$Repo = Resolve-Path "<path-to-QuantEM-checkout>"
+$KeyDir = Join-Path $Repo ".scratch\tauri-updater-key"
 $Key = "$KeyDir\quantem-app.key"
 New-Item -ItemType Directory -Force $KeyDir | Out-Null
-Set-Location "D:\Chris\QuantEM_repo\quantem_app\desktop"
-& $Npx tauri signer generate -w $Key
+Set-Location (Join-Path $Repo "quantem_app\desktop")
+npx tauri signer generate -w $Key
 ```
 
 The signer asks for a password during key generation; enter the same password
@@ -135,8 +135,18 @@ installer.
 ## Migration recovery
 
 Before a launch applies pending Django migrations, QuantEM creates a consistent
-SQLite snapshot at `backups/pre-migration/` under the active data root. The
-snapshot manifest records the target version, pending migrations, and SHA-256.
-Only the three newest migration snapshots are retained; images and models are
-not copied or deleted. If migration fails, the application stops and the log
-names the snapshot left for recovery.
+custom-format PostgreSQL dump at `backups/pre-migration/` under the active data
+root. The snapshot manifest records the server version, pending migrations,
+and SHA-256. The default policy retains only the newest migration snapshot and
+removes it after 30 days; both limits are configurable in the app's **Database
+upgrade backups** settings. Cleanup runs at startup, after snapshot creation,
+and when the policy is changed. Explicit manual database backups are outside
+this policy. Images and models are not copied or deleted. If migration fails,
+the application stops and the log names the snapshot left for recovery.
+
+The frozen sidecar includes the exact PostgreSQL runtime described by
+`packaging/postgresql/runtime.json`. The staging script verifies the vendor
+archive SHA-256, retains only the server/client runtime plus licences, checks
+the executable version, and writes a per-file manifest. On Windows these files
+belong to the content-addressed runtime layer, so an application-only update
+does not download them again.

@@ -38,6 +38,8 @@ dependencies = [
     "django-cors-headers>=4.0",
     "django-filter>=24.0",
     "waitress>=3.0",
+    # Self-contained driver; the binary extra carries libpq on Windows/macOS.
+    "psycopg[binary]>=3.3.6,<3.4",
     # --- numerics & imaging ---
     "numpy>=1.26",
     "scipy>=1.11",

@@ -12,6 +12,10 @@ const jobs = vi.hoisted(() => ({
   acquireLock: vi.fn(),
   releaseLock: vi.fn(),
 }));
+const systemSettings = vi.hoisted(() => ({
+  get: vi.fn(),
+  update: vi.fn(),
+}));
 
 vi.mock("@/features/update/desktopRuntime", () => ({
   isDesktopTauriBuild: () => desktop.enabled,
@@ -23,6 +27,10 @@ vi.mock("@/shared/api/jobs", () => ({
   getJobQueueStatus: jobs.getStatus,
   acquireUpdateApplyLock: jobs.acquireLock,
   releaseUpdateApplyLock: jobs.releaseLock,
+}));
+vi.mock("@/shared/api/systemSettings", () => ({
+  getSystemSettings: systemSettings.get,
+  updateSystemSettings: systemSettings.update,
 }));
 vi.mock("@/features/models/ModelManagementSection", () => ({
   ModelManagementSection: () => <div>Model management</div>,
@@ -36,6 +44,12 @@ describe("SettingsDialog application upgrades", () => {
     jobs.getStatus.mockReset();
     jobs.acquireLock.mockReset();
     jobs.releaseLock.mockReset();
+    systemSettings.get.mockReset();
+    systemSettings.update.mockReset();
+    systemSettings.get.mockResolvedValue({
+      pre_migration_backup_retention_count: 1,
+      pre_migration_backup_retention_days: 30,
+    });
     window.localStorage.clear();
     // Suppress the provider's automatic daily check so this test exercises the
     // Settings action specifically.
@@ -121,5 +135,34 @@ describe("SettingsDialog application upgrades", () => {
     );
 
     expect(screen.getByText("CUDA-enabled")).toBeInTheDocument();
+  });
+
+  it("loads and saves the database-upgrade backup policy", async () => {
+    systemSettings.update.mockResolvedValue({
+      pre_migration_backup_retention_count: 2,
+      pre_migration_backup_retention_days: 45,
+      removed_pre_migration_backups: 1,
+    });
+    const user = userEvent.setup();
+    renderSettings();
+
+    const count = await screen.findByRole("spinbutton", { name: "Maximum backups" });
+    const days = screen.getByRole("spinbutton", { name: "Delete after (days)" });
+    expect(count).toHaveValue(1);
+    expect(days).toHaveValue(30);
+
+    await user.clear(count);
+    await user.type(count, "2");
+    await user.clear(days);
+    await user.type(days, "45");
+    await user.click(screen.getByRole("button", { name: "Save backup settings" }));
+
+    await waitFor(() =>
+      expect(systemSettings.update).toHaveBeenCalledWith({
+        pre_migration_backup_retention_count: 2,
+        pre_migration_backup_retention_days: 45,
+      })
+    );
+    expect(await screen.findByText("Saved. 1 older backup was removed.")).toBeInTheDocument();
   });
 });
