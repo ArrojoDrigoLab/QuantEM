@@ -90,7 +90,9 @@ class AssetSegmentationListCreateView(APIView):
 
     def get(self, request, asset_id):
         asset = _resolve_public_asset_image(asset_id)
-        segmentations = ImageSegmentation.objects.filter(asset=asset)
+        segmentations = ImageSegmentation.objects.filter(
+            asset=asset, superseded_by__isnull=True
+        )
         # ``asset`` is joined for ``objects_pixel_size``, which compares the
         # image's pixel size now with the one its objects were produced under.
         # Without it that is one extra query per row of a list a screen polls.
@@ -173,9 +175,8 @@ def _create_segmentation_for_asset(request, *, asset):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Only the four released organelles are model-backed. Tissue, analysis,
-    # and reusable custom segmentations open directly into equivalent manual
-    # labeling workflows and never queue a model run.
+    # Only the four released organelles are model-backed. Area definitions and
+    # reusable custom organelles open directly into manual labeling workflows.
     manual_only_workflow = segmentation_type.internal_name not in ORGANELLE_INTERNAL_NAMES
     queue_inference = not manual_only_workflow and run_inference
     if queue_inference:
@@ -188,6 +189,7 @@ def _create_segmentation_for_asset(request, *, asset):
         asset=asset,
         segmentation_type=segmentation_type,
         display_name=analysis_name if is_analysis_mask else "",
+        superseded_by__isnull=True,
     )
     # This endpoint is get_or_create, and it queues a run for what it returns.
     # For an organelle already marked done that would start a run over a locked

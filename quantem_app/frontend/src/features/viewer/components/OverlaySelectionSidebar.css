@@ -60,6 +60,12 @@
   overflow-y: auto;
 }
 
+.overlay-list-divider {
+  height: 1px;
+  margin: 6px 2px;
+  background: rgba(148, 163, 184, 0.65);
+}
+
 .overlay-item {
   padding: 8px;
   border-radius: 8px;

@@ -39,6 +39,12 @@ class AnalysisRunCreateSerializer(serializers.Serializer):
     tissue_segmentation_id = serializers.CharField(
         required=False, allow_null=True, allow_blank=True, default=None
     )
+    cell_segmentation_id = serializers.CharField(
+        required=False, allow_null=True, allow_blank=True, default=None
+    )
+    outputs = serializers.DictField(
+        child=serializers.BooleanField(), required=False, default=dict
+    )
     points_source = serializers.ChoiceField(
         choices=POINT_SOURCES, required=False, allow_null=True, default=None
     )
@@ -62,7 +68,15 @@ class AnalysisRunCreateSerializer(serializers.Serializer):
         if segmentation is None:  # pragma: no cover - wiring error, not user input
             raise RuntimeError("AnalysisRunCreateSerializer needs a segmentation.")
         try:
-            return normalise_params(attrs, segmentation=segmentation)
+            params = normalise_params(attrs, segmentation=segmentation)
+            # DRF inserts the default empty ``outputs`` dict into attrs, so
+            # normalisation cannot by itself distinguish an older client that
+            # omitted the field from a current client that explicitly selected
+            # whole-image-only output. Keep that distinction in the saved run.
+            params["structured_outputs_enabled"] = (
+                "outputs" in self.initial_data or bool(params.get("cell_segmentation_id"))
+            )
+            return params
         except AnalysisInputError as exc:
             raise serializers.ValidationError(str(exc)) from exc
 
@@ -133,6 +147,7 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
     global_area = serializers.SerializerMethodField()
     current = serializers.SerializerMethodField()
     segmentation_settings = serializers.SerializerMethodField()
+    structured_analysis = serializers.SerializerMethodField()
 
     class Meta:
         model = AnalysisRun
@@ -147,6 +162,7 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
             "finished_at",
             "params",
             "segmentation_settings",
+            "structured_analysis",
             "global_area",
             "current",
             "input_identity",
@@ -173,6 +189,9 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
 
     def get_segmentation_settings(self, obj):
         return saved_segmentation_settings(obj)
+
+    def get_structured_analysis(self, obj):
+        return self._section(obj, "structured_analysis")
 
     def get_current(self, obj):
         from quantem.analysis.identity import run_is_current

@@ -6,6 +6,7 @@ import zipfile
 
 import numpy as np
 from django.utils import timezone
+from shapely.geometry import box
 
 from quantem.analysis.batch_views import batch_body, measurement_rows, sample_summary
 from quantem.analysis.batches import preview_batch, start_batch
@@ -17,9 +18,10 @@ from quantem.finetune.tests.fixtures import FakeCancel, FakeReporter
 from quantem.jobs.models import Job
 from quantem.library.models import Dataset, ImageWorkflowMetadata
 from quantem.segmentation.global_masks import save_global_mask
-from quantem.segmentation.models import ImageSegmentation
+from quantem.segmentation.models import AnalysisMaskObject, ImageSegmentation
 from quantem.segmentation.type_service import (
     get_or_create_analysis_mask_type,
+    get_or_create_cells_type,
     get_or_create_er_type,
 )
 
@@ -64,6 +66,44 @@ class ExperimentBatchTests(AnalysisRunTestCase):
         masked = {**unchecked, "mask_name": "Missing tissue"}
         self.assertIn("missing", preview_batch(self.experiment, masked)[0]["reason"])
         self.assertFalse(AnalysisBatch.objects.exists())
+
+    def test_definition_id_batch_defaults_to_saved_sample_area_and_cells(self):
+        sample = self.tissue
+        sample.status_stage = "CANDIDATES_READY"
+        sample.save(update_fields=["status_stage"])
+        sample_pixels = np.zeros((200, 200), dtype=bool)
+        sample_pixels[:150] = True
+        save_global_mask(sample, sample_pixels, source="manual")
+        cells = ImageSegmentation.objects.create(
+            asset=self.asset,
+            segmentation_type=get_or_create_cells_type(),
+            status_stage="CANDIDATES_READY",
+        )
+        cell_geometry = box(4, 4, 40, 40)
+        AnalysisMaskObject.objects.create(
+            segmentation=cells,
+            name="Cell 1",
+            color="#38bdf8",
+            sort_order=1,
+            geometry_wkb=cell_geometry.wkb,
+        )
+
+        row = preview_batch(
+            self.experiment,
+            {
+                "asset_ids": [str(self.asset.id)],
+                "segmentation_type_ids": [
+                    str(self.segmentation.segmentation_type_id)
+                ],
+                "mask_definition_id": str(sample.segmentation_type_id),
+            },
+        )[0]
+
+        self.assertEqual(row["reason"], "")
+        self.assertEqual(row["params"]["tissue_segmentation_id"], str(sample.id))
+        self.assertEqual(row["params"]["cell_segmentation_id"], str(cells.id))
+        self.assertTrue(row["params"]["outputs"]["per_cell"])
+        self.assertTrue(row["params"]["structured_outputs_enabled"])
 
     def test_reuse_matches_inputs_and_metadata_and_rejects_changed_calibration(self):
         ImageWorkflowMetadata.objects.create(asset=self.asset, sample_id="Donor 1", group="T1D")

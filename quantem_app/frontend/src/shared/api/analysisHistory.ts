@@ -7,6 +7,7 @@ export interface AnalysisHistoryEntry {
 }
 export interface BatchIdentity {
   structure?: string;
+  segmentation_type_id?: string | null;
   image: string; asset_id: string; organelle: string; sample_id: string; group: string;
   measurement_area: string; pixel_size_nm: number | null;
 }

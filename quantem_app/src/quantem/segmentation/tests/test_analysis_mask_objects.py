@@ -41,7 +41,7 @@ class AnalysisMaskObjectApiTests(TestCase):
         )
         self.url = f"/api/segmentations/{self.segmentation.id}/analysis-mask-objects/"
 
-    def test_first_shape_creates_named_colored_object_and_aggregate_mask(self):
+    def test_first_shape_creates_anonymous_colored_object_and_aggregate_mask(self):
         response = self.client.post(
             self.url,
             {"operation": "include", "shapes": [_shape(4, 4, 24, 24)]},
@@ -50,7 +50,7 @@ class AnalysisMaskObjectApiTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         payload = response.data["object"]
-        self.assertEqual(payload["name"], "Object 1")
+        self.assertEqual(payload["name"], "")
         self.assertRegex(payload["color"], r"^#[0-9a-f]{6}$")
         self.assertEqual(payload["geometry"]["type"], "Polygon")
         self.assertEqual(AnalysisMaskObject.objects.count(), 1)
@@ -140,13 +140,14 @@ class AnalysisMaskObjectApiTests(TestCase):
         self.assertIn("starts in Include mode", response.data["error"])
         self.assertFalse(AnalysisMaskObject.objects.exists())
 
-    def test_non_analysis_global_mask_cannot_use_named_object_api(self):
+    def test_sample_area_can_use_the_shared_area_object_editor(self):
         tissue = ImageSegmentation.objects.create(
             asset=self.segmentation.asset,
             segmentation_type=get_or_create_tissue_type(),
         )
         response = self.client.get(f"/api/segmentations/{tissue.id}/analysis-mask-objects/")
-        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["objects"], [])
 
 
 class AnalysisMaskObjectRasterTests(TestCase):
@@ -181,7 +182,7 @@ class AnalysisMaskObjectRasterTests(TestCase):
         loaded = segmentation_mask(segmentation, (32, 32))
         np.testing.assert_array_equal(loaded, mask)
         regions = analysis_mask_regions(segmentation, (32, 32))
-        self.assertEqual([region.name for region in regions], ["Object 1", "Object 2"])
+        self.assertEqual([region.name for region in regions], ["Area 1", "Area 2"])
 
         mito = np.zeros((32, 32), dtype=bool)
         mito[0:8, 0:4] = True

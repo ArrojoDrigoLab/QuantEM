@@ -13,6 +13,10 @@ class SegmentationTypeDefinition:
     short_name: str
     long_name: str
     measurement_mode: str = "objects"
+    description: str = ""
+    category: str = "organelle"
+    representation: str = "instances"
+    topology_policy: str = "non_overlapping"
 
 
 MITOCHONDRIA = SegmentationTypeDefinition(
@@ -26,6 +30,7 @@ ER = SegmentationTypeDefinition(
     short_name="ER",
     long_name="Endoplasmic Reticulum",
     measurement_mode="global",
+    representation="semantic",
 )
 
 NUCLEUS = SegmentationTypeDefinition(
@@ -46,9 +51,29 @@ LIPID_DROPLETS = SegmentationTypeDefinition(
 # and the analysis suite uses it as the denominator for area fractions.
 TISSUE = SegmentationTypeDefinition(
     internal_name="quantem_internal_tissue",
-    short_name="Tissue",
-    long_name="Tissue Mask",
+    short_name="Sample Area",
+    long_name="Sample Area",
     measurement_mode="global",
+    description=(
+        "Select all area containing the sample. Use this to remove background, "
+        "empty spaces, or other areas you wish to exclude from analysis."
+    ),
+    category="area",
+    representation="semantic",
+)
+
+CELLS = SegmentationTypeDefinition(
+    internal_name="quantem_internal_cells",
+    short_name="Cells",
+    long_name="Cells",
+    measurement_mode="global",
+    description=(
+        "Segment individual cells. Non-overlapping segmented cells can be "
+        "tagged and categorized, and analyzed individually."
+    ),
+    category="area",
+    representation="instances",
+    topology_policy="non_overlapping",
 )
 
 # A manual mask that belongs to one image rather than to a reusable
@@ -60,6 +85,10 @@ ANALYSIS_MASK = SegmentationTypeDefinition(
     short_name="Analysis mask",
     long_name="Analysis Segmentation Mask",
     measurement_mode="global",
+    description="Legacy image-specific analysis area.",
+    category="area",
+    representation="instances",
+    topology_policy="overlapping",
 )
 
 # The four released organelles. TISSUE is deliberately excluded: it is a
@@ -74,6 +103,7 @@ ORGANELLE_SEGMENTATION_TYPES: tuple[SegmentationTypeDefinition, ...] = (
 BUILTIN_SEGMENTATION_TYPES: tuple[SegmentationTypeDefinition, ...] = (
     *ORGANELLE_SEGMENTATION_TYPES,
     TISSUE,
+    CELLS,
     ANALYSIS_MASK,
 )
 
@@ -83,7 +113,13 @@ BUILTIN_SEGMENTATION_TYPES_BY_INTERNAL_NAME: dict[str, SegmentationTypeDefinitio
 
 # Segmentation types that are labeled entirely by hand: creating one never
 # enqueues a segmenter job and the segmentation is immediately ready to label.
-MANUAL_ONLY_INTERNAL_NAMES = frozenset({TISSUE.internal_name, ANALYSIS_MASK.internal_name})
+MANUAL_ONLY_INTERNAL_NAMES = frozenset(
+    {TISSUE.internal_name, CELLS.internal_name, ANALYSIS_MASK.internal_name}
+)
+
+AREA_INTERNAL_NAMES = frozenset({TISSUE.internal_name, CELLS.internal_name, ANALYSIS_MASK.internal_name})
+
+SAMPLE_AREA_NAME_ALIASES = frozenset({"tissue", "tissue mask", "sample area"})
 
 ORGANELLE_INTERNAL_NAMES = frozenset(
     definition.internal_name for definition in ORGANELLE_SEGMENTATION_TYPES
@@ -99,6 +135,9 @@ def find_builtin_segmentation_type(
     candidate = name.strip().casefold()
     if not candidate:
         return None
+
+    if candidate in SAMPLE_AREA_NAME_ALIASES:
+        return TISSUE
 
     for definition in BUILTIN_SEGMENTATION_TYPES:
         if candidate in {

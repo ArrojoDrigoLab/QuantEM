@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import secrets
 
 from django.db import transaction
@@ -19,6 +18,11 @@ from quantem.segmentation.api_views.segments.shared import (
     outline_geometry,
     parse_outline_pieces,
 )
+from quantem.segmentation.area_instances import (
+    AREA_INSTANCE_COLORS,
+    default_instance_name,
+    materialize_legacy_area_instances,
+)
 from quantem.segmentation.geometry.polygons import normalize_polygonal_geometry
 from quantem.segmentation.geometry_serialization import geometry_payload
 from quantem.segmentation.global_masks import save_global_mask_from_geometries
@@ -31,21 +35,6 @@ from quantem.segmentation.services.confirm_batch.geometry import (
     safe_difference,
     safe_union,
 )
-from quantem.segmentation.type_definitions import ANALYSIS_MASK
-
-_OBJECT_NAME = re.compile(r"^Object\s+(\d+)$", re.IGNORECASE)
-_OBJECT_COLORS = (
-    "#38bdf8",
-    "#22c55e",
-    "#f97316",
-    "#a855f7",
-    "#f43f5e",
-    "#eab308",
-    "#14b8a6",
-    "#6366f1",
-    "#ec4899",
-    "#84cc16",
-)
 
 
 def _analysis_segmentation(seg_id) -> ImageSegmentation:
@@ -53,8 +42,8 @@ def _analysis_segmentation(seg_id) -> ImageSegmentation:
         ImageSegmentation.objects.select_related("asset", "segmentation_type"),
         id=seg_id,
     )
-    if segmentation.segmentation_type.internal_name != ANALYSIS_MASK.internal_name:
-        raise ValueError("Named analysis-mask objects belong only to an Analysis Mask.")
+    if segmentation.segmentation_type.category != segmentation.segmentation_type.CATEGORY_AREA:
+        raise ValueError("Area objects belong only to an area segmentation.")
     return segmentation
 
 
@@ -71,23 +60,35 @@ def _object_payload(obj: AnalysisMaskObject) -> dict:
     }
 
 
-def _next_object_name(segmentation: ImageSegmentation) -> str:
-    largest = 0
-    for name in AnalysisMaskObject.objects.filter(segmentation=segmentation).values_list(
-        "name", flat=True
-    ):
-        match = _OBJECT_NAME.fullmatch(str(name).strip())
-        if match:
-            largest = max(largest, int(match.group(1)))
-    return f"Object {largest + 1}"
-
-
 def _next_color(segmentation: ImageSegmentation) -> str:
     used = set(
         AnalysisMaskObject.objects.filter(segmentation=segmentation).values_list("color", flat=True)
     )
-    available = [color for color in _OBJECT_COLORS if color not in used]
-    return secrets.choice(available or list(_OBJECT_COLORS))
+    available = [color for color in AREA_INSTANCE_COLORS if color not in used]
+    return secrets.choice(available or list(AREA_INSTANCE_COLORS))
+
+
+def _overlaps_another_instance(
+    segmentation: ImageSegmentation,
+    geometry: BaseGeometry | None,
+    *,
+    exclude_id=None,
+) -> bool:
+    if geometry is None or geometry.is_empty:
+        return False
+    if (
+        segmentation.segmentation_type.topology_policy
+        != segmentation.segmentation_type.TOPOLOGY_NON_OVERLAPPING
+    ):
+        return False
+    objects = AnalysisMaskObject.objects.filter(segmentation=segmentation)
+    if exclude_id:
+        objects = objects.exclude(id=exclude_id)
+    for other in objects.iterator():
+        other_geometry = other.geometry
+        if other_geometry is not None and geometry.intersection(other_geometry).area > 0:
+            return True
+    return False
 
 
 def _parse_shapes(segmentation: ImageSegmentation, raw_shapes: object) -> BaseGeometry | None:
@@ -165,6 +166,7 @@ class AnalysisMaskObjectListCreateView(APIView):
             segmentation = _analysis_segmentation(seg_id)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        materialize_legacy_area_instances(segmentation)
         objects = AnalysisMaskObject.objects.filter(segmentation=segmentation)
         return Response(
             {
@@ -203,6 +205,7 @@ class AnalysisMaskObjectListCreateView(APIView):
             )
 
         with transaction.atomic():
+            materialize_legacy_area_instances(segmentation)
             if object_id:
                 obj = get_object_or_404(
                     AnalysisMaskObject.objects.select_for_update(),
@@ -218,7 +221,7 @@ class AnalysisMaskObjectListCreateView(APIView):
                 )
                 obj = AnalysisMaskObject(
                     segmentation=segmentation,
-                    name=_next_object_name(segmentation),
+                    name=default_instance_name(segmentation),
                     color=_next_color(segmentation),
                     sort_order=int(last_order) + 1,
                 )
@@ -228,6 +231,20 @@ class AnalysisMaskObjectListCreateView(APIView):
                 result = safe_union(current, incoming)
             else:
                 result = safe_difference(current, incoming) if current is not None else None
+            if _overlaps_another_instance(
+                segmentation,
+                result,
+                exclude_id=obj.id if obj.pk else None,
+            ):
+                return Response(
+                    {
+                        "error": (
+                            "This definition uses non-overlapping instances. "
+                            "Adjust the shape so it does not cover another instance."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             obj.geometry = result
             obj.save()
 
@@ -275,10 +292,11 @@ class AnalysisMaskObjectDetailView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         name = str(request.data.get("name") or "").strip()
-        if not name:
+        if not name and (
+            obj.segmentation.segmentation_type.internal_name == "quantem_internal_cells"
+        ):
             return Response(
-                {"error": "Object name cannot be empty."},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"error": "Cell name cannot be empty."}, status=status.HTTP_400_BAD_REQUEST
             )
         if len(name) > 100:
             return Response(
@@ -317,6 +335,7 @@ class AnalysisMaskObjectSaveView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
+            materialize_legacy_area_instances(segmentation)
             record = _rebuild(segmentation)
             if segmentation.status_stage != "CANDIDATES_READY":
                 segmentation.status_stage = "CANDIDATES_READY"

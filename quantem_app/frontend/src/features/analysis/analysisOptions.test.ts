@@ -11,7 +11,8 @@ import type { ImageSegmentation } from "@/shared/types/images";
 function makeSegmentation(
   id: string,
   internalName: string,
-  longName = internalName
+  longName = internalName,
+  category: "organelle" | "area" = "organelle"
 ): ImageSegmentation {
   return {
     id,
@@ -20,6 +21,9 @@ function makeSegmentation(
       internal_name: internalName,
       short_name: longName,
       long_name: longName,
+      category,
+      representation: category === "area" ? "semantic" : "instances",
+      topology_policy: "non_overlapping",
       default_color: null,
       tags: [],
       created_at: "2026-01-01T00:00:00Z",
@@ -27,6 +31,7 @@ function makeSegmentation(
     },
     status_stage: "CANDIDATES_READY",
     status_progress: 100,
+    has_saved_area: true,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   };
@@ -34,17 +39,19 @@ function makeSegmentation(
 
 const MITO = makeSegmentation("seg-mito", "quantem_internal_mito", "Mitochondria");
 const NUCLEUS = makeSegmentation("seg-nuc", "quantem_internal_nucleus", "Nucleus");
-const TISSUE = makeSegmentation("seg-tis", "quantem_internal_tissue", "Tissue");
+const TISSUE = makeSegmentation("seg-tis", "quantem_internal_tissue", "Sample Area", "area");
+const CELLS = makeSegmentation("seg-cells", "quantem_internal_cells", "Cells", "area");
 const ANALYSIS_MASK = makeSegmentation(
   "seg-mask",
   "quantem_internal_analysis_mask",
-  "Analysis Mask"
+  "Analysis Mask",
+  "area"
 );
 const CUSTOM = makeSegmentation("seg-x", "my_own_thing", "My own thing");
 
 function baseState(overrides: Partial<AnalysisFormState> = {}): AnalysisFormState {
   return {
-    ...defaultFormState([MITO, NUCLEUS, TISSUE, ANALYSIS_MASK], MITO.id),
+    ...defaultFormState([MITO, NUCLEUS, TISSUE, CELLS, ANALYSIS_MASK], MITO.id),
     ...overrides,
   };
 }
@@ -61,18 +68,26 @@ describe("compartmentNameFor", () => {
 });
 
 describe("defaultFormState", () => {
-  it("preselects the first analysis mask", () => {
-    const state = defaultFormState([MITO, NUCLEUS, TISSUE, ANALYSIS_MASK], MITO.id);
-    expect(state.tissueSegmentationId).toBe(ANALYSIS_MASK.id);
+  it("preselects populated Sample Area and Cells layers", () => {
+    const state = defaultFormState([MITO, NUCLEUS, TISSUE, CELLS], MITO.id);
+    expect(state.tissueSegmentationId).toBe(TISSUE.id);
+    expect(state.cellSegmentationId).toBe(CELLS.id);
+    expect(state.outputs).toEqual({
+      whole_image: true,
+      sample_area: true,
+      all_cells: true,
+      per_cell: true,
+      individual_objects: true,
+    });
   });
 
-  it("keeps masks out of compartments and enables only the segmentation opened", () => {
-    const state = defaultFormState([MITO, NUCLEUS, TISSUE, ANALYSIS_MASK], MITO.id);
+  it("keeps areas out of compartments and enables every organelle with data", () => {
+    const state = defaultFormState([MITO, NUCLEUS, TISSUE, CELLS, ANALYSIS_MASK], MITO.id);
     expect(state.compartments.map((entry) => entry.segmentationId)).toEqual([
       MITO.id,
       NUCLEUS.id,
     ]);
-    expect(state.compartments.filter((entry) => entry.enabled)).toHaveLength(1);
+    expect(state.compartments.filter((entry) => entry.enabled)).toHaveLength(2);
     expect(state.compartments[0].enabled).toBe(true);
   });
 });
@@ -94,7 +109,9 @@ describe("buildAnalysisPayload", () => {
     const { payload, error } = buildAnalysisPayload(baseState());
     expect(error).toBeNull();
     expect(payload?.compartments).toEqual({ mito: MITO.id });
-    expect(payload?.tissue_segmentation_id).toBe(ANALYSIS_MASK.id);
+    expect(payload?.tissue_segmentation_id).toBe(TISSUE.id);
+    expect(payload?.cell_segmentation_id).toBe(CELLS.id);
+    expect(payload?.outputs?.per_cell).toBe(true);
     expect(payload?.band_edges_nm).toEqual([0, 50, 100, 200]);
   });
 

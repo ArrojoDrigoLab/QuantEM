@@ -21,6 +21,7 @@ export const DEFAULT_SEED = 12345;
 export const MAX_REPLICATES = 1000;
 
 export const TISSUE_INTERNAL_NAME = "quantem_internal_tissue";
+export const CELLS_INTERNAL_NAME = "quantem_internal_cells";
 export const ANALYSIS_MASK_INTERNAL_NAME = "quantem_internal_analysis_mask";
 
 /**
@@ -57,6 +58,15 @@ export interface AnalysisFormState {
   compartments: CompartmentSelection[];
   /** "" means no analysis mask: the whole image is the denominator. */
   tissueSegmentationId: string;
+  /** "" means no Cells layer is used. */
+  cellSegmentationId: string;
+  outputs: {
+    whole_image: boolean;
+    sample_area: boolean;
+    all_cells: boolean;
+    per_cell: boolean;
+    individual_objects: boolean;
+  };
   pointsSource: PointsSourceChoice;
   pointsCsv: string;
   /** "" means no distance analysis. */
@@ -75,24 +85,46 @@ export function defaultFormState(
   segmentations: ImageSegmentation[],
   primarySegmentationId: string
 ): AnalysisFormState {
-  const analysisMask = segmentations.find(
-    (seg) => seg.segmentation_type.internal_name === ANALYSIS_MASK_INTERNAL_NAME
+  void primarySegmentationId;
+  const sampleArea = segmentations.find(
+    (seg) =>
+      seg.segmentation_type.internal_name === TISSUE_INTERNAL_NAME &&
+      seg.has_saved_area === true
+  );
+  const cells = segmentations.find(
+    (seg) =>
+      seg.segmentation_type.internal_name === CELLS_INTERNAL_NAME &&
+      seg.has_saved_area === true
   );
   return {
     compartments: segmentations
       .filter(
         (seg) =>
-          seg.segmentation_type.internal_name !== TISSUE_INTERNAL_NAME &&
-          seg.segmentation_type.internal_name !== ANALYSIS_MASK_INTERNAL_NAME
+          (seg.segmentation_type.category ??
+            (seg.segmentation_type.internal_name === TISSUE_INTERNAL_NAME ||
+            seg.segmentation_type.internal_name === CELLS_INTERNAL_NAME ||
+            seg.segmentation_type.internal_name === ANALYSIS_MASK_INTERNAL_NAME
+              ? "area"
+              : "organelle")) === "organelle"
       )
       .map((seg) => ({
         segmentationId: seg.id,
         name: compartmentNameFor(seg),
-        // Only the segmentation the screen was opened on is on by default:
-        // every extra compartment is another full-resolution rasterisation.
-        enabled: seg.id === primarySegmentationId,
+        // Every organelle with authoritative saved data participates by
+        // default. A reviewed zero-object result still counts as data.
+        enabled:
+          seg.has_saved_area === true ||
+          seg.status_stage === "COMPLETED",
       })),
-    tissueSegmentationId: analysisMask?.id ?? "",
+    tissueSegmentationId: sampleArea?.id ?? "",
+    cellSegmentationId: cells?.id ?? "",
+    outputs: {
+      whole_image: true,
+      sample_area: Boolean(sampleArea),
+      all_cells: Boolean(cells),
+      per_cell: Boolean(cells),
+      individual_objects: true,
+    },
     pointsSource: "none",
     pointsCsv: "",
     distanceTarget: "",
@@ -227,6 +259,8 @@ export function buildAnalysisPayload(state: AnalysisFormState): PayloadResult {
     payload: {
       compartments,
       tissue_segmentation_id: state.tissueSegmentationId || null,
+      cell_segmentation_id: state.cellSegmentationId || null,
+      outputs: state.outputs,
       objects_in_measurement_area: true,
       points_source: pointsSource,
       points_csv: pointsSource === "csv" ? state.pointsCsv : "",

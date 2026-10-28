@@ -20,6 +20,18 @@ def input_fingerprint(segmentation, params):
     ids.update(str(v) for v in params.get("analysis_mask_ids", []))
     if params.get("tissue_segmentation_id"):
         ids.add(str(params["tissue_segmentation_id"]))
+    if params.get("cell_segmentation_id"):
+        ids.add(str(params["cell_segmentation_id"]))
+    # Consolidated legacy area masks remain as superseded source rows so their
+    # raster files can be unioned without rewriting user data during a schema
+    # migration. They are therefore measurement inputs and must invalidate a
+    # saved run if one changes.
+    ids.update(
+        str(value)
+        for value in ImageSegmentation.objects.filter(
+            superseded_by_id__in=ids
+        ).values_list("id", flat=True)
+    )
     digest = hashlib.sha256()
     asset = Asset.objects.select_related("workflow_metadata").get(id=segmentation.asset_id)
     metadata = getattr(asset, "workflow_metadata", None)

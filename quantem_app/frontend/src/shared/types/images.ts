@@ -280,9 +280,13 @@ export interface SegmentationType {
   internal_name: string;
   short_name: string;
   long_name: string;
+  description?: string;
   default_color?: string | null;
   /** Object types export per-object metrics; global types use the whole mask. */
   measurement_mode?: "objects" | "global";
+  category?: "organelle" | "area";
+  representation?: "instances" | "semantic";
+  topology_policy?: "non_overlapping" | "overlapping";
   /** Built-in types ship with QuantEM; custom types can be reused across images. */
   kind?: "builtin" | "custom";
   tags: SegmentationTypeTag[];
@@ -451,6 +455,8 @@ export interface ImageSegmentation {
    * backend. See {@link SegmentationObjectsPixelSize}.
    */
   objects_pixel_size?: SegmentationObjectsPixelSize | null;
+  /** True only when this layer has a saved non-empty mask/object set. */
+  has_saved_area?: boolean;
   status_stage: StatusStage;
   status_stage_display?: string;
   status_progress: number;

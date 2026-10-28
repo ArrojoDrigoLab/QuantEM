@@ -14,6 +14,110 @@ export interface AnalysisResultsProps {
   run: AnalysisRun;
 }
 
+function StructuredAnalysisPanel({ run }: { run: AnalysisRun }) {
+  const structured = run.structured_analysis;
+  if (!structured) return null;
+  return (
+    <Panel className="p-4">
+      <h3 className="m-0 text-sm font-semibold text-slate-900">
+        Region and cell outputs
+      </h3>
+      <p className="m-0 mt-1 text-sm text-slate-600">
+        {structured.n_cells} cell(s) · {structured.n_organelle_objects} exported
+        organelle object(s)
+      </p>
+      {structured.warnings.map((warning) => (
+        <div
+          key={warning.code}
+          role="alert"
+          className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          <strong>{warning.message}</strong>
+          {warning.cells?.length ? (
+            <p className="mb-0 mt-1">
+              Applicable cells: {warning.cells.map((cell) => cell.name).join(", ")}.
+            </p>
+          ) : null}
+        </div>
+      ))}
+      <div className="mt-3 flex flex-wrap gap-4 text-sm">
+        {(["region_summary.csv", "cell_summary.csv", "organelle_objects.csv"] as const)
+          .filter((name) => run.exports.includes(name))
+          .map((name) => (
+            <a
+              key={name}
+              className="text-cyan-800 underline"
+              href={getAnalysisExportUrl(run.id, name)}
+            >
+              {name}
+            </a>
+          ))}
+      </div>
+      {structured.region_summary.length > 0 ? (
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead>
+              <tr className="border-b text-slate-500">
+                <th className="py-1 pr-3">Area</th>
+                <th className="py-1 pr-3">Organelle</th>
+                <th className="py-1 pr-3">Area fraction</th>
+                <th className="py-1">Objects</th>
+              </tr>
+            </thead>
+            <tbody>
+              {structured.region_summary.map((row, index) => (
+                <tr key={`${String(row.region_kind)}-${String(row.segmentation_id)}-${index}`} className="border-b border-slate-100">
+                  <td className="py-1 pr-3">{String(row.region_name ?? row.region_kind)}</td>
+                  <td className="py-1 pr-3">{String(row.organelle ?? "")}</td>
+                  <td className="py-1 pr-3">
+                    {typeof row.area_fraction === "number"
+                      ? `${(row.area_fraction * 100).toFixed(2)}%`
+                      : "—"}
+                  </td>
+                  <td className="py-1">{String(row.object_count ?? "—")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {structured.cell_summary.length > 0 ? (
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead>
+              <tr className="border-b text-slate-500">
+                <th className="py-1 pr-3">Cell</th>
+                <th className="py-1 pr-3">Organelle</th>
+                <th className="py-1 pr-3">Area fraction</th>
+                <th className="py-1">Objects</th>
+              </tr>
+            </thead>
+            <tbody>
+              {structured.cell_summary.slice(0, 12).map((row, index) => (
+                <tr key={`${String(row.cell_id)}-${String(row.segmentation_id)}-${index}`} className="border-b border-slate-100">
+                  <td className="py-1 pr-3">{String(row.cell_name ?? row.cell_id)}</td>
+                  <td className="py-1 pr-3">{String(row.organelle ?? "")}</td>
+                  <td className="py-1 pr-3">
+                    {typeof row.area_fraction === "number"
+                      ? `${(row.area_fraction * 100).toFixed(2)}%`
+                      : "—"}
+                  </td>
+                  <td className="py-1">{String(row.object_count ?? "—")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {structured.cell_summary.length > 12 ? (
+            <p className="mb-0 mt-2 text-xs text-slate-500">
+              Showing 12 of {structured.cell_summary.length} rows. Download the CSV for all cells.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
 /**
  * How many points this section is actually about.
  *
@@ -118,6 +222,8 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
       </Panel>
 
       <AnalysisNotes notes={run.caveats} />
+
+      <StructuredAnalysisPanel run={run} />
 
       {run.composition ? (
         <CompositionPanel

@@ -13,6 +13,10 @@ from quantem.assets.models import Asset
 from quantem.jobs.constants import JOB_DEFAULTS, JOB_TYPE_RUN_ANALYSIS
 from quantem.jobs.models import Job
 from quantem.library.sample_identity import sample_identity
+from quantem.segmentation.area_instances import (
+    is_instance_area,
+    materialize_legacy_area_instances,
+)
 from quantem.segmentation.models import ImageSegmentation
 
 
@@ -59,7 +63,27 @@ def image_identity(asset: Asset) -> dict:
 
 
 def prepare_analysis(segmentation: ImageSegmentation, data: dict) -> PreparedAnalysis:
-    global_mode = segmentation.segmentation_type.measurement_mode == "global"
+    # Semantic organelles (notably ER) still participate in the composite
+    # organelle analysis. Only area definitions use the legacy foreground-only
+    # report when opened as the subject of a run.
+    legacy_global_mode = (
+        segmentation.segmentation_type.measurement_mode
+        == segmentation.segmentation_type.MEASUREMENT_MODE_GLOBAL
+        and not any(
+            key in data
+            for key in (
+                "outputs",
+                "compartments",
+                "tissue_segmentation_id",
+                "cell_segmentation_id",
+            )
+        )
+    )
+    global_mode = (
+        segmentation.segmentation_type.category
+        == segmentation.segmentation_type.CATEGORY_AREA
+        or legacy_global_mode
+    )
     serializer_type = GlobalAnalysisSerializer if global_mode else AnalysisRunCreateSerializer
     serializer = serializer_type(data=data, context={"segmentation": segmentation})
     serializer.is_valid(raise_exception=True)
@@ -69,15 +93,24 @@ def prepare_analysis(segmentation: ImageSegmentation, data: dict) -> PreparedAna
     mask_ids = params.get("analysis_mask_ids", [])
     if params.get("tissue_segmentation_id"):
         mask_ids = [params["tissue_segmentation_id"]]
+    if params.get("cell_segmentation_id"):
+        mask_ids = [*mask_ids, params["cell_segmentation_id"]]
     masks = (
         ImageSegmentation.objects.filter(id__in=mask_ids)
         .select_related("segmentation_type")
         .order_by("id")
     )
+    # A legacy raster area becomes persistent connected-component instances on
+    # first use.  Do that before taking the input fingerprint so loading the
+    # queued run cannot mutate its own inputs and make its snapshot stale.
+    for mask in masks:
+        if is_instance_area(mask):
+            materialize_legacy_area_instances(mask)
     area = ", ".join(mask.display_name or mask.segmentation_type.long_name for mask in masks)
     identity = {
         **image_identity(segmentation.asset),
         "organelle": segmentation.segmentation_type.internal_name,
+        "segmentation_type_id": str(segmentation.segmentation_type_id),
         "structure": segmentation.display_name
         or segmentation.segmentation_type.short_name
         or segmentation.segmentation_type.long_name,

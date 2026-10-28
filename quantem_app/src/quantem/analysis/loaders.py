@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from django.db.models import Count, QuerySet
 
+from quantem.segmentation.area_instances import materialize_legacy_area_instances
 from quantem.segmentation.features.measure import MEASURED_MARKER_KEY
 from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.instance_params import (
@@ -75,6 +76,7 @@ from .compartments import AnalysisRegionMask, CompartmentSet
 from .distances import DEFAULT_BAND_EDGES_NM
 from .models import AnalysisRun
 from .montecarlo import DEFAULT_REPLICATES, DEFAULT_SEED
+from .output_options import normalise_output_selection
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle only matters to type checkers
     from .service import AnalysisInputs
@@ -385,12 +387,71 @@ def segmentation_mask(
     are the union of their confirmed object polygons.
     """
     if segmentation.segmentation_type.measurement_mode == "global":
-        mask = load_global_mask(segmentation)
-        if mask.shape != shape:
-            raise AnalysisInputError(
-                f"Stored global mask shape {mask.shape} does not match image shape {shape}."
-            )
-        return mask.astype(bool, copy=False)
+        definition = segmentation.segmentation_type
+        if (
+            definition.category == definition.CATEGORY_AREA
+            and definition.representation == definition.REPRESENTATION_INSTANCES
+        ):
+            materialize_legacy_area_instances(segmentation)
+            regions = analysis_mask_regions(segmentation, shape)
+            if regions:
+                instance_mask = np.zeros(shape, dtype=bool)
+                for region in regions:
+                    y1 = region.y0 + region.mask.shape[0]
+                    x1 = region.x0 + region.mask.shape[1]
+                    instance_mask[region.y0:y1, region.x0:x1] |= region.mask
+                return instance_mask
+        area_regions = (
+            _area_object_regions(segmentation, shape)
+            if definition.category == definition.CATEGORY_AREA
+            else ()
+        )
+        if area_regions:
+            # Vector area objects are the editable, newest state. Their global
+            # raster may be the last explicit Save and can therefore be stale.
+            mask = np.zeros(shape, dtype=bool)
+        else:
+            mask = load_global_mask(segmentation)
+            if mask.shape != shape:
+                raise AnalysisInputError(
+                    f"Stored global mask shape {mask.shape} does not match image shape {shape}."
+                )
+            mask = mask.astype(bool, copy=False)
+        if definition.category == definition.CATEGORY_AREA:
+            # A legacy named Analysis Mask migrated to Sample Area may have
+            # carried persistent vector objects instead of (or in addition to)
+            # its raster. Multiple legacy masks are retained as superseded
+            # sources so their files remain auditable; Sample Area means their
+            # union, not whichever row happened to migrate first.
+            for region in area_regions:
+                y1 = region.y0 + region.mask.shape[0]
+                x1 = region.x0 + region.mask.shape[1]
+                mask[region.y0:y1, region.x0:x1] |= region.mask
+            for source in segmentation.superseded_segmentations.select_related(
+                "segmentation_type"
+            ).all():
+                try:
+                    source_record = source.global_mask
+                except Exception:
+                    source_record = None
+                if (
+                    source_record is not None
+                    and (source_record.metadata or {}).get("instances_migrated_to")
+                    == str(segmentation.id)
+                ):
+                    continue
+                source_mask = load_global_mask(source)
+                if source_mask.shape != shape:
+                    raise AnalysisInputError(
+                        f"Stored global mask shape {source_mask.shape} does not match "
+                        f"image shape {shape}."
+                    )
+                mask |= source_mask.astype(bool, copy=False)
+                for region in _area_object_regions(source, shape):
+                    y1 = region.y0 + region.mask.shape[0]
+                    x1 = region.x0 + region.mask.shape[1]
+                    mask[region.y0:y1, region.x0:x1] |= region.mask
+        return mask
 
     cached_mask = _settled_overlay_mask(
         segmentation,
@@ -439,17 +500,11 @@ def segmentation_mask(
     return mask
 
 
-def analysis_mask_regions(
-    segmentation: ImageSegmentation | None,
+def _area_object_regions(
+    segmentation: ImageSegmentation,
     shape: tuple[int, int],
 ) -> tuple[AnalysisRegionMask, ...]:
-    """Rasterise each named Analysis Mask object inside its own bounding box."""
-    if (
-        segmentation is None
-        or segmentation.segmentation_type.internal_name != ANALYSIS_MASK.internal_name
-    ):
-        return ()
-
+    """Rasterise the saved area-object rows without interpreting their role."""
     height, width = shape
     regions: list[AnalysisRegionMask] = []
     objects = AnalysisMaskObject.objects.filter(segmentation=segmentation).order_by(
@@ -478,13 +533,31 @@ def analysis_mask_regions(
         regions.append(
             AnalysisRegionMask(
                 identifier=str(obj.id),
-                name=obj.name,
+                name=obj.name or f"Area {len(regions) + 1}",
                 x0=x0,
                 y0=y0,
                 mask=labels != 0,
             )
         )
     return tuple(regions)
+
+
+def analysis_mask_regions(
+    segmentation: ImageSegmentation | None,
+    shape: tuple[int, int],
+) -> tuple[AnalysisRegionMask, ...]:
+    """Rasterise each persistent instance in an instance-area layer."""
+    if segmentation is None:
+        return ()
+    definition = segmentation.segmentation_type
+    if not (
+        definition.category == definition.CATEGORY_AREA
+        and definition.representation == definition.REPRESENTATION_INSTANCES
+    ):
+        return ()
+
+    materialize_legacy_area_instances(segmentation)
+    return _area_object_regions(segmentation, shape)
 
 
 # ---------------------------------------------------------------------------
@@ -828,6 +901,15 @@ def normalise_params(raw: dict[str, Any], *, segmentation: ImageSegmentation) ->
         _resolve_segmentation(tissue_id, asset_id=segmentation.asset_id, role="the tissue mask")
         tissue_id = str(tissue_id)
 
+    cell_id = raw.get("cell_segmentation_id") or None
+    if cell_id:
+        cells = _resolve_segmentation(
+            cell_id, asset_id=segmentation.asset_id, role="the Cells layer"
+        )
+        if cells.segmentation_type.internal_name != "quantem_internal_cells":
+            raise AnalysisInputError("The per-cell output requires the image's Cells layer.")
+        cell_id = str(cell_id)
+
     points_source = raw.get("points_source") or None
     if points_source is not None and points_source not in POINT_SOURCES:
         raise AnalysisInputError(
@@ -879,6 +961,17 @@ def normalise_params(raw: dict[str, Any], *, segmentation: ImageSegmentation) ->
     return {
         "compartments": compartments,
         "tissue_segmentation_id": tissue_id,
+        "cell_segmentation_id": cell_id,
+        # Older API clients pre-date the structured region/cell/object exports.
+        # Preserve their bundle shape unless they opt in with the new outputs
+        # object (or explicitly request a Cells layer).  The current UI always
+        # sends outputs, including when only whole-image output is selected.
+        "structured_outputs_enabled": (
+            bool(raw["structured_outputs_enabled"])
+            if "structured_outputs_enabled" in raw
+            else "outputs" in raw or bool(cell_id)
+        ),
+        "outputs": normalise_output_selection(raw.get("outputs")),
         "points_source": points_source,
         "points_csv": points_csv,
         "distance_target": distance_target,

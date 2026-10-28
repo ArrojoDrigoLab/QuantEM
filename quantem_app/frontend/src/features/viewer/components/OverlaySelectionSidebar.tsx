@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import type { ImageSegmentation, StatusStage } from "@/shared/types";
 import type { SegmentationOverlayManifest } from "@/shared/types/segmentation";
 import { segmentationHasResults } from "@/shared/constants/segmentation";
@@ -29,7 +29,12 @@ function segmentationListName(
   if (ORGANELLE_INTERNAL_NAMES.has(segmentation.segmentation_type.internal_name)) {
     return name;
   }
-  const suffix = segmentation.segmentation_type.kind === "custom" ? "Custom" : "Analysis";
+  const suffix =
+    segmentation.segmentation_type.category === "area"
+      ? "Area"
+      : segmentation.segmentation_type.kind === "custom"
+        ? "Custom"
+        : "Analysis";
   return `${name} (${suffix})`;
 }
 
@@ -122,6 +127,13 @@ export function OverlaySelectionSidebar({
     if (!counts) return null;
     return Object.values(counts).reduce((sum, value) => sum + (value ?? 0), 0);
   };
+  const areaOverlays = overlays.filter(
+    (overlay) => overlay.segmentation.segmentation_type.category === "area"
+  );
+  const organelleOverlays = overlays.filter(
+    (overlay) => overlay.segmentation.segmentation_type.category !== "area"
+  );
+  const orderedOverlays = [...areaOverlays, ...organelleOverlays];
 
   return (
     <aside className="overlay-sidebar">
@@ -143,7 +155,7 @@ export function OverlaySelectionSidebar({
             <div className="overlay-empty">No segmentations available.</div>
           ) : (
             <div className="overlay-list">
-              {overlays.map((overlay) => {
+              {orderedOverlays.map((overlay, index) => {
                 const segmentation = overlay.segmentation;
                 const stage = segmentation.status_stage;
                 const canDraw = segmentationHasResults(stage);
@@ -159,8 +171,11 @@ export function OverlaySelectionSidebar({
                 const finished = isCompleted(stage);
 
                 return (
+                  <Fragment key={segmentation.id}>
+                    {index === areaOverlays.length && areaOverlays.length > 0 && organelleOverlays.length > 0 ? (
+                      <div className="overlay-list-divider" role="separator" />
+                    ) : null}
                   <div
-                    key={segmentation.id}
                     className={
                       canDraw
                         ? "overlay-item"
@@ -304,6 +319,7 @@ export function OverlaySelectionSidebar({
                       </div>
                     ) : null}
                   </div>
+                  </Fragment>
                 );
               })}
             </div>

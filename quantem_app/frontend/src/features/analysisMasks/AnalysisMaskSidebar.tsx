@@ -29,6 +29,7 @@ interface AnalysisMaskSidebarProps {
   navigateMode: boolean;
   onNavigateModeChange: (enabled: boolean) => void;
   objects: AnalysisMaskObject[];
+  objectNamesRequired?: boolean;
   activeObjectId: string | null;
   busy: boolean;
   onEditObject: (objectId: string) => void;
@@ -90,6 +91,8 @@ function PolygonIcon() {
 
 function AnalysisMaskObjectRow({
   object,
+  fallbackName,
+  nameRequired,
   active,
   busy,
   onEdit,
@@ -98,6 +101,8 @@ function AnalysisMaskObjectRow({
   onRequestDelete,
 }: {
   object: AnalysisMaskObject;
+  fallbackName: string;
+  nameRequired: boolean;
   active: boolean;
   busy: boolean;
   onEdit: () => void;
@@ -107,12 +112,13 @@ function AnalysisMaskObjectRow({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(object.name);
+  const displayName = object.name || fallbackName;
 
   useEffect(() => setDraftName(object.name), [object.name]);
 
   const saveName = async () => {
     const next = draftName.trim();
-    if (!next) return;
+    if (nameRequired && !next) return;
     await onRename(next);
     setRenaming(false);
   };
@@ -125,7 +131,7 @@ function AnalysisMaskObjectRow({
       <div className="analysis-mask-object-name">
         {renaming ? (
           <input
-            aria-label={`Name for ${object.name}`}
+            aria-label={`Name for ${displayName}`}
             value={draftName}
             maxLength={100}
             autoFocus
@@ -141,16 +147,16 @@ function AnalysisMaskObjectRow({
             }}
           />
         ) : (
-          <span>{object.name}</span>
+          <span>{displayName}</span>
         )}
       </div>
       <div className="analysis-mask-object-actions">
         <button
           type="button"
           className="analysis-mask-icon-button"
-          aria-label={renaming ? `Save name for ${object.name}` : `Rename ${object.name}`}
+          aria-label={renaming ? `Save name for ${displayName}` : `Rename ${displayName}`}
           title={renaming ? "Save name" : "Rename object"}
-          disabled={busy || (renaming && !draftName.trim())}
+          disabled={busy || (renaming && nameRequired && !draftName.trim())}
           onClick={() => {
             if (renaming) void saveName();
             else setRenaming(true);
@@ -161,7 +167,7 @@ function AnalysisMaskObjectRow({
         <button
           type="button"
           className="analysis-mask-icon-button danger"
-          aria-label={`Delete ${object.name}`}
+          aria-label={`Delete ${displayName}`}
           title="Delete object"
           disabled={busy}
           onClick={onRequestDelete}
@@ -197,6 +203,7 @@ export function AnalysisMaskSidebar({
   navigateMode,
   onNavigateModeChange,
   objects,
+  objectNamesRequired = false,
   activeObjectId,
   busy,
   onEditObject,
@@ -293,13 +300,15 @@ export function AnalysisMaskSidebar({
       <section className="analysis-mask-sidebar-section analysis-mask-objects-section">
         <h3>Objects</h3>
         {objects.length === 0 ? (
-          <p className="analysis-mask-empty">Draw a polygon or brush stroke to create Object 1.</p>
+          <p className="analysis-mask-empty">Draw a polygon or brush stroke to create the first area.</p>
         ) : (
           <div className="analysis-mask-object-list">
-            {objects.map((object) => (
+            {objects.map((object, index) => (
               <AnalysisMaskObjectRow
                 key={object.id}
                 object={object}
+                fallbackName={`Area ${index + 1}`}
+                nameRequired={objectNamesRequired}
                 active={object.id === activeObjectId}
                 busy={busy}
                 onEdit={() => onEditObject(object.id)}

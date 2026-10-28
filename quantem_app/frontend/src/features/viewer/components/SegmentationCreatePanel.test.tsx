@@ -4,7 +4,10 @@ import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SegmentationCreatePanel } from "@/features/viewer/components/SegmentationCreatePanel";
-import { createAssetSegmentation } from "@/shared/api/assets";
+import {
+  createAssetSegmentation,
+  createSegmentationType,
+} from "@/shared/api/assets";
 import type { ModelPack } from "@/shared/types/finetune";
 import { server } from "@/test/msw/server";
 
@@ -12,7 +15,11 @@ vi.mock("@/shared/api/assets", async () => {
   const actual = await vi.importActual<typeof import("@/shared/api/assets")>(
     "@/shared/api/assets"
   );
-  return { ...actual, createAssetSegmentation: vi.fn() };
+  return {
+    ...actual,
+    createAssetSegmentation: vi.fn(),
+    createSegmentationType: vi.fn(),
+  };
 });
 
 function installedMitoPack(): ModelPack {
@@ -227,7 +234,7 @@ describe("SegmentationCreatePanel", () => {
     );
   });
 
-  it("creates reusable custom types without opening the model dialog", async () => {
+  it("selects an existing Custom Organelle definition from the modal", async () => {
     server.use(
       http.get("http://127.0.0.1:8000/api/segmentation-types/", () =>
         HttpResponse.json([
@@ -236,6 +243,10 @@ describe("SegmentationCreatePanel", () => {
             internal_name: "Vesicles",
             short_name: "Vesicles",
             long_name: "Vesicles",
+            description: "Small membrane-bound structures.",
+            category: "organelle",
+            representation: "instances",
+            topology_policy: "non_overlapping",
             kind: "custom",
             default_color: null,
             created_at: "2026-01-01T00:00:00Z",
@@ -248,50 +259,86 @@ describe("SegmentationCreatePanel", () => {
     vi.mocked(createAssetSegmentation).mockResolvedValue({ id: "seg-2" } as never);
     render(<SegmentationCreatePanel imageId="img-1" />);
 
-    await user.click(await screen.findByRole("button", { name: "Vesicles" }));
+    await user.click(screen.getByRole("button", { name: "Custom Organelle" }));
+    const dialog = await screen.findByRole("dialog", { name: "Custom Organelle" });
+    await user.click(within(dialog).getByRole("button", { name: "Vesicles" }));
     await waitFor(() =>
       expect(createAssetSegmentation).toHaveBeenCalledWith("img-1", {
         segmentation_type_id: "custom-vesicles",
+        run_inference: false,
       })
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("creates image-specific analysis masks without model inference", async () => {
+  it("confirms Sample Area with its analysis-focused description", async () => {
     const user = userEvent.setup();
     vi.mocked(createAssetSegmentation).mockResolvedValue({ id: "seg-2" } as never);
     render(<SegmentationCreatePanel imageId="img-1" />);
 
-    await user.type(screen.getByLabelText("Mask name"), "Cells mask");
-    await user.click(screen.getByRole("button", { name: "Create analysis mask" }));
+    await user.click(screen.getByRole("button", { name: "Sample Area" }));
+    expect(
+      await screen.findByText(
+        "Select all area containing the sample. Use this to remove background, empty spaces, or other areas you wish to exclude from analysis."
+      )
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add Sample Area" }));
 
     await waitFor(() =>
       expect(createAssetSegmentation).toHaveBeenCalledWith("img-1", {
-        segmentation_type_name: "Analysis Segmentation Mask",
-        analysis_name: "Cells mask",
+        segmentation_type_name: "Sample Area",
+        run_inference: false,
       })
     );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("keeps the reusable custom segmentation workflow intact", async () => {
+  it("creates a Custom Organelle with instance and non-overlap defaults", async () => {
     const user = userEvent.setup();
+    vi.mocked(createSegmentationType).mockResolvedValue({
+      id: "custom-vesicles",
+      short_name: "Vesicles",
+      long_name: "Vesicles",
+    } as never);
     vi.mocked(createAssetSegmentation).mockResolvedValue({ id: "seg-3" } as never);
     render(<SegmentationCreatePanel imageId="img-1" />);
 
-    await user.click(screen.getByRole("button", { name: "Create custom segmentation" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.type(screen.getByLabelText("Segmentation name"), "Vesicles");
-    await user.click(screen.getByLabelText("Object-based segmentation"));
-    await user.click(
-      within(dialog).getByRole("button", { name: "Create custom segmentation" })
-    );
+    await user.click(screen.getByRole("button", { name: "Custom Organelle" }));
+    const dialog = await screen.findByRole("dialog", { name: "Custom Organelle" });
+    await user.type(within(dialog).getByLabelText(/^Name/), "Vesicles");
+    expect(within(dialog).getByLabelText(/^Representation/)).toHaveValue("instances");
+    expect(within(dialog).getByLabelText(/^Topology policy/)).toHaveValue("non_overlapping");
+    await user.click(within(dialog).getByRole("button", { name: "Create and add" }));
 
     await waitFor(() =>
-      expect(createAssetSegmentation).toHaveBeenCalledWith("img-1", {
-        segmentation_type_name: "Vesicles",
-        measurement_mode: "global",
+      expect(createSegmentationType).toHaveBeenCalledWith({
+        long_name: "Vesicles",
+        short_name: "Vesicles",
+        description: "",
+        category: "organelle",
+        representation: "instances",
+        topology_policy: "non_overlapping",
       })
     );
+    await waitFor(() =>
+      expect(createAssetSegmentation).toHaveBeenCalledWith("img-1", {
+        segmentation_type_id: "custom-vesicles",
+        run_inference: false,
+      })
+    );
+  });
+
+  it("uses overlapping instances as the Custom Area defaults and expands help", async () => {
+    const user = userEvent.setup();
+    render(<SegmentationCreatePanel imageId="img-1" />);
+
+    await user.click(screen.getByRole("button", { name: "Custom Area" }));
+    const dialog = await screen.findByRole("dialog", { name: "Custom Area" });
+    expect(within(dialog).getByLabelText(/^Representation/)).toHaveValue("instances");
+    expect(within(dialog).getByLabelText(/^Topology policy/)).toHaveValue("overlapping");
+    await user.click(within(dialog).getByRole("button", { name: "About representation" }));
+    expect(
+      within(dialog).getByText(/Instances preserve separately selectable objects/)
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Hide representation" })).toHaveTextContent("⌃");
   });
 });

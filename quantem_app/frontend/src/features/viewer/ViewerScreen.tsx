@@ -43,13 +43,8 @@ import type { ImageSegmentation } from "@/shared/types/images";
 import { segmentationRouteToken } from "@/shared/segmentationNames";
 import "./ViewerScreen.css";
 
-const ANALYSIS_MASK_INTERNAL_NAME = "quantem_internal_analysis_mask";
-
 function labelingPath(assetId: string, segmentation: ImageSegmentation): string {
-  if (
-    segmentation.segmentation_type.internal_name ===
-    ANALYSIS_MASK_INTERNAL_NAME
-  ) {
+  if (segmentation.segmentation_type.category === "area") {
     return `/assets/${assetId}/analysis-mask/${segmentation.id}`;
   }
   return `/assets/${assetId}/labeling/${encodeURIComponent(

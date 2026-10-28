@@ -144,6 +144,68 @@
   font: inherit;
 }
 
+.segmentation-custom-dialog textarea,
+.segmentation-custom-dialog select {
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+.segmentation-definition-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.segmentation-option-help {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.segmentation-create-card .segmentation-option-help-button {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #94a3b8;
+  border-radius: 50%;
+  background: #fff;
+  color: #475569;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.segmentation-option-help-text {
+  display: block;
+  max-width: 28rem;
+  padding: 6px 8px;
+  border-left: 2px solid #0e7490;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.segmentation-definition-divider {
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.segmentation-areas-group {
+  padding-top: 10px;
+  border-top: 1px solid #cbd5e1;
+}
+
 .segmentation-custom-dialog .segmentation-custom-object-checkbox {
   flex-direction: row;
   align-items: center;

@@ -64,6 +64,12 @@ from .morphometrics import (
 )
 from .notes import analysis_notes, note, partial_metric_note, settings_notes
 from .settings import segmentation_settings
+from .structured_outputs import (
+    CELL_SUMMARY_FIELDS,
+    ORGANELLE_OBJECT_FIELDS,
+    REGION_SUMMARY_FIELDS,
+    build_structured_outputs,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - the Django model is imported lazily below
     from .models import AnalysisRun
@@ -1365,6 +1371,69 @@ def write_bundle(
         fields=COMPOSITION_CSV_BASE_FIELDS,
     )
 
+    structured_exports: dict[str, tuple[int, list[str], str]] = {}
+
+    def structured_rows(filename: str) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for result in results:
+            for source in (result.get("_structured_tables") or {}).get(filename, []):
+                rows.append(
+                    {
+                        "image_key": result.get("image_key", ""),
+                        "analysis_run_id": result.get("analysis_run_id", ""),
+                        "group": result.get("group", ""),
+                        **source,
+                    }
+                )
+        return rows
+
+    if any(result.get("structured_analysis") for result in results):
+        region_rows = structured_rows("region_summary.csv")
+        region_columns = _write_csv(
+            out_dir / "region_summary.csv",
+            region_rows,
+            fields=("image_key", "analysis_run_id", "group", *REGION_SUMMARY_FIELDS),
+        )
+        structured_exports["region_summary.csv"] = (
+            len(region_rows),
+            region_columns,
+            "one row per analysis region and organelle",
+        )
+
+    if any(
+        (result.get("structured_analysis") or {}).get("outputs", {}).get("per_cell")
+        for result in results
+    ):
+        cell_rows = structured_rows("cell_summary.csv")
+        cell_columns = _write_csv(
+            out_dir / "cell_summary.csv",
+            cell_rows,
+            fields=("image_key", "analysis_run_id", "group", *CELL_SUMMARY_FIELDS),
+        )
+        structured_exports["cell_summary.csv"] = (
+            len(cell_rows),
+            cell_columns,
+            "one row per cell and organelle, with object distributions",
+        )
+
+    if any(
+        (result.get("structured_analysis") or {})
+        .get("outputs", {})
+        .get("individual_objects")
+        for result in results
+    ):
+        organelle_rows = structured_rows("organelle_objects.csv")
+        organelle_columns = _write_csv(
+            out_dir / "organelle_objects.csv",
+            organelle_rows,
+            fields=("image_key", "analysis_run_id", "group", *ORGANELLE_OBJECT_FIELDS),
+        )
+        structured_exports["organelle_objects.csv"] = (
+            len(organelle_rows),
+            organelle_columns,
+            "one row per object-based organelle instance",
+        )
+
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(),
         "quantem_version": __version__,
@@ -1401,6 +1470,7 @@ def write_bundle(
                     comp_columns,
                     "one row per named Analysis Mask object",
                 ),
+                **structured_exports,
             },
         ),
         "images": [
@@ -1415,6 +1485,7 @@ def write_bundle(
                 "proofreading": r.get("proofreading") or {},
                 "points": r.get("points") or None,
                 "segmentation_settings": r.get("segmentation_settings") or [],
+                "structured_analysis": r.get("structured_analysis") or {},
                 "caveats": r["caveats"],
                 **({"notes": r["notes"]} if "notes" in r else {}),
             }
@@ -1718,6 +1789,26 @@ def run_for_segmentation(
             ),
             cancel_check=cancel_check,
         )
+
+        if loaded.params.get("structured_outputs_enabled"):
+            report(78.0, "building region and cell outputs")
+            structured, structured_tables = build_structured_outputs(
+                analysis_run.segmentation,
+                loaded.params,
+                cancel_check=cancel_check,
+            )
+            result["structured_analysis"] = structured
+            result["_structured_tables"] = structured_tables
+            for warning in structured["warnings"]:
+                cells = ", ".join(cell["name"] for cell in warning.get("cells", []))
+                message = warning["message"] + (
+                    f" Applicable cells: {cells}." if cells else ""
+                )
+                result["notes"].append(
+                    note(warning["code"], message, cells=warning.get("cells", []))
+                )
+                if message not in result["caveats"]:
+                    result["caveats"].append(message)
 
         # Named, not only described: the caveat says which compartment is
         # circular in a sentence, and image_summary.csv turns that into the

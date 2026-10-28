@@ -62,7 +62,7 @@ class ExperimentWorkspaceView(APIView):
                 }
             )
         segmentations = with_coverage(
-            ImageSegmentation.objects.filter(asset__in=assets)
+            ImageSegmentation.objects.filter(asset__in=assets, superseded_by__isnull=True)
             .select_related("segmentation_type", "asset")
             .annotate(
                 confirmed_count=Count(
@@ -85,6 +85,8 @@ class ExperimentWorkspaceView(APIView):
                     "short_name": seg.segmentation_type.short_name,
                     **coverage(seg),
                     "measurement_mode": seg.segmentation_type.measurement_mode,
+                    "category": seg.segmentation_type.category,
+                    "representation": seg.segmentation_type.representation,
                     "stage": seg.status_stage,
                     "confirmed_count": seg.confirmed_count,
                     "review_complete": seg.status_stage == "COMPLETED",

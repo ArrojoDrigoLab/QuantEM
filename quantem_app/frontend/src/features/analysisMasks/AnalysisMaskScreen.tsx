@@ -35,8 +35,6 @@ import type {
 } from "./types";
 import "./AnalysisMaskScreen.css";
 
-const ANALYSIS_MASK_INTERNAL_NAME = "quantem_internal_analysis_mask";
-
 function upsertObject(
   objects: AnalysisMaskObject[],
   updated: AnalysisMaskObject
@@ -83,8 +81,7 @@ export function AnalysisMaskScreen() {
       visibleSegmentations.filter(
         (segmentation) =>
           segmentation.id !== currentSegmentationId &&
-          segmentation.segmentation_type.internal_name ===
-            ANALYSIS_MASK_INTERNAL_NAME
+          segmentation.segmentation_type.category === "area"
       ),
     [currentSegmentationId, visibleSegmentations]
   );
@@ -402,10 +399,7 @@ export function AnalysisMaskScreen() {
   if (!image || objectsLoading || !currentSegmentation) {
     return <div className="analysis-mask-loading">Loading analysis mask...</div>;
   }
-  if (
-    currentSegmentation.segmentation_type.internal_name !==
-    ANALYSIS_MASK_INTERNAL_NAME
-  ) {
+  if (currentSegmentation.segmentation_type.category !== "area") {
     return <Navigate to={`/assets/${image.id}/viewer`} replace />;
   }
 
@@ -456,6 +450,10 @@ export function AnalysisMaskScreen() {
           navigateMode={navigateMode}
           onNavigateModeChange={setNavigateMode}
           objects={objects}
+          objectNamesRequired={
+            currentSegmentation.segmentation_type.internal_name ===
+            "quantem_internal_cells"
+          }
           activeObjectId={activeObjectId}
           busy={busy}
           onEditObject={(objectId) => {

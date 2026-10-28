@@ -79,10 +79,17 @@ function ImageAnalysisScreen() {
   // nothing on the screen.
   useEffect(() => {
     if (!segmentations || segmentations.length === 0) return;
+    const organelles = segmentations.filter(
+      (seg) => (seg.segmentation_type.category ?? "organelle") === "organelle"
+    );
+    const choices = organelles.length > 0 ? organelles : segmentations;
     const requested = requestedSegmentationId
-      ? segmentations.find((seg) => seg.id === requestedSegmentationId)?.id ?? null
+      ? choices.find((seg) => seg.id === requestedSegmentationId)?.id ?? null
       : null;
-    const next = requested ?? segmentations.find((seg) => seg.id === segmentationId)?.id ?? segmentations[0].id;
+    const next =
+      requested ??
+      choices.find((seg) => seg.id === segmentationId)?.id ??
+      choices[0].id;
     if (next === segmentationId) return;
     if (segmentationId) {
       // The screen was already showing another segmentation: the run panel
@@ -135,7 +142,7 @@ function ImageAnalysisScreen() {
     () => segmentations?.find((seg) => seg.id === segmentationId) ?? null,
     [segmentations, segmentationId]
   );
-  const isGlobal = selectedSegmentation?.segmentation_type.measurement_mode === "global";
+  const isGlobal = selectedSegmentation?.segmentation_type.category === "area";
   const availableAnalysisMasks = useMemo(
     () =>
       (segmentations ?? []).filter(
@@ -330,7 +337,13 @@ function ImageAnalysisScreen() {
                 value={segmentationId}
                 onChange={(event) => handleSelectSegmentation(event.target.value)}
               >
-                {segmentations.map((seg) => (
+                {segmentations
+                  .filter(
+                    (seg) =>
+                      (seg.segmentation_type.category ?? "organelle") ===
+                      "organelle"
+                  )
+                  .map((seg) => (
                   <option key={seg.id} value={seg.id}>
                     {segmentationDisplayName(seg)}
                   </option>

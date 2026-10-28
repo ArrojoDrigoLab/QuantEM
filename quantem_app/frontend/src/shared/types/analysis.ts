@@ -176,6 +176,8 @@ export interface AnalysisMonteCarloSelfCheck {
 export interface AnalysisRunParams {
   compartments?: Record<string, string>;
   tissue_segmentation_id?: string | null;
+  cell_segmentation_id?: string | null;
+  outputs?: AnalysisOutputSelection;
   points_source?: AnalysisPointsSource;
   points_csv?: string;
   distance_target?: string | null;
@@ -184,6 +186,29 @@ export interface AnalysisRunParams {
   seed?: number;
   group?: string;
   [key: string]: unknown;
+}
+
+export interface AnalysisOutputSelection {
+  whole_image: boolean;
+  sample_area: boolean;
+  all_cells: boolean;
+  per_cell: boolean;
+  individual_objects: boolean;
+}
+
+export interface StructuredAnalysisWarning {
+  code: string;
+  message: string;
+  cells?: Array<{ id: string; name: string }>;
+}
+
+export interface StructuredAnalysis {
+  outputs: AnalysisOutputSelection;
+  warnings: StructuredAnalysisWarning[];
+  region_summary: Array<Record<string, unknown>>;
+  cell_summary: Array<Record<string, unknown>>;
+  n_organelle_objects: number;
+  n_cells: number;
 }
 
 export interface SegmentationSettingsSnapshot {
@@ -205,6 +230,7 @@ export interface SegmentationSettingsSnapshot {
 export interface AnalysisRun {
   segmentation_settings?: SegmentationSettingsSnapshot[];
   global_area?: GlobalAreaReport | null;
+  structured_analysis?: StructuredAnalysis | null;
   current?: boolean | null;
   id: string;
   segmentation_id: string;
@@ -251,6 +277,8 @@ export interface AnalysisRunCreatePayload {
   /** organelle name -> segmentation id, e.g. `{"mito": "<uuid>"}`. */
   compartments?: Record<string, string>;
   tissue_segmentation_id?: string | null;
+  cell_segmentation_id?: string | null;
+  outputs?: AnalysisOutputSelection;
   points_source?: AnalysisPointsSource;
   points_csv?: string;
   distance_target?: string | null;
@@ -266,4 +294,12 @@ export interface AnalysisRunCreateResponse {
 }
 
 /** The three files `write_bundle` produces. */
-export type AnalysisExportName = "objects.csv" | "image_summary.csv" | "manifest.json" | "area.csv" | "composition.csv";
+export type AnalysisExportName =
+  | "objects.csv"
+  | "image_summary.csv"
+  | "manifest.json"
+  | "area.csv"
+  | "composition.csv"
+  | "region_summary.csv"
+  | "cell_summary.csv"
+  | "organelle_objects.csv";

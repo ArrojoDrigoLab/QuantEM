@@ -5,7 +5,8 @@ import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import type { ImageSegmentation } from "@/shared/types/images";
 import { segmentationDisplayName } from "@/shared/segmentationNames";
 import {
-  ANALYSIS_MASK_INTERNAL_NAME,
+  CELLS_INTERNAL_NAME,
+  TISSUE_INTERNAL_NAME,
   type AnalysisFormState,
 } from "@/features/analysis/analysisOptions";
 
@@ -34,13 +35,17 @@ export function AnalysisConfigForm({
   const patch = (updates: Partial<AnalysisFormState>) => {
     onChange({ ...state, ...updates });
   };
-  const analysisMasks = segmentations.filter(
+  const sampleAreas = segmentations.filter(
     (segmentation) =>
-      segmentation.segmentation_type.internal_name === ANALYSIS_MASK_INTERNAL_NAME
+      segmentation.segmentation_type.internal_name === TISSUE_INTERNAL_NAME
+  );
+  const cellLayers = segmentations.filter(
+    (segmentation) =>
+      segmentation.segmentation_type.internal_name === CELLS_INTERNAL_NAME
   );
   const segmentationLabel = (segmentationId: string): string => {
     const segmentation = segmentations.find((entry) => entry.id === segmentationId);
-    return segmentation?.segmentation_type.long_name ?? segmentationId;
+    return segmentation ? segmentationDisplayName(segmentation) : segmentationId;
   };
 
   return (
@@ -97,26 +102,123 @@ export function AnalysisConfigForm({
 
       <div className="mt-4">
         <div className="flex items-center gap-2">
-          <label className={LABEL_CLASS} htmlFor="analysis-mask">Analysis Mask</label>
+          <label className={LABEL_CLASS} htmlFor="sample-area">Sample Area</label>
           {state.tissueSegmentationId && <HelpDisclosure label="masked measurements" title="Measuring within a mask">
             An object is included when its centre is inside the mask; its full outline is measured. Compartment areas are clipped to the mask.
           </HelpDisclosure>}
         </div>
         <select
-          id="analysis-mask"
+          id="sample-area"
           className={`${FIELD_CLASS} mt-1`}
           value={state.tissueSegmentationId}
           disabled={submitting}
-          onChange={(event) => patch({ tissueSegmentationId: event.target.value })}
+          onChange={(event) =>
+            patch({
+              tissueSegmentationId: event.target.value,
+              outputs: {
+                ...state.outputs,
+                sample_area: event.target.value
+                  ? state.outputs.sample_area
+                  : false,
+              },
+            })
+          }
         >
-          <option value="">Whole image (no analysis mask)</option>
-          {analysisMasks.map((segmentation) => (
+          <option value="">No Sample Area restriction</option>
+          {sampleAreas.map((segmentation) => (
             <option key={segmentation.id} value={segmentation.id}>
               {segmentationDisplayName(segmentation)}
             </option>
           ))}
         </select>
       </div>
+
+      <div className="mt-4">
+        <label className={LABEL_CLASS} htmlFor="cells-layer">Cells</label>
+        <select
+          id="cells-layer"
+          className={`${FIELD_CLASS} mt-1`}
+          value={state.cellSegmentationId}
+          disabled={submitting}
+          onChange={(event) =>
+            patch({
+              cellSegmentationId: event.target.value,
+              outputs: {
+                ...state.outputs,
+                all_cells: event.target.value ? state.outputs.all_cells : false,
+                per_cell: event.target.value ? state.outputs.per_cell : false,
+              },
+            })
+          }
+        >
+          <option value="">No cell breakdown</option>
+          {cellLayers.map((segmentation) => (
+            <option key={segmentation.id} value={segmentation.id}>
+              {segmentationDisplayName(segmentation)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <fieldset className="mt-4 border-0 p-0">
+        <legend className={LABEL_CLASS}>Outputs</legend>
+        <div className="mt-2 flex flex-col gap-2 text-sm text-slate-700">
+          {[
+            ["whole_image", "Whole image summary"],
+            ["sample_area", "Sample Area summary"],
+            ["all_cells", "All cells summary"],
+            ["per_cell", "Per-cell breakdown"],
+            ["individual_objects", "Individual organelle table"],
+          ].map(([key, label]) => {
+            const outputKey = key as keyof AnalysisFormState["outputs"];
+            const requiresSample = outputKey === "sample_area";
+            const requiresCells = outputKey === "all_cells" || outputKey === "per_cell";
+            const locked = outputKey === "whole_image";
+            const unavailable =
+              (requiresSample && !state.tissueSegmentationId) ||
+              (requiresCells && !state.cellSegmentationId);
+            return (
+              <label key={key} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={state.outputs[outputKey]}
+                  disabled={submitting || locked || unavailable}
+                  onChange={(event) =>
+                    patch({
+                      outputs: {
+                        ...state.outputs,
+                        [outputKey]: event.target.checked,
+                      },
+                    })
+                  }
+                />
+                {label}
+                {locked ? " (always included)" : ""}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <details className="mt-4 rounded-md border border-slate-200 px-3 py-2 text-sm">
+        <summary className="cursor-pointer font-medium text-slate-700">
+          Plain-language preview
+        </summary>
+        <p className="mb-0 mt-2 text-slate-600">
+          QuantEM will report every selected organelle across the whole image
+          {state.outputs.sample_area && state.tissueSegmentationId
+            ? ", within the Sample Area"
+            : ""}
+          {state.outputs.all_cells && state.cellSegmentationId
+            ? ", across the union of all cells"
+            : ""}
+          {state.outputs.per_cell && state.cellSegmentationId
+            ? ", and for each individual cell"
+            : ""}
+          . Object-based organelles are assigned to cells by centroid and keep
+          their full-outline measurements.
+        </p>
+      </details>
 
       <div className="mt-4">
         <Button variant="primary" onClick={onSubmit} disabled={submitting}>

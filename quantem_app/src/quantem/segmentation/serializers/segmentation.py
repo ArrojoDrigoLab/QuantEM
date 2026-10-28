@@ -1,5 +1,7 @@
 """Segmentation-level serializers."""
 
+import uuid
+
 from django.db.models import Count, Q
 from django.db.models.fields.json import KeyTransform
 from rest_framework import serializers
@@ -128,11 +130,7 @@ def _notice(
 
 
 class SegmentationTypeSerializer(serializers.ModelSerializer):
-    """Read-only view of a segmentation type.
-
-    QuantEM does not ship a corpus-catalog surface, so this is the only
-    serializer exposed from it.
-    """
+    """Reusable built-in or user-defined organelle/area definition."""
 
     kind = serializers.SerializerMethodField()
 
@@ -143,16 +141,76 @@ class SegmentationTypeSerializer(serializers.ModelSerializer):
             "internal_name",
             "short_name",
             "long_name",
+            "description",
             "default_color",
+            "measurement_mode",
+            "category",
+            "representation",
+            "topology_policy",
+            "kind",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "internal_name",
             "measurement_mode",
             "kind",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = fields
+        extra_kwargs = {
+            "short_name": {"required": False},
+            "long_name": {"required": True},
+            "description": {"required": False},
+            "default_color": {"required": False},
+            "category": {"required": False},
+            "representation": {"required": False},
+            "topology_policy": {"required": False},
+        }
 
     def get_kind(self, obj):
         return "builtin" if find_builtin_segmentation_type(obj.internal_name) else "custom"
+
+    def validate_long_name(self, value):
+        cleaned = str(value or "").strip()
+        if not cleaned:
+            raise serializers.ValidationError("Give this definition a name.")
+        if SegmentationType.objects.filter(long_name__iexact=cleaned).exists():
+            raise serializers.ValidationError("A segmentation definition with this name exists.")
+        return cleaned
+
+    def validate(self, attrs):
+        category = attrs.get("category", SegmentationType.CATEGORY_ORGANELLE)
+        representation = attrs.get(
+            "representation", SegmentationType.REPRESENTATION_INSTANCES
+        )
+        if category == SegmentationType.CATEGORY_AREA and representation not in {
+            SegmentationType.REPRESENTATION_INSTANCES,
+            SegmentationType.REPRESENTATION_SEMANTIC,
+        }:
+            raise serializers.ValidationError({"representation": "Choose instances or semantic."})
+        return attrs
+
+    def create(self, validated_data):
+        long_name = validated_data["long_name"].strip()
+        short_name = str(validated_data.pop("short_name", "") or "").strip() or long_name
+        category = validated_data.get("category", SegmentationType.CATEGORY_ORGANELLE)
+        representation = validated_data.get(
+            "representation", SegmentationType.REPRESENTATION_INSTANCES
+        )
+        measurement_mode = (
+            SegmentationType.MEASUREMENT_MODE_GLOBAL
+            if category == SegmentationType.CATEGORY_AREA
+            or representation == SegmentationType.REPRESENTATION_SEMANTIC
+            else SegmentationType.MEASUREMENT_MODE_OBJECTS
+        )
+        return SegmentationType.objects.create(
+            internal_name=f"custom:{uuid.uuid4()}",
+            short_name=short_name,
+            measurement_mode=measurement_mode,
+            **validated_data,
+        )
 
 
 class ImageSegmentationSerializer(serializers.ModelSerializer):
@@ -164,6 +222,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
     is_complete = serializers.SerializerMethodField()
     run_notice = serializers.SerializerMethodField()
     objects_pixel_size = serializers.SerializerMethodField()
+    has_saved_area = serializers.SerializerMethodField()
     segmentation_type_id = serializers.PrimaryKeyRelatedField(
         queryset=SegmentationType.objects.all(),
         source="segmentation_type",
@@ -190,6 +249,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             "is_complete",
             "run_notice",
             "objects_pixel_size",
+            "has_saved_area",
             "final_result_provenance",
             # The dial position the objects on screen were found at, or ``null``
             # when nobody has moved it. Read-only here: it is written by the
@@ -445,7 +505,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         candidates on screen.
 
         The two original guards still hold. A manual-only type
-        (``MANUAL_ONLY_INTERNAL_NAMES`` -- tissue) is set to
+        (``MANUAL_ONLY_INTERNAL_NAMES`` -- Sample Area, Cells, or the legacy area type) is set to
         ``CANDIDATES_READY`` at creation with no run behind it and no model that
         could have found anything, and would otherwise be told to lower a
         threshold it does not have.
@@ -484,6 +544,18 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             kind="no_objects",
             source_model=last_run.get("source_model"),
         )
+
+    def get_has_saved_area(self, obj):
+        if obj.segmentation_type.measurement_mode == SegmentationType.MEASUREMENT_MODE_GLOBAL:
+            try:
+                if int(obj.global_mask.foreground_pixels) > 0:
+                    return True
+            except Exception:
+                pass
+            return obj.analysis_mask_objects.exclude(geometry_wkb__isnull=True).exists()
+        return obj.segments.filter(
+            label_state="CONFIRMED", superseded_at__isnull=True
+        ).exists()
 
 
 class ImageSegmentationCreateSerializer(serializers.Serializer):

@@ -52,6 +52,27 @@ class SegmentationTypeTag(TimeStampedModel):
 class SegmentationType(TimeStampedModel):
     """Global segmentation type (e.g., 'mitochondria', 'nucleus')."""
 
+    CATEGORY_ORGANELLE = "organelle"
+    CATEGORY_AREA = "area"
+    CATEGORY_CHOICES = [
+        (CATEGORY_ORGANELLE, "Organelle or structure"),
+        (CATEGORY_AREA, "Analysis area"),
+    ]
+
+    REPRESENTATION_INSTANCES = "instances"
+    REPRESENTATION_SEMANTIC = "semantic"
+    REPRESENTATION_CHOICES = [
+        (REPRESENTATION_INSTANCES, "Individual instances"),
+        (REPRESENTATION_SEMANTIC, "One semantic mask"),
+    ]
+
+    TOPOLOGY_NON_OVERLAPPING = "non_overlapping"
+    TOPOLOGY_OVERLAPPING = "overlapping"
+    TOPOLOGY_CHOICES = [
+        (TOPOLOGY_NON_OVERLAPPING, "Non-overlapping instances"),
+        (TOPOLOGY_OVERLAPPING, "Overlapping instances"),
+    ]
+
     MEASUREMENT_MODE_OBJECTS = "objects"
     MEASUREMENT_MODE_GLOBAL = "global"
     MEASUREMENT_MODE_CHOICES = [
@@ -62,7 +83,23 @@ class SegmentationType(TimeStampedModel):
     internal_name = models.CharField(max_length=100, unique=True)
     short_name = models.CharField(max_length=100, unique=True)
     long_name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, default="")
     default_color = models.CharField(max_length=7, blank=True)  # '#RRGGBB'
+    category = models.CharField(
+        max_length=16,
+        choices=CATEGORY_CHOICES,
+        default=CATEGORY_ORGANELLE,
+    )
+    representation = models.CharField(
+        max_length=16,
+        choices=REPRESENTATION_CHOICES,
+        default=REPRESENTATION_INSTANCES,
+    )
+    topology_policy = models.CharField(
+        max_length=24,
+        choices=TOPOLOGY_CHOICES,
+        default=TOPOLOGY_NON_OVERLAPPING,
+    )
     # This setting belongs to the reusable type, not one image's instance.
     measurement_mode = models.CharField(
         max_length=16,
@@ -114,6 +151,16 @@ class ImageSegmentation(TimeStampedModel):
     # example, a tissue mask and a cells mask) that must not become reusable
     # custom types on every other image.
     display_name = models.CharField(max_length=100, blank=True, default="")
+    # Legacy image-specific Analysis Masks are consolidated into one stable
+    # Cells/Sample Area layer. The old row remains addressable by historical
+    # AnalysisRun records while normal lists hide it in favour of this target.
+    superseded_by = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="superseded_segmentations",
+    )
 
     # Status of the segmentation pipeline
     STATUS_STAGE_CHOICES = [
@@ -213,13 +260,13 @@ class GlobalMask(TimeStampedModel):
 
 
 class AnalysisMaskObject(TimeStampedModel):
-    """One named, independently editable object inside an analysis mask.
+    """One independently editable object inside an area segmentation.
 
-    Analysis masks are measured globally, so their authoritative analysis
-    representation remains :class:`GlobalMask`.  This compact vector record is
-    the editing representation: one object may be a polygon, a multipolygon,
-    or a polygon with holes after any number of Include/Exclude brush strokes
-    and polygon operations.
+    This vector row is the authoritative editable representation for an area
+    instance; Save also materializes the layer's union as a :class:`GlobalMask`
+    for overlays and compatibility. One object may be a polygon, a
+    multipolygon, or a polygon with holes after any number of Include/Exclude
+    brush strokes and polygon operations.
     """
 
     segmentation = models.ForeignKey(
@@ -227,7 +274,10 @@ class AnalysisMaskObject(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="analysis_mask_objects",
     )
-    name = models.CharField(max_length=100)
+    # Cells receive persistent automatic names. Other area instances do not:
+    # a blank name is intentional and avoids manufacturing metadata for every
+    # abundant or otherwise anonymous object.
+    name = models.CharField(max_length=100, blank=True, default="")
     color = models.CharField(max_length=7)
     sort_order = models.PositiveIntegerField(default=0)
     geometry_wkb = models.BinaryField(null=True, blank=True)
@@ -246,7 +296,24 @@ class AnalysisMaskObject(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.segmentation_id}: {self.name}"
+        return f"{self.segmentation_id}: {self.name or self.id}"
+
+
+class AnalysisMaskObjectAnnotation(TimeStampedModel):
+    """Sparse optional annotations for an area instance.
+
+    A row exists only after the user adds tags or metadata. Cell names live on
+    ``AnalysisMaskObject`` because they are required persistent identity, while
+    optional biological annotations do not impose a storage row per cell.
+    """
+
+    object = models.OneToOneField(
+        AnalysisMaskObject,
+        on_delete=models.CASCADE,
+        related_name="annotation",
+    )
+    tags = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
 
 
 class SegmentObject(TimeStampedModel):
@@ -481,6 +548,19 @@ class SegmentObject(TimeStampedModel):
             f"Segment {self.id} ({self.label_state}) - "
             f"{self.segmentation} / {self.segmentation.segmentation_type.long_name}"
         )
+
+
+class SegmentObjectAnnotation(TimeStampedModel):
+    """Sparse optional annotations for an organelle/structure instance."""
+
+    object = models.OneToOneField(
+        SegmentObject,
+        on_delete=models.CASCADE,
+        related_name="annotation",
+    )
+    display_name = models.CharField(max_length=100, blank=True, default="")
+    tags = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
 
 
 class CompletedROI(TimeStampedModel):

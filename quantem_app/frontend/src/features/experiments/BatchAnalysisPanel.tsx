@@ -25,11 +25,11 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds, onSelect
   const [busy, setBusy] = useState(false);
   const [metric, setMetric] = useState("n_objects");
   const options = useMemo(() => [...new Map(images.flatMap((image) => image.segmentations)
-    .filter((seg) => seg.type !== "quantem_internal_analysis_mask").map((seg) => [seg.type, seg])).values()], [images]);
-  const masks = useMemo(() => [...new Set(images.flatMap((image) => image.segmentations)
-    .filter((seg) => seg.type === "quantem_internal_analysis_mask").map((seg) => seg.name))].sort(), [images]);
-  const payload = useMemo(() => ({ name, asset_ids: selectedIds, segmentation_types: types,
-    mask_name: mask, require_complete: complete, reuse }), [name, selectedIds, types, mask, complete, reuse]);
+    .filter((seg) => (seg.category ?? "organelle") === "organelle").map((seg) => [seg.type_id, seg])).values()], [images]);
+  const masks = useMemo(() => [...new Map(images.flatMap((image) => image.segmentations)
+    .filter((seg) => seg.type === "quantem_internal_tissue").map((seg) => [seg.type_id, seg])).values()], [images]);
+  const payload = useMemo(() => ({ name, asset_ids: selectedIds, segmentation_type_ids: types,
+    mask_definition_id: mask || null, require_complete: complete, reuse }), [name, selectedIds, types, mask, complete, reuse]);
   const payloadKey = JSON.stringify(payload);
   useEffect(() => { setPreview(null); }, [payload]);
   const active = batch?.items.some((item) => ["PENDING", "RUNNING"].includes(item.status ?? ""));
@@ -85,14 +85,14 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds, onSelect
     <div className="flex flex-wrap items-center gap-4">
       <label>Batch name <input className="rounded border px-2 py-1" value={name} onChange={(e) => setName(e.target.value)} /></label>
       <label>Measurement area <select className="rounded border px-2 py-1" value={mask} onChange={(e) => setMask(e.target.value)}>
-        <option value="">Whole image</option>{masks.map((entry) => <option key={entry}>{entry}</option>)}</select></label>
+        <option value="">Whole image</option>{masks.map((entry) => <option key={entry.type_id} value={entry.type_id}>{entry.name}</option>)}</select></label>
     </div>
     <fieldset className="flex flex-wrap gap-4"><legend className="mb-2 font-medium">Organelles</legend>
-      {options.map((seg) => <label key={seg.type}><input type="checkbox" checked={types.includes(seg.type)}
+      {options.map((seg) => <label key={seg.type_id}><input type="checkbox" checked={types.includes(seg.type_id)}
         onChange={(e) => {
           const checked = e.currentTarget.checked;
-          setTypes((current) => checked ? [...current, seg.type] : current.filter((value) => value !== seg.type));
-        }} /> {seg.name} {seg.measurement_mode === "global" ? "(area only)" : ""}</label>)}
+          setTypes((current) => checked ? [...current, seg.type_id] : current.filter((value) => value !== seg.type_id));
+        }} /> {seg.name} {seg.representation === "semantic" ? "(semantic mask)" : ""}</label>)}
       {!options.length && <p>Run a segmentation on an image before measuring this experiment.</p>}
     </fieldset>
     <div className="flex flex-wrap gap-4">
@@ -123,7 +123,7 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds, onSelect
       <thead><tr>{["Image", "Organelle", "Area", "Sample / group", "Status", selectedMetric?.replaceAll("_", " ") ?? "Measurement", "Details"].map((label) => <th key={label} className="border-b p-2">{label}</th>)}</tr></thead>
       <tbody>{rows.map((item, index) => <tr key={index}>
         <td className="border-b p-2"><Link className="text-cyan-800 underline" to={`/assets/${item.identity.asset_id}/analysis`}>{item.identity.image}</Link></td>
-        <td className="border-b p-2">{options.find((seg) => seg.type === item.identity.organelle)?.name ?? item.identity.organelle}</td><td className="border-b p-2">{item.identity.measurement_area}</td>
+        <td className="border-b p-2">{options.find((seg) => seg.type_id === item.identity.segmentation_type_id)?.name ?? item.identity.structure ?? item.identity.organelle}</td><td className="border-b p-2">{item.identity.measurement_area}</td>
         <td className="border-b p-2">{item.identity.sample_id || item.identity.image} / {item.identity.group || "Ungrouped"}</td>
         <td className="border-b p-2">{item.ready === true ? "Ready" : item.ready === false ? "Skipped" : item.status}{item.reused ? " · reused" : ""}{item.current === false ? " · outdated" : ""}</td>
         <td className="border-b p-2">{selectedMetric && item.metrics?.[selectedMetric] != null ? item.metrics[selectedMetric]?.toLocaleString(undefined, { maximumSignificantDigits: 6 }) : "—"}</td>

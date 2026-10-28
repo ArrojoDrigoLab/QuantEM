@@ -343,6 +343,9 @@ class BatchExportView(APIView):
                             "composition.csv",
                             "area.csv",
                             "image_summary.csv",
+                            "region_summary.csv",
+                            "cell_summary.csv",
+                            "organelle_objects.csv",
                             "manifest.json",
                         ):
                             if (

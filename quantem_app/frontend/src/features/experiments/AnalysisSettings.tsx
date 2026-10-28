@@ -2,6 +2,7 @@ import type { WorkspaceImage } from "@/shared/api/workspace";
 
 const settingNames: Record<string, string> = {
   mask_name: "Measurement area", require_complete: "Require completed review", reuse: "Reuse matching results",
+  mask_definition_id: "Sample Area definition", segmentation_type_ids: "Organelle definitions",
   tissue_segmentation_id: "Measurement mask", analysis_mask_ids: "Measurement masks", compartments: "Structures",
   objects_in_measurement_area: "Only objects inside measurement area", points_source: "Point source",
   points_csv: "Imported points", distance_target: "Distance to", band_edges_nm: "Distance bands (nm)",
@@ -11,7 +12,7 @@ const settingNames: Record<string, string> = {
 };
 
 export function AnalysisSettings({ values, images, unknownLabel = "None" }: { values: Record<string, unknown>; images: WorkspaceImage[]; unknownLabel?: string }) {
-  const names = new Map(images.flatMap((image) => [[image.id, image.name], ...image.segmentations.map((seg) => [seg.id, `${image.name}: ${seg.name}`]), ...image.segmentations.map((seg) => [seg.type, seg.name])] as [string, string][]));
+  const names = new Map(images.flatMap((image) => [[image.id, image.name], ...image.segmentations.map((seg) => [seg.id, `${image.name}: ${seg.name}`]), ...image.segmentations.map((seg) => [seg.type, seg.name]), ...image.segmentations.map((seg) => [seg.type_id, seg.name])] as [string, string][]));
   const display = (value: unknown): string => {
     if (value == null || value === "") return unknownLabel;
     if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -21,7 +22,7 @@ export function AnalysisSettings({ values, images, unknownLabel = "None" }: { va
     return String(value);
   };
   return <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
-    {Object.entries(values).filter(([key]) => !["asset_ids", "dataset_ids", "name", "segmentation_types"].includes(key)).map(([key, value]) => <div key={key} className="contents">
+    {Object.entries(values).filter(([key]) => !["asset_ids", "dataset_ids", "name", "segmentation_types", "segmentation_type_ids"].includes(key)).map(([key, value]) => <div key={key} className="contents">
       <dt className="font-medium">{settingNames[key] ?? key.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase())}</dt>
       <dd className="min-w-0 whitespace-pre-wrap break-words">{key === "mask_name" && !value ? "Whole image" : display(value)}</dd>
     </div>)}

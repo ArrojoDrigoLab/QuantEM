@@ -148,12 +148,15 @@ describe("OverlaySelectionSidebar", () => {
         internal_name: "quantem_internal_analysis_mask",
         short_name: "Analysis mask",
         long_name: "Analysis Segmentation Mask",
+        category: "area",
+        representation: "instances",
+        topology_policy: "overlapping",
         kind: "builtin",
       },
     });
     renderSidebar(analysis);
 
-    expect(screen.getByText("Whole-cell measurement region (Analysis)")).toBeInTheDocument();
+    expect(screen.getByText("Whole-cell measurement region (Area)")).toBeInTheDocument();
   });
 
   it("labels reusable masks outside the built-in organelles as custom", () => {

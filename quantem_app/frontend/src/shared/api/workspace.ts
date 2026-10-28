@@ -5,6 +5,7 @@ export interface WorkspaceSegmentation {
   short_name?: string; coverage?: "whole" | "partial" | "none";
   annotated_area_count?: number; annotated_percent?: number | null;
   measurement_mode: string; stage: string; confirmed_count: number;
+  category?: "organelle" | "area"; representation?: "instances" | "semantic";
   review_complete: boolean; provenance: Record<string, unknown>;
   latest_analysis?: { id: string; status: string; current: boolean | null } | null;
 }

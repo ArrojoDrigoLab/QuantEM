@@ -6,6 +6,7 @@ from .models import SegmentationType
 from .type_definitions import (
     ANALYSIS_MASK,
     BUILTIN_SEGMENTATION_TYPES,
+    CELLS,
     ER,
     LIPID_DROPLETS,
     MITOCHONDRIA,
@@ -33,6 +34,10 @@ def ensure_segmentation_type(
             "short_name": definition.short_name,
             "long_name": definition.long_name,
             "measurement_mode": definition.measurement_mode,
+            "description": definition.description,
+            "category": definition.category,
+            "representation": definition.representation,
+            "topology_policy": definition.topology_policy,
         },
     )
 
@@ -46,6 +51,11 @@ def ensure_segmentation_type(
     if seg_type.measurement_mode != definition.measurement_mode:
         seg_type.measurement_mode = definition.measurement_mode
         updated_fields.append("measurement_mode")
+    for field in ("description", "category", "representation", "topology_policy"):
+        expected = getattr(definition, field)
+        if getattr(seg_type, field) != expected:
+            setattr(seg_type, field, expected)
+            updated_fields.append(field)
 
     if updated_fields:
         seg_type.save(update_fields=updated_fields)
@@ -77,6 +87,10 @@ def get_or_create_tissue_type() -> SegmentationType:
     return ensure_segmentation_type(TISSUE)
 
 
+def get_or_create_cells_type() -> SegmentationType:
+    return ensure_segmentation_type(CELLS)
+
+
 def get_or_create_analysis_mask_type() -> SegmentationType:
     return ensure_segmentation_type(ANALYSIS_MASK)
 
@@ -85,6 +99,10 @@ def resolve_or_create_segmentation_type(
     name: str,
     *,
     measurement_mode: str = SegmentationType.MEASUREMENT_MODE_OBJECTS,
+    description: str = "",
+    category: str = SegmentationType.CATEGORY_ORGANELLE,
+    representation: str = SegmentationType.REPRESENTATION_INSTANCES,
+    topology_policy: str = SegmentationType.TOPOLOGY_NON_OVERLAPPING,
 ) -> SegmentationType:
     """Resolve a user-provided type name to canonical built-in or custom type.
 
@@ -97,6 +115,32 @@ def resolve_or_create_segmentation_type(
     valid_modes = {choice[0] for choice in SegmentationType.MEASUREMENT_MODE_CHOICES}
     if measurement_mode not in valid_modes:
         raise ValueError("Measurement mode must be 'objects' or 'global'.")
+    if category not in {choice[0] for choice in SegmentationType.CATEGORY_CHOICES}:
+        raise ValueError("Category must be 'organelle' or 'area'.")
+    if representation not in {choice[0] for choice in SegmentationType.REPRESENTATION_CHOICES}:
+        raise ValueError("Representation must be 'instances' or 'semantic'.")
+    if topology_policy not in {choice[0] for choice in SegmentationType.TOPOLOGY_CHOICES}:
+        raise ValueError("Topology policy must be 'non_overlapping' or 'overlapping'.")
+
+    # Compatibility for the pre-definition API: its only custom choice was a
+    # measurement mode. New clients send representation explicitly.
+    if (
+        measurement_mode == SegmentationType.MEASUREMENT_MODE_GLOBAL
+        and category == SegmentationType.CATEGORY_ORGANELLE
+        and representation == SegmentationType.REPRESENTATION_INSTANCES
+    ):
+        representation = SegmentationType.REPRESENTATION_SEMANTIC
+
+    # Area layers are always manually edited through the area workflow. Their
+    # union is materialized as a global mask even when named instances are the
+    # editable representation.
+    if (
+        category == SegmentationType.CATEGORY_AREA
+        or representation == SegmentationType.REPRESENTATION_SEMANTIC
+    ):
+        measurement_mode = SegmentationType.MEASUREMENT_MODE_GLOBAL
+    else:
+        measurement_mode = SegmentationType.MEASUREMENT_MODE_OBJECTS
 
     builtin = find_builtin_segmentation_type(cleaned)
     if builtin is not None:
@@ -108,6 +152,10 @@ def resolve_or_create_segmentation_type(
             "short_name": cleaned,
             "long_name": cleaned,
             "measurement_mode": measurement_mode,
+            "description": (description or "").strip(),
+            "category": category,
+            "representation": representation,
+            "topology_policy": topology_policy,
         },
     )
 
