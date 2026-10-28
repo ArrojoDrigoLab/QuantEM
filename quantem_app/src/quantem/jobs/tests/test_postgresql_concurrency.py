@@ -84,10 +84,13 @@ def test_concurrent_storage_lease_has_one_winner():
     outcomes = [output.get_nowait(), output.get_nowait()]
     assert not [outcome for outcome in outcomes if isinstance(outcome, Exception)]
     assert sorted(outcomes) == ["acquired", "conflict"]
-    assert StorageArtifactLease.objects.filter(
-        artifact_path="data/test/shared.bin",
-        status=StorageArtifactLease.STATUS_ACTIVE,
-    ).count() == 1
+    assert (
+        StorageArtifactLease.objects.filter(
+            artifact_path="data/test/shared.bin",
+            status=StorageArtifactLease.STATUS_ACTIVE,
+        ).count()
+        == 1
+    )
 
 
 def test_concurrent_schedulers_claim_each_job_once():

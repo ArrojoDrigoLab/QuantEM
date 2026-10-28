@@ -102,7 +102,10 @@ class StructuredOutputTests(TestCase):
         )
 
         self.assertEqual(result["warnings"][0]["code"], "cells_clipped_by_sample_area")
-        self.assertEqual(result["warnings"][0]["cells"], [{"id": str(AnalysisMaskObject.objects.get(name="Cell 2").id), "name": "Cell 2"}])
+        self.assertEqual(
+            result["warnings"][0]["cells"],
+            [{"id": str(AnalysisMaskObject.objects.get(name="Cell 2").id), "name": "Cell 2"}],
+        )
         cell_2 = next(row for row in tables["cell_summary.csv"] if row["cell_name"] == "Cell 2")
         self.assertGreater(cell_2["cell_area_px"], cell_2["measurement_area_px"])
         self.assertTrue(cell_2["clipped_by_sample_area"])
@@ -111,8 +114,7 @@ class StructuredOutputTests(TestCase):
         self.assertEqual(object_row["centroid_x_px"], 18.0)
         self.assertTrue(np.isfinite(object_row["area_px"]))
         region_counts = {
-            row["region_kind"]: row["object_count"]
-            for row in tables["region_summary.csv"]
+            row["region_kind"]: row["object_count"] for row in tables["region_summary.csv"]
         }
         self.assertEqual(
             region_counts,

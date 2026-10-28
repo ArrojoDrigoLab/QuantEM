@@ -704,6 +704,26 @@ fn main() {
                 return Ok(());
             };
 
+            let legacy_sqlite = storage
+                .as_ref()
+                .expect("storage checked above")
+                .join("quantem.sqlite3")
+                .is_file();
+            let startup_timeout = if legacy_sqlite {
+                // A large existing library may need to traverse several
+                // historical SQLite migrations, fingerprint every field, and
+                // copy it transactionally before the web server may open.
+                Duration::from_secs(2 * 60 * 60)
+            } else {
+                STARTUP_TIMEOUT
+            };
+            if legacy_sqlite {
+                set_status(
+                    &handle,
+                    "Upgrading the existing database to PostgreSQL… Your images and the SQLite recovery backup are being preserved.",
+                );
+            }
+
             let port = free_port().unwrap_or(8722);
             let shutdown_token = tempfile::Builder::new()
                 .prefix(".quantem-shutdown-")
@@ -819,16 +839,29 @@ fn main() {
                             }
                         }
                     }
-                    if started.elapsed() > STARTUP_TIMEOUT {
+                    if started.elapsed() > startup_timeout {
                         fail(
                             &h,
-                            "the QuantEM server did not start within five minutes.\n\
-                             See logs\\quantem-desktop.log in the QuantEM data directory.",
+                            if legacy_sqlite {
+                                "the automatic SQLite-to-PostgreSQL upgrade did not finish within two hours.\n\
+                                 The SQLite database and its recovery snapshot were retained.\n\
+                                 See logs\\quantem-desktop.log in the QuantEM data directory."
+                            } else {
+                                "the QuantEM server did not start within five minutes.\n\
+                                 See logs\\quantem-desktop.log in the QuantEM data directory."
+                            },
                         );
                         return;
                     }
                     if started.elapsed() > Duration::from_secs(20) {
-                        set_status(&h, "Still starting… the first launch migrates the database.");
+                        set_status(
+                            &h,
+                            if legacy_sqlite {
+                                "Upgrading the existing database to PostgreSQL… This can take several minutes for a large library."
+                            } else {
+                                "Still starting… the first launch migrates the database."
+                            },
+                        );
                     }
                     std::thread::sleep(Duration::from_millis(300));
                 }

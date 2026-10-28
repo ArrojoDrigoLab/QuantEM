@@ -119,15 +119,11 @@ def postgres_runtime_environment(
     )
     if sys.platform == "darwin":
         configured["DYLD_LIBRARY_PATH"] = os.pathsep.join(
-            part
-            for part in (str(library_dir), configured.get("DYLD_LIBRARY_PATH", ""))
-            if part
+            part for part in (str(library_dir), configured.get("DYLD_LIBRARY_PATH", "")) if part
         )
     elif os.name != "nt":
         configured["LD_LIBRARY_PATH"] = os.pathsep.join(
-            part
-            for part in (str(library_dir), configured.get("LD_LIBRARY_PATH", ""))
-            if part
+            part for part in (str(library_dir), configured.get("LD_LIBRARY_PATH", "")) if part
         )
     return configured
 
@@ -214,7 +210,9 @@ def _cluster_major() -> str | None:
     try:
         return version_file.read_text(encoding="ascii").strip()
     except OSError as exc:
-        raise PostgresError(f"Cannot read the PostgreSQL cluster version at {version_file}.") from exc
+        raise PostgresError(
+            f"Cannot read the PostgreSQL cluster version at {version_file}."
+        ) from exc
 
 
 def _initialize_cluster(credentials: dict[str, str]) -> None:

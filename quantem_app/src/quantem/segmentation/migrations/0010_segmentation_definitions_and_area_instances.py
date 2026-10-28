@@ -12,35 +12,30 @@ CELL_NAME = re.compile(r"^Cell\s+(\d+)$", re.IGNORECASE)
 OBJECT_NAME = re.compile(r"^Object\s+(\d+)$", re.IGNORECASE)
 
 
-def _free_builtin_names(SegmentationType, *, short_name, long_name, internal_name):
+def _free_builtin_names(SegmentationType, *, using, short_name, long_name, internal_name):
+    manager = SegmentationType.objects.using(using)
+
     def replacement(row, field):
         original = getattr(row, field)
         base = f"{original} (custom)"
         candidate = base
         suffix = 2
         lookup = f"{field}__iexact"
-        while (
-            SegmentationType.objects.exclude(id=row.id)
-            .filter(**{lookup: candidate})
-            .exists()
-        ):
+        while manager.exclude(id=row.id).filter(**{lookup: candidate}).exists():
             candidate = f"{base} {suffix}"
             suffix += 1
         return candidate
 
-    for row in SegmentationType.objects.exclude(internal_name=internal_name).filter(
-        short_name__iexact=short_name
-    ):
+    for row in manager.exclude(internal_name=internal_name).filter(short_name__iexact=short_name):
         row.short_name = replacement(row, "short_name")
-        row.save(update_fields=["short_name"])
-    for row in SegmentationType.objects.exclude(internal_name=internal_name).filter(
-        long_name__iexact=long_name
-    ):
+        row.save(using=using, update_fields=["short_name"])
+    for row in manager.exclude(internal_name=internal_name).filter(long_name__iexact=long_name):
         row.long_name = replacement(row, "long_name")
-        row.save(update_fields=["long_name"])
+        row.save(using=using, update_fields=["long_name"])
 
 
-def _classify_types(SegmentationType):
+def _classify_types(SegmentationType, *, using):
+    manager = SegmentationType.objects.using(using)
     builtins = {
         "quantem_internal_mito": ("organelle", "instances", "non_overlapping"),
         "quantem_internal_er": ("organelle", "semantic", "non_overlapping"),
@@ -51,21 +46,21 @@ def _classify_types(SegmentationType):
         LEGACY_ANALYSIS_MASK: ("area", "instances", "overlapping"),
     }
     for internal_name, (category, representation, topology) in builtins.items():
-        SegmentationType.objects.filter(internal_name=internal_name).update(
+        manager.filter(internal_name=internal_name).update(
             category=category,
             representation=representation,
             topology_policy=topology,
         )
-    SegmentationType.objects.exclude(internal_name__in=builtins).filter(
-        measurement_mode="global"
-    ).update(representation="semantic")
+    manager.exclude(internal_name__in=builtins).filter(measurement_mode="global").update(
+        representation="semantic"
+    )
 
 
-def _persistent_cell_names(AnalysisMaskObject, segmentation_id):
+def _persistent_cell_names(AnalysisMaskObject, segmentation_id, *, using):
     rows = list(
-        AnalysisMaskObject.objects.filter(segmentation_id=segmentation_id).order_by(
-            "sort_order", "created_at", "id"
-        )
+        AnalysisMaskObject.objects.using(using)
+        .filter(segmentation_id=segmentation_id)
+        .order_by("sort_order", "created_at", "id")
     )
     used = set()
     for row in rows:
@@ -92,23 +87,28 @@ def _persistent_cell_names(AnalysisMaskObject, segmentation_id):
         used.add(number)
         highest = max(highest, number)
         row.name = f"Cell {number}"
-        row.save(update_fields=["name"])
+        row.save(using=using, update_fields=["name"])
 
 
 def migrate_definitions_and_masks(apps, schema_editor):
-    del schema_editor
+    alias = schema_editor.connection.alias
     SegmentationType = apps.get_model("segmentation", "SegmentationType")
     ImageSegmentation = apps.get_model("segmentation", "ImageSegmentation")
     AnalysisMaskObject = apps.get_model("segmentation", "AnalysisMaskObject")
     GlobalMask = apps.get_model("segmentation", "GlobalMask")
+    type_objects = SegmentationType.objects.using(alias)
+    segmentation_objects = ImageSegmentation.objects.using(alias)
+    mask_objects = AnalysisMaskObject.objects.using(alias)
+    global_masks = GlobalMask.objects.using(alias)
 
     _free_builtin_names(
         SegmentationType,
+        using=alias,
         short_name="Sample Area",
         long_name="Sample Area",
         internal_name=TISSUE,
     )
-    tissue, _ = SegmentationType.objects.get_or_create(
+    tissue, _ = type_objects.get_or_create(
         internal_name=TISSUE,
         defaults={
             "short_name": "Sample Area",
@@ -129,15 +129,16 @@ def migrate_definitions_and_masks(apps, schema_editor):
     tissue.representation = "semantic"
     tissue.topology_policy = "non_overlapping"
     tissue.measurement_mode = "global"
-    tissue.save()
+    tissue.save(using=alias)
 
     _free_builtin_names(
         SegmentationType,
+        using=alias,
         short_name="Cells",
         long_name="Cells",
         internal_name=CELLS,
     )
-    cells, _ = SegmentationType.objects.get_or_create(
+    cells, _ = type_objects.get_or_create(
         internal_name=CELLS,
         defaults={
             "short_name": "Cells",
@@ -158,22 +159,22 @@ def migrate_definitions_and_masks(apps, schema_editor):
     cells.representation = "instances"
     cells.topology_policy = "non_overlapping"
     cells.measurement_mode = "global"
-    cells.save()
+    cells.save(using=alias)
 
-    _classify_types(SegmentationType)
-    legacy = SegmentationType.objects.filter(internal_name=LEGACY_ANALYSIS_MASK).first()
+    _classify_types(SegmentationType, using=alias)
+    legacy = type_objects.filter(internal_name=LEGACY_ANALYSIS_MASK).first()
     if legacy is None:
         return
 
     target_cell_ids = set()
-    rows = ImageSegmentation.objects.filter(
+    rows = segmentation_objects.filter(
         segmentation_type=legacy, superseded_by__isnull=True
     ).order_by("asset_id", "created_at", "id")
     for source in rows:
         name = (source.display_name or "").strip().casefold()
         target_type = tissue if name in SAMPLE_ALIASES else cells
         target = (
-            ImageSegmentation.objects.filter(
+            segmentation_objects.filter(
                 asset_id=source.asset_id,
                 segmentation_type=target_type,
                 superseded_by__isnull=True,
@@ -185,52 +186,55 @@ def migrate_definitions_and_masks(apps, schema_editor):
         if target is None:
             source.segmentation_type = target_type
             source.display_name = ""
-            source.save(update_fields=["segmentation_type", "display_name"])
+            source.save(using=alias, update_fields=["segmentation_type", "display_name"])
             target = source
         else:
             source.superseded_by = target
-            source.save(update_fields=["superseded_by"])
+            source.save(using=alias, update_fields=["superseded_by"])
             last_order = (
-                AnalysisMaskObject.objects.filter(segmentation=target)
+                mask_objects.filter(segmentation=target)
                 .order_by("-sort_order")
                 .values_list("sort_order", flat=True)
                 .first()
                 or 0
             )
             moved = list(
-                AnalysisMaskObject.objects.filter(segmentation=source).order_by(
-                    "sort_order", "created_at", "id"
-                )
+                mask_objects.filter(segmentation=source).order_by("sort_order", "created_at", "id")
             )
             for offset, obj in enumerate(moved, start=1):
                 obj.segmentation = target
                 obj.sort_order = last_order + offset
-                obj.save(update_fields=["segmentation", "sort_order"])
+                obj.save(using=alias, update_fields=["segmentation", "sort_order"])
             if moved:
-                source_mask = GlobalMask.objects.filter(segmentation=source).first()
+                source_mask = global_masks.filter(segmentation=source).first()
                 if source_mask is not None:
                     metadata = dict(source_mask.metadata or {})
                     metadata["instances_migrated_to"] = str(target.id)
                     source_mask.metadata = metadata
-                    source_mask.save(update_fields=["metadata"])
+                    source_mask.save(using=alias, update_fields=["metadata"])
             # If vector instances already define the target, keep a raster-only
             # source on its superseded row. Runtime materialisation will add
             # its connected components without mistaking that raster for the
             # already-moved vector objects. Moving it onto the target here
             # would make it invisible as soon as any vector object existed.
             if (
-                not GlobalMask.objects.filter(segmentation=target).exists()
-                and not AnalysisMaskObject.objects.filter(segmentation=target).exists()
+                not global_masks.filter(segmentation=target).exists()
+                and not mask_objects.filter(segmentation=target).exists()
             ):
-                GlobalMask.objects.filter(segmentation=source).update(segmentation=target)
+                global_masks.filter(segmentation=source).update(segmentation=target)
         if target_type.id == cells.id:
             target_cell_ids.add(target.id)
 
     for segmentation_id in target_cell_ids:
-        _persistent_cell_names(AnalysisMaskObject, segmentation_id)
+        _persistent_cell_names(AnalysisMaskObject, segmentation_id, using=alias)
 
 
 class Migration(migrations.Migration):
+    # PostgreSQL defers the self-referential foreign-key index until the
+    # schema editor exits.  The data conversion below updates that same table,
+    # leaving pending trigger events that prevent the deferred CREATE INDEX
+    # inside one transaction.  Commit schema operations before converting data.
+    atomic = False
     dependencies = [("segmentation", "0009_correctionrevision")]
 
     operations = [
@@ -288,7 +292,12 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="AnalysisMaskObjectAnnotation",
             fields=[
-                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("tags", models.JSONField(blank=True, default=list)),
@@ -306,7 +315,12 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="SegmentObjectAnnotation",
             fields=[
-                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("display_name", models.CharField(blank=True, default="", max_length=100)),

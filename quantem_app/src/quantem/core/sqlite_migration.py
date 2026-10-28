@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import sqlite3
 from collections import defaultdict, deque
 from datetime import UTC, date, datetime, time
@@ -21,7 +22,8 @@ from django.db import DatabaseError, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
-from quantem.core.config import STORAGE_DIR
+from quantem._version import FALLBACK_VERSION
+from quantem.core.config import DB_PATH, STORAGE_DIR
 
 
 class SQLiteMigrationError(RuntimeError):
@@ -34,6 +36,22 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _atomic_json(path: Path, payload: dict[str, object]) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
+def _remove_sqlite_sidecars(path: Path) -> None:
+    """Remove sidecars belonging only to a closed temporary SQLite copy."""
+
+    for suffix in ("-wal", "-shm"):
+        path.with_name(f"{path.name}{suffix}").unlink(missing_ok=True)
 
 
 def create_consistent_sqlite_backup(source: Path, destination_root: Path | None = None) -> Path:
@@ -64,6 +82,7 @@ def create_consistent_sqlite_backup(source: Path, destination_root: Path | None 
             source_connection.close()
             source_connection = None
         temporary.unlink(missing_ok=True)
+        _remove_sqlite_sidecars(temporary)
         with contextlib.suppress(OSError):
             root.rmdir()
         raise SQLiteMigrationError(f"Could not create a consistent SQLite backup: {exc}") from exc
@@ -72,6 +91,7 @@ def create_consistent_sqlite_backup(source: Path, destination_root: Path | None 
             target_connection.close()
         if source_connection is not None:
             source_connection.close()
+        _remove_sqlite_sidecars(temporary)
     verifier: sqlite3.Connection | None = None
     try:
         verifier = sqlite3.connect(f"file:{temporary.as_posix()}?mode=ro", uri=True)
@@ -81,14 +101,17 @@ def create_consistent_sqlite_backup(source: Path, destination_root: Path | None 
             verifier.close()
             verifier = None
         temporary.unlink(missing_ok=True)
+        _remove_sqlite_sidecars(temporary)
         with contextlib.suppress(OSError):
             root.rmdir()
         raise SQLiteMigrationError(f"Could not verify the SQLite backup: {exc}") from exc
     finally:
         if verifier is not None:
             verifier.close()
+        _remove_sqlite_sidecars(temporary)
     if integrity != ("ok",):
         temporary.unlink(missing_ok=True)
+        _remove_sqlite_sidecars(temporary)
         with contextlib.suppress(OSError):
             root.rmdir()
         raise SQLiteMigrationError(f"SQLite integrity check failed: {integrity!r}")
@@ -100,9 +123,7 @@ def create_consistent_sqlite_backup(source: Path, destination_root: Path | None 
         "source": str(source),
         "source_retained": True,
     }
-    (root / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    _atomic_json(root / "manifest.json", manifest)
     return destination
 
 
@@ -201,8 +222,20 @@ def _configure_source(backup: Path, alias: str) -> None:
     }
 
 
+def _assert_source_not_ahead(executor: MigrationExecutor) -> None:
+    known = set(executor.loader.graph.nodes)
+    unknown = sorted(set(executor.loader.applied_migrations) - known)
+    if unknown:
+        labels = ", ".join(f"{app}.{name}" for app, name in unknown)
+        raise SQLiteMigrationError(
+            "The SQLite snapshot was written by a newer or incompatible QuantEM schema. "
+            f"Unknown applied migrations: {labels}"
+        )
+
+
 def _assert_source_schema_current(alias: str) -> None:
     executor = MigrationExecutor(connections[alias])
+    _assert_source_not_ahead(executor)
     pending = executor.migration_plan(executor.loader.graph.leaf_nodes())
     if pending:
         labels = ", ".join(f"{migration.app_label}.{migration.name}" for migration, _ in pending)
@@ -210,6 +243,41 @@ def _assert_source_schema_current(alias: str) -> None:
             "The SQLite snapshot does not match this QuantEM version. Upgrade a copy with the "
             f"matching application before migrating. Pending: {labels}"
         )
+
+
+def _upgrade_source_schema(alias: str) -> list[str]:
+    """Advance a disposable SQLite copy through every skipped app migration."""
+
+    connection = connections[alias]
+    executor = MigrationExecutor(connection)
+    _assert_source_not_ahead(executor)
+    plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+    backwards = [migration for migration, is_backwards in plan if is_backwards]
+    if backwards:
+        labels = ", ".join(f"{item.app_label}.{item.name}" for item in backwards)
+        raise SQLiteMigrationError(
+            "The SQLite snapshot would require reversing migrations, which automatic "
+            f"upgrade never does: {labels}"
+        )
+    applied = [f"{migration.app_label}.{migration.name}" for migration, _ in plan]
+    if plan:
+        executor.migrate(executor.loader.graph.leaf_nodes())
+    verifier = MigrationExecutor(connection)
+    _assert_source_not_ahead(verifier)
+    remaining = verifier.migration_plan(verifier.loader.graph.leaf_nodes())
+    if remaining:
+        labels = ", ".join(f"{migration.app_label}.{migration.name}" for migration, _ in remaining)
+        raise SQLiteMigrationError(
+            f"The disposable SQLite upgrade did not reach the current schema: {labels}"
+        )
+    with connection.cursor() as cursor:
+        cursor.execute("PRAGMA integrity_check")
+        integrity = cursor.fetchone()
+    if integrity != ("ok",):
+        raise SQLiteMigrationError(
+            f"SQLite integrity check failed after applying skipped migrations: {integrity!r}"
+        )
+    return applied
 
 
 def _assert_target_pristine(alias: str) -> None:
@@ -222,6 +290,7 @@ def _assert_target_pristine(alias: str) -> None:
         "jobs.Job",
         "analysis.AnalysisRun",
         "finetune.Adapter",
+        "assets.DatabaseImport",
     ):
         model = apps.get_model(label)
         count = model._base_manager.using(alias).count()
@@ -257,9 +326,7 @@ def _copy_model(model: type, *, source: str, target: str) -> int:
             for name, value in payload.items():
                 _validate_value(
                     value,
-                    location=(
-                        f"{model._meta.label}.{payload.get(model._meta.pk.attname)}.{name}"
-                    ),
+                    location=(f"{model._meta.label}.{payload.get(model._meta.pk.attname)}.{name}"),
                 )
                 if isinstance(value, memoryview):
                     payload[name] = bytes(value)
@@ -309,18 +376,23 @@ def migrate_sqlite_to_postgres(
     backup_root: Path | None = None,
     target_alias: str = "default",
     source_alias: str = "sqlite_migration_source",
+    automatic: bool = False,
 ) -> dict[str, object]:
-    """Copy a consistent SQLite snapshot into an empty PostgreSQL database."""
+    """Upgrade and copy a consistent SQLite snapshot into empty PostgreSQL."""
 
     target = connections[target_alias]
     if target.vendor != "postgresql":
         raise SQLiteMigrationError("The migration destination must be PostgreSQL.")
+    _assert_target_pristine(target_alias)
     backup = create_consistent_sqlite_backup(source, backup_root)
-    _configure_source(backup, source_alias)
+    working = backup.with_name(f".upgrade-working-{os.getpid()}.sqlite3")
+    if working.exists():
+        raise SQLiteMigrationError(f"SQLite upgrade workspace already exists: {working}")
+    shutil.copy2(backup, working)
+    _configure_source(working, source_alias)
     source_connection = connections[source_alias]
     try:
-        _assert_source_schema_current(source_alias)
-        _assert_target_pristine(target_alias)
+        source_schema_upgrades = _upgrade_source_schema(source_alias)
         models = _models_in_dependency_order()
         source_fingerprints = {
             model._meta.label_lower: _model_fingerprint(model, alias=source_alias)
@@ -351,9 +423,23 @@ def migrate_sqlite_to_postgres(
             }
             if mismatches:
                 raise SQLiteMigrationError(
-                    "Content validation failed after copy: " + json.dumps(mismatches, sort_keys=True)
+                    "Content validation failed after copy: "
+                    + json.dumps(mismatches, sort_keys=True)
                 )
             deactivated_jobs = _deactivate_copied_jobs(target_alias)
+            DatabaseImport = apps.get_model("assets", "DatabaseImport")
+            try:
+                portable_snapshot = str(backup.parent.relative_to(STORAGE_DIR))
+            except ValueError:
+                portable_snapshot = str(backup.parent)
+            import_record = DatabaseImport.objects.using(target_alias).create(
+                source_backend="sqlite",
+                source_sha256=_sha256(backup),
+                source_schema_migrations=source_schema_upgrades,
+                snapshot_path=portable_snapshot,
+                automatic=automatic,
+                deactivated_job_ids=deactivated_jobs,
+            )
 
         report = {
             "backup": str(backup),
@@ -361,6 +447,9 @@ def migrate_sqlite_to_postgres(
             "completed_at": datetime.now(UTC).isoformat(),
             "copied_rows": copied,
             "deactivated_job_ids": deactivated_jobs,
+            "database_import_id": str(import_record.pk),
+            "automatic": automatic,
+            "source_schema_upgrades": source_schema_upgrades,
             "source": str(Path(source).expanduser().resolve(strict=True)),
             "source_retained": True,
             "validated_models": len(models),
@@ -381,3 +470,125 @@ def migrate_sqlite_to_postgres(
         ) from exc
     finally:
         source_connection.close()
+        for candidate in (
+            working,
+            Path(f"{working}-wal"),
+            Path(f"{working}-shm"),
+        ):
+            candidate.unlink(missing_ok=True)
+
+
+def _new_automatic_snapshot_root() -> Path:
+    from quantem.core.migration_safety import SNAPSHOT_ROOT
+
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    version = FALLBACK_VERSION.replace("/", "-")
+    candidate = SNAPSHOT_ROOT / f"{stamp}-to-{version}-sqlite-cutover"
+    suffix = 1
+    while candidate.exists():
+        candidate = SNAPSHOT_ROOT / f"{stamp}-to-{version}-sqlite-cutover-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _resolve_snapshot_directory(value: str) -> Path:
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        candidate = STORAGE_DIR / candidate
+    return candidate.resolve(strict=False)
+
+
+def _archive_legacy_sqlite_files(source: Path, snapshot_root: Path) -> list[str]:
+    """Move the retired live files into their already-verified backup slot."""
+
+    from quantem.core.migration_safety import SNAPSHOT_ROOT
+
+    snapshot_root = snapshot_root.resolve(strict=True)
+    if snapshot_root.parent != SNAPSHOT_ROOT.resolve(strict=False):
+        raise SQLiteMigrationError(
+            f"Refusing to archive SQLite outside the migration-backup root: {snapshot_root}"
+        )
+    original_root = snapshot_root / "original-live-files"
+    original_root.mkdir(exist_ok=True)
+    archived: list[str] = []
+    for suffix in ("", "-wal", "-shm"):
+        current = Path(f"{source}{suffix}")
+        destination = original_root / current.name
+        if current.exists() and destination.exists():
+            raise SQLiteMigrationError(
+                f"Both the live and archived SQLite files exist: {current} and {destination}"
+            )
+        if current.exists():
+            os.replace(current, destination)
+        if destination.exists():
+            archived.append(str(destination.relative_to(snapshot_root)))
+    return archived
+
+
+def _finish_automatic_cutover(source: Path, snapshot_root: Path) -> list[str]:
+    archived = _archive_legacy_sqlite_files(source, snapshot_root)
+    manifest_path = snapshot_root / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SQLiteMigrationError(
+            f"The completed migration snapshot manifest is unreadable: {manifest_path}"
+        ) from exc
+    manifest.update(
+        {
+            "backup_kind": "automatic-sqlite-to-postgresql-cutover",
+            "original_live_files": archived,
+            "source_archived": True,
+        }
+    )
+    _atomic_json(manifest_path, manifest)
+    from quantem.core.migration_safety import prune_pre_migration_snapshots
+
+    prune_pre_migration_snapshots()
+    return archived
+
+
+def migrate_legacy_sqlite_on_startup(
+    source: Path = DB_PATH,
+    *,
+    target_alias: str = "default",
+) -> dict[str, object] | None:
+    """Perform or recover the one-time, unattended desktop database cutover."""
+
+    target = connections[target_alias]
+    if target.vendor != "postgresql":
+        return None
+    source = Path(source).expanduser().resolve(strict=False)
+    DatabaseImport = apps.get_model("assets", "DatabaseImport")
+    completed = (
+        DatabaseImport.objects.using(target_alias)
+        .filter(source_backend="sqlite", automatic=True)
+        .order_by("-created_at")
+        .first()
+    )
+    if completed is not None:
+        if not source.exists():
+            return None
+        snapshot_root = _resolve_snapshot_directory(completed.snapshot_path)
+        archived = _finish_automatic_cutover(source, snapshot_root)
+        return {
+            "automatic": True,
+            "database_import_id": str(completed.pk),
+            "recovered_completed_import": True,
+            "snapshot": str(snapshot_root),
+            "archived_files": archived,
+        }
+    if not source.is_file():
+        return None
+
+    _assert_target_pristine(target_alias)
+    snapshot_root = _new_automatic_snapshot_root()
+    report = migrate_sqlite_to_postgres(
+        source,
+        backup_root=snapshot_root,
+        target_alias=target_alias,
+        automatic=True,
+    )
+    report["archived_files"] = _finish_automatic_cutover(source, snapshot_root)
+    report["snapshot"] = str(snapshot_root)
+    return report

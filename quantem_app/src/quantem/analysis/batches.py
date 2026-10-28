@@ -51,9 +51,7 @@ def preview_batch(experiment, data):
             for value in types:
                 UUID(value)
         except (TypeError, ValueError):
-            raise ValidationError(
-                "Choose reusable organelle definitions by their IDs."
-            ) from None
+            raise ValidationError("Choose reusable organelle definitions by their IDs.") from None
         valid_type_ids = {
             str(value)
             for value in SegmentationType.objects.filter(
@@ -90,9 +88,7 @@ def preview_batch(experiment, data):
         try:
             UUID(mask_definition_id)
         except (TypeError, ValueError):
-            raise ValidationError(
-                "Choose the reusable Sample Area definition by its ID."
-            ) from None
+            raise ValidationError("Choose the reusable Sample Area definition by its ID.") from None
         if not SegmentationType.objects.filter(
             id=mask_definition_id,
             category=SegmentationType.CATEGORY_AREA,
@@ -117,15 +113,11 @@ def preview_batch(experiment, data):
         masks = [
             s
             for s in segs
-            if (
-                mask_definition_id
-                and str(s.segmentation_type_id) == mask_definition_id
-            )
+            if (mask_definition_id and str(s.segmentation_type_id) == mask_definition_id)
             or (
                 not mask_definition_id
                 and mask_name
-                and s.segmentation_type.internal_name
-                == "quantem_internal_analysis_mask"
+                and s.segmentation_type.internal_name == "quantem_internal_analysis_mask"
                 and (s.display_name or s.segmentation_type.long_name) == mask_name
             )
         ]
@@ -134,10 +126,7 @@ def preview_batch(experiment, data):
                 s
                 for s in segs
                 if s.segmentation_type.internal_name == "quantem_internal_cells"
-                and (
-                    s.status_stage == "COMPLETED"
-                    or _has_saved_area(s)
-                )
+                and (s.status_stage == "COMPLETED" or _has_saved_area(s))
             ),
             None,
         )
@@ -224,7 +213,9 @@ def preview_batch(experiment, data):
                         "segmentation_type_id": (
                             str(seg.segmentation_type_id)
                             if seg
-                            else selector if using_definition_ids else None
+                            else selector
+                            if using_definition_ids
+                            else None
                         ),
                         "structure": (
                             seg.display_name

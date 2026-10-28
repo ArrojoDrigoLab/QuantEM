@@ -112,8 +112,10 @@ def _cell_contains(region, x: float, y: float, sample_mask: np.ndarray | None) -
     if sample_mask is None:
         return True
     iy, ix = int(y), int(x)
-    return 0 <= iy < sample_mask.shape[0] and 0 <= ix < sample_mask.shape[1] and bool(
-        sample_mask[iy, ix]
+    return (
+        0 <= iy < sample_mask.shape[0]
+        and 0 <= ix < sample_mask.shape[1]
+        and bool(sample_mask[iy, ix])
     )
 
 
@@ -183,9 +185,7 @@ def build_structured_outputs(
             .first()
         )
     sample_mask = (
-        segmentation_mask(sample, shape, cancel_check=cancel_check)
-        if sample is not None
-        else None
+        segmentation_mask(sample, shape, cancel_check=cancel_check) if sample is not None else None
     )
 
     cells = None
@@ -199,9 +199,7 @@ def build_structured_outputs(
     cell_regions = analysis_mask_regions(cells, shape) if cells is not None else ()
 
     organelle_masks = {
-        str(segmentation.id): segmentation_mask(
-            segmentation, shape, cancel_check=cancel_check
-        )
+        str(segmentation.id): segmentation_mask(segmentation, shape, cancel_check=cancel_check)
         for _name, segmentation in organelles
     }
     whole = np.ones(shape, dtype=bool)
@@ -209,7 +207,7 @@ def build_structured_outputs(
     for region in cell_regions:
         y1 = region.y0 + region.mask.shape[0]
         x1 = region.x0 + region.mask.shape[1]
-        cell_union[region.y0:y1, region.x0:x1] |= region.mask
+        cell_union[region.y0 : y1, region.x0 : x1] |= region.mask
     effective_cell_union = cell_union & sample_mask if sample_mask is not None else cell_union
 
     region_rows: list[dict[str, Any]] = []
@@ -261,21 +259,20 @@ def build_structured_outputs(
         y1 = region.y0 + full.shape[0]
         x1 = region.x0 + full.shape[1]
         effective = (
-            full & sample_mask[region.y0:y1, region.x0:x1]
-            if sample_mask is not None
-            else full
+            full & sample_mask[region.y0 : y1, region.x0 : x1] if sample_mask is not None else full
         )
         cell_masks[region.identifier] = (full, effective)
         if sample_mask is not None and np.any(full & ~effective):
             clipped_cells.append({"id": region.identifier, "name": region.name})
 
     object_rows: list[dict[str, Any]] = []
-    metrics_by_region_organelle: dict[
-        tuple[str, str], list[ObjectMetrics]
-    ] = defaultdict(list)
+    metrics_by_region_organelle: dict[tuple[str, str], list[ObjectMetrics]] = defaultdict(list)
     metrics_by_cell_organelle: dict[tuple[str, str], list[ObjectMetrics]] = defaultdict(list)
     for organelle_name, organelle in organelles:
-        if organelle.segmentation_type.representation != organelle.segmentation_type.REPRESENTATION_INSTANCES:
+        if (
+            organelle.segmentation_type.representation
+            != organelle.segmentation_type.REPRESENTATION_INSTANCES
+        ):
             continue
         ensure_confirmed_object_measurements(organelle, cancel_check=cancel_check)
         for obj in confirmed_objects(organelle).iterator():
@@ -296,13 +293,8 @@ def build_structured_outputs(
                 None,
             )
             iy, ix = int(obj.centroid_y), int(obj.centroid_x)
-            in_sample = (
-                sample_mask is None
-                or (
-                    0 <= iy < shape[0]
-                    and 0 <= ix < shape[1]
-                    and bool(sample_mask[iy, ix])
-                )
+            in_sample = sample_mask is None or (
+                0 <= iy < shape[0] and 0 <= ix < shape[1] and bool(sample_mask[iy, ix])
             )
             if assigned is not None:
                 metrics_by_cell_organelle[(assigned.identifier, str(organelle.id))].append(metrics)
@@ -345,13 +337,9 @@ def build_structured_outputs(
             y1 = region.y0 + full.shape[0]
             x1 = region.x0 + full.shape[1]
             for organelle_name, organelle in organelles:
-                organelle_crop = organelle_masks[str(organelle.id)][
-                    region.y0:y1, region.x0:x1
-                ]
+                organelle_crop = organelle_masks[str(organelle.id)][region.y0 : y1, region.x0 : x1]
                 organelle_area = int(np.count_nonzero(organelle_crop & effective))
-                metrics = metrics_by_cell_organelle.get(
-                    (region.identifier, str(organelle.id)), []
-                )
+                metrics = metrics_by_cell_organelle.get((region.identifier, str(organelle.id)), [])
                 cell_rows.append(
                     {
                         "cell_id": region.identifier,

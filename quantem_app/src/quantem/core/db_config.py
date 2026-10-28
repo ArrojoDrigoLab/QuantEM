@@ -79,6 +79,5 @@ def get_database_config() -> dict:
     if engine == "sqlite":
         return _sqlite_config()
     raise RuntimeError(
-        "QUANTEM_DATABASE_ENGINE must be 'postgresql' or 'sqlite' "
-        f"(got {engine!r})."
+        f"QUANTEM_DATABASE_ENGINE must be 'postgresql' or 'sqlite' (got {engine!r})."
     )

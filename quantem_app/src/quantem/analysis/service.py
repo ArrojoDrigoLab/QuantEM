@@ -1417,9 +1417,7 @@ def write_bundle(
         )
 
     if any(
-        (result.get("structured_analysis") or {})
-        .get("outputs", {})
-        .get("individual_objects")
+        (result.get("structured_analysis") or {}).get("outputs", {}).get("individual_objects")
         for result in results
     ):
         organelle_rows = structured_rows("organelle_objects.csv")
@@ -1801,9 +1799,7 @@ def run_for_segmentation(
             result["_structured_tables"] = structured_tables
             for warning in structured["warnings"]:
                 cells = ", ".join(cell["name"] for cell in warning.get("cells", []))
-                message = warning["message"] + (
-                    f" Applicable cells: {cells}." if cells else ""
-                )
+                message = warning["message"] + (f" Applicable cells: {cells}." if cells else "")
                 result["notes"].append(
                     note(warning["code"], message, cells=warning.get("cells", []))
                 )

@@ -117,7 +117,9 @@ MANUAL_ONLY_INTERNAL_NAMES = frozenset(
     {TISSUE.internal_name, CELLS.internal_name, ANALYSIS_MASK.internal_name}
 )
 
-AREA_INTERNAL_NAMES = frozenset({TISSUE.internal_name, CELLS.internal_name, ANALYSIS_MASK.internal_name})
+AREA_INTERNAL_NAMES = frozenset(
+    {TISSUE.internal_name, CELLS.internal_name, ANALYSIS_MASK.internal_name}
+)
 
 SAMPLE_AREA_NAME_ALIASES = frozenset({"tissue", "tissue mask", "sample area"})
 

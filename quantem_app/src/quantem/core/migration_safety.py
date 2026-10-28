@@ -58,6 +58,13 @@ def _atomic_json(path: Path, payload: dict) -> None:
     os.replace(temporary, path)
 
 
+def _remove_sqlite_sidecars(path: Path) -> None:
+    """Remove sidecars belonging only to a closed temporary SQLite copy."""
+
+    for suffix in ("-wal", "-shm"):
+        path.with_name(f"{path.name}{suffix}").unlink(missing_ok=True)
+
+
 def _remove_snapshot(path: Path) -> None:
     """Remove only a validated snapshot child while enforcing retention."""
 
@@ -210,6 +217,7 @@ def create_pre_migration_snapshot(pending: Sequence[str]) -> Path | None:
         if integrity != ("ok",):
             raise RuntimeError("SQLite integrity check failed for migration snapshot")
 
+        _remove_sqlite_sidecars(temporary)
         os.replace(temporary, destination)
         _atomic_json(
             snapshot_dir / "manifest.json",
@@ -226,6 +234,7 @@ def create_pre_migration_snapshot(pending: Sequence[str]) -> Path | None:
             source.close()
         if target is not None:
             target.close()
+        _remove_sqlite_sidecars(temporary)
         # The directory is our own freshly-created child and contains only a
         # failed temporary backup, never user data.
         _remove_snapshot(snapshot_dir)

@@ -92,9 +92,7 @@ class ExperimentBatchTests(AnalysisRunTestCase):
             self.experiment,
             {
                 "asset_ids": [str(self.asset.id)],
-                "segmentation_type_ids": [
-                    str(self.segmentation.segmentation_type_id)
-                ],
+                "segmentation_type_ids": [str(self.segmentation.segmentation_type_id)],
                 "mask_definition_id": str(sample.segmentation_type_id),
             },
         )[0]

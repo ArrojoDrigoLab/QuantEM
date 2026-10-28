@@ -249,8 +249,9 @@ export function SettingsDialog({
           </h2>
           <p className="mt-1 text-sm text-slate-600">
             Before an app upgrade changes the database schema, QuantEM automatically
-            creates a verified database backup. Manual backups are not affected by this
-            policy.
+            creates a verified database backup. The SQLite recovery snapshot created
+            during the PostgreSQL upgrade uses this same retained-backup slot. Manual
+            backups are not affected by this policy.
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="grid gap-1.5 text-sm font-medium text-slate-800">

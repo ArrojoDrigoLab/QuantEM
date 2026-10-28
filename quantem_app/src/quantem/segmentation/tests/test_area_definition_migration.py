@@ -38,9 +38,7 @@ class AreaDefinitionMigrationTests(TransactionTestCase):
         SegmentationType.objects.filter(
             internal_name__in=("quantem_internal_tissue", "quantem_internal_cells")
         ).delete()
-        asset = create_small_test_image(
-            "Legacy areas", width=64, height=64
-        ).asset
+        asset = create_small_test_image("Legacy areas", width=64, height=64).asset
         legacy_type = get_or_create_analysis_mask_type()
         tissue = ImageSegmentation.objects.create(
             asset=asset,
@@ -91,9 +89,7 @@ class AreaDefinitionMigrationTests(TransactionTestCase):
         NewSegmentation = new_apps.get_model("segmentation", "ImageSegmentation")
         NewObject = new_apps.get_model("segmentation", "AnalysisMaskObject")
         NewGlobalMask = new_apps.get_model("segmentation", "GlobalMask")
-        AreaAnnotation = new_apps.get_model(
-            "segmentation", "AnalysisMaskObjectAnnotation"
-        )
+        AreaAnnotation = new_apps.get_model("segmentation", "AnalysisMaskObjectAnnotation")
 
         sample_type = NewType.objects.get(internal_name="quantem_internal_tissue")
         cells_type = NewType.objects.get(internal_name="quantem_internal_cells")
@@ -128,7 +124,5 @@ class AreaDefinitionMigrationTests(TransactionTestCase):
         # the canonical Cells layer already has vector instances. Runtime
         # materialisation can then add those connected components exactly
         # once instead of hiding the raster behind an existing vector layer.
-        self.assertTrue(
-            NewGlobalMask.objects.filter(segmentation=merged_raster_cells).exists()
-        )
+        self.assertTrue(NewGlobalMask.objects.filter(segmentation=merged_raster_cells).exists())
         self.assertFalse(AreaAnnotation.objects.exists())

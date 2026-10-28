@@ -80,8 +80,7 @@ def prepare_analysis(segmentation: ImageSegmentation, data: dict) -> PreparedAna
         )
     )
     global_mode = (
-        segmentation.segmentation_type.category
-        == segmentation.segmentation_type.CATEGORY_AREA
+        segmentation.segmentation_type.category == segmentation.segmentation_type.CATEGORY_AREA
         or legacy_global_mode
     )
     serializer_type = GlobalAnalysisSerializer if global_mode else AnalysisRunCreateSerializer

@@ -153,6 +153,31 @@ class Asset(TimeStampedModel):
         return super().save(*args, **kwargs)
 
 
+class DatabaseImport(TimeStampedModel):
+    """Durable proof that a legacy database was committed into PostgreSQL.
+
+    The row is written inside the same PostgreSQL transaction as the imported
+    data.  It lets first-start recovery distinguish a completed import whose
+    final filesystem housekeeping was interrupted from an unrelated populated
+    database, without ever guessing from row counts alone.
+    """
+
+    SOURCE_SQLITE = "sqlite"
+
+    source_backend = models.CharField(max_length=16, default=SOURCE_SQLITE)
+    source_sha256 = models.CharField(max_length=64, unique=True)
+    source_schema_migrations = models.JSONField(default=list, blank=True)
+    snapshot_path = models.CharField(max_length=2048)
+    automatic = models.BooleanField(default=False)
+    deactivated_job_ids = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.source_backend}:{self.source_sha256[:12]}"
+
+
 # ---------------------------------------------------------------------------
 # Importing the same image twice
 # ---------------------------------------------------------------------------

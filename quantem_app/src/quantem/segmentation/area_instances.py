@@ -67,9 +67,7 @@ def _component_geometry(component: np.ndarray):
     if not rings:
         return None
     ring_polygons = [Polygon(ring) for ring in rings]
-    exterior_index = max(
-        range(len(rings)), key=lambda index: abs(float(ring_polygons[index].area))
-    )
+    exterior_index = max(range(len(rings)), key=lambda index: abs(float(ring_polygons[index].area)))
     exterior = ring_polygons[exterior_index]
     holes = [
         ring
@@ -91,6 +89,16 @@ def materialize_legacy_area_instances(
     time both the database and its configured data directory are guaranteed to
     be available. Once written, UUIDs and Cell names are stable.
     """
+    # Lock the stable parent row, not just its children. A SELECT FOR UPDATE on
+    # an empty child queryset locks nothing; two PostgreSQL requests could then
+    # both materialize the same legacy raster, choose the same Cell name and
+    # sort order, and commit duplicate objects. SQLite's IMMEDIATE transaction
+    # used to hide that race by serializing every writer.
+    segmentation = (
+        ImageSegmentation.objects.select_for_update()
+        .select_related("segmentation_type")
+        .get(pk=segmentation.pk)
+    )
     if segmentation.segmentation_type.category != segmentation.segmentation_type.CATEGORY_AREA:
         return list(AnalysisMaskObject.objects.filter(segmentation=segmentation))
 
@@ -98,9 +106,7 @@ def materialize_legacy_area_instances(
         AnalysisMaskObject.objects.select_for_update().filter(segmentation=segmentation)
     )
     created: list[AnalysisMaskObject] = []
-    sources = list(
-        segmentation.superseded_segmentations.select_related("segmentation_type").all()
-    )
+    sources = list(segmentation.superseded_segmentations.select_related("segmentation_type").all())
     # The canonical layer's own raster is materialized only when it has no
     # vector objects. Superseded source rasters are processed independently so
     # two legacy masks merged into Cells do not silently lose the second one.
@@ -144,9 +150,7 @@ def materialize_legacy_area_instances(
             polygon = _component_geometry(component)
             if polygon is None:
                 continue
-            geometry = translate(
-                polygon, xoff=float(x_slice.start), yoff=float(y_slice.start)
-            )
+            geometry = translate(polygon, xoff=float(x_slice.start), yoff=float(y_slice.start))
             name = ""
             if segmentation.segmentation_type.internal_name == CELLS.internal_name:
                 name = f"Cell {next_number}"

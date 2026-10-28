@@ -10,6 +10,8 @@ from django.db.backends.signals import connection_created
 from django.utils.module_loading import autodiscover_modules
 
 _scheduler_started = False
+_scheduler = None
+_scheduler_thread: threading.Thread | None = None
 
 
 def scheduler_is_running() -> bool:
@@ -36,7 +38,7 @@ def _should_autostart_scheduler() -> bool:
 
 
 def start_scheduler_if_needed() -> None:
-    global _scheduler_started
+    global _scheduler, _scheduler_started, _scheduler_thread
     if _scheduler_started:
         return
     if not _should_autostart_scheduler():
@@ -53,8 +55,33 @@ def start_scheduler_if_needed() -> None:
     scheduler = JobScheduler()
     thread = threading.Thread(target=scheduler.run_forever, name="JobScheduler", daemon=True)
     thread.start()
+    _scheduler = scheduler
+    _scheduler_thread = thread
     _scheduler_started = True
     logging.getLogger(__name__).info("Job scheduler autostarted in-process.")
+
+
+def stop_scheduler_if_running(timeout: float = 15.0) -> bool:
+    """Stop the scheduler and its workers before the database server exits."""
+
+    global _scheduler, _scheduler_started, _scheduler_thread
+    scheduler = _scheduler
+    thread = _scheduler_thread
+    if scheduler is None or thread is None:
+        _scheduler_started = False
+        return True
+    scheduler.request_stop()
+    thread.join(timeout=timeout)
+    stopped = not thread.is_alive()
+    if not stopped:
+        logging.getLogger(__name__).error(
+            "Job scheduler did not stop within %.1f seconds; forcing worker shutdown.", timeout
+        )
+        scheduler.runner.shutdown()
+    _scheduler = None
+    _scheduler_thread = None
+    _scheduler_started = False
+    return stopped
 
 
 def _on_connection_created(sender, connection, **kwargs) -> None:

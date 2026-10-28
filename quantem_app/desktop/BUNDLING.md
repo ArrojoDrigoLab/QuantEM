@@ -134,12 +134,21 @@ installer.
 
 ## Migration recovery
 
+When an upgraded installation still has `quantem.sqlite3`, the sidecar performs
+the cutover before opening its HTTP port or starting workers. It preserves a
+consistent SQLite snapshot, upgrades a disposable copy through any skipped
+schema versions, migrates and validates its content in PostgreSQL, and records
+completion inside the same PostgreSQL transaction. Fresh installs have no
+SQLite file and skip this path. The retired live SQLite files are archived into
+the verified snapshot only after the transaction commits.
+
 Before a launch applies pending Django migrations, QuantEM creates a consistent
 custom-format PostgreSQL dump at `backups/pre-migration/` under the active data
 root. The snapshot manifest records the server version, pending migrations,
 and SHA-256. The default policy retains only the newest migration snapshot and
 removes it after 30 days; both limits are configurable in the app's **Database
-upgrade backups** settings. Cleanup runs at startup, after snapshot creation,
+upgrade backups** settings. The automatic SQLite cutover snapshot occupies the
+same retained-backup slot. Cleanup runs at startup, after snapshot creation,
 and when the policy is changed. Explicit manual database backups are outside
 this policy. Images and models are not copied or deleted. If migration fails,
 the application stops and the log names the snapshot left for recovery.

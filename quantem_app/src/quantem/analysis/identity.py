@@ -28,9 +28,9 @@ def input_fingerprint(segmentation, params):
     # saved run if one changes.
     ids.update(
         str(value)
-        for value in ImageSegmentation.objects.filter(
-            superseded_by_id__in=ids
-        ).values_list("id", flat=True)
+        for value in ImageSegmentation.objects.filter(superseded_by_id__in=ids).values_list(
+            "id", flat=True
+        )
     )
     digest = hashlib.sha256()
     asset = Asset.objects.select_related("workflow_metadata").get(id=segmentation.asset_id)

@@ -90,9 +90,7 @@ class AssetSegmentationListCreateView(APIView):
 
     def get(self, request, asset_id):
         asset = _resolve_public_asset_image(asset_id)
-        segmentations = ImageSegmentation.objects.filter(
-            asset=asset, superseded_by__isnull=True
-        )
+        segmentations = ImageSegmentation.objects.filter(asset=asset, superseded_by__isnull=True)
         # ``asset`` is joined for ``objects_pixel_size``, which compares the
         # image's pixel size now with the one its objects were produced under.
         # Without it that is one extra query per row of a list a screen polls.

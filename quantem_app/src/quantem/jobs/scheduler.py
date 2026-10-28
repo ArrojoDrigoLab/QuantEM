@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 from datetime import timedelta
 
@@ -101,6 +102,12 @@ class JobScheduler:
         # called directly by tests that have nothing to do with uploads. The
         # start-up sweep is scheduled explicitly in ``run_forever`` instead.
         self._last_upload_sweep_monotonic = time.monotonic()
+        self._stop_event = threading.Event()
+
+    def request_stop(self) -> None:
+        """Wake the scheduler loop and prevent another database tick."""
+
+        self._stop_event.set()
 
     def _owns(self, job_id) -> bool:
         """True when a worker in *this* process is running the job right now.
@@ -260,8 +267,19 @@ class JobScheduler:
         Job = _get_job_model()
         now = timezone.now()
         with transaction.atomic():
-            queryset = self._lock_ready_jobs(self._get_ready_jobs())[:50]
-            for job in queryset:
+            inspected: list[object] = []
+            for _ in range(50):
+                # Lock one row at a time.  Evaluating a larger SKIP LOCKED
+                # queryset locks every returned row until commit, even though
+                # this method claims only one.  Concurrent schedulers would
+                # therefore skip the entire batch and report an empty queue.
+                queryset = self._get_ready_jobs()
+                if inspected:
+                    queryset = queryset.exclude(pk__in=inspected)
+                job = self._lock_ready_jobs(queryset).first()
+                if job is None:
+                    break
+                inspected.append(job.pk)
                 if not self.runner.can_dispatch(job.resource_class, job.type):
                     continue
                 claim = {
@@ -393,38 +411,49 @@ class JobScheduler:
         backed off, and the loop continues.
         """
         consecutive_failures = 0
-        while True:
-            try:
-                if not self._database_ready:
-                    if _wait_for_database():
-                        # Startup: every RUNNING row is an orphan by definition
-                        # (no worker can predate this scheduler), so the reap is
-                        # not gated on the heartbeat window here.
-                        self._recover_orphaned_jobs(startup=True)
-                        self._last_reap_monotonic = time.monotonic()
-                        # Start-up is when the previous session's wreckage is
-                        # still on disk: the bytes a killed server left mid
-                        # import survive a restart, and nothing else looks.
-                        self.sweep_abandoned_uploads()
-                        self._last_upload_sweep_monotonic = time.monotonic()
-                        self._database_ready = True
-                        logger.info("Job scheduler: database ready, dispatching.")
-                    else:
-                        time.sleep(self.poll_interval_seconds)
-                        continue
-                self.tick()
-                consecutive_failures = 0
-            except Exception:
-                consecutive_failures += 1
-                # The database can go away mid-session (a file moved, a lock
-                # held too long). Re-probe rather than assuming it is still there.
-                self._database_ready = False
-                logger.exception(
-                    "Job scheduler tick failed (%d in a row); continuing.",
-                    consecutive_failures,
-                )
-                time.sleep(
-                    min(30.0, self.poll_interval_seconds * 2 ** min(consecutive_failures, 5))
-                )
-                continue
-            time.sleep(self.poll_interval_seconds)
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    if not self._database_ready:
+                        if _wait_for_database():
+                            # Startup: every RUNNING row is an orphan by definition
+                            # (no worker can predate this scheduler), so the reap is
+                            # not gated on the heartbeat window here.
+                            self._recover_orphaned_jobs(startup=True)
+                            self._last_reap_monotonic = time.monotonic()
+                            # Start-up is when the previous session's wreckage is
+                            # still on disk: the bytes a killed server left mid
+                            # import survive a restart, and nothing else looks.
+                            self.sweep_abandoned_uploads()
+                            self._last_upload_sweep_monotonic = time.monotonic()
+                            self._database_ready = True
+                            logger.info("Job scheduler: database ready, dispatching.")
+                        elif self._stop_event.wait(self.poll_interval_seconds):
+                            break
+                        else:
+                            continue
+                    if self._stop_event.is_set():
+                        break
+                    self.tick()
+                    consecutive_failures = 0
+                except Exception:
+                    consecutive_failures += 1
+                    # The database can go away mid-session (a file moved, a lock
+                    # held too long). Re-probe rather than assuming it is still there.
+                    self._database_ready = False
+                    logger.exception(
+                        "Job scheduler tick failed (%d in a row); continuing.",
+                        consecutive_failures,
+                    )
+                    delay = min(
+                        30.0, self.poll_interval_seconds * 2 ** min(consecutive_failures, 5)
+                    )
+                    if self._stop_event.wait(delay):
+                        break
+                    continue
+                self._stop_event.wait(self.poll_interval_seconds)
+        finally:
+            self.runner.shutdown()
+            # Django connections are thread-local. Close the scheduler's own
+            # connection before the private PostgreSQL server is stopped.
+            connections.close_all()

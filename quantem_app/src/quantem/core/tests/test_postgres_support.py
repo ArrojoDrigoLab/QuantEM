@@ -98,6 +98,5 @@ def test_desktop_runtime_manifest_matches_managed_server_version():
     assert specification["postgresql_version"] == POSTGRES_VERSION
     assert set(specification["platforms"]) == {"windows-x64", "macos-universal"}
     assert all(
-        len(platform_spec["sha256"]) == 64
-        for platform_spec in specification["platforms"].values()
+        len(platform_spec["sha256"]) == 64 for platform_spec in specification["platforms"].values()
     )

@@ -35,8 +35,9 @@ probability-map provenance columns, so the backfill's inverse is a no-op rather
 than an attempt to put values back into columns that no longer exist.
 """
 
-import django.db.models.deletion
 import uuid
+
+import django.db.models.deletion
 from django.db import migrations, models
 
 #: Metadata keys ``inference`` already records beside a stored probability map,
@@ -72,9 +73,11 @@ def backfill_probability_map_provenance(apps, schema_editor):
     ``resample_kernel`` stays blank and ``value_range`` stays null: unknown,
     stated as unknown.
     """
+    alias = schema_editor.connection.alias
     ProbabilityMap = apps.get_model("segmentation", "ProbabilityMap")
     updated = []
-    for row in ProbabilityMap.objects.all().iterator():
+    manager = ProbabilityMap.objects.using(alias)
+    for row in manager.all().iterator():
         metadata = row.metadata if isinstance(row.metadata, dict) else {}
         if not metadata:
             continue
@@ -102,179 +105,266 @@ def backfill_probability_map_provenance(apps, schema_editor):
         if changed:
             updated.append(row)
         if len(updated) >= 500:
-            ProbabilityMap.objects.bulk_update(
-                updated, ["grid", "quantisation", "resample_kernel", "value_range"]
-            )
+            manager.bulk_update(updated, ["grid", "quantisation", "resample_kernel", "value_range"])
             updated = []
     if updated:
-        ProbabilityMap.objects.bulk_update(
-            updated, ["grid", "quantisation", "resample_kernel", "value_range"]
-        )
+        manager.bulk_update(updated, ["grid", "quantisation", "resample_kernel", "value_range"])
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('segmentation', '0002_segmentationcompletionarchive'),
+        ("segmentation", "0002_segmentationcompletionarchive"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='CountBox',
+            name="CountBox",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('run_version', models.PositiveIntegerField(default=1)),
-                ('x', models.FloatField()),
-                ('y', models.FloatField()),
-                ('width', models.FloatField()),
-                ('height', models.FloatField()),
-                ('seed', models.BigIntegerField(default=0)),
-                ('placement', models.CharField(blank=True, default='', max_length=16)),
-                ('n_marked', models.PositiveIntegerField(default=0)),
-                ('n_matched', models.PositiveIntegerField(default=0)),
-                ('completed_at', models.DateTimeField(blank=True, null=True)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("run_version", models.PositiveIntegerField(default=1)),
+                ("x", models.FloatField()),
+                ("y", models.FloatField()),
+                ("width", models.FloatField()),
+                ("height", models.FloatField()),
+                ("seed", models.BigIntegerField(default=0)),
+                ("placement", models.CharField(blank=True, default="", max_length=16)),
+                ("n_marked", models.PositiveIntegerField(default=0)),
+                ("n_matched", models.PositiveIntegerField(default=0)),
+                ("completed_at", models.DateTimeField(blank=True, null=True)),
             ],
             options={
-                'ordering': ['segmentation', 'run_version'],
+                "ordering": ["segmentation", "run_version"],
             },
         ),
         migrations.CreateModel(
-            name='QualityCheck',
+            name="QualityCheck",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('run_version', models.PositiveIntegerField(default=1)),
-                ('kind', models.CharField(choices=[('random_sample', 'Random spot check'), ('count_box', 'Inside the count box')], default='random_sample', max_length=16)),
-                ('sample_seed', models.BigIntegerField(default=0)),
-                ('ordinal', models.PositiveIntegerField(default=0)),
-                ('answer', models.CharField(blank=True, choices=[('yes', 'Yes'), ('wrong_shape', 'Wrong shape'), ('not_the_thing', 'Not the thing'), ('unsure', 'Not sure')], default='', max_length=16)),
-                ('answered_at', models.DateTimeField(blank=True, null=True)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("run_version", models.PositiveIntegerField(default=1)),
+                (
+                    "kind",
+                    models.CharField(
+                        choices=[
+                            ("random_sample", "Random spot check"),
+                            ("count_box", "Inside the count box"),
+                        ],
+                        default="random_sample",
+                        max_length=16,
+                    ),
+                ),
+                ("sample_seed", models.BigIntegerField(default=0)),
+                ("ordinal", models.PositiveIntegerField(default=0)),
+                (
+                    "answer",
+                    models.CharField(
+                        blank=True,
+                        choices=[
+                            ("yes", "Yes"),
+                            ("wrong_shape", "Wrong shape"),
+                            ("not_the_thing", "Not the thing"),
+                            ("unsure", "Not sure"),
+                        ],
+                        default="",
+                        max_length=16,
+                    ),
+                ),
+                ("answered_at", models.DateTimeField(blank=True, null=True)),
             ],
             options={
-                'ordering': ['segmentation', 'run_version', 'kind', 'ordinal'],
+                "ordering": ["segmentation", "run_version", "kind", "ordinal"],
             },
         ),
         migrations.CreateModel(
-            name='SegmentationResultVersion',
+            name="SegmentationResultVersion",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('version', models.PositiveIntegerField(default=1)),
-                ('include_level', models.FloatField(blank=True, null=True)),
-                ('run_identity', models.JSONField(blank=True, default=dict)),
-                ('object_count', models.PositiveIntegerField(default=0)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("version", models.PositiveIntegerField(default=1)),
+                ("include_level", models.FloatField(blank=True, null=True)),
+                ("run_identity", models.JSONField(blank=True, default=dict)),
+                ("object_count", models.PositiveIntegerField(default=0)),
             ],
             options={
-                'ordering': ['segmentation', 'version'],
+                "ordering": ["segmentation", "version"],
             },
         ),
         migrations.AddField(
-            model_name='imagesegmentation',
-            name='include_level',
+            model_name="imagesegmentation",
+            name="include_level",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='imagesegmentation',
-            name='preview_rows_ready',
+            model_name="imagesegmentation",
+            name="preview_rows_ready",
             field=models.PositiveIntegerField(default=0),
         ),
         migrations.AddField(
-            model_name='probabilitymap',
-            name='grid',
-            field=models.CharField(choices=[('native', 'Original image pixels'), ('model', 'Model prediction grid')], default='native', max_length=16),
+            model_name="probabilitymap",
+            name="grid",
+            field=models.CharField(
+                choices=[("native", "Original image pixels"), ("model", "Model prediction grid")],
+                default="native",
+                max_length=16,
+            ),
         ),
         migrations.AddField(
-            model_name='probabilitymap',
-            name='quantisation',
-            field=models.CharField(default='uint8', max_length=16),
+            model_name="probabilitymap",
+            name="quantisation",
+            field=models.CharField(default="uint8", max_length=16),
         ),
         migrations.AddField(
-            model_name='probabilitymap',
-            name='resample_kernel',
-            field=models.CharField(blank=True, default='', max_length=32),
+            model_name="probabilitymap",
+            name="resample_kernel",
+            field=models.CharField(blank=True, default="", max_length=32),
         ),
         migrations.AddField(
-            model_name='probabilitymap',
-            name='value_range',
+            model_name="probabilitymap",
+            name="value_range",
             field=models.JSONField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='segmentobject',
-            name='run_version',
+            model_name="segmentobject",
+            name="run_version",
             field=models.PositiveIntegerField(default=1),
         ),
         migrations.AddField(
-            model_name='segmentobject',
-            name='superseded_at',
+            model_name="segmentobject",
+            name="superseded_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddIndex(
-            model_name='segmentobject',
-            index=models.Index(fields=['segmentation', 'superseded_at'], name='segmentatio_segment_87d7b2_idx'),
+            model_name="segmentobject",
+            index=models.Index(
+                fields=["segmentation", "superseded_at"], name="segmentatio_segment_87d7b2_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='segmentobject',
-            index=models.Index(fields=['segmentation', 'run_version'], name='segmentatio_segment_c223bd_idx'),
+            model_name="segmentobject",
+            index=models.Index(
+                fields=["segmentation", "run_version"], name="segmentatio_segment_c223bd_idx"
+            ),
         ),
         migrations.AddField(
-            model_name='countbox',
-            name='segmentation',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='count_boxes', to='segmentation.imagesegmentation'),
+            model_name="countbox",
+            name="segmentation",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="count_boxes",
+                to="segmentation.imagesegmentation",
+            ),
         ),
         migrations.AddField(
-            model_name='qualitycheck',
-            name='segment',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='quality_checks', to='segmentation.segmentobject'),
+            model_name="qualitycheck",
+            name="segment",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="quality_checks",
+                to="segmentation.segmentobject",
+            ),
         ),
         migrations.AddField(
-            model_name='qualitycheck',
-            name='segmentation',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='quality_checks', to='segmentation.imagesegmentation'),
+            model_name="qualitycheck",
+            name="segmentation",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="quality_checks",
+                to="segmentation.imagesegmentation",
+            ),
         ),
         migrations.AddField(
-            model_name='segmentationresultversion',
-            name='segmentation',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='result_versions', to='segmentation.imagesegmentation'),
+            model_name="segmentationresultversion",
+            name="segmentation",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="result_versions",
+                to="segmentation.imagesegmentation",
+            ),
         ),
         migrations.AddIndex(
-            model_name='countbox',
-            index=models.Index(fields=['segmentation', 'run_version'], name='segmentatio_segment_c7bb39_idx'),
+            model_name="countbox",
+            index=models.Index(
+                fields=["segmentation", "run_version"], name="segmentatio_segment_c7bb39_idx"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='countbox',
-            constraint=models.UniqueConstraint(fields=('segmentation', 'run_version'), name='uniq_count_box_per_result_version'),
+            model_name="countbox",
+            constraint=models.UniqueConstraint(
+                fields=("segmentation", "run_version"), name="uniq_count_box_per_result_version"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='countbox',
-            constraint=models.CheckConstraint(condition=models.Q(('width__gt', 0), ('height__gt', 0)), name='count_box_has_area'),
+            model_name="countbox",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("width__gt", 0), ("height__gt", 0)), name="count_box_has_area"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='countbox',
-            constraint=models.CheckConstraint(condition=models.Q(('n_matched__lte', models.F('n_marked'))), name='count_box_matched_within_marked'),
+            model_name="countbox",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("n_matched__lte", models.F("n_marked"))),
+                name="count_box_matched_within_marked",
+            ),
         ),
         migrations.AddIndex(
-            model_name='qualitycheck',
-            index=models.Index(fields=['segmentation', 'run_version', 'kind'], name='segmentatio_segment_5d4f0f_idx'),
+            model_name="qualitycheck",
+            index=models.Index(
+                fields=["segmentation", "run_version", "kind"],
+                name="segmentatio_segment_5d4f0f_idx",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='qualitycheck',
-            constraint=models.UniqueConstraint(fields=('segmentation', 'run_version', 'kind', 'ordinal'), name='uniq_quality_check_slot'),
+            model_name="qualitycheck",
+            constraint=models.UniqueConstraint(
+                fields=("segmentation", "run_version", "kind", "ordinal"),
+                name="uniq_quality_check_slot",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='qualitycheck',
-            constraint=models.CheckConstraint(condition=models.Q(models.Q(('answer', ''), ('answered_at__isnull', True)), models.Q(models.Q(('answer', ''), _negated=True), ('answered_at__isnull', False)), _connector='OR'), name='quality_check_answer_and_time_together'),
+            model_name="qualitycheck",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    models.Q(("answer", ""), ("answered_at__isnull", True)),
+                    models.Q(
+                        models.Q(("answer", ""), _negated=True), ("answered_at__isnull", False)
+                    ),
+                    _connector="OR",
+                ),
+                name="quality_check_answer_and_time_together",
+            ),
         ),
         migrations.AddIndex(
-            model_name='segmentationresultversion',
-            index=models.Index(fields=['segmentation', '-version'], name='segmentatio_segment_52e9f5_idx'),
+            model_name="segmentationresultversion",
+            index=models.Index(
+                fields=["segmentation", "-version"], name="segmentatio_segment_52e9f5_idx"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='segmentationresultversion',
-            constraint=models.UniqueConstraint(fields=('segmentation', 'version'), name='uniq_result_version_per_segmentation'),
+            model_name="segmentationresultversion",
+            constraint=models.UniqueConstraint(
+                fields=("segmentation", "version"), name="uniq_result_version_per_segmentation"
+            ),
         ),
         # Last, because it writes to four columns the operations above create.
         # Reverse is a no-op: unapplying this migration drops those columns.

@@ -4,14 +4,15 @@ from django.db import migrations, models
 
 
 def set_builtin_measurement_modes(apps, schema_editor):
+    alias = schema_editor.connection.alias
     SegmentationType = apps.get_model("segmentation", "SegmentationType")
-    SegmentationType.objects.filter(internal_name="quantem_internal_er").update(
+    SegmentationType.objects.using(alias).filter(internal_name="quantem_internal_er").update(
         measurement_mode="global"
     )
-    SegmentationType.objects.filter(internal_name="quantem_internal_tissue").update(
+    SegmentationType.objects.using(alias).filter(internal_name="quantem_internal_tissue").update(
         measurement_mode="global"
     )
-    SegmentationType.objects.filter(
+    SegmentationType.objects.using(alias).filter(
         internal_name="quantem_internal_analysis_mask"
     ).update(measurement_mode="global")
 

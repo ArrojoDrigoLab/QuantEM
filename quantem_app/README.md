@@ -182,18 +182,31 @@ lives in one directory:
 
 ### Database migration and recovery
 
-An existing SQLite installation is migrated only when you request it. The destination PostgreSQL
+The first launch after upgrading an existing SQLite installation performs the PostgreSQL cutover
+automatically, before any worker can claim a job. QuantEM creates and verifies a consistent SQLite
+snapshot, advances a disposable copy through every skipped Django migration, initializes the
+private PostgreSQL schema, copies and validates every model field, and only then opens the app.
+Queued, retrying, or running jobs are retained as records but marked failed; jobs copied from the
+old application instance are never resumed.
+
+The live SQLite files are moved into that verified snapshot after PostgreSQL commits successfully.
+The snapshot is the first **Database upgrade backup** and follows the configured count and age
+limits (one backup for 30 days by default). A failed cutover leaves both the original SQLite files
+and recovery snapshot intact, and startup stops instead of opening an empty database. A fresh
+installation has no SQLite file, so it creates an empty PostgreSQL database without running the
+bridge.
+
+The equivalent command remains available for controlled recovery or development against an
+inactive data directory; ordinary desktop upgrades do not require it. The destination PostgreSQL
 database must contain no user data:
 
 ```bash
 quantem-app --data-dir PATH database migrate-sqlite --source PATH/quantem.sqlite3
 ```
 
-The command reads through SQLite's online backup API, verifies the snapshot, copies primary keys,
-relationships, WKB geometry, JSON, timestamps and file references, resets PostgreSQL sequences,
-and compares canonical field content after the copy. Queued, retrying, or running jobs are retained
-as records but marked failed; jobs from another application instance are never resumed. The source
-SQLite file and the verified snapshot are retained.
+The bridge copies primary keys, relationships, WKB geometry, JSON, timestamps and file references,
+resets PostgreSQL sequences, and compares canonical field content after the copy. The explicit
+command retains its source SQLite file and verified snapshot.
 
 After migration, PostgreSQL becomes the writable database. Opening the retained SQLite snapshot
 later does not include any edits made in PostgreSQL. Moving back therefore requires an explicit

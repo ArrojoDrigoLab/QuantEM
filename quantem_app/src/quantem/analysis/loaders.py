@@ -399,7 +399,7 @@ def segmentation_mask(
                 for region in regions:
                     y1 = region.y0 + region.mask.shape[0]
                     x1 = region.x0 + region.mask.shape[1]
-                    instance_mask[region.y0:y1, region.x0:x1] |= region.mask
+                    instance_mask[region.y0 : y1, region.x0 : x1] |= region.mask
                 return instance_mask
         area_regions = (
             _area_object_regions(segmentation, shape)
@@ -426,7 +426,7 @@ def segmentation_mask(
             for region in area_regions:
                 y1 = region.y0 + region.mask.shape[0]
                 x1 = region.x0 + region.mask.shape[1]
-                mask[region.y0:y1, region.x0:x1] |= region.mask
+                mask[region.y0 : y1, region.x0 : x1] |= region.mask
             for source in segmentation.superseded_segmentations.select_related(
                 "segmentation_type"
             ).all():
@@ -434,11 +434,9 @@ def segmentation_mask(
                     source_record = source.global_mask
                 except Exception:
                     source_record = None
-                if (
-                    source_record is not None
-                    and (source_record.metadata or {}).get("instances_migrated_to")
-                    == str(segmentation.id)
-                ):
+                if source_record is not None and (source_record.metadata or {}).get(
+                    "instances_migrated_to"
+                ) == str(segmentation.id):
                     continue
                 source_mask = load_global_mask(source)
                 if source_mask.shape != shape:
@@ -450,7 +448,7 @@ def segmentation_mask(
                 for region in _area_object_regions(source, shape):
                     y1 = region.y0 + region.mask.shape[0]
                     x1 = region.x0 + region.mask.shape[1]
-                    mask[region.y0:y1, region.x0:x1] |= region.mask
+                    mask[region.y0 : y1, region.x0 : x1] |= region.mask
         return mask
 
     cached_mask = _settled_overlay_mask(

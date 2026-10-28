@@ -42,9 +42,7 @@ class AnalysisRunCreateSerializer(serializers.Serializer):
     cell_segmentation_id = serializers.CharField(
         required=False, allow_null=True, allow_blank=True, default=None
     )
-    outputs = serializers.DictField(
-        child=serializers.BooleanField(), required=False, default=dict
-    )
+    outputs = serializers.DictField(child=serializers.BooleanField(), required=False, default=dict)
     points_source = serializers.ChoiceField(
         choices=POINT_SOURCES, required=False, allow_null=True, default=None
     )
@@ -73,8 +71,8 @@ class AnalysisRunCreateSerializer(serializers.Serializer):
             # normalisation cannot by itself distinguish an older client that
             # omitted the field from a current client that explicitly selected
             # whole-image-only output. Keep that distinction in the saved run.
-            params["structured_outputs_enabled"] = (
-                "outputs" in self.initial_data or bool(params.get("cell_segmentation_id"))
+            params["structured_outputs_enabled"] = "outputs" in self.initial_data or bool(
+                params.get("cell_segmentation_id")
             )
             return params
         except AnalysisInputError as exc:

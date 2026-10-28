@@ -307,8 +307,10 @@ class _ShutdownApplication:
         if environ.get("PATH_INFO") != self.path:
             return self.application(environ, start_response)
         supplied = environ.get("HTTP_X_QUANTEM_SHUTDOWN_TOKEN", "")
-        if environ.get("REQUEST_METHOD") != "POST" or not self.token or not hmac.compare_digest(
-            supplied, self.token
+        if (
+            environ.get("REQUEST_METHOD") != "POST"
+            or not self.token
+            or not hmac.compare_digest(supplied, self.token)
         ):
             start_response("404 Not Found", [("Content-Type", "text/plain")])
             return [b"Not found"]
@@ -381,14 +383,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
     port = args.port or free_port()
     print(f"{APP_NAME} serving on http://127.0.0.1:{port}", flush=True)
     print(f"data dir: {os.environ[DATA_DIR_ENV_VAR]}", flush=True)
-    if database_server is not None and database_server.endpoint is not None:
-        print(
-            "database: private PostgreSQL "
-            f"{database_server.endpoint.host}:{database_server.endpoint.port}",
-            flush=True,
-        )
-    else:
-        print("database: SQLite compatibility mode", flush=True)
     # Only when this process is really going to write it. Promising a path that
     # stays empty sends whoever is debugging to the wrong place.
     if file_logging_enabled():
@@ -399,6 +393,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "shows what is installed.",
         flush=True,
     )
+    # Keep the four established startup lines above in their documented order;
+    # desktop wrappers and diagnostics scrape them before Django starts.  The
+    # database detail is additive and follows those stable announcements.
+    if database_server is not None and database_server.endpoint is not None:
+        print(
+            "database: private PostgreSQL "
+            f"{database_server.endpoint.host}:{database_server.endpoint.port}",
+            flush=True,
+        )
+    else:
+        print("database: SQLite compatibility mode", flush=True)
     # What this machine was measured to be and what the app will therefore do
     # on it -- worker counts, thread counts, how many heavy jobs run at once.
     # Printed last so it sits next to whatever the user is about to compare it
@@ -444,6 +449,31 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 ", ".join(pending_migrations),
             )
         call_command("migrate", interactive=False, verbosity=0)
+        if database_server is not None:
+            from quantem.core.config import DB_PATH
+            from quantem.core.sqlite_migration import migrate_legacy_sqlite_on_startup
+
+            if DB_PATH.is_file():
+                print(
+                    "database migration: upgrading existing SQLite data to PostgreSQL; "
+                    "the application will open when validation finishes",
+                    flush=True,
+                )
+                logging.getLogger("quantem.serve").info(
+                    "Detected legacy SQLite database at %s; starting automatic cutover.",
+                    DB_PATH,
+                )
+            cutover = migrate_legacy_sqlite_on_startup()
+            if cutover is not None:
+                logging.getLogger("quantem.serve").info(
+                    "Automatic SQLite-to-PostgreSQL cutover completed: %s",
+                    cutover,
+                )
+                print(
+                    "database migration: complete; the retained SQLite backup is managed "
+                    "by Database upgrade backups settings",
+                    flush=True,
+                )
     except Exception:
         if snapshot_dir is not None:
             logging.getLogger("quantem.serve").exception(
@@ -486,8 +516,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
         logging.getLogger("quantem.serve").info("Desktop shell requested shutdown.")
     finally:
         from quantem.core.postgres import stop_managed_postgres
+        from quantem.jobs.apps import stop_scheduler_if_running
 
-        stop_managed_postgres()
+        try:
+            stop_scheduler_if_running()
+        finally:
+            stop_managed_postgres()
     return 0
 
 
@@ -773,9 +807,7 @@ def cmd_database_restore(args: argparse.Namespace) -> int:
     from quantem.core.postgres_backup import BackupError, restore_postgres_backup
 
     try:
-        result = restore_postgres_backup(
-            Path(args.archive), target_database=args.target_database
-        )
+        result = restore_postgres_backup(Path(args.archive), target_database=args.target_database)
     except (BackupError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

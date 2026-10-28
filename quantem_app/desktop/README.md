@@ -76,6 +76,13 @@ service or Docker installation is used. The shell requests a controlled server
 shutdown when its window closes; the Windows Job Object remains the crash
 recovery path for the complete process tree.
 
+On the first launch after an SQLite-based version is upgraded, the shell waits
+while the sidecar snapshots the old database, applies every skipped schema
+migration to a disposable copy, migrates and validates it in PostgreSQL, and
+archives the retired SQLite files as the configured database-upgrade backup.
+Fresh installs skip the bridge. No user command or separately administered
+database service is required.
+
 ### Install-time model selection
 
 After its hardware-acceleration page, the NSIS installer shows a "Model

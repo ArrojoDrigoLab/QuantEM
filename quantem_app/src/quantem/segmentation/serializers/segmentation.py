@@ -182,9 +182,7 @@ class SegmentationTypeSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         category = attrs.get("category", SegmentationType.CATEGORY_ORGANELLE)
-        representation = attrs.get(
-            "representation", SegmentationType.REPRESENTATION_INSTANCES
-        )
+        representation = attrs.get("representation", SegmentationType.REPRESENTATION_INSTANCES)
         if category == SegmentationType.CATEGORY_AREA and representation not in {
             SegmentationType.REPRESENTATION_INSTANCES,
             SegmentationType.REPRESENTATION_SEMANTIC,
@@ -553,9 +551,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             except Exception:
                 pass
             return obj.analysis_mask_objects.exclude(geometry_wkb__isnull=True).exists()
-        return obj.segments.filter(
-            label_state="CONFIRMED", superseded_at__isnull=True
-        ).exists()
+        return obj.segments.filter(label_state="CONFIRMED", superseded_at__isnull=True).exists()
 
 
 class ImageSegmentationCreateSerializer(serializers.Serializer):

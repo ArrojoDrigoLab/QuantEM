@@ -9,6 +9,7 @@ RUNNING with nobody running it.
 from __future__ import annotations
 
 import os
+import threading
 from unittest import mock
 
 from django.test import TestCase
@@ -50,6 +51,22 @@ class SchedulerAutostartTests(TestCase):
             os.environ.pop(WORKER_PROCESS_ENV_VAR, None)
             runner._setup_django()
             self.assertEqual(os.environ.get(WORKER_PROCESS_ENV_VAR), "1")
+
+    def test_stop_request_wakes_scheduler_and_shuts_down_runner(self):
+        scheduler = JobScheduler(poll_interval_seconds=30)
+        scheduler._database_ready = True
+        ticked = threading.Event()
+        scheduler.tick = ticked.set
+        scheduler.runner.shutdown = mock.Mock()
+        thread = threading.Thread(target=scheduler.run_forever)
+        thread.start()
+        self.assertTrue(ticked.wait(timeout=2))
+
+        scheduler.request_stop()
+        thread.join(timeout=2)
+
+        self.assertFalse(thread.is_alive())
+        scheduler.runner.shutdown.assert_called_once_with()
 
 
 class DispatchFailureTests(TestCase):
