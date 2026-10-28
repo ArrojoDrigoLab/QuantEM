@@ -290,15 +290,22 @@ class TheWorkerTests(IncludeLevelDialTestCase):
         ``test_threshold_replay`` uses.
         """
         self.run_the_model(0.5)
-        at_half = self.live_candidates()
-        assert at_half == 0, "running the model must not create candidates"
+        at_half = self.segmentation.segments.filter(
+            label_state="CONFIRMED", superseded_at=None
+        ).count()
+        assert at_half > 0, "a full run supplies a measurable result"
 
         with patch.object(DinoMitoSegmenter, "load_models", side_effect=AssertionError("loaded")):
             outcome = self.work_the_job(0.25)
 
-        assert outcome["segment_count"] == self.live_candidates()
+        assert (
+            outcome["segment_count"]
+            == self.segmentation.segments.filter(
+                label_state="CONFIRMED", superseded_at=None
+            ).count()
+        )
         assert outcome["include_level"] == 0.25
-        assert self.live_candidates() > at_half
+        assert outcome["segment_count"] > at_half
 
     def test_preview_publishes_geometry_before_loading_images_or_measuring_objects(self):
         self.run_the_model(0.5)
@@ -345,21 +352,12 @@ class TheWorkerTests(IncludeLevelDialTestCase):
             "the numbered result did not record the level it was extracted at"
         )
 
-    def test_a_model_run_records_no_level_at_all(self):
-        """``None`` is not 0.5. Nobody moved a dial, so none is shown.
-
-        The guard on the test above: if a plain run wrote its own threshold into
-        ``include_level``, every image would show a dial position its user never
-        chose, and the field would stop meaning anything.
-        """
+    def test_a_model_run_records_its_default_as_the_accepted_threshold(self):
         self.run_the_model(0.5)
-
-        assert not SegmentationResultVersion.objects.filter(
-            segmentation=self.segmentation
-        ).exists(), "a preview is not yet a candidate result"
+        assert SegmentationResultVersion.objects.filter(segmentation=self.segmentation).exists()
         self.segmentation.refresh_from_db()
-        assert self.segmentation.include_level is None
-        assert self.segmentation.status_stage == "THRESHOLD_READY"
+        assert self.segmentation.include_level == 0.5
+        assert self.segmentation.status_stage == "CANDIDATES_READY"
 
     def test_the_level_is_written_where_every_screen_reads_it(self):
         self.run_the_model(0.5)
@@ -376,7 +374,7 @@ class TheWorkerTests(IncludeLevelDialTestCase):
             (segment.features or {}).get("run") or {}
             for segment in SegmentObject.objects.filter(
                 segmentation=self.segmentation,
-                label_state="CANDIDATE",
+                label_state="CONFIRMED",
                 superseded_at__isnull=True,
             )
         ]
@@ -505,17 +503,17 @@ class TheRouteTests(IncludeLevelDialTestCase):
 
         assert response.status_code == 200
         body = response.json()
-        assert body["include_level"] is None  # nobody has moved it
+        assert body["include_level"] == 0.5  # the default was applied automatically
         assert body["can_move"] is True
         assert body["detail"] == ""
         assert body["minimum"] == 0.0
         assert body["maximum"] == 1.0
-        assert body["object_count"] == 0
+        assert body["object_count"] > 0
         assert body["measurement_mode"] == "objects"
         assert body["candidate_count"] == 0
         assert body["confirmable_candidate_count"] == 0
         assert body["manual_roi_candidate_count"] == 0
-        assert body["confirmed_model_count"] == 0
+        assert body["confirmed_model_count"] == body["object_count"]
         assert body["preview_url"].endswith("/include-level/map")
         assert body["preview_bounds"] == [0, 0, SIZE, SIZE]
 
@@ -545,7 +543,7 @@ class TheRouteTests(IncludeLevelDialTestCase):
 
         assert response.status_code == 200
         assert response.json()["default_include_level"] == 0.25
-        assert response.json()["include_level"] is None
+        assert response.json()["include_level"] == 0.25
         assert response.json()["can_move"] is True
         base = self.client.get(self.url, {"source_model": SOURCE_MODEL}).json()
         assert base["can_move"] is False
@@ -595,7 +593,7 @@ class TheRouteTests(IncludeLevelDialTestCase):
         SegmentObject.objects.filter(
             segmentation=self.segmentation,
             source_model="omniem:mito",
-            label_state="CANDIDATE",
+            label_state="CONFIRMED",
         ).delete()
 
         outcome = self.work_the_job(0.71, source_model="omniem:mito")
@@ -603,7 +601,7 @@ class TheRouteTests(IncludeLevelDialTestCase):
         omniem_candidates = SegmentObject.objects.filter(
             segmentation=self.segmentation,
             source_model="omniem:mito",
-            label_state="CANDIDATE",
+            label_state="CONFIRMED",
             superseded_at__isnull=True,
         ).count()
         assert outcome["source_model"] == "omniem:mito"
@@ -613,7 +611,7 @@ class TheRouteTests(IncludeLevelDialTestCase):
             self.client.get(
                 self.url,
                 {"source_model": "omniem:mito"},
-            ).json()["candidate_count"]
+            ).json()["confirmed_model_count"]
             == omniem_candidates
         )
 
@@ -901,15 +899,15 @@ class ConfirmWholeModelOutputTests(IncludeLevelDialTestCase):
         assert rectangular_candidate.label_state == "CANDIDATE"
         assert outside_candidate.label_state == "CONFIRMED"
 
-    def test_a_completed_segmentation_refuses_bulk_confirmation(self):
+    def test_a_completed_segmentation_remains_editable(self):
         self.candidate((10, 10, 30, 30))
         self.segmentation.status_stage = "COMPLETED"
         self.segmentation.save(update_fields=["status_stage"])
 
         response = self.post_confirm()
 
-        assert response.status_code == 409
-        assert "Unlock it first" in response.json()["detail"]
+        assert response.status_code == 200
+        assert response.json()["confirmed_count"] == 1
 
 
 class ConfirmContestedPixelsTests(IncludeLevelDialTestCase):

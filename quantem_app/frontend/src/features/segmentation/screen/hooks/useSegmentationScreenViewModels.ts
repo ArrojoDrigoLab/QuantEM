@@ -387,8 +387,6 @@ export function useSegmentationScreenViewModels({
     const testDisabled =
       !selectedPackId ||
       modelRunnability.state === "blocked" ||
-      route.currentSegmentation?.status_stage === "COMPLETED" ||
-      route.currentSegmentation?.is_complete === true ||
       processing.isApplyingFull ||
       processing.isRerunningRoi ||
       processing.hasQueuedOrRunningOrganelleTask;
@@ -396,10 +394,7 @@ export function useSegmentationScreenViewModels({
       ? "Select QuantEM or OmniEM before testing an ROI."
       : modelRunnability.state === "blocked"
         ? modelRunnability.reason ?? "The selected model cannot run here."
-        : route.currentSegmentation?.status_stage === "COMPLETED" ||
-            route.currentSegmentation?.is_complete === true
-          ? "This segmentation is locked. Unlock it before testing an ROI."
-          : processing.isApplyingFull ||
+        : processing.isApplyingFull ||
               processing.isRerunningRoi ||
               processing.hasQueuedOrRunningOrganelleTask
             ? "Processing in progress"
@@ -521,8 +516,8 @@ export function useSegmentationScreenViewModels({
               onStartPlacement: erRoi.startPlacement,
               onEditRoi: erRoi.editRoi,
               onCancelPlacement: erRoi.cancelPlacement,
-              onConfirmRoi: () => {
-                void erRoi.confirmRoi();
+              onConfirmRoi: (prepopulate?: boolean) => {
+                void erRoi.confirmRoi(prepopulate);
               },
               onMarkRoiDone: (roiId: string, done: boolean) => {
                 void erRoi.markRoiDone(roiId, done);

@@ -29,7 +29,8 @@ class GlobalAnalysisSerializer(serializers.Serializer):
         valid = ImageSegmentation.objects.filter(
             id__in=ids,
             asset_id=self.context["segmentation"].asset_id,
-            segmentation_type__internal_name="quantem_internal_analysis_mask",
+            segmentation_type__category="area",
+            superseded_by__isnull=True,
         ).count()
         if valid != len(ids):
             raise serializers.ValidationError("Choose analysis masks on this image.")
@@ -87,6 +88,17 @@ def prepare_analysis(segmentation: ImageSegmentation, data: dict) -> PreparedAna
     serializer = serializer_type(data=data, context={"segmentation": segmentation})
     serializer.is_valid(raise_exception=True)
     params = dict(serializer.validated_data)
+    from quantem.analysis.input_contract import require_complete_organelles
+    from quantem.analysis.loaders import AnalysisInputError
+
+    try:
+        require_complete_organelles(segmentation, params)
+    except AnalysisInputError as exc:
+        raise serializers.ValidationError(str(exc)) from exc
+    from quantem.analysis.export_selection import output_files
+    from quantem.segmentation.coverage import coverage_state
+
+    params["output_files"] = output_files(data.get("output_files"))
     if global_mode:
         params["global_area"] = True
     mask_ids = params.get("analysis_mask_ids", [])
@@ -115,7 +127,7 @@ def prepare_analysis(segmentation: ImageSegmentation, data: dict) -> PreparedAna
         or segmentation.segmentation_type.long_name,
         "segmentation_id": str(segmentation.id),
         "measurement_area": area or "Whole image",
-        "review_complete": segmentation.status_stage == "COMPLETED",
+        "review_complete": coverage_state(segmentation)["ready"],
         "provenance": segmentation.final_result_provenance,
     }
     return PreparedAnalysis(params, identity, input_fingerprint(segmentation, params))
@@ -153,6 +165,7 @@ def create_analysis_run(
             AnalysisRun.objects.filter(
                 segmentation=segmentation,
                 status="SUCCESS",
+                superseded_at=None,
                 input_fingerprint=prepared.fingerprint,
                 input_identity=prepared.identity,
             )

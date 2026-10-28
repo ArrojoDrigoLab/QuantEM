@@ -13,22 +13,16 @@ from quantem.analysis.creation import (
     image_identity,
     prepare_analysis,
 )
+from quantem.analysis.input_contract import has_saved_area
 from quantem.analysis.models import AnalysisBatch, AnalysisBatchItem
+from quantem.analysis.output_options import normalise_output_selection
 from quantem.assets.models import Asset
 from quantem.jobs.constants import (
     ACTIVE_SEGMENTATION_JOB_TYPES,
 )
 from quantem.segmentation.api_views.shared import active_segmentation_job
+from quantem.segmentation.coverage import coverage_state
 from quantem.segmentation.models import SegmentationType
-
-
-def _has_saved_area(segmentation) -> bool:
-    if segmentation.analysis_mask_objects.exclude(geometry_wkb__isnull=True).exists():
-        return True
-    try:
-        return int(segmentation.global_mask.foreground_pixels) > 0
-    except Exception:
-        return False
 
 
 def preview_batch(experiment, data):
@@ -88,13 +82,14 @@ def preview_batch(experiment, data):
         try:
             UUID(mask_definition_id)
         except (TypeError, ValueError):
-            raise ValidationError("Choose the reusable Sample Area definition by its ID.") from None
+            raise ValidationError(
+                "Choose a reusable measurement area definition by its ID."
+            ) from None
         if not SegmentationType.objects.filter(
             id=mask_definition_id,
             category=SegmentationType.CATEGORY_AREA,
-            internal_name="quantem_internal_tissue",
         ).exists():
-            raise ValidationError("Choose the reusable Sample Area definition by its ID.")
+            raise ValidationError("Choose a reusable measurement area definition by its ID.")
     mask_name = str(data.get("mask_name") or "").strip()
     require_complete = data.get("require_complete", True)
     if not isinstance(require_complete, bool) or not isinstance(data.get("reuse", True), bool):
@@ -121,12 +116,19 @@ def preview_batch(experiment, data):
                 and (s.display_name or s.segmentation_type.long_name) == mask_name
             )
         ]
+        if not mask_definition_id and not mask_name and data.get("use_available_regions", True):
+            masks = [
+                s
+                for s in segs
+                if s.segmentation_type.internal_name == "quantem_internal_tissue"
+                and has_saved_area(s)
+            ]
         cells = next(
             (
                 s
                 for s in segs
                 if s.segmentation_type.internal_name == "quantem_internal_cells"
-                and (s.status_stage == "COMPLETED" or _has_saved_area(s))
+                and (s.status_stage == "COMPLETED" or has_saved_area(s))
             ),
             None,
         )
@@ -157,44 +159,43 @@ def preview_batch(experiment, data):
                 "COMPUTING_FEATURES",
             ):
                 reason = "Segmentation is still processing."
-            elif require_complete and seg.status_stage != "COMPLETED":
-                reason = "Review is not marked complete."
+            elif not coverage_state(seg)["ready"]:
+                reason = "The whole image has not been segmented."
             elif active_segmentation_job(seg, job_types=ACTIVE_SEGMENTATION_JOB_TYPES):
                 reason = "A segmentation task is queued or running."
             if (mask_definition_id or mask_name) and len(masks) != 1:
-                reason = "The selected Sample Area definition is missing or ambiguous."
+                reason = "The selected measurement area definition is missing or ambiguous."
             mask = masks[0] if len(masks) == 1 else None
+            if mask is not None and not has_saved_area(mask):
+                reason = "The selected measurement area has no saved area."
             params = {"group": identity["group"]}
             prepared = None
             if seg and not reason:
-                if not using_definition_ids and seg.segmentation_type.measurement_mode == "global":
-                    raw = {
-                        "analysis_mask_ids": [str(mask.id)] if mask else [],
-                        "group": identity["group"],
+                outputs = normalise_output_selection(
+                    data.get("outputs")
+                    or {
+                        "whole_image": True,
+                        "sample_area": True,
+                        "all_cells": True,
+                        "per_cell": True,
+                        "individual_objects": True,
                     }
-                elif not using_definition_ids:
-                    raw = {
-                        "objects_in_measurement_area": True,
-                        "tissue_segmentation_id": str(mask.id) if mask else None,
-                        "group": identity["group"],
-                    }
-                else:
-                    raw = {
-                        "objects_in_measurement_area": True,
-                        "tissue_segmentation_id": str(mask.id) if mask else None,
-                        "cell_segmentation_id": str(cells.id) if cells else None,
-                        "outputs": {
-                            "whole_image": True,
-                            "sample_area": bool(mask),
-                            "all_cells": bool(cells),
-                            "per_cell": bool(cells),
-                            "individual_objects": True,
-                        },
-                        "group": identity["group"],
-                    }
+                )
+                outputs["sample_area"] = outputs["sample_area"] and bool(mask)
+                outputs["all_cells"] = outputs["all_cells"] and bool(cells)
+                outputs["per_cell"] = outputs["per_cell"] and bool(cells)
+                raw = {
+                    "objects_in_measurement_area": True,
+                    "tissue_segmentation_id": str(mask.id) if mask else None,
+                    "cell_segmentation_id": str(cells.id) if cells else None,
+                    "outputs": outputs,
+                    "group": identity["group"],
+                }
                 raw.update(advanced)
                 try:
-                    prepared = prepare_analysis(seg, raw)
+                    prepared = prepare_analysis(
+                        seg, {**raw, "output_files": data.get("output_files")}
+                    )
                     params = prepared.params
                 except ValidationError as exc:
                     reason = str(exc.detail)
@@ -230,7 +231,7 @@ def preview_batch(experiment, data):
                             if mask
                             else "Whole image"
                         ),
-                        "review_complete": bool(seg and seg.status_stage == "COMPLETED"),
+                        "review_complete": bool(seg and coverage_state(seg)["ready"]),
                         "provenance": seg.final_result_provenance if seg else {},
                     },
                 }

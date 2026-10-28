@@ -305,6 +305,9 @@ class AnalysisMaskObjectDetailView(APIView):
             )
         obj.name = name
         obj.save(update_fields=["name", "updated_at"])
+        from quantem.analysis.superseded import mark_superseded
+
+        mark_superseded(obj.segmentation)
         return Response(_object_payload(obj), status=status.HTTP_200_OK)
 
     def delete(self, request, seg_id, object_id):

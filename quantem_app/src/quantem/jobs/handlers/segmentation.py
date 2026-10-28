@@ -208,6 +208,7 @@ def handle_run_segmentation_for_image(
                 "segmentation_id": str(segmentation.id),
                 "source_model": normalize_source_model(raw.get("source_model")) or None,
                 "adapter_id": str(raw.get("adapter_id") or "").strip() or None,
+                "threshold": raw.get("threshold"),
             }
         )
 

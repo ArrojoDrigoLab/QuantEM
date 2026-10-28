@@ -17,25 +17,18 @@ from quantem.assets.asset_resolver import get_active_asset
 from quantem.assets.roi_state import get_active_roi_for_asset
 from quantem.jobs.constants import JOB_TYPE_RUN_SEGMENTATION_ROI, QUEUE_P3_ROI
 from quantem.jobs.models import Job
-from quantem.seg_core.db.prob_maps import delete_probability_maps_for_segmentation
 from quantem.seg_core.registry import get_segmenter_or_none
 from quantem.segmentation.completion import (
-    archive_and_discard,
     completion_preview,
     is_locked,
     locked_payload,
     restore_last_archive,
 )
-from quantem.segmentation.final_result import persist_final_result_provenance
 from quantem.segmentation.models import (
     ImageSegmentation,
     ProbabilityMap,
     SegmentationConfig,
     SegmentationType,
-)
-from quantem.segmentation.overlay_ngff import (
-    full_image_dirty_bbox,
-    register_overlay_mutation_all_bundles,
 )
 from quantem.segmentation.serializers import (
     ImageSegmentationCreateSerializer,
@@ -501,221 +494,101 @@ class ProbabilityMapListCreateView(APIView):
 
 
 class SegmentationCompleteView(APIView):
-    """Lock a segmentation, and optionally prune what nobody confirmed.
-
-    ``GET``
-        The read-only preview: how many objects a discard would destroy, broken
-        down by label state and source model, and whether it could be undone.
-        Changes nothing. This is what a confirmation dialog needs in order to
-        name a number, and there was previously no way to ask.
-
-    ``POST``
-        Marks the segmentation ``COMPLETED``. **Keeps every object unless the
-        request explicitly asks otherwise**: ``discard_unconfirmed`` defaults to
-        false, so no client can destroy a run's output without meaning to. When
-        it is true, ``acknowledged_discard_count`` must equal what is actually
-        there -- a client whose count is stale gets a 409 carrying the fresh
-        preview rather than silently deleting objects the user was never shown.
-        A discard is archived first and can be undone with ``DELETE``.
-
-    ``DELETE``
-        Unlocks the segmentation and restores the objects the last completion
-        discarded. It used to only flip ``status_stage`` back and restore
-        nothing, which made "unlock" a word for "the button is available again"
-        rather than an undo.
-    """
+    """Confirm whole-image manual coverage; model runs supply coverage automatically."""
 
     def get(self, request, seg_id):
-        segmentation = get_object_or_404(
-            ImageSegmentation.objects.select_related("asset", "segmentation_type"),
-            id=seg_id,
+        from quantem.segmentation.coverage import coverage_state
+
+        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        return Response(
+            {**completion_preview(segmentation), "coverage": coverage_state(segmentation)}
         )
-        return Response(completion_preview(segmentation), status=status.HTTP_200_OK)
 
     def post(self, request, seg_id):
-        from quantem.jobs.constants import (  # noqa: PLC0415
-            ACTIVE_SEGMENTATION_JOB_TYPES,
-            JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
-        )
-        from quantem.segmentation.api_views.shared import (  # noqa: PLC0415
-            active_segmentation_job,
-        )
+        from quantem.jobs.constants import ACTIVE_SEGMENTATION_JOB_TYPES
+        from quantem.segmentation.api_views.shared import active_segmentation_job
+        from quantem.segmentation.coverage import coverage_state
 
-        segmentation = get_object_or_404(
-            ImageSegmentation.objects.select_related("asset", "segmentation_type"),
-            id=seg_id,
-        )
-        finalization_job_types = frozenset(
-            {*ACTIVE_SEGMENTATION_JOB_TYPES, JOB_TYPE_TRAIN_ORGANELLE_ADAPTER}
-        )
-        active_job = active_segmentation_job(
-            segmentation,
-            job_types=finalization_job_types,
-        )
-        if active_job is not None:
+        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        job = active_segmentation_job(segmentation, job_types=ACTIVE_SEGMENTATION_JOB_TYPES)
+        if job:
+            from quantem.segmentation.api_views.shared import blocking_job_response_payload
+
+            return Response(blocking_job_response_payload(job), status=409)
+        if coverage_state(segmentation)["ready"]:
+            return Response(ImageSegmentationSerializer(segmentation).data)
+        if not (
+            request.data.get("acknowledge_full_manual") is True
+            and request.data.get("acknowledge_no_model") is True
+        ):
             return Response(
                 {
-                    "detail": (
-                        "A task is still using this segmentation. Wait for it to finish, "
-                        "or stop it in Tasks & Queues, before marking the result final."
-                    ),
-                    "job_id": str(active_job.id),
-                    "job_type": active_job.type,
-                    "job_status": active_job.status,
+                    "detail": "Confirm that you have manually segmented the entire image and that no model outputs are included."
                 },
-                status=status.HTTP_409_CONFLICT,
+                status=400,
             )
-        payload = request.data if isinstance(request.data, dict) else {}
+        from quantem.segmentation.models import SegmentObject
 
-        # ``POST`` marks done; it has no "and also undo it" mode. A body saying
-        # ``is_complete: false`` was read by nobody, so the request locked the
-        # segmentation and answered 200 -- the opposite of what it asked for,
-        # reported as success. Refuse it and name the verb that unlocks.
-        raw_is_complete = payload.get("is_complete")
-        if raw_is_complete is not None and _parse_bool(raw_is_complete) is not True:
+        generated = SegmentObject.objects.filter(
+            segmentation=segmentation, superseded_at=None
+        ).exclude(source_model="manual")
+        from quantem.segmentation.models import CompletedROI, GlobalMask
+
+        generated_mask = (
+            GlobalMask.objects.filter(segmentation=segmentation)
+            .exclude(source__startswith="manual")
+            .exists()
+        )
+        if generated.exists() or generated_mask:
             return Response(
                 {
-                    # HTTP verbs are for the ``unlock`` block below, which is
-                    # what a client reads; a sentence naming them is I-12's
-                    # http-verb class and tells a reader nothing they can act
-                    # on. "Unlock segmentation" is the control's own caption.
-                    "detail": (
-                        "Marking this segmentation done cannot undo it. Use "
-                        "Unlock segmentation on the labeling screen to unlock "
-                        "it and restore whatever the completion discarded."
-                    ),
-                    "unlock": {
-                        "method": "DELETE",
-                        "path": f"/api/segmentations/{segmentation.id}/complete",
-                    },
-                    "preview": completion_preview(segmentation),
+                    "detail": "This image still contains model-derived objects. Mark completed ROIs or apply a full-image model result."
                 },
-                status=status.HTTP_400_BAD_REQUEST,
+                status=400,
             )
+        segmentation.manual_full_image = True
+        segmentation.status_stage = "CANDIDATES_READY"
+        segmentation.status_error = ""
+        from django.utils import timezone
 
-        raw_discard = payload.get("discard_unconfirmed")
-        discard = _parse_bool(raw_discard)
-        if raw_discard is not None and discard is None:
-            return Response(
-                {
-                    "detail": (
-                        "discard_unconfirmed must be a boolean. Omit it to keep every object."
-                    ),
-                    "preview": completion_preview(segmentation),
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        # The safe default. An older client, a retry, a hand-rolled curl -- none
-        # of them can delete a run's output by leaving a field out.
-        discard = bool(discard)
+        from quantem import __version__
 
-        outcome = {
-            "discarded_count": 0,
-            "restorable": False,
-            "archive_id": None,
+        segmentation.final_result_provenance = {
+            "quantem_version": __version__,
+            "finalized_at": timezone.now().isoformat(),
+            "model_identifier": "manual",
+            "final_level_kind": "manual",
         }
-        if discard:
-            preview = completion_preview(segmentation)
-            acknowledged = payload.get("acknowledged_discard_count")
-            if not isinstance(acknowledged, int) or isinstance(acknowledged, bool):
-                try:
-                    acknowledged = int(str(acknowledged).strip())
-                except (TypeError, ValueError):
-                    return Response(
-                        {
-                            "detail": (
-                                "discard_unconfirmed requires "
-                                "acknowledged_discard_count: the number of objects "
-                                "the user was shown before agreeing to delete them."
-                            ),
-                            "preview": preview,
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-            if acknowledged != preview["discard_count"]:
-                # Usually an inference run finished while the dialog was open.
-                # Refusing costs a re-confirm; not refusing destroys objects
-                # nobody was told about.
-                return Response(
-                    {
-                        "detail": (
-                            f"This segmentation now holds {preview['discard_count']} "
-                            f"unconfirmed object(s), not {acknowledged}. Nothing was "
-                            "deleted. Re-confirm against the current count."
-                        ),
-                        "preview": preview,
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
+        from shapely.geometry import box
+
+        from quantem.analysis.superseded import mark_superseded
 
         with transaction.atomic():
-            if discard:
-                outcome = archive_and_discard(segmentation)
-            persist_final_result_provenance(segmentation)
-            segmentation.status_stage = "COMPLETED"
-            # A completed result must not keep describing an older failed
-            # attempt.  Both labeling screens render any non-empty
-            # ``status_error`` even when the stage is no longer FAILED, so
-            # leaving it behind makes a successfully finalized segmentation
-            # continue to look broken.
-            segmentation.status_error = ""
-            segmentation.save(update_fields=["status_stage", "status_error"])
-            register_overlay_mutation_all_bundles(
-                segmentation,
-                dirty_bbox=full_image_dirty_bbox(segmentation),
-                force_full_rebuild=True,
+            CompletedROI.objects.create(
+                segmentation=segmentation,
+                geometry=box(
+                    0, 0, segmentation.asset.logical_width, segmentation.asset.logical_height
+                ),
             )
-
-        removed_probability_maps = delete_probability_maps_for_segmentation(segmentation)
-        logger.info(
-            "Reclaimed %d probability map(s) for completed segmentation %s.",
-            removed_probability_maps,
-            segmentation.id,
-        )
-
-        serializer = ImageSegmentationSerializer(segmentation)
-        response_payload = dict(serializer.data)
-        response_payload["completion"] = {
-            "discarded_unconfirmed": discard,
-            "discarded_count": int(outcome["discarded_count"]),
-            "restorable": bool(outcome["restorable"]),
-            "archive_id": outcome["archive_id"],
-        }
-        return Response(response_payload, status=status.HTTP_200_OK)
+            mark_superseded(segmentation)
+            segmentation.save(
+                update_fields=[
+                    "manual_full_image",
+                    "status_stage",
+                    "status_error",
+                    "final_result_provenance",
+                    "updated_at",
+                ]
+            )
+        return Response(ImageSegmentationSerializer(segmentation).data)
 
     def delete(self, request, seg_id):
-        segmentation = get_object_or_404(
-            ImageSegmentation.objects.select_related("asset", "segmentation_type"),
-            id=seg_id,
-        )
+        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        # Compatibility for older installations: recover any objects archived by
+        # the former completion action, without reclaiming prediction files.
         restored = restore_last_archive(segmentation)
-        update_fields = []
+        segmentation.manual_full_image = False
         if segmentation.status_stage == "COMPLETED":
             segmentation.status_stage = "CANDIDATES_READY"
-            update_fields.append("status_stage")
-        # This is the one explicit lifecycle boundary at which the immutable
-        # note stops describing reality: after Unlock, the user can re-run,
-        # re-threshold, or edit the result. Keeping the old note would attach
-        # the previous model/threshold to a future final result.
-        if segmentation.final_result_provenance:
-            segmentation.final_result_provenance = {}
-            update_fields.append("final_result_provenance")
-        if update_fields:
-            segmentation.save(update_fields=update_fields)
-        if restored["restored_count"]:
-            register_overlay_mutation_all_bundles(
-                segmentation,
-                dirty_bbox=full_image_dirty_bbox(segmentation),
-                force_full_rebuild=True,
-            )
-        serializer = ImageSegmentationSerializer(segmentation)
-        response_payload = dict(serializer.data)
-        response_payload["restored"] = {
-            "restored_count": int(restored["restored_count"]),
-            "archived_count": int(restored["archived_count"]),
-            # False with a non-zero archived_count means the discard was too
-            # large to archive: those objects are gone and the UI must not
-            # promise otherwise.
-            "restorable": bool(restored["restorable"]),
-        }
-        return Response(response_payload, status=status.HTTP_200_OK)
+        segmentation.save(update_fields=["manual_full_image", "status_stage", "updated_at"])
+        return Response({**ImageSegmentationSerializer(segmentation).data, "restored": restored})

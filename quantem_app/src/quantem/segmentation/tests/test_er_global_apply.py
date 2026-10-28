@@ -8,6 +8,7 @@ from django.test import TestCase
 
 from quantem.inference.postprocess import close_and_fill
 from quantem.jobs.handlers.rethreshold import handle_reextract_at_include_level
+from quantem.seg_core.db.prob_maps import save_probability_map
 from quantem.seg_core.types import InferenceResult
 from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
@@ -44,11 +45,14 @@ class ErGlobalApplyTests(TestCase):
         probability[20:44, 20:44] = 0.0
         result = InferenceResult(prob_maps={"DINO": probability}, prob=probability)
         segmenter = SimpleNamespace(
+            get_dl_model_names=lambda: ["DINO"],
+            prob_map_prefix="er",
             source_model="quantem:er",
             _organelle=SimpleNamespace(close_radius=1),
             _foreground_mask=lambda values: np.asarray(values) >= 0.5,
         )
 
+        save_probability_map(self.segmentation, "DINO", probability, "er", "er_generated")
         with (
             patch(
                 "quantem.jobs.handlers.rethreshold.get_segmenter_or_none",

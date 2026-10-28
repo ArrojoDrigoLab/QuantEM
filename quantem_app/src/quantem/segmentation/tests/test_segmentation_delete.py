@@ -146,16 +146,14 @@ class DeleteRefusalTests(_DeleteTestBase):
         self.assertEqual(response.data["job_type"], "run_segmentation_full_task")
         self.assertTrue(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())
 
-    def test_refused_while_locked_by_mark_image_done(self):
+    def test_completion_does_not_prevent_explicit_deletion(self):
         self.segmentation.status_stage = "COMPLETED"
         self.segmentation.save(update_fields=["status_stage"])
 
         response = self.client.delete(self.url)
 
-        self.assertEqual(response.status_code, 409)
-        self.assertTrue(response.data["locked"])
-        self.assertIn("marked done", response.data["detail"])
-        self.assertTrue(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(ImageSegmentation.objects.filter(id=self.segmentation.id).exists())
 
     def test_refused_when_the_acknowledged_count_is_stale(self):
         self._segment(0, label_state="CANDIDATE")

@@ -72,6 +72,7 @@ class AnalysisRun(TimeStampedModel):
     params = models.JSONField(default=dict, blank=True)
     input_fingerprint = models.CharField(max_length=64, blank=True)
     input_identity = models.JSONField(default=dict, blank=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
     #: What :func:`quantem.analysis.service.run_analysis` returned, minus the
     #: per-object rows -- those are in ``objects.csv``, which is the file a paper
     #: should cite. Keeping tens of thousands of rows in a JSON column would make

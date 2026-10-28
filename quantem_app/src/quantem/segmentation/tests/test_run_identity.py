@@ -312,7 +312,9 @@ class RunIdentityOnRealObjectsTests(TestCase):
     def _runs(self) -> list[dict]:
         return [
             segment.features.get(RUN_FEATURE_KEY)
-            for segment in SegmentObject.objects.filter(segmentation=self.segmentation)
+            for segment in SegmentObject.objects.filter(
+                segmentation=self.segmentation, superseded_at=None
+            )
         ]
 
     def test_a_released_run_stamps_its_settings_on_every_object(self):

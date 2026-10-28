@@ -36,7 +36,7 @@ function HistoryDetails({ entry, images, onChanged }: { entry: AnalysisHistoryEn
     void refresh();
     return () => { cancelled = true; clearTimeout(timer); };
   }, [entry.id, entry.kind, revision]);
-  const act = async (action: "retry_failed" | "cancel") => {
+  const act = async (action: "retry_failed" | "cancel" | "regenerate") => {
     setBusy(true); setError("");
     try {
       setDetail(await apiRequest<AnalysisBatch>(`/api/analysis-batches/${entry.id}/`, { method: "POST", body: JSON.stringify({ action }) }));
@@ -47,6 +47,10 @@ function HistoryDetails({ entry, images, onChanged }: { entry: AnalysisHistoryEn
   if (error && !detail) return <p role="alert" className="text-red-700">{error}</p>;
   if (!detail) return <p role="status">Loading analysis…</p>;
   if ("items" in detail) return <div className="space-y-4">
+    {detail.items.some((item) => item.current === false) && <div className="rounded border border-yellow-300 bg-yellow-50 p-3" role="status">
+      <p>⚑ {detail.items.filter((item) => item.current === false).length} {detail.items.filter((item) => item.current === false).length === 1 ? "measurement has" : "measurements have"} been superseded by changes to their model, threshold, annotations, or measurement inputs. These saved results and downloads are retained. Regenerate to measure the current versions.</p>
+      <Button disabled={busy} onClick={() => void act("regenerate")}>Regenerate with current results</Button>
+    </div>}
     <div className="flex flex-wrap gap-4">
       <a className="inline-flex h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2" href={resolveApiUrl(`/api/analysis-batches/${detail.id}/export/?objects=true`)} download>Download</a>
       {detail.items.some((item) => ["FAILED", "CANCELLED"].includes(item.status ?? "")) && <Button disabled={busy} onClick={() => void act("retry_failed")}>Retry failed</Button>}
@@ -127,6 +131,7 @@ function HistoryPage({ experimentId, images, refreshKey, imageId }: {
           <div className="overflow-x-auto"><Button className="!flex !w-full min-w-[660px] !justify-start !rounded-none !border-0 !bg-transparent !p-3 !text-left" aria-expanded={open === key} onClick={() => setOpen(open === key ? "" : key)}>
             <span aria-hidden="true">{open === key ? "▾" : "▸"}</span>
             <span className="min-w-0 flex-1 truncate font-medium" title={entry.name}>{entry.name}</span>
+            {!!entry.superseded_count && <span className="text-yellow-600" role="img" aria-label={`Superseded in ${entry.superseded_scope === "all" ? "full" : "part"}`} title="Saved measurements use earlier inputs. Open for details and regeneration.">⚑</span>}
             <span className="shrink-0 text-xs text-slate-600">{formatTimestamp(entry.created_at)}</span>
             <span className="shrink-0 text-xs">{entry.images.length} {entry.images.length === 1 ? "image" : "images"} · {entry.structures.join(", ")} · {statusName[entry.status] ?? entry.status}</span>
           </Button></div>

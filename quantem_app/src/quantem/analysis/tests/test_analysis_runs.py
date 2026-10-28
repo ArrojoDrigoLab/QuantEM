@@ -69,7 +69,9 @@ class AnalysisRunTestCase(TestCase):
         self.asset = self.image.asset
 
         self.segmentation = ImageSegmentation.objects.create(
-            asset=self.asset, segmentation_type=get_or_create_mitochondria_type()
+            asset=self.asset,
+            segmentation_type=get_or_create_mitochondria_type(),
+            manual_full_image=True,
         )
         self.tissue = ImageSegmentation.objects.create(
             asset=self.asset, segmentation_type=get_or_create_tissue_type()
@@ -399,7 +401,9 @@ class LoaderTests(AnalysisRunTestCase):
     def test_a_compartment_on_another_image_is_refused(self):
         other = create_small_test_image("Other Image", width=64, height=64)
         elsewhere = ImageSegmentation.objects.create(
-            asset=other.asset, segmentation_type=get_or_create_mitochondria_type()
+            asset=other.asset,
+            segmentation_type=get_or_create_mitochondria_type(),
+            manual_full_image=True,
         )
         with self.assertRaises(loaders.AnalysisInputError) as caught:
             loaders.normalise_params(
@@ -1220,7 +1224,9 @@ class GroupRollupApiTests(AnalysisRunTestCase):
         """A second image with two confirmed mitochondria instead of three."""
         other = create_small_test_image("Second Unit", width=IMAGE_SIZE, height=IMAGE_SIZE)
         segmentation = ImageSegmentation.objects.create(
-            asset=other.asset, segmentation_type=get_or_create_mitochondria_type()
+            asset=other.asset,
+            segmentation_type=get_or_create_mitochondria_type(),
+            manual_full_image=True,
         )
         for x, y in MITO_BOXES[:2]:
             self._segment(segmentation, _square(x, y), "CONFIRMED")

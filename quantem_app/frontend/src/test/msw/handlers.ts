@@ -61,6 +61,7 @@ export const EMPTY_FINETUNE_PREVIEW = {
 // Default no-op handler to keep MSW initialized in tests that do not define
 // request handlers explicitly.
 export const handlers = [
+  http.get("http://127.0.0.1:8000/api/segmentations/:segId/results/", () => HttpResponse.json({results: []})),
   http.get("http://127.0.0.1:8000/__msw_health__", () =>
     HttpResponse.json({ ok: true })
   ),

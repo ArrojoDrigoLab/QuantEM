@@ -107,6 +107,7 @@ def analysis_counts(experiment) -> dict[str, int]:
 
 def _batch_entry(batch):
     images, structures, completed, statuses = {}, {}, set(), []
+    superseded_count = 0
     for item in batch.items.all():
         identity = item.identity or {}
         asset_id = identity.get("asset_id")
@@ -122,6 +123,8 @@ def _batch_entry(batch):
         if item.job and item.job.status in ("FAILED", "CANCELLED"):
             state = item.job.status
         statuses.append(state)
+        if state == "SUCCESS" and item.run and item.run.superseded_at:
+            superseded_count += 1
         if state == "SUCCESS" and asset_id:
             completed.add(asset_id)
     return {
@@ -133,6 +136,12 @@ def _batch_entry(batch):
         "images": [{"id": key, "name": value} for key, value in images.items()],
         "structures": list(structures.values()),
         "measurement_count": len(statuses),
+        "superseded_count": superseded_count,
+        "superseded_scope": "all"
+        if superseded_count and superseded_count == statuses.count("SUCCESS")
+        else "part"
+        if superseded_count
+        else None,
         "measurement_area": batch.history_mask or "Whole image",
         "completed_image_ids": sorted(completed),
     }
@@ -157,6 +166,8 @@ def _run_entry(run):
         "images": [{"id": asset_id, "name": name}] if asset_id else [],
         "structures": [structure],
         "measurement_count": 1,
+        "superseded_count": int(bool(run.superseded_at)),
+        "superseded_scope": "all" if run.superseded_at else None,
         "measurement_area": identity.get("measurement_area")
         or ("Selected mask" if run.history_mask or run.history_masks else "Whole image"),
         "completed_image_ids": [asset_id] if asset_id and run.status == "SUCCESS" else [],
@@ -198,6 +209,7 @@ def history_page(experiment, *, offset=0, limit=PAGE_SIZE, asset_id=None) -> dic
         "identity",
         "run_id",
         "run__status",
+        "run__superseded_at",
         "job_id",
         "job__status",
         "segmentation_id",
@@ -225,6 +237,7 @@ def history_page(experiment, *, offset=0, limit=PAGE_SIZE, asset_id=None) -> dic
             "status",
             "created_at",
             "input_identity",
+            "superseded_at",
             "segmentation_id",
             "segmentation__asset_id",
             "segmentation__asset__display_name",

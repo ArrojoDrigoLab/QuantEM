@@ -108,6 +108,27 @@ describe("useSegmentationRouteState", () => {
    * "No objects from QuantEM yet".
    */
   describe("model picker default", () => {
+    it.each([
+      ["", "quantem:mito"],
+      ["?source_model=omniem%3Amito", "omniem:mito"],
+    ])("opens the canonical model while honoring explicit choices: %s", async (query, expected) => {
+      vi.mocked(getAsset).mockResolvedValue(makeImage());
+      vi.mocked(getAssetSegmentations).mockResolvedValue([
+        makeSegmentation({
+          source_models: SOURCE_MODEL_OPTIONS,
+          final_result_provenance: {
+            model_identifier: "quantem:mito", adapter_identifier: "default",
+            quantem_version: "0.1.7", finalized_at: "2026-10-28", final_level: 0.5,
+            final_level_kind: "include_level",
+          },
+        }),
+      ]);
+      const { result } = renderHook(() => useSegmentationRouteState(), {
+        wrapper: makeWrapper(`/assets/img-1/labeling/mitochondria${query}`),
+      });
+      await waitFor(() => expect(result.current.activeSourceModel).toBe(expected));
+    });
+
     it("defaults to OmniEM when download state is unavailable", async () => {
       vi.mocked(getAsset).mockResolvedValue(makeImage());
       vi.mocked(getAssetSegmentations).mockResolvedValue([

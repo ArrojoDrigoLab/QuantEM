@@ -1,3 +1,5 @@
+import { defaultOutputFiles } from "../outputSelection";
+import { AnalysisFileSelection } from "../AnalysisFileSelection";
 /** Configure one analysis run with its measured compartments and analysis mask. */
 
 import { Button, Panel } from "@/shared/ui/design";
@@ -6,7 +8,6 @@ import type { ImageSegmentation } from "@/shared/types/images";
 import { segmentationDisplayName } from "@/shared/segmentationNames";
 import {
   CELLS_INTERNAL_NAME,
-  TISSUE_INTERNAL_NAME,
   type AnalysisFormState,
 } from "@/features/analysis/analysisOptions";
 
@@ -37,7 +38,7 @@ export function AnalysisConfigForm({
   };
   const sampleAreas = segmentations.filter(
     (segmentation) =>
-      segmentation.segmentation_type.internal_name === TISSUE_INTERNAL_NAME
+      segmentation.segmentation_type.category === "area"
   );
   const cellLayers = segmentations.filter(
     (segmentation) =>
@@ -69,7 +70,7 @@ export function AnalysisConfigForm({
                 id={`compartment-${entry.segmentationId}`}
                 className="h-4 w-4"
                 checked={entry.enabled}
-                disabled={submitting}
+                disabled={submitting || entry.ready === false}
                 onChange={(event) => {
                   const next = [...state.compartments];
                   next[index] = { ...entry, enabled: event.target.checked };
@@ -81,7 +82,7 @@ export function AnalysisConfigForm({
                 className="min-w-0 flex-1 truncate text-sm text-slate-700"
                 title={segmentationLabel(entry.segmentationId)}
               >
-                {segmentationLabel(entry.segmentationId)}
+                {segmentationLabel(entry.segmentationId)}{entry.ready === false && " — whole-image segmentation required"}
               </label>
               <input
                 type="text"
@@ -102,7 +103,7 @@ export function AnalysisConfigForm({
 
       <div className="mt-4">
         <div className="flex items-center gap-2">
-          <label className={LABEL_CLASS} htmlFor="sample-area">Sample Area</label>
+          <label className={LABEL_CLASS} htmlFor="sample-area">Measurement area</label>
           {state.tissueSegmentationId && <HelpDisclosure label="masked measurements" title="Measuring within a mask">
             An object is included when its centre is inside the mask; its full outline is measured. Compartment areas are clipped to the mask.
           </HelpDisclosure>}
@@ -118,13 +119,13 @@ export function AnalysisConfigForm({
               outputs: {
                 ...state.outputs,
                 sample_area: event.target.value
-                  ? state.outputs.sample_area
+                  ? true
                   : false,
               },
             })
           }
         >
-          <option value="">No Sample Area restriction</option>
+          <option value="">No area restriction</option>
           {sampleAreas.map((segmentation) => (
             <option key={segmentation.id} value={segmentation.id}>
               {segmentationDisplayName(segmentation)}
@@ -165,7 +166,7 @@ export function AnalysisConfigForm({
         <div className="mt-2 flex flex-col gap-2 text-sm text-slate-700">
           {[
             ["whole_image", "Whole image summary"],
-            ["sample_area", "Sample Area summary"],
+            ["sample_area", "Selected area summary"],
             ["all_cells", "All cells summary"],
             ["per_cell", "Per-cell breakdown"],
             ["individual_objects", "Individual organelle table"],
@@ -207,7 +208,7 @@ export function AnalysisConfigForm({
         <p className="mb-0 mt-2 text-slate-600">
           QuantEM will report every selected organelle across the whole image
           {state.outputs.sample_area && state.tissueSegmentationId
-            ? ", within the Sample Area"
+            ? ", within the selected measurement area"
             : ""}
           {state.outputs.all_cells && state.cellSegmentationId
             ? ", across the union of all cells"
@@ -221,7 +222,8 @@ export function AnalysisConfigForm({
       </details>
 
       <div className="mt-4">
-        <Button variant="primary" onClick={onSubmit} disabled={submitting}>
+        <AnalysisFileSelection value={state.outputFiles ?? defaultOutputFiles()} onChange={(outputFiles) => patch({ outputFiles })} />
+        <Button variant="primary" onClick={onSubmit} disabled={submitting || !state.compartments.some((entry) => entry.enabled) || state.compartments.some((entry) => entry.enabled && entry.ready === false)}>
           {submitting ? "Starting…" : "Run Analysis"}
         </Button>
       </div>

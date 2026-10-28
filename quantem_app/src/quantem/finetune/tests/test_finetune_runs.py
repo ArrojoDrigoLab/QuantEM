@@ -592,7 +592,7 @@ class ApplyTests(TestCase):
         assert queued[0]["asset_id"] == str(self.segmentations[0].asset_id)
         assert Job.objects.filter(id=queued[0]["job_id"]).exists()
 
-    def test_apply_refuses_a_completed_segmentation_without_partial_scheduling(self):
+    def test_apply_accepts_completed_segmentations_without_unlocking(self):
         self.segmentations[0].status_stage = "COMPLETED"
         self.segmentations[0].save(update_fields=["status_stage", "updated_at"])
 
@@ -602,12 +602,10 @@ class ApplyTests(TestCase):
             {"dataset_ids": [str(self.dataset.id)]},
         )
 
-        assert response.status_code == 409
-        assert "marked complete" in response.json()["detail"]
-        self.adapter.refresh_from_db()
-        assert self.adapter.applied_at is None
-        assert self.adapter.applied_assets.count() == 0
-        assert Job.objects.count() == 0
+        assert response.status_code == 202
+        queued = response.json()["queued"]
+        assert len(queued) == 3
+        assert Job.objects.count() == len(queued)
 
     def test_apply_refuses_an_image_with_an_active_segmentation_job(self):
         busy = self.segmentations[0]

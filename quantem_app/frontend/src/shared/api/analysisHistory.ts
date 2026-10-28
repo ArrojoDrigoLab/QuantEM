@@ -3,6 +3,7 @@ import { apiRequest } from "./core/http";
 export interface AnalysisHistoryEntry {
   id: string; kind: "batch" | "run"; name: string; created_at: string; status: string;
   images: { id: string; name: string }[]; structures: string[];
+  superseded_count?: number; superseded_scope?: "all" | "part" | null;
   measurement_count: number; measurement_area: string; completed_image_ids: string[];
 }
 export interface BatchIdentity {

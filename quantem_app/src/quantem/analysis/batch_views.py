@@ -130,12 +130,25 @@ class BatchDetailView(APIView):
     def post(self, request, batch_id):
         batch = get_object_or_404(AnalysisBatch, id=batch_id)
         action = request.data.get("action")
+        if action == "regenerate":
+            if not batch.experiment_id:
+                raise ValidationError("This experiment is no longer available.")
+            return Response(
+                batch_body(start_batch(batch.experiment, {**batch.settings, "reuse": True})),
+                status=201,
+            )
         if action not in ("retry_failed", "cancel"):
             raise ValidationError("Choose retry_failed or cancel.")
         with transaction.atomic():
-            for item in batch.items.select_for_update().select_related(
-                "run", "job", "segmentation__asset"
-            ):
+            # PostgreSQL cannot lock the nullable side of an outer join. Load
+            # related state after locking the items, so a waiting retry also
+            # sees the replacement run committed by the preceding request.
+            items = (
+                batch.items.select_for_update()
+                .order_by("id")
+                .prefetch_related("run", "job", "segmentation__asset")
+            )
+            for item in items:
                 if action == "cancel":
                     if item.job and item.job.status in Job.OPEN_STATUSES:
                         from django.utils import timezone
@@ -315,9 +328,14 @@ class BatchExportView(APIView):
         stream = tempfile.TemporaryFile(dir=directory)  # noqa: SIM115 -- FileResponse owns and closes it.
         try:
             with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-                bundle.writestr("measurements.csv", csv_text(rows))
-                bundle.writestr("samples.csv", csv_text(samples))
-                bundle.writestr("groups.csv", csv_text(groups))
+                selection = body["settings"].get("export_tables", {})
+                for filename, contents in (
+                    ("measurements.csv", rows),
+                    ("samples.csv", samples),
+                    ("groups.csv", groups),
+                ):
+                    if selection.get(filename, True):
+                        bundle.writestr(filename, csv_text(contents))
                 manifest = {
                     **body,
                     "aggregation": (
@@ -349,8 +367,8 @@ class BatchExportView(APIView):
                             "manifest.json",
                         ):
                             if (
-                                name == "objects.csv"
-                                and request.query_params.get("objects") != "true"
+                                name in {"objects.csv", "organelle_objects.csv"}
+                                and request.query_params.get("objects", "true") != "true"
                             ):
                                 continue
                             path = item.run.export_path / name

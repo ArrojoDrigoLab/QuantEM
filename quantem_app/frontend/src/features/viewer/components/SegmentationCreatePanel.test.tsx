@@ -304,9 +304,9 @@ describe("SegmentationCreatePanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Custom Organelle" }));
     const dialog = await screen.findByRole("dialog", { name: "Custom Organelle" });
-    await user.type(within(dialog).getByLabelText(/^Name/), "Vesicles");
-    expect(within(dialog).getByLabelText(/^Representation/)).toHaveValue("instances");
-    expect(within(dialog).getByLabelText(/^Topology policy/)).toHaveValue("non_overlapping");
+    await user.type(within(dialog).getByRole("textbox", { name: /^Name/ }), "Vesicles");
+    expect(within(dialog).getByRole("combobox", { name: /^Representation/ })).toHaveValue("instances");
+    expect(within(dialog).getByRole("combobox", { name: /^Topology policy/ })).toHaveValue("non_overlapping");
     await user.click(within(dialog).getByRole("button", { name: "Create and add" }));
 
     await waitFor(() =>
@@ -333,8 +333,8 @@ describe("SegmentationCreatePanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Custom Area" }));
     const dialog = await screen.findByRole("dialog", { name: "Custom Area" });
-    expect(within(dialog).getByLabelText(/^Representation/)).toHaveValue("instances");
-    expect(within(dialog).getByLabelText(/^Topology policy/)).toHaveValue("overlapping");
+    expect(within(dialog).getByRole("combobox", { name: /^Representation/ })).toHaveValue("instances");
+    expect(within(dialog).getByRole("combobox", { name: /^Topology policy/ })).toHaveValue("overlapping");
     await user.click(within(dialog).getByRole("button", { name: "About representation" }));
     expect(
       within(dialog).getByText(/Instances preserve separately selectable objects/)

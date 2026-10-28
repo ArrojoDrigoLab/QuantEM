@@ -1,5 +1,4 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -9,7 +8,6 @@ import {
 } from "./SegmentationScreen.testUtils";
 import { SegmentationScreen } from "./SegmentationScreen";
 import { getAssetSegmentations } from "@/shared/api/assets";
-import { activateSegmentationRoi } from "@/shared/api/segmentations/rois";
 import { unlockSegmentation } from "@/shared/api/segmentations/annotations";
 import type { ImageViewerProps } from "@/viewer/imageViewerTypes";
 
@@ -58,50 +56,23 @@ describe("locked segmentation screen", () => {
     };
   });
 
-  it("opens one viewer with confirmed objects and browsable ROIs, without editing controls", async () => {
-    const user = userEvent.setup();
+  it("opens completed images with editing and model controls available", async () => {
     renderScreen();
-    await screen.findByRole("button", { name: "Unlock segmentation" });
-    await screen.findAllByRole("button", { name: "Open" });
-    expect(screen.getAllByTestId("viewer")).toHaveLength(1);
-    expect(viewerProps().overlays?.idMapOverlays?.map((layer) => layer.id)).toEqual([
-      "label-left-confirmed-idmap",
-    ]);
-    for (const name of ["Add New", "Edit Area", "Test", "Run model", "Remove area", "Remove objects", "Brush", "Polygon"]) {
-      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
-    }
-    expect(viewerProps().interactions?.brush?.enabled).toBe(false);
-    await user.click(screen.getAllByRole("button", { name: "Open" })[1]);
-    expect(viewerProps().viewport?.fitBounds).toEqual({ x: 300, y: 200, width: 100, height: 80 });
-    expect(activateSegmentationRoi).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("checkbox", { name: "View confirmed" }));
-    expect(viewerProps().overlays?.idMapOverlays).toEqual([]);
-    expect(screen.getAllByTestId("viewer")).toHaveLength(1);
-    await user.click(screen.getByRole("checkbox", { name: "View confirmed" }));
-    expect(viewerProps().overlays?.idMapOverlays).toHaveLength(1);
+    expect(await screen.findByRole("button", {name: "Whole image segmented"})).toBeDisabled();
+    expect(screen.queryByRole("button", {name: "Unlock segmentation"})).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name: "Add New"})).toBeEnabled();
+    expect(screen.getByRole("button", {name: "Remove objects"})).toBeEnabled();
+    expect(unlockSegmentation).not.toHaveBeenCalled();
   });
-
-  it("restores the editing layout after unlocking without reloading", async () => {
-    renderScreen();
-    const unlock = await screen.findByRole("button", { name: "Unlock segmentation" });
-    vi.mocked(getAssetSegmentations).mockResolvedValue([makeSegmentation()]);
-    await userEvent.setup().click(unlock);
-    await waitFor(() => expect(screen.getAllByTestId("viewer")).toHaveLength(2));
-    expect(unlockSegmentation).toHaveBeenCalledWith("seg-1");
-    expect(screen.getByRole("button", { name: "Remove objects" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add New" })).toBeInTheDocument();
-  });
-
-  it("loads a delayed confirmed overlay without unlocking or refreshing the page", async () => {
+  it("loads delayed overlays while preserving editing access", async () => {
     const saved = overlayManifestState.manifest;
     overlayManifestState.manifest = null;
-    const { rerender } = renderScreen();
-    await screen.findByRole("button", { name: "Unlock segmentation" });
-    expect(viewerProps().overlays?.idMapOverlays).toEqual([]);
+    const {rerender} = renderScreen();
+    await screen.findByRole("button", {name: "Whole image segmented"});
     overlayManifestState.manifest = saved;
     rerender(<TestScreen />);
-    await waitFor(() => expect(viewerProps().overlays?.idMapOverlays).toHaveLength(1));
-    expect(screen.getAllByTestId("viewer")).toHaveLength(1);
+    await waitFor(() => expect(viewerProps().overlays?.idMapOverlays?.length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", {name: "Add New"})).toBeEnabled();
     expect(unlockSegmentation).not.toHaveBeenCalled();
   });
 });

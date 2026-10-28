@@ -23,12 +23,14 @@ from rest_framework.routers import DefaultRouter
 from quantem.segmentation.api_views.analysis_masks import (
     urlpatterns as analysis_mask_urls,
 )
+from quantem.segmentation.api_views.bulk_runs import urlpatterns as bulk_run_urls
 from quantem.segmentation.api_views.preview import urlpatterns as preview_urls
 from quantem.segmentation.api_views.propose import urlpatterns as propose_urls
 from quantem.segmentation.api_views.quality import urlpatterns as quality_urls
 from quantem.segmentation.api_views.rethreshold import urlpatterns as rethreshold_urls
 from quantem.segmentation.api_views.revisions import urlpatterns as revision_urls
 from quantem.segmentation.api_views.runs import urlpatterns as runs_urls
+from quantem.segmentation.api_views.saved_results import urlpatterns as saved_result_urls
 from quantem.segmentation.feedback.views import SegmentationUserFeedbackView
 from quantem.segmentation.views import (
     CompletedRoiListCreateView,
@@ -67,6 +69,8 @@ router = DefaultRouter()
 router.register(r"segmentation-types", SegmentationTypeViewSet, basename="segmentation-type")
 
 urlpatterns = [
+    *saved_result_urls,
+    *bulk_run_urls,
     # Router includes (more general routes)
     *router.urls,
     # One segmentation: GET (with the deletion preview) and DELETE. The

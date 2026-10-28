@@ -1,3 +1,4 @@
+import { defaultOutputFiles } from "./outputSelection";
 /**
  * Form state for an analysis run, and the rules that turn it into a request.
  *
@@ -50,11 +51,13 @@ export interface CompartmentSelection {
   /** Label the compartment carries into every exported column. */
   name: string;
   enabled: boolean;
+  ready?: boolean;
 }
 
 export type PointsSourceChoice = "none" | "centroids" | "csv";
 
 export interface AnalysisFormState {
+  outputFiles?: Record<string, boolean>;
   compartments: CompartmentSelection[];
   /** "" means no analysis mask: the whole image is the denominator. */
   tissueSegmentationId: string;
@@ -112,10 +115,10 @@ export function defaultFormState(
         name: compartmentNameFor(seg),
         // Every organelle with authoritative saved data participates by
         // default. A reviewed zero-object result still counts as data.
-        enabled:
-          seg.has_saved_area === true ||
-          seg.status_stage === "COMPLETED",
+        enabled: seg.is_complete === true,
+        ready: seg.is_complete === true,
       })),
+    outputFiles: defaultOutputFiles(),
     tissueSegmentationId: sampleArea?.id ?? "",
     cellSegmentationId: cells?.id ?? "",
     outputs: {
@@ -204,6 +207,9 @@ export function buildAnalysisPayload(state: AnalysisFormState): PayloadResult {
     return { payload: null, error: "Choose at least one compartment to measure." };
   }
 
+  if (enabled.some((entry) => entry.ready === false)) {
+    return { payload: null, error: "Every selected organelle must be segmented over the whole image." };
+  }
   const compartments: Record<string, string> = {};
   for (const entry of enabled) {
     const name = entry.name.trim();
@@ -258,6 +264,7 @@ export function buildAnalysisPayload(state: AnalysisFormState): PayloadResult {
   return {
     payload: {
       compartments,
+      output_files: state.outputFiles ?? defaultOutputFiles(),
       tissue_segmentation_id: state.tissueSegmentationId || null,
       cell_segmentation_id: state.cellSegmentationId || null,
       outputs: state.outputs,

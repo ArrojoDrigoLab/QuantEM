@@ -1,3 +1,5 @@
+import { BulkModelPanel } from "./BulkModelPanel";
+import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { getWorkspace, type WorkspaceImage, type WorkspaceSegmentation } from "@/shared/api/workspace";
@@ -61,6 +63,8 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [newAnalysis, setNewAnalysis] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [fineTuning, setFineTuning] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
   const historyChanged = useCallback(() => setHistoryRevision((value) => value + 1), []);
   const [page, setPage] = useState(() => readMemory<number>(`${experiment.id}.page`, 0));
@@ -119,6 +123,17 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
     </div>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {tab === "images" && <>
+      <p className="text-sm text-slate-600">Organize → Evaluate → Apply broadly → Measure. Annotate examples and fine-tune only when the default results need improvement.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <strong>{selectedIds.length} selected</strong>
+        <Button disabled={!filtered.length} onClick={() => change({ selected: [...new Set([...selectedIds, ...filtered.map((image) => image.id)])] })}>Select all filtered images ({filtered.length})</Button>
+        <Button disabled={!selectedIds.length} onClick={() => change({ selected: [] })}>Clear selection</Button>
+        <Button disabled={!selectedIds.length} onClick={() => setApplying(!applying)}>Apply models…</Button>
+        <Button disabled={!selectedIds.length} onClick={() => setFineTuning(true)}>Evaluate / Fine-tune…</Button>
+        <Button disabled={!selectedIds.length} onClick={() => { chooseTab("analysis"); setNewAnalysis(true); }}>Measure selected…</Button>
+      </div>
+      {applying && <BulkModelPanel experimentId={experiment.id} selectedIds={selectedIds} onChanged={historyChanged} />}
+      <FineTuneDialog initialMode="evaluate" open={fineTuning} onClose={() => setFineTuning(false)} initialAssetIds={selectedIds} initialExperimentId={experiment.id} />
       <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-white p-4">
         {controls.layout === "table" && <>
         <label>Search images <input className="block rounded border px-2 py-1" type="search" value={controls.query} onChange={(e) => change({ query: e.target.value })} /></label>
@@ -127,7 +142,7 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
         <label>Image order <select className="block rounded border px-2 py-1" value={controls.sort} onChange={(e) => change({ sort: e.target.value })}>
           <option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="sample">Sample ID</option></select></label>
         <label>Readiness <select className="block rounded border px-2 py-1" value={controls.readiness} onChange={(e) => change({ readiness: e.target.value })}>
-          <option value="">All images</option><option value="uncalibrated">Missing resolution</option><option value="reviewed">Has completed review</option><option value="unreviewed">No completed review</option></select></label>
+          <option value="">All images</option><option value="uncalibrated">Missing resolution</option><option value="reviewed">Whole image segmented</option><option value="unreviewed">Needs full-image coverage</option></select></label>
         </>}
         <label>View <select className="block rounded border px-2 py-1" value={controls.layout} onChange={(e) => change({ layout: e.target.value })}>
           <option value="table">Workflow table</option><option value="cards">Dataset cards</option></select></label>
@@ -135,8 +150,9 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
       {controls.layout === "cards" ? children :
         loading ? <p role="status">Loading workflow status…</p> :
         <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
-          <thead><tr><th scope="col" aria-label="Thumbnail" className="border-b p-3" />{["Image", "Dataset", "Resolution", "Segmentations", "Analyses"].map((label) => <th scope="col" key={label} className="border-b p-3">{label}</th>)}</tr></thead>
+          <thead><tr><th scope="col" className="p-3">Select</th><th scope="col" aria-label="Thumbnail" className="border-b p-3" />{["Image", "Dataset", "Resolution", "Segmentations", "Analyses"].map((label) => <th scope="col" key={label} className="border-b p-3">{label}</th>)}</tr></thead>
           <tbody>{visible.map((image) => <tr key={image.id}>
+            <td className="border-b p-3"><input type="checkbox" aria-label={`Select ${image.name}`} checked={selectedIds.includes(image.id)} onChange={(e) => change({ selected: e.target.checked ? [...selectedIds, image.id] : selectedIds.filter((id) => id !== image.id) })} /></td>
             <td className="border-b p-3"><ImageThumbnail image={image} /></td>
             <td className="border-b p-3"><div className="flex items-center gap-2"><Link className="font-medium text-cyan-800 underline" to={`/assets/${image.id}`}>{image.name}</Link><ImageStatus stage={image.stage} /></div></td>
             <td className="border-b p-3">{image.datasets.map((dataset) => dataset.name).join(", ") || "Ungrouped"}</td>

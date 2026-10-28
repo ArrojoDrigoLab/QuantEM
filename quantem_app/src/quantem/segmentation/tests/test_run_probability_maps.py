@@ -130,7 +130,16 @@ class FakeOrganelleSegmenter(BaseSegmenter):
         return segments
 
     def get_probability_map_metadata(self, model_name: str) -> dict[str, object]:
-        return {"model_name": model_name, "pack_id": "fake:mito", "threshold": 0.5}
+        return {
+            "model_name": model_name,
+            "pack_id": "fake:mito",
+            "threshold": 0.5,
+            "native_coordinates": True,
+            "thresholded_on": "stored_native_uint8",
+            "quantization": "uint8_255_round",
+            "resample_interpolation": "none",
+            "resample_back_factor": 1.0,
+        }
 
 
 class _Reporter:
@@ -212,13 +221,13 @@ class ProbabilityMapPersistedByRunTests(TestCase):
         assert crop.prob[40, 40] > 0.9  # image (60, 60), inside the blob
         assert crop.prob[110, 110] < 0.1  # image (130, 130), outside it
 
-    def test_rerunning_replaces_the_map_instead_of_accumulating_rows(self):
+    def test_rerunning_retains_previous_prediction_maps(self):
         self._run_full()
         self._run_full()
         self._run_full()
 
         maps = list(ProbabilityMap.objects.filter(segmentation=self.segmentation))
-        assert len(maps) == 1
+        assert len(maps) == 3
         assert resolve_probability_map_path(maps[0]).exists()
 
     def test_an_roi_run_records_the_window_so_it_is_read_at_the_right_offset(self):
@@ -333,21 +342,25 @@ class EmptyRunReportingTests(TestCase):
             )
         return count, reporter
 
-    def test_a_run_saves_the_threshold_result_without_creating_candidates(self):
+    def test_an_empty_run_establishes_full_image_coverage(self):
         stored_count, reporter = self._run(np.zeros((SIZE, SIZE), dtype=np.float32))
 
         assert stored_count == 1
         assert SegmentObject.objects.filter(segmentation=self.segmentation).count() == 0
-        assert reporter.logs == []
         self.segmentation.refresh_from_db()
-        assert self.segmentation.status_stage == "THRESHOLD_READY"
+        assert self.segmentation.status_stage == "CANDIDATES_READY"
         assert self.segmentation.status_error == ""
 
-    def test_a_nonempty_model_result_still_waits_for_apply(self):
+    def test_a_nonempty_model_result_is_automatically_accepted(self):
         stored_count, reporter = self._run(_blob_prob())
 
         assert stored_count == 1
-        assert SegmentObject.objects.filter(segmentation=self.segmentation).count() == 0
+        assert (
+            SegmentObject.objects.filter(
+                segmentation=self.segmentation, label_state="CONFIRMED", superseded_at=None
+            ).count()
+            > 0
+        )
         assert [message for level, message in reporter.logs if level == "warning"] == []
 
 

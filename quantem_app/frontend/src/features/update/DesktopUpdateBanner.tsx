@@ -32,7 +32,6 @@ export function DesktopUpdateBanner() {
     <aside className="desktop-update-banner" aria-live="polite">
       <div className="desktop-update-banner-copy">
         <strong>QuantEM {update.version} is available.</strong>
-        {phase === "available" && <span>Download it now; your data stays where it is.</span>}
         {phase === "downloading" && <span>Downloading update: {progressText}{percent !== null ? ` (${percent}%)` : ""}.</span>}
         {phase === "downloaded" && <span>Update downloaded. Preparing a safe restart.</span>}
         {phase === "waiting" && <span>Update downloaded. Waiting for {openJobs} active {openJobs === 1 ? "task" : "tasks"} to finish.</span>}

@@ -349,23 +349,19 @@ class ObjectsTheUserDecidedAboutTests(AnnotationPreservationTestCase):
 
     def test_a_confirmed_object_survives_a_model_run_unchanged(self):
         confirmed = self.annotate_object(0)
+        self.complete_area(0)
         before = _annotation_fingerprint(confirmed)
 
         assert self.run_model() > 0, "the fixture found nothing, so this proves nothing"
 
         assert _annotation_fingerprint(confirmed) == before
         self.assert_still_visible(confirmed)
-        assert any(
-            candidate.geometry.intersects(confirmed.geometry)
-            for candidate in self.fresh_candidates()
-        ), (
-            "Preview did not materialize the full model result around a confirmed "
-            "object; overlap resolution belongs to Confirm"
-        )
+        assert not self.candidates_inside(confirmed.geometry)
 
     def test_a_hand_drawn_object_survives_a_model_run_unchanged(self):
         """What the drawing tool creates: ``source_model="manual"``, CONFIRMED."""
         drawn = self.annotate_object(1, source_model=SOURCE_MODEL_MANUAL, refined="MANUAL")
+        self.complete_area(1)
         before = _annotation_fingerprint(drawn)
 
         self.run_model()
@@ -373,30 +369,21 @@ class ObjectsTheUserDecidedAboutTests(AnnotationPreservationTestCase):
         assert _annotation_fingerprint(drawn) == before
         self.assert_still_visible(drawn)
 
-    def test_a_hand_drawn_object_the_user_has_not_confirmed_also_survives(self):
-        """A drawn outline left as a candidate is still the user's own work.
-
-        It is the weakest of the annotations -- no label, no confirmation -- and
-        therefore the one a pass is most likely to treat as its own to replace.
-        It is not: ``delete_replaced_candidates`` is scoped to the running
-        model's ``source_model``, and a hand-made row is not that model's.
-        """
+    def test_unfinished_manual_work_is_retained_for_recovery_after_replacement(self):
         drawn = self.annotate_object(
-            2,
-            label_state="CANDIDATE",
-            source_model=SOURCE_MODEL_MANUAL,
-            refined="MANUAL",
+            2, label_state="CANDIDATE", source_model=SOURCE_MODEL_MANUAL, refined="MANUAL"
         )
-        before = _annotation_fingerprint(drawn)
-
+        geometry = drawn.geometry.wkt
         self.run_model()
-
-        assert _annotation_fingerprint(drawn) == before
-        self.assert_still_visible(drawn)
+        drawn.refresh_from_db()
+        assert drawn.superseded_at is not None
+        assert drawn.geometry.wkt == geometry
+        assert self.segmentation.correction_revisions.exists()
 
     def test_a_rejected_object_is_not_offered_again(self):
         """EXCLUDED is a decision too, and a re-run must not undo it."""
         rejected = self.annotate_object(3, label_state="EXCLUDED")
+        self.complete_area(3)
         before = _annotation_fingerprint(rejected)
 
         self.run_model()

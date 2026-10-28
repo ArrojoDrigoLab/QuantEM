@@ -197,7 +197,7 @@ export function AnalysisResults({ run }: AnalysisResultsProps) {
       <strong>{row.name}</strong><p>{row.foreground_percent === null ? "Undefined (empty denominator)" : `${row.foreground_percent.toFixed(3)}%`}</p>
       <p className="text-xs text-slate-600">{row.foreground_pixels.toLocaleString()} foreground pixels / {row.denominator_pixels.toLocaleString()} denominator pixels</p>
     </div>)}
-    <div className="flex gap-4"><a className="text-cyan-800 underline" href={getAnalysisExportUrl(run.id, "area.csv")}>Export area measurements CSV</a>
+    <div className="flex gap-4">{run.exports.includes("area.csv") && <a className="text-cyan-800 underline" href={getAnalysisExportUrl(run.id, "area.csv")}>Export area measurements CSV</a>}
       <a className="text-cyan-800 underline" href={getAnalysisExportUrl(run.id, "manifest.json")}>Export manifest</a></div>
   </Panel>;
 

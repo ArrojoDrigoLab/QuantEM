@@ -121,6 +121,31 @@ def get_prob_map_file_path(
         prefix: Filename prefix (e.g. "er", "mito").
         roi_id: Optional ROI ID for ROI-scoped maps.
     """
+    override = getattr(segmentation, "_probability_map_override", None)
+    if override is not None:
+        return resolve_probability_map_path(override)
+    if roi_id is None:
+        canonical = (
+            segmentation.saved_results.filter(
+                is_canonical=True,
+                deleted_at=None,
+                probability_map__name=_probability_map_name(prefix, model_name),
+            )
+            .select_related("probability_map")
+            .first()
+        )
+        if canonical and canonical.probability_map:
+            return resolve_probability_map_path(canonical.probability_map)
+    maps = ProbabilityMap.objects.filter(
+        segmentation=segmentation,
+        name=_probability_map_name(prefix, model_name),
+    ).order_by("-created_at", "-id")
+    for record in maps:
+        if (record.metadata or {}).get("composite"):
+            continue
+        scope_roi = str((record.metadata or {}).get("roi_id") or "")
+        if scope_roi == str(roi_id or ""):
+            return resolve_probability_map_path(record)
     storage_dir = _prob_map_storage_dir(segmentation, roi_id)
     stem = f"{prefix}_{model_name.lower()}_prob"
     chunked = storage_dir / f"{stem}.zarr"
@@ -325,7 +350,11 @@ def delete_probability_maps_for_segmentation(segmentation: ImageSegmentation) ->
             segmentation.id,
         )
         return 0
-    records = list(ProbabilityMap.objects.filter(segmentation=segmentation))
+    records = list(
+        ProbabilityMap.objects.filter(segmentation=segmentation).exclude(
+            saved_results__deleted_at__isnull=True, saved_results__isnull=False
+        )
+    )
     if records:
         ProbabilityMap.objects.filter(id__in=[record.id for record in records]).delete()
         for record in records:
@@ -484,10 +513,11 @@ def save_probability_map(
         raise ValueError(f"Probability map must be 2D, got shape {shape}")
     height, width = int(shape[0]), int(shape[1])
     use_chunked = height * width >= PROBABILITY_MAP_ZARR_MIN_PIXELS
-    file_path = (
-        get_prob_map_chunked_path(segmentation, model_name, prefix, roi_id)
-        if use_chunked
-        else _prob_map_png_path(segmentation, model_name, prefix, roi_id)
+    # Every inference owns immutable bytes. Threshold variants reference these
+    # bytes rather than copying gigapixel images or overwriting earlier runs.
+    suffix = ".zarr" if use_chunked else ".png"
+    file_path = _prob_map_storage_dir(segmentation, roi_id) / (
+        f"{prefix}_{model_name.lower()}_{uuid4().hex}{suffix}"
     )
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -495,6 +525,7 @@ def save_probability_map(
     metadata: dict[str, object] = {"model_type": model_name, generated_flag: True}
     if extra_metadata:
         metadata.update(extra_metadata)
+    metadata["roi_id"] = str(roi_id) if roi_id else None
 
     with _publish_probability_map(file_path, prob_data, chunked=use_chunked) as prob_uint8:
         prob_map = ProbabilityMap.objects.create(
@@ -513,14 +544,6 @@ def save_probability_map(
             file_path,
             exc_info=True,
         )
-
-    _remove_superseded_storage_format(
-        segmentation,
-        model_name,
-        prefix,
-        roi_id,
-        kept_path=file_path,
-    )
 
     # Composite ROI prob map into a full-image version for viewing
     if roi_id:

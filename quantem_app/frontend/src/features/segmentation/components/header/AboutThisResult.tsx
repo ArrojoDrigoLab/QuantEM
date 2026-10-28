@@ -55,7 +55,7 @@ export function AboutThisResult({
       : `${finalNote.final_level_kind.replaceAll("_", " ")} ${finalNote.final_level.toFixed(3)}`;
   const finalAdapter = finalNote?.adapter_identifier ?? "unknown";
   const finalDetail = finalNote
-    ? `Final result: ${finalNote.model_identifier}; QuantEM ${finalNote.quantem_version}; ${finalLevel}; adapter ${finalAdapter}. Finalized ${finalNote.finalized_at}.`
+    ? `Final result: ${finalNote.model_identifier}; QuantEM ${finalNote.quantem_version ?? "version not recorded"}; ${finalLevel}; adapter ${finalAdapter}. Finalized ${finalNote.finalized_at ?? "date not recorded"}.`
     : "";
   return (
     <>
@@ -107,11 +107,9 @@ export function AboutThisResult({
           className="header-clear-rerun-button"
           data-testid="clear-rerun-button"
           onClick={onOpenClearRerun}
-          disabled={isBusy || isComplete || !currentSegmentation}
+          disabled={isBusy || !currentSegmentation}
           title={
-            isComplete
-              ? "This segmentation is locked. Unlock it first."
-              : isBusy
+            isBusy
                 ? "Processing in progress"
                 : "Delete the objects made before the pixel size was set, then run the model again at it"
           }

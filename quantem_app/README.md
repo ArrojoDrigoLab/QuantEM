@@ -18,27 +18,66 @@ Fine-tune, Models and Tasks. Previous/next image follows the experiment's filter
 keeps the current kind of page. Fine-tune opens with the current experiment or image selected;
 annotations are required to start training, but not to open the dialog or apply a saved model.
 
+### Evaluate and apply models across an experiment
+
+Start in the experiment's **Images** table. Organize images into datasets and optionally
+record sample IDs and groups, then select a representative subset. Selection persists
+across filters and pages; **Select all filtered images** includes every matching image.
+Images use their names as sample labels and participate in summaries by default. Assign a
+shared **Sample ID** to average images from one donor or sample together, and a **Group** to
+compare conditions. Leaving Sample ID blank restores the image-name default.
+
+**Evaluate / Fine-tune** opens on evaluation. **Inspect predictions** applies released or
+saved models to the selection without requiring annotations. Open images to inspect the
+results. If needed, create ROIs populated with model outputs, correct them, and mark them
+done. Train on those examples, then evaluate and repeat. **Score against ROIs** evaluates
+completed annotations without training or changing segmentations. Images used in the
+model's training history are flagged, but can still be evaluated.
+
+Use **Apply models** to apply released defaults or a saved fine-tune to the shared image
+selection. The readiness check explains unavailable images and required downloads before
+queueing work. Model defaults follow the same installed-model policy as the image viewer.
+Evaluation settings can be carried into application, including the chosen threshold. Saved
+applications retain per-image progress; cancel remaining tasks or retry failures without
+repeating successful images.
+
+A successful full-image model run is ready for measurement automatically. Completed manual
+ROIs override predictions inside those areas. Manual-only coverage can be established by a
+completed ROI covering the image or explicit acknowledgement that the entire image has been
+manually segmented and includes no model output. Whole-image coverage does not lock editing.
+
+In the labeling viewer, **Model results** retains model and threshold versions. Toggle
+predictions or compare two overview overlays side by side. Each side has its own model
+selector and opacity control, initially 30%. A check mark identifies the confirmed model.
+**Confirm this model**, beside an unconfirmed selection, chooses the canonical model and
+threshold while preserving completed manual areas. Its confirmation
+checks deletion of other versions by default; clear those checkboxes to retain comparisons.
+Only the final **Confirm** starts the change; old outputs are deleted after the replacement
+has been successfully built and saved. Overview overlays display
+thresholded probabilities; measurements use the extracted full-resolution result.
+
 ### Measure and export many images
 
-1. Open an experiment's **Images** tab. The workflow table separates image preparation,
-   calibration, prediction, review completion and measurement status.
-2. Select individual images, **Select visible**, or **Select all matching**. Dataset and
-   readiness filters narrow the matching set. Selection persists across filters and includes
-   each image only once, even when datasets overlap.
-3. Images use their image names as sample labels and are included in summaries by default.
-   Optionally assign a shared **Sample ID** to average images from one donor or sample
-   together, and a **Group** to compare conditions. Saving replaces both fields;
-   leaving Sample ID blank restores the image-name default.
-4. Choose **Analyze selection**, select organelles and the measurement area, then **Check
-   readiness**. A named analysis mask must exist on each image; an absent or ambiguous mask
-   skips that image. Review completion is required by default and is independent of whether
-   prediction finished. Uncalibrated images retain pixel measurements.
-5. **Run ready images** queues durable tasks. Reopen saved batches, compare a metric across
-   images, retry failed items, or cancel remaining work. Matching successful results can be
+1. Select images in the experiment table and choose **Measure selected**. All available
+   organelles and output files are selected by default. Whole-image model results and
+   completed manual segmentations can be measured immediately.
+2. Single-image and batch analysis use the same organelle definitions and output choices.
+   Available Sample Area and Cells measurements are included by default, along with whole-image
+   summaries. Custom area definitions can supply a measurement region; their union is used as
+   the denominator. Choose **Check readiness** before starting a batch. Explicitly selected
+   areas must exist on each image; missing or ambiguous areas skip that image. Uncalibrated
+   images retain pixel measurements. A partial manually annotated ROI never makes its organelle
+   eligible for whole-image analysis, even when a smaller measurement region is selected.
+3. **Run ready images** queues durable tasks. Reopen saved batches, compare measurements
+   across images, retry failed items, or cancel remaining work. Successful results are
    reused only when their inputs, settings and identity still match.
-6. **Export measurements ZIP** works for complete or partial batches. It includes
-   `measurements.csv`, `samples.csv`, `groups.csv`, a manifest, and available per-run
-   summaries. **Include object tables** adds each run's `objects.csv`.
+4. **Export measurements ZIP** supports complete and partial batches. By default it contains
+   image, sample and group tables, available per-run summaries and object tables, and a
+   manifest. File checkboxes control the generated outputs.
+
+Saved measurements and exports remain available after segmentation changes. A yellow flag
+in history identifies superseded results, with an explanation on the analysis page.
+Regenerating a batch creates a new result and can reuse its unchanged measurements.
 
 Object measurements use current confirmed objects. When using an analysis mask, an object's
 centroid must lie inside it; its full outline supplies shape measurements. Global

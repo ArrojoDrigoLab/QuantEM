@@ -45,6 +45,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+from django.db import transaction
 from skimage.morphology import closing, disk
 
 from quantem.assets.models import ImageROI
@@ -55,7 +56,7 @@ from quantem.seg_core.db.extraction import extract_and_save_segments, resolve_mi
 from quantem.seg_core.db.inference import replay_stored_probability_map
 from quantem.seg_core.registry import get_segmenter_or_none
 from quantem.segmentation.global_masks import load_global_mask, save_global_mask
-from quantem.segmentation.models import ImageSegmentation
+from quantem.segmentation.models import ImageSegmentation, ProbabilityMap, SavedSegmentationResult
 from quantem.segmentation.organelle_tasks import zero_object_outcome
 from quantem.segmentation.overlay_ngff import (
     full_image_dirty_bbox,
@@ -66,6 +67,7 @@ from quantem.segmentation.run_identity import (
     RUN_SCOPE_PATCH,
     run_identity_from_segmenter,
 )
+from quantem.segmentation.saved_results import accept_model_area, publish_result
 from quantem.segmentation.services.confirm_batch.feature_refresh import (
     _enqueue_segment_feature_refresh,
 )
@@ -140,6 +142,22 @@ def handle_reextract_at_include_level(
         raise ValueError("The image this task was queued for has no picture to read.")
 
     include_level = _parse_include_level(payload.get("include_level"))
+    selected = None
+    if payload.get("saved_result_id"):
+        selected = SavedSegmentationResult.objects.select_related("probability_map").get(
+            pk=payload["saved_result_id"],
+            segmentation=segmentation,
+            deleted_at=None,
+        )
+        if selected.probability_map is None:
+            raise ValueError("This result's stored prediction is unavailable.")
+        segmentation._probability_map_override = selected.probability_map
+        include_level = selected.threshold
+    elif payload.get("probability_map_id"):
+        segmentation._probability_map_override = ProbabilityMap.objects.get(
+            pk=payload["probability_map_id"],
+            segmentation=segmentation,
+        )
 
     roi = None
     roi_id = str(payload.get("roi_id") or "").strip()
@@ -148,7 +166,9 @@ def handle_reextract_at_include_level(
         if roi is None:
             raise ValueError("The region this task was queued for is no longer here.")
 
-    source_model = normalize_source_model(payload.get("source_model"))
+    source_model = normalize_source_model(
+        selected.source_model if selected else payload.get("source_model")
+    )
     segmenter_internal_name = resolve_segmenter_internal_name(
         segmentation_type_internal_name=segmentation.segmentation_type.internal_name,
         source_model=source_model,
@@ -168,6 +188,31 @@ def handle_reextract_at_include_level(
             "The model that produced this result is not available on this "
             "computer, so its objects cannot be redone at a new include level."
         )
+
+    from quantem.core.local_storage import storage_relpath_for_path
+    from quantem.seg_core.db.prob_maps import get_prob_map_file_path
+
+    selected_path = get_prob_map_file_path(
+        segmentation,
+        list(segmenter.get_dl_model_names())[0],
+        segmenter.prob_map_prefix,
+        str(roi.id) if roi else None,
+    )
+    probability_map = (
+        ProbabilityMap.objects.filter(
+            segmentation=segmentation,
+            file_path=storage_relpath_for_path(selected_path),
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if probability_map is None:
+        raise ValueError("The stored prediction is unavailable. Run the model again.")
+    segmentation._probability_map_override = probability_map
+    segmentation._publish_full_result = roi is None
+    ImageSegmentation.objects.filter(pk=segmentation.pk).update(
+        status_stage="UPDATING", status_error=""
+    )
 
     cancel.check_cancelled()
     reporter.update(progress=5.0, message="reading the stored result")
@@ -211,6 +256,17 @@ def handle_reextract_at_include_level(
             y1, x1 = y0 + mask.shape[0], x0 + mask.shape[1]
             full_mask[y0:y1, x0:x1] = mask
             mask = full_mask
+        else:
+            from quantem.segmentation.coverage import completed_geometry
+            from quantem.segmentation.global_masks import _rasterize_geometries
+
+            protected = completed_geometry(segmentation)
+            if not protected.is_empty:
+                old_mask = load_global_mask(segmentation)
+                completed = _rasterize_geometries(
+                    [protected], height=mask.shape[0], width=mask.shape[1]
+                )
+                mask[completed] = old_mask[completed]
 
         metadata = {
             **stored_metadata,
@@ -230,15 +286,26 @@ def handle_reextract_at_include_level(
             history.append(dict(previous.metadata))
         history.append({**metadata, "scope": "patch" if roi is not None else "full"})
         metadata["inference_runs"] = history
-        save_global_mask(segmentation, mask, source="model", metadata=metadata)
-        segmentation.include_level = include_level
-        segmentation.save(update_fields=["include_level", "updated_at"])
-        register_overlay_mutation_all_bundles(
-            segmentation,
-            dirty_bbox=full_image_dirty_bbox(segmentation),
-            force_full_rebuild=True,
-        )
-        foreground_pixels = int(np.count_nonzero(mask))
+        with transaction.atomic():
+            cancel.check_cancelled()
+            save_global_mask(segmentation, mask, source="model", metadata=metadata)
+            segmentation.include_level = include_level
+            segmentation.save(update_fields=["include_level", "updated_at"])
+            register_overlay_mutation_all_bundles(
+                segmentation,
+                dirty_bbox=full_image_dirty_bbox(segmentation),
+                force_full_rebuild=True,
+            )
+            foreground_pixels = int(np.count_nonzero(mask))
+            if roi is None:
+                publish_result(
+                    segmentation,
+                    probability_map,
+                    include_level,
+                    source_model,
+                    selected=selected,
+                    delete_ids=payload.get("delete_result_ids", []),
+                )
         reporter.update(progress=100.0, message="completed: binary foreground mask ready")
         return {
             "segmentation_id": str(segmentation.id),
@@ -278,18 +345,32 @@ def handle_reextract_at_include_level(
     run_identity["ran_at_nm"] = stored_metadata.get("ran_at_nm")
     run_identity["resolution_recorded"] = stored_metadata.get("resolution_recorded", False)
 
-    segment_count = extract_and_save_segments(
-        segmenter,
-        segmentation,
-        result,
-        image_array,
-        roi,
-        min_area=area_floor,
-        on_detail=lambda message: reporter.log("info", message),
-        run_identity=run_identity,
-        include_level=include_level,
-        defer_features=True,
-    )
+    # The old canonical objects remain intact if publishing the replacement
+    # fails. Analysis never observes a partially replaced object collection.
+    with transaction.atomic():
+        segment_count = extract_and_save_segments(
+            segmenter,
+            segmentation,
+            result,
+            image_array,
+            roi,
+            min_area=area_floor,
+            on_detail=lambda message: reporter.log("info", message),
+            run_identity=run_identity,
+            include_level=include_level,
+            defer_features=True,
+        )
+        if roi is None:
+            cancel.check_cancelled()
+            accept_model_area(segmentation)
+            publish_result(
+                segmentation,
+                probability_map,
+                include_level,
+                source_model,
+                selected=selected,
+                delete_ids=payload.get("delete_result_ids", []),
+            )
 
     # Written after the objects, never before: until the extraction succeeded
     # the objects on screen were still found at the old level, and a field

@@ -29,6 +29,7 @@ JOB_TYPE_REFRESH_SEGMENT_FEATURES = "refresh_segment_features"
 JOB_TYPE_TRAIN_ORGANELLE_ADAPTER = "train_organelle_adapter"
 JOB_TYPE_RUN_ANALYSIS = "run_analysis"
 JOB_TYPE_INSTALL_MODEL_PACK = "install_model_pack"
+JOB_TYPE_EVALUATE_MODEL = "evaluate_model"
 
 # --- v2 push -------------------------------------------------------------
 # Declared here, ahead of their handlers, so that the packages implementing
@@ -52,6 +53,7 @@ JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL = "reextract_at_include_level"
 
 ALLOWED_JOB_TYPES = frozenset(
     {
+        JOB_TYPE_EVALUATE_MODEL,
         JOB_TYPE_ENSURE_IMAGE_NGFF,
         JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
         JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -141,6 +143,11 @@ JOB_TYPE_LABELS = {
 }
 
 JOB_DEFAULTS = {
+    JOB_TYPE_EVALUATE_MODEL: {
+        "priority": "default",
+        "resource_class": "gpu",
+        "queue_name": QUEUE_P4_FULL,
+    },
     JOB_TYPE_ENSURE_IMAGE_NGFF: {
         "priority": "high",
         "resource_class": "cpu",

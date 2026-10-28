@@ -100,14 +100,16 @@ def test_saved_csv_preview_download_and_manifest_use_the_same_columns(tmp_path, 
     assert preview["rows"] == [["9007199254740993", "0.00000012345"]]
     response = client.get(f"/api/analysis/{run.id}/export/image_summary.csv")
     downloaded = b"".join(response.streaming_content)
-    response.close()
+    # The test client's iterator closes the response with its signal guards.
+    # Closing it again ends PostgreSQL's surrounding test transaction.
+    assert response.closed
     assert list(csv.reader(io.StringIO(downloaded.decode("utf-8-sig")))) == [
         preview["columns"],
         *preview["rows"],
     ]
     response = client.get(f"/api/analysis/{run.id}/export/manifest.json")
     manifest = json.loads(b"".join(response.streaming_content))
-    response.close()
+    assert response.closed
     entry = manifest["outputs"]["files"][0]
     assert entry["sha256"] == hashlib.sha256(downloaded).hexdigest()
     assert entry["size_bytes"] == len(downloaded)

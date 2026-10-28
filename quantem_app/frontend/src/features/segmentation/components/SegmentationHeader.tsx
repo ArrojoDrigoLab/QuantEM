@@ -1,30 +1,4 @@
-/**
- * Header for the labeling screen: what image, what objects, what produced them.
- *
- * Provenance is the reason this component is fussy. It used to render
- * "Model: MitoNet v1_mini (Default)" out of a `config.mitonet_model_variant`
- * that the serializer stopped emitting when MitoNet was dropped -- so the
- * annotation screen named a model that produced nothing in the object set the
- * user was correcting. Everything shown here now comes from data the server
- * actually sends: `source_models` (with per-model object counts), the overlay
- * manifest's `source_model` (what the displayed raster was built from).
- *
- * ## Why this file is a composition and not a component
- *
- * It was 966 lines holding roughly twenty distinct surfaces, and five separate
- * packages needed to change different ones of them at the same time. The
- * surfaces now live in `./header/`, one file per thing an owner would want:
- *
- * * `header/AboutThisResult.tsx` — the provenance chips,
- *   the discard-and-re-run trigger, and the two route links;
- * * `header/notices.tsx` — every `role="status"` sentence under the controls;
- * * `header/CompletionDialogs.tsx` — Lock segmentation and delete-and-re-run,
- *   with the state each of them needs in `header/completionDialogState.ts`.
- *
- * Nothing moved changed. The props of `SegmentationHeader` are what they were,
- * the children of `.header-controls` are the same elements in the same order,
- * and every `className`, `data-testid`, `role` and literal string is untouched.
- */
+/** Image, model selection, result coverage, and analysis navigation. */
 
 import {
   NONE_SOURCE_MODEL,
@@ -80,13 +54,7 @@ interface SegmentationHeaderProps {
   onSourceModelChange?: (sourceModel: string) => void;
   onModelChange?: (model: string) => void;
   onFineTuneImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
-  /**
-   * Lock the segmentation, or unlock it.
-   *
-   * `discardUnconfirmed` is the destructive half, and is only ever passed after
-   * the user has ticked it in the confirmation. `acknowledgedDiscardCount` is
-   * the number they were shown; the endpoint refuses a stale one.
-   */
+  /** Explicit acknowledgement of whole-image manual coverage. */
   onToggleSegmentationComplete: (options?: {
     discardUnconfirmed: boolean;
     acknowledgedDiscardCount: number;
@@ -243,7 +211,7 @@ export function SegmentationHeader({
       </div>
 
       <div className="header-controls">
-        {!isComplete && sourceModelPickerOptions.length > 0 && (
+        {sourceModelPickerOptions.length > 0 && (
           <div className="header-source-model">
             {/* "Model" and "Objects shown" are separated on purpose: the
                 picker chooses which model the next run uses *and* which
@@ -290,7 +258,7 @@ export function SegmentationHeader({
             </div>
           </div>
         )}
-        {!isComplete && <AboutThisResult
+        <AboutThisResult
           isOrganelle={isOrganelle}
           displayedObjects={displayedObjects}
           modelRunControl={modelRunControl}
@@ -299,7 +267,7 @@ export function SegmentationHeader({
           isBusy={isBusy}
           isComplete={isComplete}
           onOpenClearRerun={onClearMislabeledObjects ? clearRerun.open : undefined}
-        />}
+        />
         <HeaderNotices
           currentSegmentation={currentSegmentation}
           isComplete={isComplete}
@@ -311,21 +279,9 @@ export function SegmentationHeader({
           activeBaseModel={selectedPackId}
           onFineTuneImageCompleted={onFineTuneImageCompleted}
         />
-        <button
-          className="segmentation-complete-button"
-          onClick={() => {
-            // Unlocking only moves the stage back and restores whatever the
-            // last completion archived, so it stays a single click. Completing
-            // is a state change with a destructive option attached, so it asks.
-            if (isComplete) {
-              onToggleSegmentationComplete();
-              return;
-            }
-            completion.open();
-          }}
-          disabled={!currentSegmentation}
-        >
-          {isComplete ? "Unlock segmentation" : "Lock segmentation"}
+        <button className="segmentation-complete-button" disabled={!currentSegmentation || isComplete}
+          onClick={() => completion.open()}>
+          {isComplete ? "Whole image segmented" : "Confirm whole-image manual segmentation…"}
         </button>
       </div>
 

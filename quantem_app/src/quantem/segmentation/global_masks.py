@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Iterable
 
 import numpy as np
+from django.db import transaction
 from PIL import Image
 from shapely.geometry.base import BaseGeometry
 
@@ -66,7 +67,10 @@ def save_global_mask(
             f"Global mask shape {binary.shape} does not match image shape {(height, width)}."
         )
 
-    path = _mask_path(segmentation)
+    # Publish a new file so a surrounding database rollback still points to the
+    # previous mask. Never overwrite the bytes behind an accepted result.
+    previous = GlobalMask.objects.filter(segmentation=segmentation).first()
+    path = _mask_path(segmentation).with_name(f"mask-{uuid.uuid4().hex}.png")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
@@ -88,6 +92,24 @@ def save_global_mask(
             "metadata": dict(metadata or {}),
         },
     )
+    if previous and previous.file_path != record.file_path:
+
+        def remove_previous():
+            try:
+                storage_path(previous.file_path).unlink(missing_ok=True)
+            except OSError:
+                # Reclamation must never turn a successful save into a failure.
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Could not reclaim an older mask file", exc_info=True
+                )
+
+        transaction.on_commit(remove_previous)
+    segmentation._state.fields_cache.pop("global_mask", None)
+    from quantem.analysis.superseded import mark_superseded
+
+    mark_superseded(segmentation)
     return record
 
 
@@ -126,10 +148,9 @@ def load_global_mask(
     therefore reopen their confirmed global results without a lossy migration.
     """
     height, width = _dimensions(segmentation)
-    try:
-        record = segmentation.global_mask
-    except GlobalMask.DoesNotExist:
-        record = None
+    # Callers may hold the segmentation across several edits. Its reverse
+    # relation cache can still point to the previous immutable mask file.
+    record = GlobalMask.objects.filter(segmentation=segmentation).first()
     if record is not None:
         data = decode_canonical_array(storage_path(record.file_path)) > 0
         if data.shape != (height, width):

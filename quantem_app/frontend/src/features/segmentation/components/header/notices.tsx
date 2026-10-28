@@ -175,7 +175,7 @@ export function HeaderNotices({
         // about the newest attempt -- see `LatestAttemptNotice`.
         <LatestAttemptNotice message={currentSegmentation.status_error.trim()} />
       ) : null}
-      {isComplete && <LockedNotice />}
+      {isComplete && <span className="text-sm text-emerald-800">Whole-image coverage · editing remains available</span>}
     </>
   );
 }

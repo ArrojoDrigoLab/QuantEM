@@ -537,7 +537,7 @@ describe("FineTuneDialog", () => {
 
     // `default_mode` is "holdout_1"; the dialog honours it rather than deciding
     // for itself from the tile count.
-    expect(holdOut).toBeChecked();
+    await waitFor(() => expect(holdOut).toBeChecked());
     expect(useAll).not.toBeChecked();
 
     await user.click(cv);

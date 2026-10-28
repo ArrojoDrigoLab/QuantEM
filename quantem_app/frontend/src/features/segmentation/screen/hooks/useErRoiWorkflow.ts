@@ -171,7 +171,7 @@ export function useErRoiWorkflow({
     [handleEditDrag]
   );
 
-  const confirmRoi = useCallback(async () => {
+  const confirmRoi = useCallback(async (prepopulate = true) => {
     if (!currentSegmentationId || !pendingRoi || confirming) return;
 
     setConfirming(true);
@@ -183,6 +183,7 @@ export function useErRoiWorkflow({
         width: pendingRoi.width,
         height: pendingRoi.height,
         source: "MANUAL",
+        prepopulate,
       });
       created = true;
 

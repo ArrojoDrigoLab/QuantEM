@@ -217,25 +217,13 @@ export function getSegmentationCompletionPreview(
   );
 }
 
-/**
- * Lock a segmentation, and optionally delete everything nobody confirmed.
- *
- * The discard is opt-in on the wire as well as in the UI: omitting
- * `discardUnconfirmed` locks the segmentation and keeps every object, so no
- * call path can throw away a run's output by accident. Asking for it requires
- * the count the user was shown; a mismatch comes back `409` with a fresh
- * preview attached rather than deleting the difference.
- */
+/** Explicitly acknowledge whole-image manual segmentation. */
 export function markSegmentationComplete(
   segmentationId: string,
-  options: { discardUnconfirmed?: boolean; acknowledgedDiscardCount?: number } = {}
+  _options: { discardUnconfirmed?: boolean; acknowledgedDiscardCount?: number } = {}
 ): Promise<MarkSegmentationCompleteResponse> {
-  const body = options.discardUnconfirmed
-    ? {
-        discard_unconfirmed: true,
-        acknowledged_discard_count: options.acknowledgedDiscardCount ?? 0,
-      }
-    : {};
+  void _options; // Legacy callers may still pass obsolete discard options.
+  const body = { acknowledge_full_manual: true, acknowledge_no_model: true };
   return apiRequest<MarkSegmentationCompleteResponse>(
     `/api/segmentations/${segmentationId}/complete`,
     {

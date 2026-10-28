@@ -38,6 +38,12 @@ class WorkspaceCoverageTests(TestCase):
         self.assertEqual(self.summary()["coverage"], "none")
         record.metadata = {"run_scope": "full"}
         record.save()
+        self.assertEqual(self.summary()["coverage"], "none")
+        from quantem.segmentation.saved_results import publish_result
+
+        publish_result(
+            self.segmentation, source_model="quantem:mito", threshold=0.5, probability_map=record
+        )
         self.assertEqual(self.summary()["coverage"], "whole")
 
     def test_manual_whole_image_completion_needs_no_model_run(self):

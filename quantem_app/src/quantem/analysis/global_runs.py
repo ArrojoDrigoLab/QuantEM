@@ -16,6 +16,9 @@ def run_global_area(run, *, progress, cancel_check):
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])
     try:
+        from quantem.analysis.input_contract import require_complete_organelles
+
+        require_complete_organelles(run.segmentation, run.params)
         cancel_check()
         progress(15, "Measuring foreground area")
         report = global_area_report(

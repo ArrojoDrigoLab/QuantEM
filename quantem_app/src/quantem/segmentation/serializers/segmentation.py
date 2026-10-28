@@ -218,6 +218,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
     segment_counts_by_source_model = serializers.SerializerMethodField()
     config = serializers.SerializerMethodField()
     is_complete = serializers.SerializerMethodField()
+    coverage = serializers.SerializerMethodField()
     run_notice = serializers.SerializerMethodField()
     objects_pixel_size = serializers.SerializerMethodField()
     has_saved_area = serializers.SerializerMethodField()
@@ -245,6 +246,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             "segment_counts_by_source_model",
             "config",
             "is_complete",
+            "coverage",
             "run_notice",
             "objects_pixel_size",
             "has_saved_area",
@@ -276,7 +278,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
     def get_segment_counts(self, obj):
         counts = {choice[0]: 0 for choice in SegmentObject.LABEL_STATE_CHOICES}
         qs = (
-            SegmentObject.objects.filter(segmentation=obj)
+            SegmentObject.objects.filter(segmentation=obj, superseded_at=None)
             .values("label_state")
             .annotate(count=Count("id"))
         )
@@ -287,7 +289,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
     def _source_counts(self, obj) -> dict[str, dict[str, int]]:
         counts: dict[str, dict[str, int]] = {}
         rows = (
-            SegmentObject.objects.filter(segmentation=obj)
+            SegmentObject.objects.filter(segmentation=obj, superseded_at=None)
             .values("source_model", "label_state")
             .annotate(count=Count("id"))
         )
@@ -371,7 +373,12 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         }
 
     def get_is_complete(self, obj):
-        return obj.status_stage == "COMPLETED"
+        return self.get_coverage(obj)["ready"]
+
+    def get_coverage(self, obj):
+        from quantem.segmentation.coverage import coverage_state
+
+        return coverage_state(obj)
 
     def get_objects_pixel_size(self, obj):
         """What the image's pixel size was **when these objects were made**.
@@ -417,7 +424,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         with three thousand objects.
         """
         rows = (
-            SegmentObject.objects.filter(segmentation=obj)
+            SegmentObject.objects.filter(segmentation=obj, superseded_at=None)
             .values(run=KeyTransform(RUN_FEATURE_KEY, "features"))
             .annotate(count=Count("id"))
             .order_by()
@@ -521,7 +528,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         if last_run is None or last_run.get("found_objects") is not False:
             return None
 
-        counts = SegmentObject.objects.filter(segmentation=obj).aggregate(
+        counts = SegmentObject.objects.filter(segmentation=obj, superseded_at=None).aggregate(
             total=Count("id"),
             # Deliberately the tuple `_zero_object_advice` branches on,
             # imported rather than repeated: this method chooses which of that

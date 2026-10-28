@@ -24,7 +24,6 @@ import { cx } from "@/shared/ui/cx";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import type { AnalysisRun } from "@/shared/types/analysis";
 import {
-  ANALYSIS_MASK_INTERNAL_NAME,
   buildAnalysisPayload,
   defaultFormState,
   type AnalysisFormState,
@@ -84,12 +83,12 @@ function ImageAnalysisScreen() {
     );
     const choices = organelles.length > 0 ? organelles : segmentations;
     const requested = requestedSegmentationId
-      ? choices.find((seg) => seg.id === requestedSegmentationId)?.id ?? null
+      ? segmentations.find((seg) => seg.id === requestedSegmentationId)?.id ?? null
       : null;
     const next =
       requested ??
-      choices.find((seg) => seg.id === segmentationId)?.id ??
-      choices[0].id;
+      segmentations.find((seg) => seg.id === segmentationId)?.id ??
+      choices.find((seg) => seg.is_complete)?.id ?? choices[0].id;
     if (next === segmentationId) return;
     if (segmentationId) {
       // The screen was already showing another segmentation: the run panel
@@ -148,8 +147,7 @@ function ImageAnalysisScreen() {
       (segmentations ?? []).filter(
         (segmentation) =>
           segmentation.id !== segmentationId &&
-          segmentation.segmentation_type.internal_name ===
-            ANALYSIS_MASK_INTERNAL_NAME
+          segmentation.segmentation_type.category === "area"
       ),
     [segmentationId, segmentations]
   );
@@ -318,7 +316,7 @@ function ImageAnalysisScreen() {
         {!segmentationsLoading && (segmentations?.length ?? 0) === 0 ? (
           <PageState
             title="Nothing to analyse"
-            detail="This image has no segmentations yet. Create one and confirm some objects first."
+            detail="This image has no segmentations yet. Apply a model or finish whole-image manual annotation first."
           />
         ) : null}
 
@@ -337,17 +335,9 @@ function ImageAnalysisScreen() {
                 value={segmentationId}
                 onChange={(event) => handleSelectSegmentation(event.target.value)}
               >
-                {segmentations
-                  .filter(
-                    (seg) =>
-                      (seg.segmentation_type.category ?? "organelle") ===
-                      "organelle"
-                  )
-                  .map((seg) => (
-                  <option key={seg.id} value={seg.id}>
-                    {segmentationDisplayName(seg)}
-                  </option>
-                ))}
+                {(["organelle", "area"] as const).map((category) => <optgroup key={category} label={category === "organelle" ? "Organelles" : "Area coverage"}>
+                  {segmentations.filter((seg) => (seg.segmentation_type.category ?? "organelle") === category).map((seg) => <option key={seg.id} value={seg.id}>{segmentationDisplayName(seg)}</option>)}
+                </optgroup>)}
               </select>
             </div>
           </Panel>

@@ -4,7 +4,6 @@ import numpy as np
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from quantem import __version__
 from quantem.jobs.constants import (
     JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
     JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
@@ -40,20 +39,13 @@ class FinalResultProvenanceTests(TestCase):
         }
         self.probability_map.save(update_fields=["metadata", "updated_at"])
 
-    def test_completion_persists_visible_note_before_silent_map_cleanup(self):
-        response = self.client.post(
-            f"/api/segmentations/{self.segmentation.id}/complete",
-            {},
-            format="json",
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-        note = response.data["final_result_provenance"]
-        self.assertEqual(note["model_identifier"], "quantem:er")
-        self.assertEqual(note["quantem_version"], __version__)
-        self.assertEqual(note["final_level"], 0.42)
-        self.assertEqual(note["final_level_kind"], "include_level")
-        self.assertEqual(note["adapter_identifier"], "adapter-123")
-        self.assertFalse(ProbabilityMap.objects.filter(id=self.probability_map.id).exists())
+    def test_publishing_a_model_keeps_its_prediction_and_provenance(self):
+        from quantem.segmentation.saved_results import publish_result
+
+        result = publish_result(self.segmentation, self.probability_map, 0.42, "quantem:er")
+        self.assertEqual(result.provenance["pack_id"], "quantem:er")
+        self.assertEqual(self.segmentation.final_result_provenance["final_level"], 0.42)
+        self.assertTrue(ProbabilityMap.objects.filter(id=self.probability_map.id).exists())
 
     def test_note_is_immutable_across_retries_and_later_metadata_changes(self):
         first = persist_final_result_provenance(self.segmentation)
@@ -99,46 +91,22 @@ class FinalResultProvenanceTests(TestCase):
         self.assertEqual(note["model_identifier"], "manual")
         self.assertEqual(note["adapter_identifier"], "manual")
 
-    def test_unlock_clears_the_note_so_a_later_final_result_is_not_misattributed(self):
-        completed = self.client.post(
-            f"/api/segmentations/{self.segmentation.id}/complete",
-            {},
-            format="json",
-        )
-        self.assertEqual(completed.status_code, 200, completed.data)
-        unlocked = self.client.delete(f"/api/segmentations/{self.segmentation.id}/complete")
-        self.assertEqual(unlocked.status_code, 200, unlocked.data)
-        self.segmentation.refresh_from_db()
-        self.assertEqual(self.segmentation.final_result_provenance, {})
+    def test_replacement_preserves_previous_version_identity(self):
+        from quantem.segmentation.saved_results import publish_result
 
+        first = publish_result(self.segmentation, self.probability_map, 0.42, "quantem:er")
         replacement = write_prob_map_png(
-            self.segmentation,
-            np.full((32, 32), 0.8, dtype=np.float32),
-            name="ER_OMNIEM",
+            self.segmentation, np.full((32, 32), 0.8), name="ER_OMNIEM"
         )
-        replacement.metadata = {
-            "pack_id": "omniem:er",
-            "threshold": 0.6,
-            "adapter_id": None,
-        }
-        replacement.save(update_fields=["metadata", "updated_at"])
-        self.segmentation.include_level = 0.6
-        self.segmentation.save(update_fields=["include_level", "updated_at"])
-
-        recompleted = self.client.post(
-            f"/api/segmentations/{self.segmentation.id}/complete",
-            {},
-            format="json",
-        )
-        self.assertEqual(recompleted.status_code, 200, recompleted.data)
-        self.assertEqual(
-            recompleted.data["final_result_provenance"]["model_identifier"],
-            "omniem:er",
-        )
-        self.assertEqual(
-            recompleted.data["final_result_provenance"]["adapter_identifier"],
-            "unknown",
-        )
+        replacement.metadata = {"pack_id": "omniem:er"}
+        replacement.save()
+        second = publish_result(self.segmentation, replacement, 0.6, "omniem:er")
+        first.refresh_from_db()
+        self.assertFalse(first.is_canonical)
+        self.assertIsNone(first.deleted_at)
+        self.assertEqual(first.provenance["pack_id"], "quantem:er")
+        self.assertTrue(second.is_canonical)
+        self.assertEqual(self.segmentation.final_result_provenance["model_identifier"], "omniem:er")
 
     def test_active_rethreshold_reader_defers_cleanup(self):
         Job.objects.create(
@@ -170,7 +138,7 @@ class FinalResultProvenanceTests(TestCase):
         self.assertTrue(ProbabilityMap.objects.filter(id=self.probability_map.id).exists())
 
     def test_dataset_calibration_reader_is_recognised_by_asset_list(self):
-        job = Job.objects.create(
+        Job.objects.create(
             type=JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
             status="PENDING",
             payload_json={"asset_ids": [str(self.segmentation.asset_id)]},
@@ -183,5 +151,5 @@ class FinalResultProvenanceTests(TestCase):
             {},
             format="json",
         )
-        self.assertEqual(response.status_code, 409, response.data)
-        self.assertEqual(response.data["job_id"], str(job.id))
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertTrue(ProbabilityMap.objects.filter(id=self.probability_map.id).exists())

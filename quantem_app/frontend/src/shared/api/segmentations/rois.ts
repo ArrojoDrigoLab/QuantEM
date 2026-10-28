@@ -20,6 +20,7 @@ export function getSegmentationRois(segmentationId: string): Promise<Segmentatio
 export function createSegmentationRoi(
   segmentationId: string,
   payload: Partial<Pick<SegmentationRoi, "x" | "y" | "width" | "height">> & {
+    prepopulate?: boolean;
     source?: "AUTO" | "MANUAL" | "DEFAULT";
     seed?: number | null;
   }

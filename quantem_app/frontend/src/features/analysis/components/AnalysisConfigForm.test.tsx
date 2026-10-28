@@ -39,6 +39,7 @@ function segmentation(
     status_stage: "CANDIDATES_READY",
     status_progress: 100,
     has_saved_area: true,
+    is_complete: true,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   };
@@ -82,10 +83,12 @@ describe("AnalysisConfigForm", () => {
     const user = userEvent.setup();
     const { onSubmit } = renderForm();
 
-    const selector = screen.getByLabelText("Sample Area") as HTMLSelectElement;
+    const selector = screen.getByLabelText("Measurement area") as HTMLSelectElement;
     expect(Array.from(selector.options).map((option) => option.text)).toEqual([
-      "No Sample Area restriction",
+      "No area restriction",
       "Sample Area",
+      "Cells",
+      "Analysis Mask",
     ]);
     expect(selector.value).toBe(TISSUE.id);
     expect(screen.getByLabelText("Cells")).toHaveValue(CELLS.id);

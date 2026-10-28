@@ -982,11 +982,6 @@ class FineTuneRunApplyView(APIView):
                     segmentation, _created = ImageSegmentation.objects.get_or_create(
                         asset=asset, segmentation_type_id=adapter.segmentation_type_id
                     )
-                    if segmentation.status_stage == "COMPLETED":
-                        raise _ApplyConflict(
-                            f"{asset.display_name} is marked complete. Unlock it before "
-                            "running this fine-tune."
-                        )
                     blocking = active_segmentation_job(
                         segmentation,
                         job_types=ACTIVE_SEGMENTATION_JOB_TYPES,

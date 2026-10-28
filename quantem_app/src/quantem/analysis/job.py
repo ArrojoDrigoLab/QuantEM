@@ -50,6 +50,9 @@ def run_job(payload: dict[str, Any], reporter: JobReporter, cancel: CancelToken)
     try:
         from quantem.analysis.global_runs import run_global_area
         from quantem.analysis.identity import input_fingerprint
+        from quantem.analysis.input_contract import require_complete_organelles
+
+        require_complete_organelles(run.segmentation, run.params)
 
         if (
             run.input_fingerprint
@@ -62,6 +65,9 @@ def run_job(payload: dict[str, Any], reporter: JobReporter, cancel: CancelToken)
             progress=progress,
             cancel_check=cancel.check_cancelled,
         )
+        from quantem.analysis.export_selection import select_export_files
+
+        select_export_files(run)
         if (
             run.input_fingerprint
             and input_fingerprint(run.segmentation, run.params) != run.input_fingerprint

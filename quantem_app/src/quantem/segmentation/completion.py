@@ -1,29 +1,7 @@
-"""Marking a segmentation done, and undoing it.
+"""Compatibility helpers for historical completion archives.
 
-"Mark image done" locks a segmentation *and* -- if the caller asks for it --
-deletes every object a human has not confirmed. That second half is the most
-destructive operation in the application: a full-image run is minutes of GPU
-time and, once the candidates are gone, only another full run brings them back.
-
-So the rules here are:
-
-* **The destructive half never happens by default.** ``discard_unconfirmed``
-  has to be sent, explicitly true, by a caller that meant it. A request that
-  omits it locks the segmentation and keeps every object. There is no request
-  shape that destroys work by accident, which is a stronger guarantee than a
-  dialog: the dialog can be skipped, dismissed by a stray Enter, or simply not
-  built yet by some future client.
-* **The caller has to have counted.** ``acknowledged_discard_count`` must equal
-  what is actually there. A client that shows "32 objects will be deleted" and
-  then finds 40 is out of date -- an inference run finished while the dialog was
-  open -- and gets a 409 with the fresh numbers instead of quietly destroying
-  eight objects nobody was told about.
-* **It is undoable.** The discarded objects are archived first, in the same
-  transaction, and ``DELETE`` on the endpoint ("unlock segmentation") restores
-  them. If the archive cannot be written the delete does not happen either.
-
-:func:`completion_preview` is the read-only question "what would this destroy?",
-which is what a confirmation dialog needs and had no way to ask.
+Whole-image coverage is tracked separately and never locks editing. These
+helpers retain the ability to restore objects archived by older installations.
 """
 
 from __future__ import annotations
@@ -63,16 +41,8 @@ LOCKED_DETAIL = (
 
 
 def is_locked(segmentation: ImageSegmentation) -> bool:
-    """True when this segmentation refuses mutations.
-
-    The dialog has always said *"Marking it done locks the segmentation"*, and
-    for a while nothing enforced it: a ``COMPLETED`` segmentation still accepted
-    relabelling every object, adding completed ROIs and re-running full
-    segmentation, and only the button caption changed. "Done" is the state a lab
-    relies on to mean the numbers are final, so it is enforced rather than
-    reworded. It is not a one-way door: ``DELETE /complete`` unlocks.
-    """
-    return segmentation.status_stage == COMPLETED_STAGE
+    """Completion describes coverage and never prevents editing."""
+    return False
 
 
 def locked_payload(segmentation: ImageSegmentation) -> dict:

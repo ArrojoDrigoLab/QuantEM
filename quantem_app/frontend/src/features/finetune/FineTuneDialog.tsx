@@ -1,3 +1,4 @@
+import { ModelEvaluation } from "./ModelEvaluation";
 /**
  * Train on selected annotations, then optionally apply a saved model.
  *
@@ -81,6 +82,7 @@ import "./FineTuneDialog.css";
 
 export interface FineTuneDialogProps {
   open: boolean;
+  initialMode?: "train" | "evaluate";
   onClose: () => void;
   /**
    * The organelle, when the dialog was opened from a labeling view. Null on the
@@ -111,6 +113,7 @@ export function FineTuneDialog(props: FineTuneDialogProps) {
 
 function FineTuneDialogBody({
   onClose,
+  initialMode = "train",
   segmentationType = null,
   initialAssetIds,
   initialExperimentId,
@@ -139,7 +142,7 @@ function FineTuneDialogBody({
   const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [adapters, setAdapters] = useState<FineTuneAdapterSummary[]>([]);
-  const [dialogMode, setDialogMode] = useState<"train" | "apply">(initialSavedAdapterId ? "apply" : "train");
+  const [dialogMode, setDialogMode] = useState<"train" | "apply" | "evaluate">(initialSavedAdapterId ? "apply" : initialMode);
   const [scopeGroups, setScopeGroups] = useState(() => buildScopeTree(null));
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
@@ -419,9 +422,7 @@ function FineTuneDialogBody({
 
   const phase: "form" | "running" | "done" =
     trainingRunId === null ? "form" : settled ? "done" : "running";
-  const hasSavedFineTune =
-    adapters.some((adapter) => adapter.status === "SUCCESS") ||
-    progress?.status === "SUCCESS" || Boolean(savedAdapterId);
+
 
   // --- actions -----------------------------------------------------------
 
@@ -511,7 +512,7 @@ function FineTuneDialogBody({
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-3">
           <div>
             <h2 id={titleId} className="m-0 text-lg font-semibold text-slate-950">
-              Fine-tune a model
+              {dialogMode === "evaluate" ? "Evaluate models" : "Fine-tune a model"}
             </h2>
           </div>
           {/* Not just "Close": the footer has a Close too, and two controls
@@ -527,12 +528,12 @@ function FineTuneDialogBody({
           </Button>
         </div>
 
-        {hasSavedFineTune ? (
-          <div
+        <div
             className="flex gap-1 border-b border-slate-200 bg-slate-50 px-5 py-2"
             role="tablist"
             aria-label="Fine-tune action"
           >
+            <button type="button" role="tab" aria-selected={dialogMode === "evaluate"} className="rounded-md px-4 py-1.5 text-sm font-semibold" onClick={() => setDialogMode("evaluate")}>Evaluate</button>
             <button
               type="button"
               role="tab"
@@ -560,13 +561,14 @@ function FineTuneDialogBody({
               Apply
             </button>
           </div>
-        ) : null}
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {Object.keys(loadErrors).length > 0 && <div role="alert" className="mb-4 rounded border border-red-300 p-3 text-red-800">
             {Object.entries(loadErrors).map(([key, message]) => <p key={key}>{message}</p>)}
             <Button onClick={() => { setLoadErrors({}); setLoadAttempt((attempt) => attempt + 1); }}>Retry loading</Button>
           </div>}
+          {dialogMode === "evaluate" && <ModelEvaluation types={types ?? []} initialTypeId={chosenTypeId}
+            initialAssetIds={initialAssetIds} initialExperimentId={initialExperimentId} adapters={adapters} />}
           {dialogMode === "train" && phase === "form" ? (
             <div className="flex flex-col gap-5">
               {!segmentationType ? (

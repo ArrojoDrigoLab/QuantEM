@@ -12,6 +12,7 @@ screen.
 
 from django.urls import path
 
+from quantem.finetune.evaluation import ModelEvaluationDetailView, ModelEvaluationsView
 from quantem.finetune.lifecycle import SavedModelsView, SavedModelView
 from quantem.finetune.run_views import (
     FineTuneAdaptersView,
@@ -31,6 +32,8 @@ from quantem.finetune.views import (
 )
 
 urlpatterns = [
+    path("finetune/evaluations/", ModelEvaluationsView.as_view()),
+    path("finetune/evaluations/<uuid:job_id>/", ModelEvaluationDetailView.as_view()),
     path("finetune/models/", SavedModelsView.as_view()),
     path("finetune/models/<uuid:adapter_id>/", SavedModelView.as_view()),
     # --- the named fine-tune flow ---

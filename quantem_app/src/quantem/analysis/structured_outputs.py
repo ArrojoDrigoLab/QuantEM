@@ -230,7 +230,7 @@ def build_structured_outputs(
                 _region_row(
                     region_kind="sample_area",
                     region_id=str(sample.id),
-                    region_name=sample.segmentation_type.long_name,
+                    region_name=sample.display_name or sample.segmentation_type.long_name,
                     region_mask=sample_mask,
                     organelle_name=organelle_name,
                     organelle=organelle,
@@ -370,7 +370,7 @@ def build_structured_outputs(
             {
                 "code": "cells_clipped_by_sample_area",
                 "message": (
-                    f"{len(clipped_cells)} cell(s) extend beyond the Sample Area. "
+                    f"{len(clipped_cells)} cell(s) extend beyond the selected measurement area. "
                     "Their all-cells and per-cell composition uses the intersection; "
                     "cell_area reports the full saved cell and measurement_area reports "
                     "the clipped area."

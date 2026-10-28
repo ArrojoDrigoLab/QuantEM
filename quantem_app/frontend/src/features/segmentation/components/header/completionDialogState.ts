@@ -1,130 +1,24 @@
-/**
- * The state behind the labeling header's two destructive confirmations.
- *
- * Split out of `SegmentationHeader.tsx` unchanged, and kept apart from
- * `CompletionDialogs.tsx` so that file exports components only. What each hook
- * holds is what its dialog needs and nothing else, which is what lets the
- * header hold the trigger and no dialog state at all.
- */
-
-import { useCallback, useEffect, useState } from "react";
-import { getSegmentationCompletionPreview } from "@/shared/api/segmentations/annotations";
+/** State for explicit manual coverage confirmation and rerun recovery. */
+import { useCallback, useState } from "react";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
-import type { SegmentationCompletionPreview } from "@/shared/types";
 
-/**
- * Mark Image Done: the lock, and the separate opt-in to delete.
- *
- * The count is read fresh every time the dialog opens — not from
- * `segment_counts` on the segmentation payload, which can be a poll behind, and
- * `POST` compares the acknowledged count against a fresh read and returns 409
- * on a mismatch. A dialog quoting a stale number would simply fail at the last
- * click.
- */
-export function useCompletionConfirm({
-  segmentationId,
-  onToggleSegmentationComplete,
-}: {
+export function useCompletionConfirm({ onToggleSegmentationComplete }: {
   segmentationId: string | null;
-  onToggleSegmentationComplete: (options?: {
-    discardUnconfirmed: boolean;
-    acknowledgedDiscardCount: number;
-  }) => void | Promise<void>;
+  onToggleSegmentationComplete: (options?: { discardUnconfirmed: boolean; acknowledgedDiscardCount: number }) => void | Promise<void>;
 }) {
-  const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
-  const [discardUnconfirmed, setDiscardUnconfirmed] = useState(false);
-  const [preview, setPreview] = useState<SegmentationCompletionPreview | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [previewNonce, setPreviewNonce] = useState(0);
+  const [isOpen, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const open = useCallback(() => {
-    setPreview(null);
-    setPreviewError(null);
-    setSubmitError(null);
-    setDiscardUnconfirmed(false);
-    setCompleteConfirmOpen(true);
-    setPreviewNonce((current) => current + 1);
-  }, []);
-
-  const close = useCallback(() => setCompleteConfirmOpen(false), []);
-
-  useEffect(() => {
-    if (!completeConfirmOpen || !segmentationId) return undefined;
-    let cancelled = false;
-    void getSegmentationCompletionPreview(segmentationId)
-      .then((next) => {
-        if (!cancelled) setPreview(next);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setPreviewError(
-          extractApiErrorMessage(
-            error,
-            "The number of objects this would delete could not be read."
-          )
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [completeConfirmOpen, segmentationId, previewNonce]);
-
-  const discardCount = preview?.discard_count ?? null;
-
-  // A refreshed preview can leave nothing to discard -- someone else completed
-  // the segmentation while this dialog was open. The tick box is then gone, so
-  // its state has to go with it or the confirm button offers to "delete 0
-  // objects".
-  useEffect(() => {
-    if (discardCount === 0) setDiscardUnconfirmed(false);
-  }, [discardCount]);
-
-  /**
-   * Confirming keeps the dialog open until the server agrees.
-   *
-   * The refusal this handles is the `409`: the count moved while the dialog was
-   * open, usually because an inference run finished, and nothing was deleted.
-   * Closing on click would have replaced that with silence, which is the exact
-   * failure the endpoint's check exists to prevent.
-   */
+  const open = useCallback(() => { setSubmitError(null); setOpen(true); }, []);
+  const close = useCallback(() => setOpen(false), []);
   const confirm = useCallback(async () => {
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      await onToggleSegmentationComplete(
-        discardUnconfirmed && discardCount !== null
-          ? { discardUnconfirmed: true, acknowledgedDiscardCount: discardCount }
-          : undefined
-      );
-      setCompleteConfirmOpen(false);
-    } catch (error) {
-      setSubmitError(
-        extractApiErrorMessage(error, "The segmentation could not be marked done.")
-      );
-      // Re-read, so the number beside the tick box is the one that would now go.
-      setPreviewNonce((current) => current + 1);
-    } finally {
-      setSubmitting(false);
-    }
-  }, [discardCount, discardUnconfirmed, onToggleSegmentationComplete]);
-
-  return {
-    isOpen: completeConfirmOpen,
-    open,
-    close,
-    preview,
-    previewError,
-    submitError,
-    submitting,
-    discardCount,
-    discardUnconfirmed,
-    setDiscardUnconfirmed,
-    confirm,
-  };
+    setSubmitting(true); setSubmitError(null);
+    try { await onToggleSegmentationComplete(); setOpen(false); }
+    catch (error) { setSubmitError(extractApiErrorMessage(error, "Manual coverage could not be confirmed.")); }
+    finally { setSubmitting(false); }
+  }, [onToggleSegmentationComplete]);
+  return { isOpen, open, close, submitting, submitError, confirm };
 }
-
 export type CompletionConfirmState = ReturnType<typeof useCompletionConfirm>;
 
 /**

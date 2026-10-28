@@ -258,6 +258,7 @@ export interface AnalysisRun {
 
 /** One row of the run history: enough to pick a run, not enough to plot one. */
 export interface AnalysisRunSummary {
+  superseded?: boolean;
   id: string;
   status: AnalysisRunStatus;
   group: string;
@@ -272,6 +273,7 @@ export interface AnalysisRunSummary {
 }
 
 export interface AnalysisRunCreatePayload {
+  output_files?: Record<string, boolean>;
   objects_in_measurement_area?: boolean;
   analysis_mask_ids?: string[];
   /** organelle name -> segmentation id, e.g. `{"mito": "<uuid>"}`. */

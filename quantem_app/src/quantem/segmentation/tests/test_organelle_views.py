@@ -6,7 +6,6 @@ from quantem.assets.roi_state import activate_roi
 from quantem.assets.utils import create_roi_image_from_image
 from quantem.jobs.constants import (
     JOB_TYPE_LABELS,
-    JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
     JOB_TYPE_RUN_SEGMENTATION_FULL,
     JOB_TYPE_RUN_SEGMENTATION_ROI,
     QUEUE_P3_ROI,
@@ -416,56 +415,21 @@ class SegmentationCompleteViewTests(TestCase):
         )
         return confirmed
 
-    def test_complete_without_an_explicit_discard_keeps_every_object(self):
-        """The destructive half is opt-in, and a bare POST is not an opt-in.
-
-        This test used to assert the opposite: a POST with no body deleted every
-        non-confirmed object. A user pruned a 32-object run with zero
-        confirmations on one click of the greenest button on the screen, and
-        recovery was a fresh inference pass.
-        """
+    def test_bare_completion_leaves_partial_objects_untouched(self):
         self._four_segments()
-
         response = self.client.post(f"/api/segmentations/{self.segmentation.id}/complete")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.segmentation.segments.count(), 4)
 
-        self.assertEqual(response.status_code, 200)
-        self.segmentation.refresh_from_db()
-        self.assertEqual(self.segmentation.status_stage, "COMPLETED")
-        self.assertEqual(SegmentObject.objects.filter(segmentation=self.segmentation).count(), 4)
-        self.assertEqual(response.data["completion"]["discarded_count"], 0)
-        self.assertFalse(response.data["completion"]["discarded_unconfirmed"])
-
-    def test_complete_prunes_non_confirmed_segments_and_queues_full_overlay_rebuild(self):
-        confirmed = self._four_segments()
-
+    def test_old_discard_request_cannot_delete_objects(self):
+        self._four_segments()
         response = self.client.post(
             f"/api/segmentations/{self.segmentation.id}/complete",
-            data={"discard_unconfirmed": True, "acknowledged_discard_count": 3},
-            content_type="application/json",
+            {"discard_unconfirmed": True, "acknowledged_discard_count": 3},
+            format="json",
         )
-
-        self.assertEqual(response.status_code, 200)
-        self.segmentation.refresh_from_db()
-        self.assertEqual(self.segmentation.status_stage, "COMPLETED")
-        self.assertEqual(
-            set(
-                SegmentObject.objects.filter(segmentation=self.segmentation).values_list(
-                    "id", flat=True
-                )
-            ),
-            {confirmed.id},
-        )
-        self.assertEqual(response.data["completion"]["discarded_count"], 3)
-        self.assertTrue(response.data["completion"]["restorable"])
-        self.assertEqual(
-            Job.objects.filter(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY).count(),
-            1,
-        )
-        queued_job = Job.objects.get(type=JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY)
-        self.assertEqual(
-            queued_job.payload_json,
-            {"segmentation_id": str(self.segmentation.id), "mode": "full"},
-        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.segmentation.segments.count(), 4)
 
     def test_delete_unlocks_completed_segmentation(self):
         self.segmentation.status_stage = "COMPLETED"

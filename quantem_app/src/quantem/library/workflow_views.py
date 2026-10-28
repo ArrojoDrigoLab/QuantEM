@@ -89,7 +89,7 @@ class ExperimentWorkspaceView(APIView):
                     "representation": seg.segmentation_type.representation,
                     "stage": seg.status_stage,
                     "confirmed_count": seg.confirmed_count,
-                    "review_complete": seg.status_stage == "COMPLETED",
+                    "review_complete": coverage(seg)["coverage"] == "whole",
                     "provenance": seg.final_result_provenance,
                 }
             )
@@ -135,7 +135,13 @@ class ExperimentWorkspaceView(APIView):
                         {"detail": f"{key} must be text up to 255 characters."}, status=400
                     )
                 values[key] = value.strip()
+        previous = getattr(asset, "workflow_metadata", None)
+        changed = any(getattr(previous, key, "") != value for key, value in values.items())
         metadata, _ = ImageWorkflowMetadata.objects.update_or_create(asset=asset, defaults=values)
+        if changed:
+            from quantem.analysis.superseded import mark_asset_superseded
+
+            mark_asset_superseded(asset)
         return Response(
             {
                 **sample_identity(

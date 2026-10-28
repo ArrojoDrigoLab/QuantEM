@@ -1368,6 +1368,9 @@ def register_overlay_mutation_all_bundles(
     bundle, and an image segmented by two models therefore cost twice as much
     per keystroke as one segmented by one.
     """
+    from quantem.analysis.superseded import mark_superseded
+
+    mark_superseded(segmentation)
     normalized_source_model = normalize_overlay_source_model(source_model)
     if source_models is not None:
         # The union over the sources involved, not the sources themselves: a

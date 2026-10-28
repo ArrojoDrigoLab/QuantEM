@@ -197,8 +197,8 @@ describe("SegmentationHeader", () => {
     await user.click(screen.getByRole("button", { name: "← Back to Home" }));
     // "Lock segmentation" can throw away a whole inference pass, so it goes
     // through a confirmation; see the dedicated tests below.
-    await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-    await user.click(await screen.findByRole("button", { name: "Mark done" }));
+    await user.click(screen.getByRole("button", { name: "Confirm whole-image manual segmentation…" }));
+    await user.click(await screen.findByRole("button", { name: "Entire image manually segmented; no model outputs" }));
     expect(onBackToHome).toHaveBeenCalledTimes(1);
     expect(onMarkDone).toHaveBeenCalledTimes(1);
   });
@@ -220,33 +220,11 @@ describe("SegmentationHeader", () => {
     ).not.toBeInTheDocument();
   });
 
-  /**
-   * "Marking it done locks the segmentation" is a promise the dialog has always
-   * made and the app did not keep: every mutation control stayed enabled. The
-   * server now refuses mutations on a COMPLETED segmentation, so the screen has
-   * to show the lock rather than let the user find it by being refused.
-   */
-  describe("locked segmentation", () => {
-    const DONE = makeSegmentation({ status_stage: "COMPLETED", is_complete: true });
-
-    it("says it is locked, and how to unlock it", () => {
-      renderHeader({ currentSegmentation: DONE });
-
-      // Not only a tooltip: unreachable by keyboard, and a disabled control
-      // with nothing beside it reads as a bug.
-      const notice = screen.getByRole("status");
-      expect(notice).toHaveTextContent("This segmentation is locked.");
-      expect(notice).toHaveTextContent("Unlock segmentation");
-      expect(
-        screen.getByRole("button", { name: "Unlock segmentation" })
-      ).toBeEnabled();
-    });
-
-    it("does not show a lock notice while the segmentation is open", () => {
-      renderHeader();
-
-      expect(screen.queryByText(/This segmentation is locked/)).not.toBeInTheDocument();
-    });
+  it("keeps completed images editable and indicates whole coverage", () => {
+    renderHeader({currentSegmentation: makeSegmentation({status_stage: "COMPLETED", is_complete: true})});
+    expect(screen.getByRole("button", { name: "Whole image segmented" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeEnabled();
+    expect(screen.queryByText(/This segmentation is locked/)).not.toBeInTheDocument();
   });
 
   /**
@@ -394,252 +372,32 @@ describe("SegmentationHeader", () => {
    * payload that can be a poll behind, and (c) keep the deletion a separate,
    * opt-in decision from locking.
    */
-  describe("Lock segmentation", () => {
-    it("does not destroy anything on the first click", async () => {
-      const user = userEvent.setup();
-      const onMarkDone = vi.fn();
-      renderHeader({ onToggleSegmentationComplete: onMarkDone });
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-
-      expect(await screen.findByRole("dialog")).toBeInTheDocument();
-      expect(onMarkDone).not.toHaveBeenCalled();
-    });
-
-    it("counts what would go by asking the server, not the cached payload", async () => {
-      // The segmentation prop says 7 unconfirmed; the server says 32 because a
-      // run finished. The dialog must quote the server, or the POST it makes
-      // gets refused for a stale acknowledged count.
-      const user = userEvent.setup();
-      usePreview({ discard_count: 32, confirmed_count: 3 });
-      renderHeader();
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-
-      expect(
-        await screen.findByText(/holds 32 objects nobody has confirmed/)
-      ).toBeInTheDocument();
-      expect(screen.getByText(/3 objects you confirmed/)).toBeInTheDocument();
-    });
-
-    it("locks without deleting anything unless the discard is ticked", async () => {
-      const user = userEvent.setup();
-      const onMarkDone = vi.fn();
-      usePreview({ discard_count: 7, confirmed_count: 1 });
-      renderHeader({ onToggleSegmentationComplete: onMarkDone });
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-      await user.click(await screen.findByRole("button", { name: "Mark done" }));
-
-      expect(onMarkDone).toHaveBeenCalledWith(undefined);
-    });
-
-    it("sends the discard with the exact count the user was shown", async () => {
-      const user = userEvent.setup();
-      const onMarkDone = vi.fn();
-      usePreview({ discard_count: 32, confirmed_count: 0 });
-      renderHeader({ onToggleSegmentationComplete: onMarkDone });
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-      await user.click(
-        await screen.findByRole("checkbox", {
-          name: /Also delete the 32 objects nobody confirmed/,
-        })
-      );
-      await user.click(
-        screen.getByRole("button", { name: "Mark done and delete 32 objects" })
-      );
-
-      expect(onMarkDone).toHaveBeenCalledWith({
-        discardUnconfirmed: true,
-        acknowledgedDiscardCount: 32,
-      });
-    });
-
-    /**
-     * `discardable_queryset` is "everything that is not CONFIRMED", so the
-     * count covers candidates nobody has opened *and* objects somebody opened
-     * and rejected. Same arithmetic, different loss: a rejection is the record
-     * of a review, and `fetchGroundTruthProvenance` feeds EXCLUDED objects to
-     * the fine-tuning wizard as negative examples.
-     */
-    it("separates rejections from candidates nobody reviewed", async () => {
-      const user = userEvent.setup();
-      usePreview({
-        discard_count: 39,
-        confirmed_count: 12,
-        discard_by_label_state: { CANDIDATE: 20, INFERRED: 12, EXCLUDED: 7 },
-      });
-      renderHeader();
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-
-      expect(
-        await screen.findByText(
-          /32 objects were never reviewed and 7 are ones you rejected/
-        )
-      ).toBeInTheDocument();
-      expect(screen.getByText(/trains against rejections/)).toBeInTheDocument();
-      expect(
-        screen.getByRole("checkbox", {
-          name: /Also delete all 39 objects: the 32 never reviewed and the 7 you rejected/,
-        })
-      ).toBeInTheDocument();
-    });
-
-    it("keeps the plain wording when nothing was rejected", async () => {
-      const user = userEvent.setup();
-      usePreview({
-        discard_count: 32,
-        confirmed_count: 0,
-        discard_by_label_state: { CANDIDATE: 30, INFERRED: 2, EXCLUDED: 0 },
-      });
-      renderHeader();
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-
-      expect(
-        await screen.findByRole("checkbox", {
-          name: /Also delete the 32 objects nobody confirmed/,
-        })
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByText(/trains against rejections/)
-      ).not.toBeInTheDocument();
-    });
-
-    it("names the models the doomed objects came from", async () => {
-      // The reported case: 32 model-detected objects, zero confirmations.
-      const user = userEvent.setup();
-      usePreview({
-        discard_count: 32,
-        confirmed_count: 0,
-        discard_by_source_model: { "quantem:mito": 32 },
-      });
-      renderHeader();
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-
-      expect(await screen.findByText(/32 from QuantEM/)).toBeInTheDocument();
-    });
-
-    it("says the discard can be undone when the server says it can", async () => {
-      const user = userEvent.setup();
-      usePreview({ discard_count: 7, confirmed_count: 1, restorable: true });
-      renderHeader();
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-      await user.click(await screen.findByRole("checkbox"));
-
-      expect(
-        screen.getByText(/archived first/)
-      ).toBeInTheDocument();
-    });
-
-    it("says plainly when a discard is too large to undo", async () => {
-      const user = userEvent.setup();
-      usePreview({
-        discard_count: 40000,
-        confirmed_count: 1,
-        restorable: false,
-        archive_max_objects: 20000,
-      });
-      renderHeader();
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-      await user.click(await screen.findByRole("checkbox"));
-
-      expect(
-        screen.getByText(/cannot be archived/)
-      ).toBeInTheDocument();
-    });
-
-    it("destroys nothing when the confirmation is cancelled", async () => {
-      const user = userEvent.setup();
-      const onMarkDone = vi.fn();
-      usePreview({ discard_count: 7, confirmed_count: 1 });
-      renderHeader({ onToggleSegmentationComplete: onMarkDone });
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-      await user.click(await screen.findByRole("button", { name: "Cancel" }));
-
-      expect(onMarkDone).not.toHaveBeenCalled();
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-
-    it("offers no deletion when there is nothing unconfirmed", async () => {
-      const user = userEvent.setup();
-      usePreview({ discard_count: 0, confirmed_count: 4 });
-      renderHeader();
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-
-      expect(
-        await screen.findByText(/nothing here is unconfirmed/i)
-      ).toBeInTheDocument();
+  describe("manual coverage confirmation", () => {
+    it("requires an explicit entire-image acknowledgement and offers no deletion", async () => {
+      const user = userEvent.setup(); const confirm = vi.fn();
+      renderHeader({onToggleSegmentationComplete: confirm});
+      await user.click(screen.getByRole("button", {name: "Confirm whole-image manual segmentation…"}));
+      expect(confirm).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog")).toHaveTextContent("No model outputs will be included");
       expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Mark done" })).toBeInTheDocument();
-    });
-
-    it("keeps the dialog open and says why when the server refuses", async () => {
-      // The 409 the endpoint returns when the count moved while the dialog was
-      // open. Nothing was deleted, and the user has to be told that.
-      const user = userEvent.setup();
-      usePreview({ discard_count: 7, confirmed_count: 1 });
-      const onMarkDone = vi.fn().mockRejectedValue(
-        new ApiRequestError(
-          JSON.stringify({
-            detail:
-              "This segmentation now holds 9 unconfirmed object(s), not 7. Nothing was deleted.",
-          }),
-          { status: 409 }
-        )
-      );
-      renderHeader({ onToggleSegmentationComplete: onMarkDone });
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-      await user.click(await screen.findByRole("checkbox"));
-      await user.click(
-        screen.getByRole("button", { name: "Mark done and delete 7 objects" })
-      );
-
-      expect(await screen.findByRole("alert")).toHaveTextContent(
-        /now holds 9 unconfirmed/
-      );
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
-    });
-
-    it("unlocks on the first click, because unlocking restores rather than destroys", async () => {
-      const user = userEvent.setup();
-      const onToggle = vi.fn();
-      renderHeader({
-        currentSegmentation: makeSegmentation({
-          status_stage: "COMPLETED",
-          is_complete: true,
-        }),
-        onToggleSegmentationComplete: onToggle,
-      });
-
-      await user.click(screen.getByRole("button", { name: "Unlock segmentation" }));
-
-      expect(onToggle).toHaveBeenCalledTimes(1);
+      await user.click(screen.getByRole("button", {name: "Entire image manually segmented; no model outputs"}));
+      expect(confirm).toHaveBeenCalledWith();
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-
-    it("says so rather than guessing when the preview cannot be read", async () => {
+    it("cancels without changing coverage", async () => {
+      const user = userEvent.setup(); const confirm = vi.fn();
+      renderHeader({onToggleSegmentationComplete: confirm});
+      await user.click(screen.getByRole("button", {name: "Confirm whole-image manual segmentation…"}));
+      await user.click(screen.getByRole("button", {name: "Cancel"}));
+      expect(confirm).not.toHaveBeenCalled();
+    });
+    it("keeps the confirmation open when coverage is refused", async () => {
       const user = userEvent.setup();
-      server.use(
-        http.get("http://127.0.0.1:8000/api/segmentations/:segId/complete", () =>
-          HttpResponse.json({ detail: "nope" }, { status: 500 })
-        )
-      );
-      renderHeader();
-
-      await user.click(screen.getByRole("button", { name: "Lock segmentation" }));
-
-      expect(
-        await screen.findByText(/will still lock the segmentation/)
-      ).toBeInTheDocument();
+      renderHeader({onToggleSegmentationComplete: vi.fn().mockRejectedValue(new Error("Model outputs are still present."))});
+      await user.click(screen.getByRole("button", {name: "Confirm whole-image manual segmentation…"}));
+      await user.click(screen.getByRole("button", {name: "Entire image manually segmented; no model outputs"}));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Model outputs are still present.");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
     });
   });
 
@@ -1067,7 +825,7 @@ describe("SegmentationHeader", () => {
       ).toBeInTheDocument();
     });
 
-    it("hides the rerun action and model picker while locked", () => {
+    it("keeps the model picker available for completed images", () => {
       renderHeader({
         currentSegmentation: makeSegmentation({
           ...PREDATES,
@@ -1077,8 +835,8 @@ describe("SegmentationHeader", () => {
         onClearMislabeledObjects: vi.fn(),
       });
 
-      expect(screen.queryByTestId("clear-rerun-button")).not.toBeInTheDocument();
-      expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("clear-rerun-button")).toBeEnabled();
+      expect(screen.getByRole("combobox", { name: "Model" })).toBeEnabled();
     });
   });
 
@@ -1202,7 +960,7 @@ describe("SegmentationHeader", () => {
     expect(screen.queryByText("Pixel size not set")).not.toBeInTheDocument();
   });
 
-  it("shows unlock action for completed segmentations", () => {
+  it("shows whole-image coverage for completed segmentations", () => {
     renderHeader({
       currentSegmentation: makeSegmentation({
         status_stage: "COMPLETED",
@@ -1210,6 +968,6 @@ describe("SegmentationHeader", () => {
       }),
     });
 
-    expect(screen.getByRole("button", { name: "Unlock segmentation" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Whole image segmented" })).toBeDisabled();
   });
 });

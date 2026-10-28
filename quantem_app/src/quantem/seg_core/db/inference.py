@@ -148,6 +148,8 @@ def apply_active_adapter(
     Returns:
         The adapter id that was applied, or None.
     """
+    if adapter_id == "default":
+        return None
     if not hasattr(segmentation, "_meta"):
         # Not a persisted row, so nothing can have been applied to it. (The
         # cache/streaming tests below drive this function with a stand-in.)

@@ -57,12 +57,13 @@ class ExperimentBatchTests(AnalysisRunTestCase):
         self.assertEqual(batch.items.count(), 1)
         self.assertEqual(Job.objects.filter(batch_id=f"analysis-batch:{batch.id}").count(), 1)
 
-    def test_review_is_separate_from_prediction_and_masks_never_fall_back(self):
+    def test_partial_predictions_are_not_whole_coverage_and_masks_never_fall_back(self):
         self.segmentation.status_stage = "CANDIDATES_READY"
+        self.segmentation.manual_full_image = False
         self.segmentation.save()
-        self.assertIn("Review", preview_batch(self.experiment, self.payload)[0]["reason"])
+        self.assertIn("whole image", preview_batch(self.experiment, self.payload)[0]["reason"])
         unchecked = {**self.payload, "require_complete": False}
-        self.assertEqual(preview_batch(self.experiment, unchecked)[0]["reason"], "")
+        self.assertIn("whole image", preview_batch(self.experiment, unchecked)[0]["reason"])
         masked = {**unchecked, "mask_name": "Missing tissue"}
         self.assertIn("missing", preview_batch(self.experiment, masked)[0]["reason"])
         self.assertFalse(AnalysisBatch.objects.exists())
@@ -148,8 +149,10 @@ class ExperimentBatchTests(AnalysisRunTestCase):
             {**self.payload, "segmentation_types": [seg.segmentation_type.internal_name]},
         )
         run = self._execute(batch.items.get())
-        self.assertEqual(run.results["global_area"]["whole_image"]["foreground_percent"], 50)
-        self.assertTrue((run.export_path / "area.csv").is_file())
+        self.assertEqual(
+            run.results["structured_analysis"]["region_summary"][0]["area_fraction"], 0.5
+        )
+        self.assertTrue((run.export_path / "region_summary.csv").is_file())
         self.assertTrue(run_is_current(run))
         save_global_mask(seg, ~pixels, source="manual")
         self.assertFalse(run_is_current(run))
@@ -170,6 +173,45 @@ class ExperimentBatchTests(AnalysisRunTestCase):
         rows = measurement_rows(batch_body(batch))
         self.assertEqual(rows[0]["n_objects"], 1)
         self.assertTrue(any(key.startswith("mean_") for key in rows[0]))
+
+    def test_export_choices_persist_without_changing_previous_outputs(self):
+        first = self._execute(start_batch(self.experiment, self.payload).items.get())
+        original = (first.export_path / "objects.csv").read_bytes()
+        payload = {**self.payload, "output_files": {"objects.csv": False}}
+        second = self._execute(start_batch(self.experiment, payload).items.get())
+        self.assertNotEqual(first.id, second.id)
+        self.assertFalse((second.export_path / "objects.csv").exists())
+        self.assertTrue((second.export_path / "image_summary.csv").exists())
+        self.assertEqual((first.export_path / "objects.csv").read_bytes(), original)
+        self.assertTrue(run_is_current(second))
+        self.assertTrue(start_batch(self.experiment, payload).items.get().reused)
+
+    def test_superseded_history_retains_measurements_and_regeneration_creates_new_run(self):
+        from quantem.analysis.history import history_page
+        from quantem.analysis.superseded import mark_superseded
+
+        batch = start_batch(self.experiment, self.payload)
+        run = self._execute(batch.items.get())
+        original = (run.export_path / "objects.csv").read_bytes()
+        result = run.results
+        mark_superseded(self.segmentation)
+        run.refresh_from_db()
+        self.assertFalse(run_is_current(run))
+        self.assertEqual(run.results, result)
+        self.assertEqual((run.export_path / "objects.csv").read_bytes(), original)
+        entry = next(
+            row for row in history_page(self.experiment)["results"] if row["id"] == str(batch.id)
+        )
+        self.assertEqual(entry["superseded_count"], 1)
+        self.assertEqual(entry["superseded_scope"], "all")
+        response = self.client.post(
+            f"/api/analysis-batches/{batch.id}/", {"action": "regenerate"}, format="json"
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertNotEqual(response.data["id"], str(batch.id))
+        new_item = AnalysisBatch.objects.get(id=response.data["id"]).items.get()
+        self.assertNotEqual(new_item.run_id, run.id)
+        self.assertFalse(new_item.reused)
 
     def test_partial_zip_has_status_manifest_and_optional_object_tables(self):
         batch = start_batch(
@@ -208,7 +250,8 @@ class ExperimentBatchTests(AnalysisRunTestCase):
                     for entry in saved_manifest["outputs"]["files"]:
                         content = archive.read(f"{directory}/{entry['filename']}")
                         self.assertEqual(entry["sha256"], hashlib.sha256(content).hexdigest())
-        response.close()
+        # Streaming through APIClient already closes the response safely.
+        self.assertTrue(response.closed)
 
     def test_cancelling_queued_batch_is_terminal_and_retry_keeps_old_run(self):
         batch = start_batch(self.experiment, self.payload)

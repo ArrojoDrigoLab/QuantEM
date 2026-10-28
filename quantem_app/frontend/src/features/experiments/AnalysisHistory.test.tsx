@@ -45,7 +45,7 @@ it("filters history by image but opens every image and saved setting in the orig
   expect(screen.getByRole("cell", { name: "Field A" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("href", "/api/analysis-batches/batch/export/?objects=true");
   await userEvent.click(screen.getByText("Analysis settings"));
-  expect(screen.getByText("Require completed review")).toBeVisible();
+  expect(screen.getByText("Require whole-image coverage")).toBeVisible();
   expect(screen.getByText("Yes")).toBeVisible();
   expect(screen.getByRole("region", { name: "Notes" })).toHaveTextContent("Field B: No tissue mask was supplied.");
 

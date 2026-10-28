@@ -6,9 +6,8 @@ import uuid
 
 import numpy as np
 
-from quantem.segmentation.global_masks import load_global_mask
+from quantem.analysis.loaders import image_shape, segmentation_mask
 from quantem.segmentation.models import ImageSegmentation
-from quantem.segmentation.type_definitions import ANALYSIS_MASK
 
 
 def _area_row(*, name: str, numerator: int, denominator: int, segmentation_id=None) -> dict:
@@ -31,7 +30,7 @@ def global_area_report(
     """Foreground percentage for the whole image and selected analysis masks."""
     if segmentation.segmentation_type.measurement_mode != "global":
         raise ValueError("Area-only analysis is available only for global segmentations.")
-    foreground = load_global_mask(segmentation)
+    foreground = segmentation_mask(segmentation, image_shape(segmentation))
     whole_numerator = int(np.count_nonzero(foreground))
     rows = []
     requested = []
@@ -50,18 +49,19 @@ def global_area_report(
             for mask in ImageSegmentation.objects.select_related("segmentation_type").filter(
                 id__in=requested,
                 asset_id=segmentation.asset_id,
-                segmentation_type__internal_name=ANALYSIS_MASK.internal_name,
+                segmentation_type__category="area",
+                superseded_by__isnull=True,
                 segmentation_type__measurement_mode="global",
             )
         }
         missing = [value for value in requested if value not in masks]
         if missing:
             raise ValueError(
-                "Every selected analysis mask must be a global analysis mask on this image."
+                "Every selected measurement region must be an area definition on this image."
             )
         for mask_id in requested:
             selected = masks[mask_id]
-            denominator_mask = load_global_mask(selected)
+            denominator_mask = segmentation_mask(selected, image_shape(segmentation))
             denominator = int(np.count_nonzero(denominator_mask))
             numerator = int(np.count_nonzero(foreground & denominator_mask))
             rows.append(

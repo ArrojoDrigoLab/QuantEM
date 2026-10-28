@@ -20,6 +20,9 @@ from quantem.testing import create_image_from_test_tiff
 
 class OrganelleTaskInstanceParamsTests(TestCase):
     def setUp(self):
+        publisher = patch("quantem.jobs.handlers.rethreshold.handle_reextract_at_include_level")
+        publisher.start()
+        self.addCleanup(publisher.stop)
         self.image = create_image_from_test_tiff("Organelle Task Param Test Image")
         self.mito_segmentation = ImageSegmentation.objects.create(
             asset=self.image.asset,
@@ -66,7 +69,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
     ):
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.return_value = self._mock_inference_result()
-        mock_persist.return_value = [object()]
+        mock_persist.return_value = [SimpleNamespace(id="stored-map")]
 
         run_segmentation_full_task(
             segmentation_id=str(self.mito_segmentation.id),
@@ -98,7 +101,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
         )
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.return_value = self._mock_inference_result()
-        mock_persist.return_value = [object()]
+        mock_persist.return_value = [SimpleNamespace(id="stored-map")]
 
         run_segmentation_roi_task(
             segmentation_id=str(self.mito_segmentation.id),
@@ -124,7 +127,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
     ):
         mock_get_segmenter.return_value = SimpleNamespace(name="er")
         mock_run_inference.return_value = self._mock_inference_result()
-        mock_persist.return_value = [object()]
+        mock_persist.return_value = [SimpleNamespace(id="stored-map")]
 
         run_segmentation_full_task(
             segmentation_id=str(self.er_segmentation.id),
@@ -145,7 +148,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
     ):
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.side_effect = self._mock_inference_with_status_message
-        mock_persist.return_value = [object()]
+        mock_persist.return_value = [SimpleNamespace(id="stored-map")]
         reporter = Mock()
 
         run_segmentation_full_task(
@@ -180,7 +183,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
         )
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.side_effect = self._mock_inference_with_status_message
-        mock_persist.return_value = [object()]
+        mock_persist.return_value = [SimpleNamespace(id="stored-map")]
         reporter = Mock()
 
         run_segmentation_roi_task(
@@ -208,7 +211,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
     ):
         mock_get_segmenter.return_value = SimpleNamespace(name="mito")
         mock_run_inference.return_value = self._mock_inference_result()
-        mock_persist.return_value = [object()]
+        mock_persist.return_value = [SimpleNamespace(id="stored-map")]
 
         run_segmentation_full_task(
             segmentation_id=str(self.mito_segmentation.id),

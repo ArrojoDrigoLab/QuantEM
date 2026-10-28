@@ -1,7 +1,7 @@
 import type { WorkspaceImage } from "@/shared/api/workspace";
 
 const settingNames: Record<string, string> = {
-  mask_name: "Measurement area", require_complete: "Require completed review", reuse: "Reuse matching results",
+  mask_name: "Measurement area", require_complete: "Require whole-image coverage", reuse: "Reuse matching results",
   mask_definition_id: "Sample Area definition", segmentation_type_ids: "Organelle definitions",
   tissue_segmentation_id: "Measurement mask", analysis_mask_ids: "Measurement masks", compartments: "Structures",
   objects_in_measurement_area: "Only objects inside measurement area", points_source: "Point source",

@@ -116,6 +116,7 @@ export function RunHistory({
                 {run.calibrated === false ? (
                   <span className="text-amber-700">uncalibrated</span>
                 ) : null}
+                {run.superseded && <span role="img" aria-label="Superseded results" title="Inputs changed; regenerate to measure the current results." className="text-yellow-600">⚑</span>}
                 {run.n_caveats > 0 ? (
                   <span className="text-amber-700">
                     {run.n_caveats} note{run.n_caveats === 1 ? "" : "s"}

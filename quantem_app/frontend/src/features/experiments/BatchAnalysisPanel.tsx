@@ -1,9 +1,10 @@
+import { defaultOutputFiles } from "@/features/analysis/outputSelection";
+import { AnalysisFileSelection } from "@/features/analysis/AnalysisFileSelection";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest, resolveApiUrl } from "@/shared/api/core/http";
 import type { WorkspaceImage } from "@/shared/api/workspace";
 import { Button } from "@/shared/ui/design";
-import { HelpDisclosure } from "@/shared/ui/HelpDisclosure";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import type { AnalysisBatch as Batch, BatchItem as Item } from "@/shared/api/analysisHistory";
 import { AnalysisImageSelection } from "./AnalysisImageSelection";
@@ -12,12 +13,14 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds, onSelect
   experimentId: string; images: WorkspaceImage[]; selectedIds: string[];
   onSelectionChange: (ids: string[]) => void; onHistoryChange: () => void; onMetadataSaved: () => void;
 }) {
-  const [types, setTypes] = useState<string[]>([]);
+  const [chosenTypes, setTypes] = useState<string[] | null>(null);
   const [name, setName] = useState("Experiment measurements");
-  const [mask, setMask] = useState("");
-  const [complete, setComplete] = useState(true);
+  const [mask, setMask] = useState("auto");
+  const [files, setFiles] = useState(defaultOutputFiles);
+  const [tables, setTables] = useState<Record<string, boolean>>({ "measurements.csv": true, "samples.csv": true, "groups.csv": true });
   const [reuse, setReuse] = useState(true);
-  const [objects, setObjects] = useState(false);
+  const [outputs, setOutputs] = useState({ whole_image: true, sample_area: true,
+    all_cells: true, per_cell: true, individual_objects: true });
   const [preview, setPreview] = useState<Item[] | null>(null);
   const [previewKey, setPreviewKey] = useState("");
   const [batch, setBatch] = useState<Batch | null>(null);
@@ -26,10 +29,12 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds, onSelect
   const [metric, setMetric] = useState("n_objects");
   const options = useMemo(() => [...new Map(images.flatMap((image) => image.segmentations)
     .filter((seg) => (seg.category ?? "organelle") === "organelle").map((seg) => [seg.type_id, seg])).values()], [images]);
+  const types = useMemo(() => chosenTypes ?? options.map((seg) => seg.type_id), [chosenTypes, options]);
   const masks = useMemo(() => [...new Map(images.flatMap((image) => image.segmentations)
-    .filter((seg) => seg.type === "quantem_internal_tissue").map((seg) => [seg.type_id, seg])).values()], [images]);
+    .filter((seg) => seg.category === "area").map((seg) => [seg.type_id, seg])).values()], [images]);
   const payload = useMemo(() => ({ name, asset_ids: selectedIds, segmentation_type_ids: types,
-    mask_definition_id: mask || null, require_complete: complete, reuse }), [name, selectedIds, types, mask, complete, reuse]);
+    mask_definition_id: mask && mask !== "auto" ? mask : null, use_available_regions: mask === "auto",
+    reuse, outputs, output_files: files, export_tables: tables }), [name, selectedIds, types, mask, reuse, outputs, files, tables]);
   const payloadKey = JSON.stringify(payload);
   useEffect(() => { setPreview(null); }, [payload]);
   const active = batch?.items.some((item) => ["PENDING", "RUNNING"].includes(item.status ?? ""));
@@ -85,25 +90,31 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds, onSelect
     <div className="flex flex-wrap items-center gap-4">
       <label>Batch name <input className="rounded border px-2 py-1" value={name} onChange={(e) => setName(e.target.value)} /></label>
       <label>Measurement area <select className="rounded border px-2 py-1" value={mask} onChange={(e) => setMask(e.target.value)}>
-        <option value="">Whole image</option>{masks.map((entry) => <option key={entry.type_id} value={entry.type_id}>{entry.name}</option>)}</select></label>
+        <option value="auto">Available Sample Area on each image</option><option value="">Whole image</option>{masks.map((entry) => <option key={entry.type_id} value={entry.type_id}>{entry.name}</option>)}</select></label>
     </div>
     <fieldset className="flex flex-wrap gap-4"><legend className="mb-2 font-medium">Organelles</legend>
       {options.map((seg) => <label key={seg.type_id}><input type="checkbox" checked={types.includes(seg.type_id)}
         onChange={(e) => {
           const checked = e.currentTarget.checked;
-          setTypes((current) => checked ? [...current, seg.type_id] : current.filter((value) => value !== seg.type_id));
-        }} /> {seg.name} {seg.representation === "semantic" ? "(semantic mask)" : ""}</label>)}
+          setTypes(checked ? [...types, seg.type_id] : types.filter((value) => value !== seg.type_id));
+        }} /> {seg.name} {seg.representation === "semantic" ? "(area measurements)" : ""}</label>)}
       {!options.length && <p>Run a segmentation on an image before measuring this experiment.</p>}
     </fieldset>
     <div className="flex flex-wrap gap-4">
-      <div className="flex items-center gap-2">
-        <label><input type="checkbox" checked={complete} onChange={(e) => setComplete(e.target.checked)} /> Require review marked complete</label>
-        <HelpDisclosure label="review requirements" title="Unfinished reviews">
-          Only confirmed objects are counted. Including unfinished reviews may give lower counts.
-        </HelpDisclosure>
-      </div>
+      <p className="text-sm">Whole-image model results and completed manual segmentations are ready to measure.</p>
       <label><input type="checkbox" checked={reuse} onChange={(e) => setReuse(e.target.checked)} /> Reuse matching current results</label>
     </div>
+    <fieldset className="flex flex-wrap gap-3"><legend className="font-medium">Measurements</legend>
+      {Object.entries({ whole_image: "Whole image", sample_area: "Selected area", all_cells: "All cells summary", per_cell: "Per-cell measurements", individual_objects: "Individual organelles" }).map(([key, label]) => <label key={key}>
+        <input type="checkbox" checked={outputs[key as keyof typeof outputs]} disabled={key === "whole_image"}
+          onChange={(event) => setOutputs((values) => ({ ...values, [key]: event.target.checked }))} /> {label}
+      </label>)}
+      <p className="w-full text-sm">Available Sample Area and Cells are included by default. Each image is measured over the whole image as well. Missing explicitly selected areas are reported as skipped; automatic area and cell outputs apply where those regions exist.</p>
+    </fieldset>
+    <AnalysisFileSelection value={files} onChange={setFiles} />
+    <fieldset className="flex flex-wrap gap-3"><legend className="font-medium">Batch summary files</legend>
+      {Object.entries(tables).map(([name, enabled]) => <label key={name}><input type="checkbox" checked={enabled} onChange={(e) => setTables((values) => ({ ...values, [name]: e.target.checked }))} /> {name}</label>)}
+    </fieldset>
     <div className="flex flex-wrap gap-2">
       <Button disabled={busy || !selectedIds.length || !types.length} onClick={() => void run(true)}>Check readiness</Button>
       <Button variant="primary" disabled={busy || previewKey !== payloadKey || !preview?.some((item) => item.ready)} onClick={() => void run(false)}>Run ready images</Button>
@@ -116,8 +127,7 @@ export function BatchAnalysisPanel({ experimentId, images, selectedIds, onSelect
       <strong>{batch.name}</strong><Button disabled={busy} onClick={() => void open(batch.id)}>Refresh</Button>
       <Button disabled={busy || !batch.items.some((item) => ["FAILED", "CANCELLED"].includes(item.status ?? ""))} onClick={() => void open(batch.id, "retry_failed")}>Retry failed</Button>
       <Button disabled={busy || !active} onClick={() => void open(batch.id, "cancel")}>Cancel remaining</Button>
-      <label><input type="checkbox" checked={objects} onChange={(e) => setObjects(e.target.checked)} /> Include object tables</label>
-      <a className="font-medium text-cyan-800 underline" href={resolveApiUrl(`/api/analysis-batches/${batch.id}/export/?objects=${objects}`)} download>Export measurements ZIP</a>
+      <a className="font-medium text-cyan-800 underline" href={resolveApiUrl(`/api/analysis-batches/${batch.id}/export/`)} download>Export measurements ZIP</a>
     </div>}
     {rows.length > 0 && <div className="max-h-96 overflow-auto"><table className="w-full text-left text-sm">
       <thead><tr>{["Image", "Organelle", "Area", "Sample / group", "Status", selectedMetric?.replaceAll("_", " ") ?? "Measurement", "Details"].map((label) => <th key={label} className="border-b p-2">{label}</th>)}</tr></thead>

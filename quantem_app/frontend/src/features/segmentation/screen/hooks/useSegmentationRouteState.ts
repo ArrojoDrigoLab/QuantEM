@@ -199,6 +199,8 @@ export function useSegmentationRouteState(
       sourceModelQueryParam,
     ]
   );
+  const canonicalSource = currentSegmentation?.final_result_provenance?.model_identifier;
+  const canonicalAdapter = currentSegmentation?.final_result_provenance?.adapter_identifier;
   const activeModelValue = useMemo(() => {
     const requestedAdapter = adapterQueryParam
       ? adapterQueryParam.startsWith("adapted:")
@@ -212,6 +214,10 @@ export function useSegmentationRouteState(
     if (sourceModelQueryParam && resolveLabelingModel(modelOptions, sourceModelQueryParam)) {
       return sourceModelQueryParam;
     }
+    if (canonicalAdapter && resolveLabelingModel(modelOptions, `adapted:${canonicalAdapter}`)) {
+      return `adapted:${canonicalAdapter}`;
+    }
+    if (canonicalSource && resolveLabelingModel(modelOptions, canonicalSource)) return canonicalSource;
     return defaultLabelingModel(
       modelOptions,
       modelCatalogue,
@@ -219,6 +225,8 @@ export function useSegmentationRouteState(
     );
   }, [
     adapterQueryParam,
+    canonicalSource,
+    canonicalAdapter,
     currentSegmentationId,
     modelCatalogue,
     modelOptions,
@@ -392,8 +400,7 @@ export function useSegmentationRouteState(
     visibleSegmentations,
     currentSegmentation,
     currentSegmentationId,
-    isLocked: currentSegmentation?.status_stage === "COMPLETED" ||
-      currentSegmentation?.is_complete === true,
+    isLocked: false,
     segmentationInternalName,
     isTissueSegmentation,
     isErSegmentation,

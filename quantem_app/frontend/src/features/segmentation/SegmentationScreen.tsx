@@ -1,3 +1,4 @@
+import { SavedResultsPanel } from "./components/SavedResultsPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawing } from "@/hooks/useDrawing";
 import { useUncertainSegments } from "@/features/segmentation/hooks/useUncertainSegments";
@@ -717,6 +718,10 @@ export function SegmentationScreen() {
         modelRunControl={thresholdEnabled && thresholdControls.blocked
           ? <RunModelButton controls={thresholdControls} /> : undefined}
       />
+      {route.currentSegmentation && <SavedResultsPanel key={route.currentSegmentation.id}
+        segmentationId={route.currentSegmentation.id} assetId={route.image.id}
+        revision={route.currentSegmentation.updated_at ?? route.currentSegmentation.status_stage}
+        onQueued={route.refetchSegmentations} />}
       <main
         className={`segmentation-main ${
           ui.showConfirmedPanel && !route.isLocked ? "show-confirmed" : "hide-confirmed"

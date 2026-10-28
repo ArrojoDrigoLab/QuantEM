@@ -111,7 +111,9 @@ class ManifestTestCase(TestCase):
         self.image = create_small_test_image("Manifest Image", width=IMAGE_SIZE, height=IMAGE_SIZE)
         self.asset = self.image.asset
         self.segmentation = ImageSegmentation.objects.create(
-            asset=self.asset, segmentation_type=get_or_create_mitochondria_type()
+            asset=self.asset,
+            segmentation_type=get_or_create_mitochondria_type(),
+            manual_full_image=True,
         )
         for i in range(self.n_model):
             self._segment(_square(20 + 30 * i, 30), MODEL_FEATURES)

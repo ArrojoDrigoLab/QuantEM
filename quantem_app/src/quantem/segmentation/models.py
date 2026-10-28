@@ -16,6 +16,7 @@ from .geometry import (
     wkb_geometry_property,
 )
 from .instance_params import coerce_instance_params, instance_params_defaults
+from .result_models import ModelApplicationBatch, SavedSegmentationResult  # noqa: F401
 from .segment_status import (
     SEGMENT_STATUS_CANDIDATE,
     SEGMENT_STATUS_CHOICES,
@@ -202,6 +203,7 @@ class ImageSegmentation(TimeStampedModel):
     #: working artifacts and are reclaimed at completion, so this compact note
     #: is the durable answer to which model produced the final pixels.
     final_result_provenance = models.JSONField(default=dict, blank=True)
+    manual_full_image = models.BooleanField(default=False)
 
     class Meta:
         constraints = [

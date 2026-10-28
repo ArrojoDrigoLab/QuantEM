@@ -1,7 +1,7 @@
 name: quantem-app
 
-# Routine app CI: frontend and backend checks plus platform packaging smoke tests.
-# It uses no GPU, model weights, or database service. Tagged production builds
+# Routine app CI: frontend, backend, PostgreSQL, and platform packaging checks.
+# It uses no GPU or model weights. Tagged production builds
 # and GitHub Release publication remain in quantem-app-desktop-release.yml.
 
 on:
@@ -119,9 +119,15 @@ jobs:
           python -m django check --settings quantem.core.settings
           python -m django makemigrations --check --dry-run --settings quantem.core.settings
           pytest \
+            src/quantem/analysis/tests \
             src/quantem/jobs/tests/test_postgresql_concurrency.py \
+            src/quantem/segmentation/tests/test_postgresql_bulk_workflows.py \
             src/quantem/segmentation/tests/test_postgresql_area_concurrency.py \
             src/quantem/segmentation/tests/test_area_definition_migration.py \
+            src/quantem/segmentation/tests/test_reconciled_schema.py \
+            src/quantem/segmentation/tests/test_bulk_model_runs.py \
+            src/quantem/segmentation/tests/test_saved_results.py \
+            src/quantem/finetune/tests/test_evaluation.py \
             src/quantem/core/tests/test_sqlite_cutover.py
 
   frontend:

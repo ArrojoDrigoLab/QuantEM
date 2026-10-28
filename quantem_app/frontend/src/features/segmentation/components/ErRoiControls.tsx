@@ -23,7 +23,7 @@ export interface ErRoiSection {
   onStartPlacement: () => void;
   onEditRoi: (roi: SegmentationRoi) => void;
   onCancelPlacement: () => void;
-  onConfirmRoi: () => void;
+  onConfirmRoi: (prepopulate?: boolean) => void;
   onMarkRoiDone: (roiId: string, done: boolean) => void;
   onDeleteRoi: (roiId: string) => void;
   onActivateRoi: (roiId: string) => void;
@@ -68,6 +68,7 @@ export function ErRoiControls({
     [rois]
   );
   const editing = relocatingRoiId !== null;
+  const [prepopulate, setPrepopulate] = useState(true);
   const primaryLabel = pendingRoiActive
     ? confirming
       ? editing
@@ -80,7 +81,7 @@ export function ErRoiControls({
       ? "Cancel"
       : "Add New";
   const onPrimaryClick = pendingRoiActive
-    ? onConfirmRoi
+    ? () => onConfirmRoi(prepopulate)
     : placementActive
       ? onCancelPlacement
       : onStartPlacement;
@@ -98,6 +99,7 @@ export function ErRoiControls({
           {primaryLabel}
         </button>}
       </div>
+      {!readOnly && pendingRoiActive && <label className="er-roi-hint"><input type="checkbox" checked={prepopulate} onChange={(event) => setPrepopulate(event.target.checked)} /> Start with model outputs to correct</label>}
       {!readOnly && placementActive && !pendingRoiActive && (
         <p className="er-roi-hint">Click to place the new ROI.</p>
       )}

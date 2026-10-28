@@ -530,35 +530,35 @@ class SelfConfirmationCaveatTests(QualityFixture):
         self.assertEqual(payload["self_confirmation"]["threshold"], 0.8)
 
 
-class CompletionLockTests(QualityFixture):
+class CompletedImageEditingTests(QualityFixture):
     def _mark_finished(self):
         self.segmentation.status_stage = "COMPLETED"
         self.segmentation.save(update_fields=["status_stage"])
 
-    def test_a_finished_image_refuses_an_answer(self):
+    def test_a_finished_image_accepts_an_answer(self):
         payload = self._spot_check(1)
         check = payload["checks"][0]
         self._mark_finished()
-        self._answer(check, QualityCheck.ANSWER_YES, expect=409)
+        self._answer(check, QualityCheck.ANSWER_YES, expect=200)
 
-    def test_a_finished_image_refuses_a_count_box(self):
+    def test_a_finished_image_accepts_a_count_box(self):
         self._mark_finished()
         response = self.client.post(f"{self.base}/count-box", {}, format="json")
-        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.status_code, 200, response.data)
 
     def test_a_finished_image_still_reports_what_was_already_checked(self):
         self._answer_all([QualityCheck.ANSWER_YES] * 3)
         self._mark_finished()
         payload = self._spot_check(3)
         self.assertEqual(payload["counts"]["positive"], 3)
-        self.assertTrue(payload["locked"])
+        self.assertFalse(payload["locked"])
 
-    def test_a_finished_image_does_not_draw_questions_nobody_can_answer(self):
+    def test_a_finished_image_can_continue_sampling(self):
         self._spot_check(3)
         self._mark_finished()
         payload = self._spot_check(12)
-        self.assertEqual(len(payload["checks"]), 3)
-        self.assertEqual(payload["drawing_refused"], "locked")
+        self.assertEqual(len(payload["checks"]), 12)
+        self.assertNotEqual(payload.get("drawing_refused"), "locked")
 
 
 class RequestValidationTests(QualityFixture):

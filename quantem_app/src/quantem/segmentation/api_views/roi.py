@@ -1,24 +1,4 @@
-"""ROI endpoints for segmentation workflows.
-
-**Where the completion lock falls in here.** A ROI rectangle is asset-scoped:
-one rectangle is shared by every organelle on the image. Marking *one*
-segmentation done therefore cannot freeze the rectangles themselves -- the
-other organelles are still being worked, through their own ids, and they need
-to place and remove ROIs.
-
-What the lock does cover is everything a request *through this segmentation's
-id* writes into this segmentation: the ROI's association with it, the
-per-(ROI, segmentation) completion row, and the flat done flag on the ROI it is
-looking at. So every route below that writes refuses when this segmentation is
-marked done, and the same rectangle stays fully manageable through any
-organelle on the asset that is not.
-
-The one write that is deliberately still allowed is activation, which is how
-the viewer is pointed at a ROI -- navigation, not result. It cannot be frozen
-in any case: an unlocked organelle on the same asset flips the same shared flag.
-
-Reads are untouched. A finished segmentation stays fully browsable.
-"""
+"""ROI placement, initialization and completion for editable segmentations."""
 
 from __future__ import annotations
 
@@ -191,7 +171,10 @@ class SegmentationRoiListCreateView(APIView):
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def post(self, request, seg_id):
+        if "prepopulate" in request.data and not isinstance(request.data["prepopulate"], bool):
+            return Response({"detail": "Choose whether to prepopulate this ROI."}, status=400)
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         # Refused before anything is read off the request, so a locked
         # segmentation answers the lock rather than a complaint about the body.
@@ -263,6 +246,10 @@ class SegmentationRoiListCreateView(APIView):
             is_active=True,
         )
         roi_image.segmentations.add(segmentation)
+        if "prepopulate" in request.data:
+            from quantem.segmentation.roi_initialization import initialize_roi
+
+            initialize_roi(segmentation, roi_image, prepopulate=request.data["prepopulate"] is True)
         serializer = SegmentationRoiSerializer(
             roi_image,
             context={"segmentation": segmentation},
@@ -293,6 +280,15 @@ class SegmentationRoiCompleteView(APIView):
         with transaction.atomic():
             roi_image.is_complete = True
             roi_image.save(update_fields=["is_complete", "updated_at"])
+            roi_image.segmentations.add(segmentation)
+            status_row, _ = RoiSegmentationStatus.objects.get_or_create(
+                image_roi=roi_image, segmentation=segmentation
+            )
+            status_row.set_complete(True)
+            status_row.save()
+            from quantem.analysis.superseded import mark_superseded
+
+            mark_superseded(segmentation)
             candidate_cleanup = _delete_candidates_for_completed_roi(
                 segmentation,
                 roi_image,
@@ -355,6 +351,9 @@ class SegmentationRoiSegmentationCompleteView(APIView):
                 segmentation=segmentation,
             )
             status_row.set_complete(is_complete)
+            from quantem.analysis.superseded import mark_superseded
+
+            mark_superseded(segmentation)
             status_row.save(update_fields=["is_complete", "completed_at", "updated_at"])
             if is_complete:
                 candidate_cleanup = _delete_candidates_for_completed_roi(
@@ -427,6 +426,10 @@ class SegmentationRoiDetailView(APIView):
                 "Failed to delete ROI crop file for %s", roi_image.id, exc_info=True
             )
 
+        from quantem.analysis.superseded import mark_superseded
+
+        for related in roi_image.segmentations.all():
+            mark_superseded(related)
         roi_image.delete()
 
         if was_active and asset is not None:

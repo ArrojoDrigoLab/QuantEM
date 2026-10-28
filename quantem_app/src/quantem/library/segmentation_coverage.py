@@ -9,6 +9,7 @@ from quantem.segmentation.models import (
     GlobalMask,
     ProbabilityMap,
     RoiSegmentationStatus,
+    SavedSegmentationResult,
     SegmentObject,
 )
 
@@ -18,6 +19,11 @@ def with_coverage(queryset):
     return queryset.annotate(
         has_annotations=Exists(live.filter(Q(label_state="CONFIRMED") | Q(source_model="manual"))),
         has_full_result=Exists(live.filter(features__run__scope="full")),
+        has_accepted_result=Exists(
+            SavedSegmentationResult.objects.filter(
+                segmentation_id=OuterRef("pk"), is_canonical=True, deleted_at=None, full_image=True
+            )
+        ),
     ).prefetch_related(
         Prefetch(
             "completed_rois", queryset=CompletedROI.objects.only("segmentation_id", "geometry_wkb")
@@ -61,13 +67,19 @@ def coverage(segmentation):
     percent = min(100.0, area / (width * height) * 100) if width and height else None
     mask = getattr(segmentation, "global_mask", None)
     whole = (
-        segmentation.status_stage == "COMPLETED"
-        or segmentation.has_full_result
-        or any(_whole_map(row.metadata) for row in segmentation.probability_maps.all())
-        or bool(mask and _whole_map(mask.metadata))
+        segmentation.manual_full_image
+        or segmentation.has_accepted_result
+        or segmentation.status_stage == "COMPLETED"
         or bool(width and height and area >= width * height)
     )
     partial = bool(count or segmentation.has_annotations or (mask and mask.foreground_pixels))
+    if segmentation.status_stage in {
+        "RUNNING_INFERENCE",
+        "EXTRACTING_CANDIDATES",
+        "UPDATING",
+        "FAILED",
+    }:
+        whole = False
     return {
         "coverage": "whole" if whole else "partial" if partial else "none",
         "annotated_area_count": count,

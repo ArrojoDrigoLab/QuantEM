@@ -755,9 +755,18 @@ def update_asset(asset: Asset, payload: dict, *, inside_transaction: bool = Fals
         return serialize_asset_detail(asset)
 
     def apply_updates() -> None:
+        changed = any(
+            getattr(asset, field) != value
+            for field, value in updates.items()
+            if field in PIXEL_SIZE_FIELDS
+        )
         for field, value in updates.items():
             setattr(asset, field, value)
         asset.save(update_fields=[*updates.keys(), "updated_at"])
+        if changed:
+            from quantem.analysis.superseded import mark_asset_superseded
+
+            mark_asset_superseded(asset)
 
     if inside_transaction:
         apply_updates()

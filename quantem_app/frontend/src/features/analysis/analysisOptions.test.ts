@@ -32,6 +32,7 @@ function makeSegmentation(
     status_stage: "CANDIDATES_READY",
     status_progress: 100,
     has_saved_area: true,
+    is_complete: true,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   };
@@ -68,6 +69,22 @@ describe("compartmentNameFor", () => {
 });
 
 describe("defaultFormState", () => {
+  it("includes complete zero-object predictions and excludes partial manual organelles", () => {
+    const zero = { ...MITO, has_saved_area: false, is_complete: true };
+    const partial = { ...NUCLEUS, has_saved_area: true, is_complete: false };
+    const state = defaultFormState([zero, partial], zero.id);
+    expect(state.compartments.map((entry) => entry.enabled)).toEqual([true, false]);
+    expect(buildAnalysisPayload(state).payload?.compartments).toEqual({ mito: zero.id });
+    state.compartments[1].enabled = true;
+    expect(buildAnalysisPayload(state).error).toMatch(/whole image/);
+  });
+
+  it("carries explicit structured-file choices into the request", () => {
+    const state = defaultFormState([MITO], MITO.id);
+    state.outputFiles = { ...state.outputFiles, "organelle_objects.csv": false };
+    expect(buildAnalysisPayload(state).payload?.output_files?.["organelle_objects.csv"]).toBe(false);
+  });
+
   it("preselects populated Sample Area and Cells layers", () => {
     const state = defaultFormState([MITO, NUCLEUS, TISSUE, CELLS], MITO.id);
     expect(state.tissueSegmentationId).toBe(TISSUE.id);
@@ -108,7 +125,7 @@ describe("buildAnalysisPayload", () => {
   it("maps enabled compartments to name -> segmentation id", () => {
     const { payload, error } = buildAnalysisPayload(baseState());
     expect(error).toBeNull();
-    expect(payload?.compartments).toEqual({ mito: MITO.id });
+    expect(payload?.compartments).toEqual({ mito: MITO.id, nucleus: NUCLEUS.id });
     expect(payload?.tissue_segmentation_id).toBe(TISSUE.id);
     expect(payload?.cell_segmentation_id).toBe(CELLS.id);
     expect(payload?.outputs?.per_cell).toBe(true);
@@ -137,7 +154,7 @@ describe("buildAnalysisPayload", () => {
   });
 
   it("refuses a distance target that is not a selected compartment", () => {
-    const state = baseState({ pointsSource: "centroids", distanceTarget: "nucleus" });
+    const state = baseState({ pointsSource: "centroids", distanceTarget: "missing" });
     expect(buildAnalysisPayload(state).error).toMatch(/not one of the selected/);
   });
 

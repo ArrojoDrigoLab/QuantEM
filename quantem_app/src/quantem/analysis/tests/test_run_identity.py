@@ -115,7 +115,9 @@ class RunIdentityTestCase(TestCase):
     # --- fixture helpers ---------------------------------------------------
 
     def _segmentation(self, type_factory) -> ImageSegmentation:
-        return ImageSegmentation.objects.create(asset=self.asset, segmentation_type=type_factory())
+        return ImageSegmentation.objects.create(
+            asset=self.asset, segmentation_type=type_factory(), manual_full_image=True
+        )
 
     def _object(
         self,

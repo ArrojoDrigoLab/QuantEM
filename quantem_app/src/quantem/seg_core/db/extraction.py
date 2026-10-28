@@ -347,9 +347,14 @@ def run_extraction(
     # Areas the user has already finished are not this pass's to write in. See
     # the module docstring: this is a question about where the pass may write,
     # which is why it is answered before the shapes reach the protection index.
+    publishing = bool(getattr(segmentation, "_publish_full_result", False))
     extracted, absorbed_by_finished = drop_inside_finished_regions(
-        extracted, finished_regions(segmentation)
+        extracted, [] if publishing else finished_regions(segmentation)
     )
+    if publishing:
+        from quantem.segmentation.saved_results import retain_completed_annotations
+
+        retain_completed_annotations(segmentation)
     if absorbed_by_finished:
         logger.info(
             "Left %d candidate(s) unwritten inside finished areas of segmentation %s",

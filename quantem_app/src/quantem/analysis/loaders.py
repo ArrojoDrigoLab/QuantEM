@@ -896,7 +896,11 @@ def normalise_params(raw: dict[str, Any], *, segmentation: ImageSegmentation) ->
 
     tissue_id = raw.get("tissue_segmentation_id") or None
     if tissue_id:
-        _resolve_segmentation(tissue_id, asset_id=segmentation.asset_id, role="the tissue mask")
+        area = _resolve_segmentation(
+            tissue_id, asset_id=segmentation.asset_id, role="the measurement area"
+        )
+        if area.segmentation_type.category != "area":
+            raise AnalysisInputError("Choose an area definition as the measurement region.")
         tissue_id = str(tissue_id)
 
     cell_id = raw.get("cell_segmentation_id") or None
@@ -978,6 +982,7 @@ def normalise_params(raw: dict[str, Any], *, segmentation: ImageSegmentation) ->
         "seed": seed,
         "group": str(raw.get("group") or ""),
         "objects_in_measurement_area": raw.get("objects_in_measurement_area") is True,
+        **({"output_files": raw["output_files"]} if "output_files" in raw else {}),
     }
 
 
@@ -2600,6 +2605,9 @@ def load_inputs(
 
     segmentation = run.segmentation
     params = normalise_params(run.params or {}, segmentation=segmentation)
+    from .input_contract import require_complete_organelles
+
+    require_complete_organelles(segmentation, params)
     shape = image_shape(segmentation)
     asset = segmentation.asset
 

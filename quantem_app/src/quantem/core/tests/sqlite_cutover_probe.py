@@ -10,7 +10,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-def _legacy_sqlite_fixture(path: Path, alias: str) -> dict[str, uuid.UUID]:
+def _legacy_sqlite_fixture(
+    path: Path, alias: str, *, saved_results: bool = False
+) -> dict[str, uuid.UUID]:
     from django.db import connections
     from django.db.migrations.executor import MigrationExecutor
     from shapely.geometry import box
@@ -27,7 +29,7 @@ def _legacy_sqlite_fixture(path: Path, alias: str) -> dict[str, uuid.UUID]:
         elif app_label == "jobs":
             name = "0004_update_maintenance"
         elif app_label == "segmentation":
-            name = "0009_correctionrevision"
+            name = "0011_model_application_batch" if saved_results else "0009_correctionrevision"
         targets.append((app_label, name))
     executor.migrate(targets)
     historical = executor.loader.project_state(targets).apps
@@ -72,13 +74,72 @@ def _legacy_sqlite_fixture(path: Path, alias: str) -> dict[str, uuid.UUID]:
         status="PENDING",
         payload_json={"asset_id": str(asset.pk)},
     )
-    source.close()
-    return {
+    identifiers = {
         "asset": asset.pk,
         "segmentation": segmentation.pk,
         "area": area.pk,
         "job": job.pk,
     }
+    if saved_results:
+        from django.utils import timezone
+
+        mito_type, _ = SegmentationType.objects.using(alias).get_or_create(
+            internal_name="quantem_internal_mito",
+            defaults={"short_name": "Mito", "long_name": "Mitochondria"},
+        )
+        model_segmentation = LegacySegmentation.objects.using(alias).create(
+            asset_id=asset.pk,
+            segmentation_type_id=mito_type.pk,
+            manual_full_image=True,
+        )
+        prediction = (
+            historical.get_model("segmentation", "ProbabilityMap")
+            .objects.using(alias)
+            .create(
+                segmentation_id=model_segmentation.pk,
+                file_path="predictions/saved-model.npy",
+                metadata={"source_model": "quantem:mito", "threshold": 0.73},
+            )
+        )
+        SavedResult = historical.get_model("segmentation", "SavedSegmentationResult")
+        for threshold, canonical in ((0.5, False), (0.73, True)):
+            saved = SavedResult.objects.using(alias).create(
+                segmentation_id=model_segmentation.pk,
+                probability_map_id=prediction.pk,
+                name=f"Saved threshold {threshold}",
+                threshold=threshold,
+                source_model="quantem:mito",
+                full_image=True,
+                is_canonical=canonical,
+            )
+            identifiers["canonical_result" if canonical else "old_result"] = saved.pk
+        application = (
+            historical.get_model("segmentation", "ModelApplicationBatch")
+            .objects.using(alias)
+            .create(
+                experiment_id=experiment.pk,
+                settings={"organelles": ["mito"], "threshold": 0.73},
+                items=[{"asset_id": str(asset.pk), "job_id": str(job.pk), "ready": True}],
+            )
+        )
+        analysis = (
+            historical.get_model("analysis", "AnalysisRun")
+            .objects.using(alias)
+            .create(
+                segmentation_id=model_segmentation.pk,
+                status="SUCCESS",
+                superseded_at=timezone.now(),
+                input_identity={"asset_id": str(asset.pk)},
+                results={"objects": {"n": 3}, "area_fraction_mito": 0.25},
+            )
+        )
+        identifiers.update(
+            model_segmentation=model_segmentation.pk,
+            application=application.pk,
+            analysis=analysis.pk,
+        )
+    source.close()
+    return identifiers
 
 
 def main() -> None:
@@ -87,6 +148,7 @@ def main() -> None:
     parser.add_argument("--snapshots", type=Path, required=True)
     parser.add_argument("--settings", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--saved-results", action="store_true")
     args = parser.parse_args()
 
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "quantem.core.settings")
@@ -98,7 +160,9 @@ def main() -> None:
 
     from quantem.core import app_settings, migration_safety, sqlite_migration
 
-    identifiers = _legacy_sqlite_fixture(args.source, "legacy_cutover_fixture")
+    identifiers = _legacy_sqlite_fixture(
+        args.source, "legacy_cutover_fixture", saved_results=args.saved_results
+    )
     with (
         patch.object(migration_safety, "SNAPSHOT_ROOT", args.snapshots),
         patch.object(app_settings, "APP_SETTINGS_PATH", args.settings),

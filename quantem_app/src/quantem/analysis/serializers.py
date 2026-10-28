@@ -87,6 +87,7 @@ class AnalysisRunSummarySerializer(serializers.ModelSerializer):
     calibrated = serializers.SerializerMethodField()
     n_caveats = serializers.SerializerMethodField()
     segmentation_deleted = serializers.SerializerMethodField()
+    superseded = serializers.SerializerMethodField()
 
     class Meta:
         model = AnalysisRun
@@ -103,12 +104,16 @@ class AnalysisRunSummarySerializer(serializers.ModelSerializer):
             "calibrated",
             "n_caveats",
             "segmentation_deleted",
+            "superseded",
         ]
         read_only_fields = fields
 
     def get_segmentation_deleted(self, obj: AnalysisRun) -> bool:
         """See :meth:`AnalysisRunSerializer.get_segmentation_deleted`."""
         return obj.segmentation_id is None
+
+    def get_superseded(self, obj):
+        return obj.superseded_at is not None
 
     def get_n_objects(self, obj: AnalysisRun) -> int | None:
         return ((obj.results or {}).get("objects") or {}).get("n")

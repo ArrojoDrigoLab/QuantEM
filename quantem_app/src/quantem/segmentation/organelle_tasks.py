@@ -465,6 +465,7 @@ def _run_segmentation(
     tile_window: TileWindow | None = None,
     image_array=None,
     adapter_id: str | None = None,
+    threshold: float | None = None,
 ) -> int:
     """Run inference and save the result used by the threshold preview.
 
@@ -592,8 +593,9 @@ def _run_segmentation(
         # dial must fall back to this run's own default (including a calibrated
         # fine-tune threshold), not retain the level chosen for the map that was
         # just replaced.
-        segmentation.include_level = None
-        segmentation.save(update_fields=["include_level", "updated_at"])
+        if roi is not None:
+            segmentation.include_level = None
+            segmentation.save(update_fields=["include_level", "updated_at"])
         stored_count = len(written)
         if not stored_count and not bool(getattr(segmenter, "persist_probability_maps", True)):
             raise RuntimeError(
@@ -604,7 +606,36 @@ def _run_segmentation(
             stored_count = len(result.prob_maps)
         if on_detail is not None:
             on_detail("Threshold preview ready")
-        on_status("THRESHOLD_READY", 100.0)
+        if roi is None:
+            from quantem.jobs.handlers.rethreshold import handle_reextract_at_include_level
+            from quantem.jobs.reporter import CancelToken
+            from quantem.segmentation.result_reporting import InlineCancellation, InlineReporter
+
+            active_reporter = reporter or InlineReporter()
+            job_id = getattr(reporter, "job_id", None)
+            from uuid import UUID
+
+            try:
+                job_id = UUID(str(job_id))
+            except (ValueError, TypeError):
+                job_id = None
+            handle_reextract_at_include_level(
+                {
+                    "segmentation_id": str(segmentation.id),
+                    "source_model": resolved_source_model,
+                    "include_level": float(
+                        threshold
+                        if threshold is not None
+                        else getattr(segmenter, "fg_threshold", 0.5)
+                    ),
+                    **({"probability_map_id": str(written[0].id)} if written else {}),
+                },
+                active_reporter,
+                CancelToken(job_id) if job_id else InlineCancellation(),
+            )
+            on_status("CANDIDATES_READY", 100.0)
+        else:
+            on_status("THRESHOLD_READY", 100.0)
         return stored_count
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         logger.exception(
@@ -652,6 +683,7 @@ def run_segmentation_full_task(
     force_recompute_prob_maps: bool = False,
     reporter=None,
     adapter_id: str | None = None,
+    threshold: float | None = None,
 ) -> int:
     """Run inference over the full image. Returns the stored-output count."""
     return _run_segmentation(
@@ -662,6 +694,7 @@ def run_segmentation_full_task(
         force_recompute_prob_maps=force_recompute_prob_maps,
         reporter=reporter,
         adapter_id=adapter_id,
+        threshold=threshold,
     )
 
 
@@ -769,6 +802,7 @@ def _plan_legs(asset_shape, raw_legs: list[dict]) -> list[dict]:
                 "name": segmentation.segmentation_type.long_name,
                 "source_model": source_model,
                 "adapter_id": str(raw.get("adapter_id") or "").strip() or None,
+                "threshold": raw.get("threshold"),
                 "tiles": tiles,
                 "grid": _leg_pack_grid(segmenter) if segmenter is not None else (float("inf"), 0),
                 "requested_seq": index,
@@ -866,6 +900,7 @@ def run_segmentation_for_image_task(
                     tile_window=window,
                     image_array=shared_image,
                     adapter_id=leg.get("adapter_id"),
+                    threshold=leg.get("threshold"),
                 )
         except Exception as exc:  # noqa: BLE001 -- every leg is reported
             logger.exception(
