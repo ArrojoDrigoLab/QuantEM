@@ -314,7 +314,10 @@ class LegacyStoredMapTests(TestCase):
 
     def test_a_file_with_no_row_behind_it_is_refused(self):
         """Bytes whose conventions nobody wrote down are the same problem."""
+        stored_bytes = self._map_path().read_bytes()
         ProbabilityMap.objects.filter(segmentation=self.segmentation).delete()
-        assert self._map_path().exists()
+        legacy_path = self._map_path()
+        legacy_path.write_bytes(stored_bytes)
+        assert legacy_path.exists()
         with self.assertRaises(StoredMapUnavailable):
             self._load()

@@ -343,7 +343,9 @@ class OverlayAndCompositionTests(TestCase):
         self.image = create_small_test_image("Composition", width=SIZE, height=SIZE, textured=True)
         self.asset = self.image.asset
         self.segmentation = ImageSegmentation.objects.create(
-            asset=self.asset, segmentation_type=get_or_create_mitochondria_type()
+            asset=self.asset,
+            segmentation_type=get_or_create_mitochondria_type(),
+            manual_full_image=True,
         )
         self.tissue = ImageSegmentation.objects.create(
             asset=self.asset, segmentation_type=get_or_create_tissue_type()

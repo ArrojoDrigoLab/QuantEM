@@ -18,7 +18,16 @@ HERE = Path(__file__).resolve().parent
 RUNTIME_SPEC = HERE / "runtime.json"
 REQUIRED_DIRECTORIES = ("bin", "lib", "share")
 LICENSE_FILES = ("server_license.txt", "commandlinetools_3rd_party_licenses.txt")
-REQUIRED_TOOLS = ("postgres", "initdb", "pg_ctl", "pg_isready", "psql", "createdb", "pg_dump", "pg_restore")
+REQUIRED_TOOLS = (
+    "postgres",
+    "initdb",
+    "pg_ctl",
+    "pg_isready",
+    "psql",
+    "createdb",
+    "pg_dump",
+    "pg_restore",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -34,7 +43,9 @@ def _platform_key() -> str:
         return "windows-x64"
     if sys_platform() == "darwin" and platform.machine().lower() in {"arm64", "x86_64"}:
         return "macos-universal"
-    raise SystemExit(f"No packaged PostgreSQL runtime is defined for {platform.system()} {platform.machine()}")
+    raise SystemExit(
+        f"No packaged PostgreSQL runtime is defined for {platform.system()} {platform.machine()}"
+    )
 
 
 def sys_platform() -> str:
@@ -60,7 +71,10 @@ def _download(entry: dict[str, object], cache_dir: Path) -> Path:
     if destination.is_file() and _sha256(destination) == entry["sha256"]:
         return destination
     temporary = destination.with_name(f".{destination.name}.tmp")
-    with urllib.request.urlopen(str(entry["url"]), timeout=60) as response, temporary.open("wb") as output:
+    with (
+        urllib.request.urlopen(str(entry["url"]), timeout=60) as response,
+        temporary.open("wb") as output,
+    ):
         shutil.copyfileobj(response, output, length=1024 * 1024)
     if _sha256(temporary) != entry["sha256"]:
         temporary.unlink(missing_ok=True)
@@ -100,6 +114,13 @@ def stage_runtime(*, archive: Path, output: Path, platform_key: str) -> dict[str
             if not source.is_file():
                 raise SystemExit(f"PostgreSQL archive is missing {name}")
             shutil.copy2(source, output / name)
+
+    if platform_key == "macos-universal":
+        # zipfile extracts regular files without restoring the executable bits
+        # carried by the vendor's macOS bin directory.
+        for path in (output / "bin").iterdir():
+            if path.is_file():
+                path.chmod(path.stat().st_mode | 0o111)
 
     suffix = ".exe" if platform_key == "windows-x64" else ""
     for tool in REQUIRED_TOOLS:
@@ -158,7 +179,9 @@ def main() -> int:
         if args.download_cache is None:
             parser.error("provide --archive or --download-cache")
         archive = _download(entry, args.download_cache)
-    manifest = stage_runtime(archive=archive.resolve(strict=True), output=args.output.resolve(), platform_key=key)
+    manifest = stage_runtime(
+        archive=archive.resolve(strict=True), output=args.output.resolve(), platform_key=key
+    )
     print(json.dumps({key: {"files": len(manifest["files"]), "bytes": manifest["total_bytes"]}}))
     return 0
 

@@ -67,8 +67,8 @@ def render_jinja(text: str) -> str:
 
 
 def split_requirement(req: str) -> tuple[str, str]:
-    """``"Django>=5.2,<5.3"`` -> ``("django", ">=5.2,<5.3")``, spaces dropped."""
-    m = re.match(r"\s*([A-Za-z0-9_.\-]+)\s*(.*)$", req)
+    """Split a requirement, ignoring PyPI extras that conda does not express."""
+    m = re.match(r"\s*([A-Za-z0-9_.\-]+)(?:\[[^\]]+\])?\s*(.*)$", req)
     assert m, req
     return m.group(1).lower(), m.group(2).replace(" ", "")
 

@@ -355,6 +355,11 @@ class ScreenAndBundleCannotDisagreeTests(_SegmentationTestCase):
     put a screen and an export side by side.
     """
 
+    def setUp(self):
+        super().setUp()
+        self.segmentation.manual_full_image = True
+        self.segmentation.save(update_fields=["manual_full_image"])
+
     def _analysis_result(self) -> dict:
         run = AnalysisRun.objects.create(
             segmentation=self.segmentation,

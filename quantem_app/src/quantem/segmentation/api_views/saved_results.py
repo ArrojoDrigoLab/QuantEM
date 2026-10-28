@@ -12,6 +12,7 @@ from PIL import Image
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from quantem.assets.canonical_decode import decode_canonical_plane
 from quantem.jobs.constants import (
     ACTIVE_SEGMENTATION_JOB_TYPES,
     JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
@@ -107,8 +108,7 @@ class SavedResultPreviewView(APIView):
             preview = ensure_probability_preview(
                 resolve_probability_map_path(result.probability_map)
             )
-            with Image.open(preview) as image:
-                values = np.asarray(image.convert("L"))
+            values = decode_canonical_plane(preview).array
             rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
             from quantem.inference.resample import binarize_quantized
 

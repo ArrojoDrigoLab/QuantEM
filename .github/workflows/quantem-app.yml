@@ -98,7 +98,6 @@ jobs:
       QUANTEM_POSTGRES_PASSWORD: quantem-ci
       QUANTEM_POSTGRES_HOST: 127.0.0.1
       QUANTEM_POSTGRES_PORT: "5432"
-      QUANTEM_DATA_DIR: ${{ runner.temp }}/quantem-postgresql-data
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -115,6 +114,8 @@ jobs:
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dev]"
       - name: Check PostgreSQL schema and focused integration workflows
+        env:
+          QUANTEM_DATA_DIR: ${{ runner.temp }}/quantem-postgresql-data
         run: |
           python -m django check --settings quantem.core.settings
           python -m django makemigrations --check --dry-run --settings quantem.core.settings

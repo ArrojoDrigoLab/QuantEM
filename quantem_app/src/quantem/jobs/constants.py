@@ -127,6 +127,7 @@ QUEUE_DISPLAY_NAMES = {
 #: biologist, so they are plain English and never the type string; the copy gate
 #: enforces that.
 JOB_TYPE_LABELS = {
+    JOB_TYPE_EVALUATE_MODEL: "Evaluate model",
     JOB_TYPE_ENSURE_IMAGE_NGFF: "Build image NGFF",
     JOB_TYPE_UPLOAD_IMAGE_PIPELINE: "Process upload",
     JOB_TYPE_RUN_SEGMENTATION_ROI: "Run ROI segmentation",

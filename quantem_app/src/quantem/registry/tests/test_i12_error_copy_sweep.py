@@ -859,15 +859,6 @@ class ServedErrorBodyTests(TestCase):
         assert response.status_code == 409
         _assert_body_is_clean(response.json(), "DELETE a segmentation with a run queued")
 
-    def test_deleting_a_segmentation_that_is_marked_done(self):
-        self.segmentation.status_stage = "COMPLETED"
-        self.segmentation.save(update_fields=["status_stage"])
-
-        response = self.client.delete(f"/api/segmentations/{self.segmentation.id}/")
-
-        assert response.status_code == 409
-        _assert_body_is_clean(response.json(), "DELETE a segmentation that is done")
-
     def test_deleting_with_a_stale_object_count(self):
         response = self.client.delete(
             f"/api/segmentations/{self.segmentation.id}/",

@@ -28,6 +28,7 @@ SHIPPED_JOB_TYPES = frozenset(
         "rebuild_segmentation_overlay",
         "refresh_segment_features",
         "train_organelle_adapter",
+        "evaluate_model",
         "run_analysis",
         "install_model_pack",
     }
