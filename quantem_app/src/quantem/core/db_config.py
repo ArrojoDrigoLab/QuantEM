@@ -1,11 +1,8 @@
-"""Database configuration.
+"""Database configuration for the local application database.
 
-QuantEM is a single-user desktop application. There is exactly one backend --
-plain SQLite in the user data directory -- and no server to connect to, so
-there are no credentials to configure.
-
-WAL journalling lets the job scheduler read while a request writes; the busy
-timeout absorbs the short write contention that produces on a local disk.
+Installed builds use QuantEM's private loopback-only PostgreSQL server. SQLite
+remains available only for tests, development comparisons, and the explicit
+SQLite-to-PostgreSQL migration command.
 """
 
 import os
@@ -22,8 +19,7 @@ def _get_sqlite_timeout_seconds() -> float:
     return max(1.0, timeout)
 
 
-def get_database_config() -> dict:
-    """Return the ``DATABASES['default']`` mapping for the local SQLite file."""
+def _sqlite_config() -> dict:
     timeout_seconds = _get_sqlite_timeout_seconds()
     return {
         "ENGINE": "django.db.backends.sqlite3",
@@ -40,3 +36,49 @@ def get_database_config() -> dict:
             "transaction_mode": "IMMEDIATE",
         },
     }
+
+
+def _postgres_config() -> dict:
+    required = {
+        "NAME": "QUANTEM_POSTGRES_DATABASE",
+        "USER": "QUANTEM_POSTGRES_USER",
+        "PASSWORD": "QUANTEM_POSTGRES_PASSWORD",
+        "HOST": "QUANTEM_POSTGRES_HOST",
+        "PORT": "QUANTEM_POSTGRES_PORT",
+    }
+    missing = [environment for environment in required.values() if not os.environ.get(environment)]
+    if missing:
+        raise RuntimeError(
+            "The private PostgreSQL server was not prepared before Django started; "
+            f"missing {', '.join(missing)}. Launch QuantEM through quantem-app."
+        )
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        **{key: os.environ[environment] for key, environment in required.items()},
+        "CONN_MAX_AGE": 60,
+        "CONN_HEALTH_CHECKS": True,
+        "OPTIONS": {
+            "connect_timeout": 10,
+            "application_name": "quantem-desktop",
+            "sslmode": "disable",
+        },
+    }
+
+
+def get_database_config() -> dict:
+    """Return Django's default database mapping.
+
+    ``postgresql`` is the product default. ``sqlite`` is deliberately explicit
+    so an unavailable private server cannot silently redirect writes into an
+    older SQLite snapshot.
+    """
+
+    engine = os.environ.get("QUANTEM_DATABASE_ENGINE", "postgresql").strip().lower()
+    if engine == "postgresql":
+        return _postgres_config()
+    if engine == "sqlite":
+        return _sqlite_config()
+    raise RuntimeError(
+        "QUANTEM_DATABASE_ENGINE must be 'postgresql' or 'sqlite' "
+        f"(got {engine!r})."
+    )

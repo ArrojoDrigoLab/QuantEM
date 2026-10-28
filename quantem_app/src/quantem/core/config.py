@@ -43,14 +43,22 @@ def _resolve_storage_dir() -> Path:
 # Root of everything this application writes.
 STORAGE_DIR = _resolve_storage_dir()
 
-#: The one SQLite file. See :mod:`quantem.core.db_config`.
+#: The legacy SQLite file. It remains readable by the explicit migration tool.
 DB_PATH = STORAGE_DIR / "quantem.sqlite3"
+
+#: Private PostgreSQL state. The server is part of QuantEM and never registers
+#: a machine-wide service.
+POSTGRES_DIR = STORAGE_DIR / "postgres"
+POSTGRES_CLUSTER_DIR = POSTGRES_DIR / "cluster"
+POSTGRES_CREDENTIALS_PATH = POSTGRES_DIR / "credentials.json"
+POSTGRES_LOCK_PATH = POSTGRES_DIR / "instance.lock"
 
 #: Per-install Django secret key, generated on first run. Never committed.
 SECRET_KEY_PATH = STORAGE_DIR / "secret_key"
 
 # Directory paths - all relative to STORAGE_DIR
 LOGS_DIR = STORAGE_DIR / "logs"
+POSTGRES_LOG_PATH = LOGS_DIR / "quantem-postgresql.log"
 
 #: The server's rotating log file. Written when the launcher enables file
 #: logging (``quantem serve`` and the frozen build set ``QUANTEM_LOG_TO_FILE=1``;
@@ -109,6 +117,7 @@ def ensure_directories():
         ROIS_DIR,
         PROB_MAPS_DIR,
         GLOBAL_MASKS_DIR,
+        POSTGRES_DIR,
     ]
 
     created_dirs = []

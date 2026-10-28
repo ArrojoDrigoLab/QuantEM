@@ -69,6 +69,7 @@ from django.db import transaction
 from zarr.storage import LocalStore
 
 from quantem.core.config import NGFF_TMP_DIR
+from quantem.core.db_locks import lock_transaction_key
 
 logger = logging.getLogger(__name__)
 
@@ -751,6 +752,7 @@ def begin_attempt(asset) -> str:
     """
 
     with transaction.atomic():
+        lock_transaction_key("pyramid-state", str(asset.pk))
         state = dict(_ensure_state(asset))
         state["attempt_token"] = str(uuid.uuid4())
         state["outcome"] = OUTCOME_PENDING
@@ -775,6 +777,7 @@ def record_attempt_failure(asset, detail: str) -> str:
     """
 
     with transaction.atomic():
+        lock_transaction_key("pyramid-state", str(asset.pk))
         state = dict(_ensure_state(asset))
         state["attempt_token"] = str(uuid.uuid4())
         state["published_generation"] = NOT_PUBLISHED
@@ -793,6 +796,7 @@ def record_attempt_failure(asset, detail: str) -> str:
 
 def record_import_success(asset) -> str:
     with transaction.atomic():
+        lock_transaction_key("pyramid-state", str(asset.pk))
         state = dict(_ensure_state(asset))
         state["attempt_token"] = str(uuid.uuid4())
         state["outcome"] = OUTCOME_SUCCEEDED
@@ -803,6 +807,7 @@ def record_import_success(asset) -> str:
 
 def record_terminal_failure(asset, detail: str) -> str:
     with transaction.atomic():
+        lock_transaction_key("pyramid-state", str(asset.pk))
         state = dict(_ensure_state(asset))
         state["attempt_token"] = str(uuid.uuid4())
         state["outcome"] = OUTCOME_FAILED
@@ -874,16 +879,10 @@ def request_lazy_build(asset):
     was told about a lease instead of about the disk error that had actually
     broken the import.
 
-    The design closes this with a unique ``Job.idempotency_key``. That column
-    is in ``jobs/models.py``, which belongs to another workflow for the
-    duration of this change, so the collapse is done with the primitive this
-    application already has: **SQLite serialises writers**, and this whole
-    check-and-insert runs inside one transaction that takes the write lock on
-    its first statement. Concurrent callers therefore queue behind each other
-    rather than interleaving between the ``SELECT`` and the ``INSERT``. The key
-    itself -- asset plus attempt token -- is carried on the job payload, so a
-    *new* attempt still gets its own job while a stale one can never be
-    revived. Handoff: make it a unique column when ``jobs/models.py`` is free.
+    The collapse is protected by a transaction-scoped logical lock keyed by
+    asset. Concurrent callers therefore queue behind each other rather than
+    interleaving between the ``SELECT`` and ``INSERT``. The attempt token in
+    the payload keeps a new attempt independent from a stale job.
 
     Returns the job, or ``None`` when the asset has no attempt state yet.
     """
@@ -892,9 +891,9 @@ def request_lazy_build(asset):
     from quantem.jobs.models import Job
 
     with transaction.atomic():
+        lock_transaction_key("pyramid-state", str(asset.pk))
         state = _ensure_state(asset)
         token = str(state.get("attempt_token") or "")
-        # Takes the write lock, which is what serialises the concurrent callers.
         _write_state(asset, dict(state), published_root=_published_root(asset, state))
         existing = (
             Job.objects.filter(

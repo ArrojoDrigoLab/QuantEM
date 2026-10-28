@@ -22,6 +22,7 @@ from quantem.assets.views import (
     AssetUploadPipelineRecoveryView,
     AssetUploadView,
     SystemHandshakeView,
+    SystemSettingsView,
     SystemStatusView,
 )
 from quantem.library.urls import urlpatterns as library_urls
@@ -67,6 +68,7 @@ urlpatterns = [
         name="asset-raster-export",
     ),
     path("system/status/", SystemStatusView.as_view(), name="system-status"),
+    path("system/settings/", SystemSettingsView.as_view(), name="system-settings"),
     path("system/handshake/", SystemHandshakeView.as_view(), name="system-handshake"),
     # The grouping layer over this library: experiments, datasets, and the one
     # route that puts images into them. Spliced in here, from

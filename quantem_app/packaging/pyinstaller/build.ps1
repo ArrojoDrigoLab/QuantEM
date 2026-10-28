@@ -11,6 +11,7 @@
 param(
     [string]$Python = "",
     [string]$Scratch = "",
+    [string]$PostgresRuntime = "",
     [switch]$VerboseBuild
 )
 
@@ -19,11 +20,20 @@ $appRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)  # quantem_app/
 $repoRoot = Split-Path -Parent $appRoot
 if (-not $Scratch) { $Scratch = Join-Path $repoRoot ".scratch" }
 if (-not $Python)  { $Python  = (Get-Command python).Source }
+if (-not $PostgresRuntime) { $PostgresRuntime = $env:QUANTEM_POSTGRES_RUNTIME_DIR }
+if (-not $PostgresRuntime) {
+    throw "PostgreSQL runtime is required. Run packaging/postgresql/stage_runtime.py and pass -PostgresRuntime."
+}
+$postgres = Join-Path $PostgresRuntime "bin\postgres.exe"
+if (-not (Test-Path -LiteralPath $postgres -PathType Leaf)) {
+    throw "PostgreSQL runtime is incomplete: $postgres"
+}
 
 $env:TMP = "$Scratch\tmp"
 $env:TEMP = "$Scratch\tmp"
 $env:PYINSTALLER_CONFIG_DIR = "$Scratch\pyinstaller-config"
 $env:PYTHONPATH = "$appRoot\src"
+$env:QUANTEM_POSTGRES_RUNTIME_DIR = (Resolve-Path -LiteralPath $PostgresRuntime).Path
 New-Item -ItemType Directory -Force "$Scratch\tmp" | Out-Null
 New-Item -ItemType Directory -Force "$Scratch\pyi_build" | Out-Null
 

@@ -5,6 +5,21 @@ installer all deliver the same `quantem-app` Python distribution — the desktop
 merely wraps it. Model weights ship in **none** of them; they are downloaded at
 runtime (see the README's *Models* section).
 
+Desktop builds also carry a private PostgreSQL server. Before freezing the
+sidecar, stage the pinned, checksum-verified runtime:
+
+```bash
+python packaging/postgresql/stage_runtime.py \
+  --download-cache <build-cache> --output <staged-runtime>
+export QUANTEM_POSTGRES_RUNTIME_DIR=<staged-runtime>
+```
+
+`runtime.json` pins the server release and vendor archive digest for Windows
+and macOS. The staging output contains only `bin/`, `lib/`, `share/`, licences,
+and a per-file manifest. PyInstaller refuses to build without it. The runtime
+is included in the Windows content-addressed runtime layer and in the macOS
+application resources; it is not included in the pip wheel or conda package.
+
 ## Wheel and sdist
 
 The built frontend rides inside the wheel as `quantem/_frontend/` (mapped from

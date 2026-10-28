@@ -1,9 +1,9 @@
 """Coordinate the brief no-new-work window before a desktop update applies.
 
-QuantEM has one local SQLite database and one server process.  The frontend
+QuantEM has one private local database and one server process. The frontend
 downloads an application update while normal work continues, then asks this
 module to acquire an *apply* lock.  Acquiring it and checking that the queue is
-empty happen in the same SQLite transaction.  That closes the race where a new
+empty happen in the same transaction. That closes the race where a new
 job could arrive between a client-side queue poll and the application restart.
 
 The lock is intentionally short lived.  It is not a maintenance mode for a
@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from django.apps import apps
 from django.db import DatabaseError, OperationalError, transaction
 from django.utils import timezone
+
+from quantem.core.db_locks import lock_transaction_key
 
 
 class UpdateApplyInProgress(RuntimeError):
@@ -57,6 +59,9 @@ def assert_job_submission_allowed() -> None:
     """
 
     Maintenance = _maintenance_model()
+    # The singleton may not exist yet. PostgreSQL cannot row-lock an absent
+    # row, so lock its logical identity before get_or_create().
+    lock_transaction_key("update-maintenance", str(Maintenance.SINGLETON_ID))
     maintenance, _ = Maintenance.objects.select_for_update().get_or_create(
         pk=Maintenance.SINGLETON_ID
     )
@@ -88,6 +93,7 @@ def try_acquire_update_apply_lock() -> ApplyLockResult:
     Maintenance = _maintenance_model()
     Job = _job_model()
     with transaction.atomic():
+        lock_transaction_key("update-maintenance", str(Maintenance.SINGLETON_ID))
         maintenance, _ = Maintenance.objects.select_for_update().get_or_create(
             pk=Maintenance.SINGLETON_ID
         )

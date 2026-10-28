@@ -1056,13 +1056,11 @@ def create_roi_image_from_image(
 ) -> ImageROI:
     """Create an ROI image from an asset-backed openable and save its PNG.
 
-    Cropping and encoding deliberately happen before the transaction. QuantEM
-    uses ``BEGIN IMMEDIATE`` for explicit SQLite transactions, so entering an
-    atomic block takes the one database writer lock even before the first
-    query. A fallback crop can decode a very large source image and take longer
-    than SQLite's busy timeout; holding the lock across that work made an
-    unrelated upload fail with ``database is locked`` and stalled job-status
-    writes for the same interval.
+    Cropping and encoding deliberately happen before the transaction.
+    Filesystem work never belongs inside the database transaction. In SQLite
+    compatibility mode an atomic block takes the single writer lock; under
+    PostgreSQL it still retains row locks and a connection while a large
+    source image is decoded.
 
     Only the row count, active-ROI handoff, and row insert need to be atomic.
     If that short commit fails, remove the PNG that no row can reference.

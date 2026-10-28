@@ -1,6 +1,7 @@
 import uuid
 
 from django.db import models, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from quantem.jobs.constants import (
@@ -225,6 +226,13 @@ class Job(models.Model):
             models.Index(fields=["queue_name"]),
             models.Index(fields=["batch_id", "status"]),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["batch_id", "batch_seq"],
+                condition=~Q(batch_id=""),
+                name="unique_job_position_in_batch",
+            )
+        ]
 
     @classmethod
     def resolve_batch(cls, job_type: str, payload: dict | None) -> tuple[str, int]:
@@ -306,10 +314,16 @@ class Job(models.Model):
         )
 
         with transaction.atomic():
+            from quantem.core.db_locks import lock_transaction_key  # noqa: PLC0415
+
             assert_job_submission_allowed()
             if batch_id is None:
+                grouping_key = batch_key_for_payload(payload)
+                if job_type in BATCH_ROLLUP_JOB_TYPES and grouping_key:
+                    lock_transaction_key("job-batch", grouping_key)
                 batch_id, batch_seq = cls.resolve_batch(job_type, payload)
             else:
+                lock_transaction_key("job-batch-id", batch_id)
                 batch_seq = cls.objects.filter(batch_id=batch_id).count()
             planned = planned_units_for(job_type, payload)
             units_total, unit_label = planned if planned else (None, "")

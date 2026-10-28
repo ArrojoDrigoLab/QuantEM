@@ -2397,7 +2397,7 @@ def image_identity(
 ) -> dict[str, Any]:
     """What the image *is*, beyond a local database row.
 
-    ``image_key`` is a UUID from this machine's SQLite file. It identifies
+    ``image_key`` is a UUID from this QuantEM data directory. It identifies
     nothing anywhere else, and it survives the underlying file being replaced.
     The checksum and the name the file was imported under do not.
 

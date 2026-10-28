@@ -13,6 +13,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from quantem.core.db_locks import lock_transaction_key
 from quantem.core.local_storage import StorageError, StoragePath
 from quantem.jobs.models import Job, StorageArtifactLease
 
@@ -46,6 +47,10 @@ def acquire_storage_artifact_leases(job: Job, paths: list[StoragePath]) -> None:
 
     for path in sorted({item.relpath for item in paths if item.lease_required}):
         with transaction.atomic():
+            # There may be no row to select yet. SQLite's IMMEDIATE transaction
+            # used to serialize that absence globally; PostgreSQL needs the
+            # logical path locked until the unique row is created.
+            lock_transaction_key("storage-artifact", path)
             lease = (
                 StorageArtifactLease.objects.select_for_update().filter(artifact_path=path).first()
             )

@@ -52,7 +52,7 @@ QuantEM.exe                  Tauri v2 shell (Rust, ~10 MB)
 
 ### Where everything is stored (owner ruling 2026-08-09)
 
-All application storage — the sqlite DB, models, HF cache, exports, logs,
+All application storage — the private PostgreSQL cluster, models, HF cache, exports, logs,
 and the WebView2 profile — lives **with the installation**:
 
 * `QUANTEM_DATA_DIR`, if set, is the one explicit override (absolute path).
@@ -69,6 +69,12 @@ and the WebView2 profile — lives **with the installation**:
 * There is **no silent fallback**: if the computed location is not
   writable, the shell shows an error that names `QUANTEM_DATA_DIR` instead
   of relocating the data.
+
+The sidecar starts the bundled PostgreSQL 17.11 server on a free loopback port
+before Django loads, waits for readiness, and owns its lifetime. No PostgreSQL
+service or Docker installation is used. The shell requests a controlled server
+shutdown when its window closes; the Windows Job Object remains the crash
+recovery path for the complete process tree.
 
 ### Install-time model selection
 

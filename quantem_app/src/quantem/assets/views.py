@@ -19,6 +19,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from quantem import __version__
+from quantem.core.app_settings import (
+    AppSettingsValidationError,
+    load_app_settings,
+    update_app_settings,
+)
 from quantem.core.config import DATA_DIR
 from quantem.core.local_storage import resolve_stored_path
 
@@ -431,6 +436,46 @@ class SystemStatusView(APIView):
                 # be accepted. Bytes, and an integer: a float would arrive in
                 # JavaScript as a value that cannot be compared exactly.
                 "max_upload_bytes": int(settings.QUANTEM_MAX_UPLOAD_BYTES),
+            }
+        )
+
+
+class SystemSettingsView(APIView):
+    """Read and update settings that must survive database schema changes."""
+
+    def get(self, request):
+        return Response(load_app_settings().as_dict())
+
+    def put(self, request):
+        return self._update(request)
+
+    def patch(self, request):
+        return self._update(request)
+
+    @staticmethod
+    def _update(request):
+        if not isinstance(request.data, dict):
+            return Response(
+                {"error": "Settings must be a JSON object."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            updated = update_app_settings(dict(request.data))
+        except AppSettingsValidationError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # A lower count or age limit takes effect when the user saves it; it
+        # does not wait for another application upgrade to happen.
+        from quantem.core.migration_safety import prune_pre_migration_snapshots
+
+        removed = prune_pre_migration_snapshots(app_settings=updated)
+        return Response(
+            {
+                **updated.as_dict(),
+                "removed_pre_migration_backups": len(removed),
             }
         )
 

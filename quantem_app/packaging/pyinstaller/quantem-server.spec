@@ -35,10 +35,16 @@ SPEC_DIR = Path(SPECPATH).resolve()
 APP_ROOT = SPEC_DIR.parents[1]  # quantem_app/
 SRC_DIR = APP_ROOT / "src"
 FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
+POSTGRES_RUNTIME = Path(os.environ.get("QUANTEM_POSTGRES_RUNTIME_DIR", "")).resolve()
 
 if not (FRONTEND_DIST / "index.html").is_file():
     raise SystemExit(
         f"frontend build missing at {FRONTEND_DIST}; run `npm run build` in frontend/ first"
+    )
+if not (POSTGRES_RUNTIME / "bin" / ("postgres.exe" if os.name == "nt" else "postgres")).is_file():
+    raise SystemExit(
+        "staged PostgreSQL runtime missing; set QUANTEM_POSTGRES_RUNTIME_DIR after "
+        "running packaging/postgresql/stage_runtime.py"
     )
 
 datas = [
@@ -48,8 +54,29 @@ datas = [
     # terms attach to. The wheel and the conda package carry NOTICE through
     # their own metadata; this build has to be told.
     (str(APP_ROOT / "NOTICE"), "."),
+    (str(POSTGRES_RUNTIME / "lib"), "postgresql/lib"),
+    (str(POSTGRES_RUNTIME / "share"), "postgresql/share"),
+    (str(POSTGRES_RUNTIME / "server_license.txt"), "postgresql"),
+    (
+        str(POSTGRES_RUNTIME / "commandlinetools_3rd_party_licenses.txt"),
+        "postgresql",
+    ),
+    (str(POSTGRES_RUNTIME / "runtime-manifest.json"), "postgresql"),
 ]
-binaries = []
+postgres_bin_files = sorted(path for path in (POSTGRES_RUNTIME / "bin").iterdir() if path.is_file())
+datas += [
+    (str(path), "postgresql/bin")
+    for path in postgres_bin_files
+    if path.suffix.lower() in {".a", ".lib"}
+]
+# PostgreSQL's bin/ files must remain executable on macOS. Marking them as
+# PyInstaller binaries also lets its platform-specific dependency handling see
+# the server/client executables and the DLLs that EDB places beside them.
+binaries = [
+    (str(path), "postgresql/bin")
+    for path in postgres_bin_files
+    if path.suffix.lower() not in {".a", ".lib"}
+]
 hiddenimports = ["quantem_server_settings", "waitress"]
 
 # PyTorch 2.13 imports parts of its internal testing namespace from production
@@ -76,6 +103,7 @@ for pkg in (
     "django_filters",
     "corsheaders",
     "environ",
+    "psycopg",
 ):
     d, b, h = collect_all(pkg)
     datas += d
@@ -87,7 +115,15 @@ for pkg in ("zarr", "numcodecs", "imagecodecs", "tifffile"):
     hiddenimports += collect_submodules(pkg)
 
 # Version lookups via importlib.metadata at runtime.
-for dist_name in ("huggingface-hub", "timm", "zarr", "numcodecs", "imagecodecs"):
+for dist_name in (
+    "huggingface-hub",
+    "timm",
+    "zarr",
+    "numcodecs",
+    "imagecodecs",
+    "psycopg",
+    "psycopg-binary",
+):
     try:
         datas += copy_metadata(dist_name)
     except Exception:

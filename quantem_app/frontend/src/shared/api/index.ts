@@ -7,3 +7,4 @@ export * from "@/shared/api/segmentations/lifecycle";
 export * from "@/shared/api/segmentations/overlays";
 export * from "@/shared/api/segmentations/rois";
 export * from "@/shared/api/jobs";
+export * from "@/shared/api/systemSettings";

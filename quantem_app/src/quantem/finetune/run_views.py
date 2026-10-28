@@ -686,8 +686,7 @@ class FineTuneRunsView(APIView):
 def _job_for(adapter: Adapter):
     """The most recent queue row for this fine-tune, if the queue still has one.
 
-    Matched on the payload rather than on ``tags``: ``JSONField.__contains`` is
-    unsupported on SQLite, which is the shipped database.
+    Matched on the indexed payload key rather than scanning the tags list.
     """
     return (
         Job.objects.filter(

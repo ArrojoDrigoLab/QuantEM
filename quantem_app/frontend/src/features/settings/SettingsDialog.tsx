@@ -1,9 +1,13 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import type { SystemStatus } from "@/shared/types/jobs";
 import { Button } from "@/shared/ui/design";
 import { ModelManagementSection } from "@/features/models/ModelManagementSection";
 import { useDesktopUpdate } from "@/features/update/desktopUpdateHooks";
+import {
+  getSystemSettings,
+  updateSystemSettings,
+} from "@/shared/api/systemSettings";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -24,9 +28,78 @@ export function SettingsDialog({
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const desktopUpdate = useDesktopUpdate();
+  const [backupCount, setBackupCount] = useState("1");
+  const [backupDays, setBackupDays] = useState("30");
+  const [backupSettingsLoading, setBackupSettingsLoading] = useState(false);
+  const [backupSettingsSaving, setBackupSettingsSaving] = useState(false);
+  const [backupSettingsError, setBackupSettingsError] = useState<string | null>(null);
+  const [backupSettingsSaved, setBackupSettingsSaved] = useState<string | null>(null);
   const updateBusy = ["downloading", "downloaded", "waiting", "blocked", "applying"].includes(
     desktopUpdate.phase
   );
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let active = true;
+    setBackupSettingsLoading(true);
+    setBackupSettingsError(null);
+    setBackupSettingsSaved(null);
+    void getSystemSettings()
+      .then((loaded) => {
+        if (!active) return;
+        setBackupCount(String(loaded.pre_migration_backup_retention_count));
+        setBackupDays(String(loaded.pre_migration_backup_retention_days));
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setBackupSettingsError(
+          error instanceof Error ? error.message : "Backup settings could not be loaded."
+        );
+      })
+      .finally(() => {
+        if (active) setBackupSettingsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+
+  const parsedBackupCount = Number(backupCount);
+  const parsedBackupDays = Number(backupDays);
+  const backupSettingsValid =
+    Number.isInteger(parsedBackupCount) &&
+    parsedBackupCount >= 1 &&
+    parsedBackupCount <= 100 &&
+    Number.isInteger(parsedBackupDays) &&
+    parsedBackupDays >= 1 &&
+    parsedBackupDays <= 3650;
+
+  const saveBackupSettings = async () => {
+    if (!backupSettingsValid) return;
+    setBackupSettingsSaving(true);
+    setBackupSettingsError(null);
+    setBackupSettingsSaved(null);
+    try {
+      const updated = await updateSystemSettings({
+        pre_migration_backup_retention_count: parsedBackupCount,
+        pre_migration_backup_retention_days: parsedBackupDays,
+      });
+      setBackupCount(String(updated.pre_migration_backup_retention_count));
+      setBackupDays(String(updated.pre_migration_backup_retention_days));
+      const removed = updated.removed_pre_migration_backups ?? 0;
+      setBackupSettingsSaved(
+        removed
+          ? `Saved. ${removed} older backup${removed === 1 ? " was" : "s were"} removed.`
+          : "Saved."
+      );
+    } catch (error) {
+      setBackupSettingsError(
+        error instanceof Error ? error.message : "Backup settings could not be saved."
+      );
+    } finally {
+      setBackupSettingsSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -169,6 +242,72 @@ export function SettingsDialog({
             ) : null}
           </div>
         ) : null}
+
+        <div className="mt-6 border-t border-slate-200 pt-5">
+          <h2 className="m-0 text-lg font-semibold text-slate-950">
+            Database upgrade backups
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Before an app upgrade changes the database schema, QuantEM automatically
+            creates a verified database backup. Manual backups are not affected by this
+            policy.
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-1.5 text-sm font-medium text-slate-800">
+              Maximum backups
+              <input
+                className="h-10 rounded-lg border border-slate-300 px-3 text-slate-950 disabled:bg-slate-100"
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={backupCount}
+                disabled={backupSettingsLoading || backupSettingsSaving}
+                onChange={(event) => setBackupCount(event.target.value)}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-slate-800">
+              Delete after (days)
+              <input
+                className="h-10 rounded-lg border border-slate-300 px-3 text-slate-950 disabled:bg-slate-100"
+                type="number"
+                min={1}
+                max={3650}
+                step={1}
+                value={backupDays}
+                disabled={backupSettingsLoading || backupSettingsSaving}
+                onChange={(event) => setBackupDays(event.target.value)}
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Defaults: one backup, removed after 30 days. Cleanup runs on app startup,
+            after a migration backup, and when this policy is saved.
+          </p>
+          {!backupSettingsValid && !backupSettingsLoading ? (
+            <p className="mt-2 text-sm text-red-700">
+              Enter 1–100 backups and an age of 1–3650 days.
+            </p>
+          ) : null}
+          {backupSettingsError ? (
+            <p className="mt-2 text-sm text-red-700">{backupSettingsError}</p>
+          ) : null}
+          {backupSettingsSaved ? (
+            <p className="mt-2 text-sm text-emerald-700">{backupSettingsSaved}</p>
+          ) : null}
+          <div className="mt-3">
+            <Button
+              type="button"
+              size="sm"
+              disabled={
+                backupSettingsLoading || backupSettingsSaving || !backupSettingsValid
+              }
+              onClick={() => void saveBackupSettings()}
+            >
+              {backupSettingsSaving ? "Saving…" : "Save backup settings"}
+            </Button>
+          </div>
+        </div>
 
         <div className="mt-6 border-t border-slate-200 pt-5">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">

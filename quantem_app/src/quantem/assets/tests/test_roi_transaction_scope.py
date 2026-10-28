@@ -1,4 +1,4 @@
-"""ROI image I/O must never hold SQLite's single writer lock."""
+"""ROI image I/O must never hold a database transaction open."""
 
 import shutil
 from pathlib import Path
@@ -49,7 +49,7 @@ class RoiTransactionScopeTests(TransactionTestCase):
         self.assertEqual(
             states,
             [("file", False), ("database", True)],
-            "filesystem work acquired SQLite's writer transaction",
+            "filesystem work entered the database transaction",
         )
         self.assertTrue((roi_root / f"{roi.id}.png").exists())
 
