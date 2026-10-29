@@ -58,6 +58,7 @@ from dataclasses import dataclass, field
 from shapely.geometry import Polygon as ShapelyPolygon
 from shapely.geometry.base import BaseGeometry
 
+from quantem.core.performance import timed_stage
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
 from quantem.segmentation.run_identity import RUN_FEATURE_KEY
 from quantem.segmentation.source_models import SOURCE_MODEL_MANUAL
@@ -111,6 +112,7 @@ class _Batcher:
         if len(self.pending) >= self.batch_size:
             self.flush()
 
+    @timed_stage("db_insert")
     def flush(self) -> None:
         if not self.pending:
             return
@@ -218,6 +220,7 @@ def count_manual_objects(segmentation: ImageSegmentation) -> int:
     ).count()
 
 
+@timed_stage("candidate_write")
 def write_segments(
     segmentation: ImageSegmentation,
     rows: Iterable,

@@ -14,6 +14,7 @@ request a person is waiting on.
 from __future__ import annotations
 
 import logging
+import time
 
 from rest_framework import status
 from rest_framework.request import Request
@@ -79,6 +80,7 @@ class SamBoxPromptView(APIView):
     """
 
     def post(self, request: Request, seg_id) -> Response:
+        started = time.perf_counter()
         from django.shortcuts import get_object_or_404
 
         from quantem.segmentation.api_views.shared import completion_lock_response
@@ -151,7 +153,9 @@ class SamBoxPromptView(APIView):
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+        store_started = time.perf_counter()
         outcome = store_top_candidate(segmentation=segmentation, result=result)
+        store_ms = (time.perf_counter() - store_started) * 1000
         measurement = outcome.pop("measurement", None)
         outcome.pop("dirty_bbox", None)
 
@@ -159,6 +163,7 @@ class SamBoxPromptView(APIView):
             register_confirmation_overlay_mutation,
         )
 
+        overlay_started = time.perf_counter()
         overlay = register_confirmation_overlay_mutation(
             segmentation=segmentation,
             result={**outcome, "dirty_bbox": None},
@@ -179,6 +184,14 @@ class SamBoxPromptView(APIView):
                 "cache_hit": result.cache_hit,
                 "encode_ms": result.encode_ms,
                 "decode_ms": result.decode_ms,
+                "queue_ms": result.queue_ms,
+                "bootstrap_ms": result.bootstrap_ms,
+                "model_ms": result.model_ms,
+                "crop_ms": result.crop_ms,
+                "geometry_ms": result.geometry_ms,
+                "store_ms": round(store_ms, 1),
+                "publication_ms": round((time.perf_counter() - overlay_started) * 1000, 1),
+                "total_ms": round((time.perf_counter() - started) * 1000, 1),
                 "device": result.device,
             },
         }

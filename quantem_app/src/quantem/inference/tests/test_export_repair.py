@@ -87,6 +87,59 @@ def test_an_existing_export_is_never_rewritten(pack):
     export.assert_not_called()
 
 
+def test_numerical_refusal_survives_a_new_process_but_changed_weights_retry(pack):
+    from quantem.inference.export import ExportParityError
+
+    files, spec, cfg, bundle, model = pack
+    with patch(
+        "quantem.inference.export.export_built_encoder",
+        side_effect=ExportParityError("parity mismatch"),
+    ) as export:
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+        engine._EXPORT_REFUSED.clear()  # Simulate the next worker.
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+        assert export.call_count == 1
+        files.head_path.write_bytes(b"changed weights")
+        engine._EXPORT_REFUSED.clear()
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+        assert export.call_count == 2
+
+
+def test_corrupt_refusal_file_does_not_break_model_loading(pack):
+    files, spec, cfg, bundle, model = pack
+    (files.head_path.parent / "encoder_ts.pt.refused.json").write_text("[]")
+    with patch(
+        "quantem.inference.export.export_built_encoder", side_effect=OSError("read-only")
+    ) as export:
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+    assert export.call_count == 1
+
+
+def test_frozen_install_without_export_source_still_remembers_parity_refusal(pack, monkeypatch):
+    from quantem.inference.export import ExportParityError
+
+    files, spec, cfg, bundle, model = pack
+    monkeypatch.setattr(engine, "__file__", str(files.head_path.parent / "frozen/engine.pyc"))
+    with patch(
+        "quantem.inference.export.export_built_encoder", side_effect=ExportParityError("parity")
+    ) as export:
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+        engine._EXPORT_REFUSED.clear()
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+    assert export.call_count == 1
+
+
+def test_transient_repair_failure_is_retried_by_the_next_worker(pack):
+    files, spec, cfg, bundle, model = pack
+    with patch(
+        "quantem.inference.export.export_built_encoder", side_effect=OSError("disk unavailable")
+    ) as export:
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+        engine._EXPORT_REFUSED.clear()
+        _repair_export(files, spec, cfg, bundle, model, "cpu")
+        assert export.call_count == 2
+
+
 def test_a_failing_rewrite_never_fails_the_run_and_says_why(pack, caplog):
     files, spec, cfg, bundle, model = pack
 

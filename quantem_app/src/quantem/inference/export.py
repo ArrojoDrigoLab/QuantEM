@@ -102,6 +102,10 @@ class ExportError(RuntimeError):
     """An encoder could not be exported, or the export did not reproduce the original."""
 
 
+class ExportParityError(ExportError):
+    """The exported computation does not reproduce the eager model."""
+
+
 @dataclass(frozen=True)
 class ExportResult:
     pack_id: str
@@ -151,11 +155,11 @@ class _TapModule(nn.Module):
 
 def _max_abs_diff(a: tuple[torch.Tensor, ...], b: tuple[torch.Tensor, ...]) -> float:
     if len(a) != len(b):
-        raise ExportError(f"exported encoder returned {len(b)} taps, eager returned {len(a)}")
+        raise ExportParityError(f"exported encoder returned {len(b)} taps, eager returned {len(a)}")
     worst = 0.0
     for x, y in zip(a, b, strict=True):
         if x.shape != y.shape:
-            raise ExportError(
+            raise ExportParityError(
                 f"tap shape drift: eager {tuple(x.shape)} vs exported {tuple(y.shape)}"
             )
         worst = max(worst, float((x.float() - y.float()).abs().max()))
@@ -424,7 +428,7 @@ def export_built_encoder(
     diff = _max_abs_diff(eager, got)
     if diff > tolerance:
         tmp.unlink(missing_ok=True)
-        raise ExportError(
+        raise ExportParityError(
             f"{pack_id}: the exported encoder differs from the eager one by {diff:.3e} "
             f"once its graph is specialised (tolerance {tolerance:.1e}). Not writing "
             f"{target.name} -- an artifact that does not reproduce the published model "

@@ -49,6 +49,7 @@ __all__ = [
 #: rather than a slot so a changed checkpoint cannot be served a stale model.
 _MODELS: dict[tuple, SamBackend] = {}
 _MODEL_LOCK = threading.Lock()
+_LOAD_LOCK = threading.Lock()
 
 
 def stub_mode() -> bool:
@@ -74,14 +75,21 @@ def _weights_key() -> tuple:
 
 
 def get_backend() -> SamBackend:
+    from quantem.core.compute_admission import interactive_request
+
+    # Share the first allocation instead of briefly holding duplicate weights
+    # and encoder activation pools for simultaneous first prompts.
+    # Priority precedes the load lock for direct callers too; otherwise a
+    # preloader can hold the load lock while waiting for a prompt that needs it.
+    with interactive_request(), _LOAD_LOCK:
+        return _get_backend()
+
+
+def _get_backend() -> SamBackend:
     """The process-wide backend for the current weights, built on first use.
 
-    Double-checked: the lock is taken to look, released for the multi-second
-    load, and retaken to publish. Holding it across the load would turn every
-    concurrent first prompt into a stall; the cost of not holding it is that two
-    simultaneous cold starts may both build and one copy is dropped. That is the
-    same trade ``inference.engine.load_model`` already makes, and it is the
-    right one.
+    The separate load lock keeps status inspection cheap while a cold caller
+    builds the single shared allocation.
     """
     key = _weights_key()
     with _MODEL_LOCK:

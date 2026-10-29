@@ -229,6 +229,34 @@ class JobRunnerFailureHandlingTests(TestCase):
 
 
 class JobRunnerConcurrencyTests(TestCase):
+    def setUp(self):
+        # Queue-capacity cases start with an idle interactive lane. API tests
+        # in the same process may just have exercised the real grace window.
+        interactive = patch(
+            "quantem.core.compute_admission.interactive_pending", return_value=False
+        )
+        self.interactive_pending = interactive.start()
+        self.addCleanup(interactive.stop)
+
+    def test_interactive_prompt_pauses_new_background_dispatch(self):
+        self.interactive_pending.return_value = True
+        runner = JobRunner()
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_RUN_ANALYSIS))
+        self.assertFalse(runner.can_dispatch("gpu", JOB_TYPE_RUN_SEGMENTATION_FULL))
+
+    @patch("quantem.jobs.runner._detect_accelerator_devices", return_value=[])
+    @patch("quantem.jobs.runner.get_machine_profile")
+    def test_cpu_fallback_consumes_the_shared_small_machine_slot(self, profile, _detect):
+        profile.return_value.heavy_slots = 1
+        profile.return_value.cpu_count = 4
+        profile.return_value.name = "small"
+        runner = JobRunner()
+        runner.running["inference"] = RunningJob(
+            _AliveProcess(), "gpu", JOB_TYPE_RUN_SEGMENTATION_FULL
+        )
+        self.assertFalse(runner.can_dispatch("cpu", JOB_TYPE_UPLOAD_IMAGE_PIPELINE))
+        self.assertFalse(runner.can_dispatch("gpu", JOB_TYPE_RUN_SEGMENTATION_FULL))
+
     @patch.dict(os.environ, {"JOB_CPU_WORKERS": "4"}, clear=False)
     def test_background_maintenance_never_runs_two_at_a_time(self):
         """Two of these at once means two raster process pools on one box."""
@@ -307,6 +335,8 @@ class JobRunnerConcurrencyTests(TestCase):
         profile's four absorb it.
         """
         machine_profile.return_value.heavy_slots = 1
+        machine_profile.return_value.cpu_count = 4
+        machine_profile.return_value.name = "small"
 
         with patch.dict(os.environ, {"JOB_CPU_WORKERS": ""}, clear=False):
             runner = JobRunner()
@@ -334,6 +364,8 @@ class JobRunnerConcurrencyTests(TestCase):
         _detect_accelerators,
     ):
         machine_profile.return_value.heavy_slots = 4
+        machine_profile.return_value.cpu_count = 28
+        machine_profile.return_value.name = "workstation"
 
         runner = JobRunner()
 

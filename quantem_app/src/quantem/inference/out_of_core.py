@@ -86,23 +86,25 @@ def _process_is_alive(pid: int) -> bool:
     return True
 
 
-def _cleanup_stale_workspaces(workspace_root: Path) -> None:
+def _cleanup_stale_workspaces(
+    workspace_root: Path, *, prefix: str = "postprocess-", min_age: float = _STALE_WORKSPACE_SECONDS
+) -> None:
     """Remove abandoned stores without touching live concurrent extraction."""
     now = time.time()
-    for candidate in workspace_root.glob("postprocess-*"):
-        if not candidate.is_dir():
+    for candidate in workspace_root.glob(f"{prefix}*"):
+        if candidate.is_symlink() or not candidate.is_dir():
             continue
         try:
             age = now - candidate.stat().st_mtime
         except OSError:
             continue
-        if age < _STALE_WORKSPACE_SECONDS:
+        if age < min_age:
             continue
         pid = 0
         try:
             payload = json.loads((candidate / "owner.json").read_text(encoding="utf-8"))
             pid = int(payload.get("pid", 0))
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        except (OSError, ValueError, TypeError, AttributeError):
             pass
         if _process_is_alive(pid):
             continue

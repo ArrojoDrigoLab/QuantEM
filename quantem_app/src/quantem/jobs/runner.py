@@ -79,6 +79,8 @@ def _detect_accelerator_devices() -> list[str]:
     nothing to distribute across, but naming it lets the inference layer use it
     rather than silently falling back to CPU.
     """
+    if os.environ.get("QUANTEM_DEVICE", "").strip().lower() == "cpu":
+        return []
     if os.environ.get("QUANTEM_CUDA_AVAILABLE", "").strip() in {"0", "false", "False"}:
         return []
 
@@ -103,7 +105,10 @@ def _detect_accelerator_devices() -> list[str]:
         pass
 
     try:
-        if torch.backends.mps.is_available():
+        if (
+            os.environ.get("QUANTEM_DEVICE", "").strip().lower() == "mps"
+            and torch.backends.mps.is_available()
+        ):
             return ["mps"]
     except Exception:
         pass
@@ -547,6 +552,20 @@ class JobRunner:
         return self.gpu_devices[assigned_workers % len(self.gpu_devices)]
 
     def _available_slots(self, resource_class: str, job_type: str = "") -> int:
+        from quantem.core.compute_admission import interactive_pending
+
+        if interactive_pending(include_grace=True):
+            return 0
+        # Host RAM and CPU are shared even when jobs carry different queue
+        # labels. A CPU fallback must not bypass the CPU-only machine's cap.
+        profile = get_machine_profile()
+        # The machine profile already budgets heavy work. Keep that single
+        # source of truth and honor an explicit JOB_CPU_WORKERS override.
+        shared_capacity = self.cpu_slots
+        if (not self.gpu_devices or profile.name == "small") and len(
+            self.running
+        ) >= shared_capacity:
+            return 0
         if resource_class == "cpu" and job_type in HEAVY_CPU_JOB_TYPES:
             # The gate is directional. Background maintenance stands aside for
             # every heavy job: a second one would put two raster process pools

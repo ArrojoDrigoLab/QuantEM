@@ -46,11 +46,13 @@ from typing import Any
 import numpy as np
 from skimage.measure import regionprops
 
+from quantem.core.performance import timed_stage
 from quantem.seg_core.base_segmenter import BaseSegmenter
 from quantem.seg_core.extraction import build_segment_from_region
-from quantem.seg_core.types import ExtractedSegment
+from quantem.seg_core.types import ExtractedSegment, InferenceResult
 
 from . import engine, out_of_core, postprocess, resample, tiling
+from .mapped_prediction import STREAMING_MIN_PIXELS, PyramidPlane, predict_native
 from .specs import (
     DEFAULT_FAMILY,
     ORGANELLES,
@@ -232,6 +234,37 @@ class DinoOrganelleSegmenter(BaseSegmenter):
     @property
     def model_spec(self):
         return self._spec
+
+    @property
+    def supports_image_file_prediction(self) -> bool:
+        return True
+
+    def predict_from_image_file(
+        self,
+        image_file: Any,
+        cached_prob_maps: dict[str, np.ndarray | None] | None = None,
+        on_progress: Callable[[str, float], None] | None = None,
+        **kwargs: Any,
+    ) -> InferenceResult:
+        from quantem.assets.pyramid_authority import PublishedPyramid, resolve_pyramid
+        from quantem.assets.task_utils import load_image_array
+
+        shared = kwargs.pop("image_array", None)
+        published = resolve_pyramid(image_file) if shared is None else None
+        if shared is not None:
+            image = shared
+        elif isinstance(published, PublishedPyramid):
+            image = PyramidPlane(published.open_level(0))
+            if image.shape[0] * image.shape[1] < STREAMING_MIN_PIXELS:
+                image = image[:, :]
+        else:
+            if int(image_file.width) * int(image_file.height) >= STREAMING_MIN_PIXELS:
+                raise RuntimeError(
+                    "The image pyramid must finish before this large image can be segmented."
+                )
+            image, _ = load_image_array(image_file)
+        self.prediction_image = image
+        return self.predict(image, cached_prob_maps, on_progress, **kwargs)
 
     @property
     def fg_threshold(self) -> float:
@@ -419,6 +452,9 @@ class DinoOrganelleSegmenter(BaseSegmenter):
 
         report(DL_MODEL_NAME, 0.0)
         effective_pixel_size = pixel_size_nm or self._pixel_size_nm
+        context = resample.plan_resample(
+            image.shape[:2], effective_pixel_size, self._spec.canonical_nm
+        )
         # The denominator goes on the row *before* the first forward pass, so
         # the run can say "0 of 858 tiles" instead of nothing while the first
         # tile is in flight. ``on_tile`` then reports whole tiles, and carries
@@ -435,6 +471,23 @@ class DinoOrganelleSegmenter(BaseSegmenter):
             organelle=self.ORGANELLE,
             device=getattr(self._model, "device", None),
         ) as tiles:
+            if (
+                not isinstance(image, np.ndarray)
+                or image.shape[0] * image.shape[1] >= STREAMING_MIN_PIXELS
+                or context.model_shape[0] * context.model_shape[1] >= STREAMING_MIN_PIXELS
+            ):
+                native = predict_native(
+                    self._model,
+                    image,
+                    pixel_size_nm=effective_pixel_size,
+                    overlap=self._overlap,
+                    on_progress=lambda fraction: report(DL_MODEL_NAME, fraction),
+                    on_tile=lambda done, total: tiles.set(done, total=total),
+                )
+                self._device_notices = [*self._model.load_notices, *self._model.run_notices]
+                self.adopt_native_probability_map(native)
+                report(DL_MODEL_NAME, 1.0)
+                return {DL_MODEL_NAME: native.data}
             prediction = engine.predict_region(
                 self._model,
                 image,
@@ -554,6 +607,7 @@ class DinoOrganelleSegmenter(BaseSegmenter):
             min_area=min_area,
         )
 
+    @timed_stage("object_extraction")
     def extract_instances(
         self,
         prob: np.ndarray,
@@ -603,6 +657,7 @@ class DinoOrganelleSegmenter(BaseSegmenter):
         report(1.0)
         return segments
 
+    @timed_stage("object_extraction")
     def extract_instances_geometry(
         self,
         prob: np.ndarray,

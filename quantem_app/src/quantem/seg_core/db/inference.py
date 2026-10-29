@@ -702,12 +702,14 @@ def run_inference_for_segmentation(
     if use_image_file_prediction:
         result = segmenter.predict_from_image_file(
             target_image,
+            image_array=image_array,
             cached_prob_maps=cached_prob_maps,
             on_progress=on_progress,
             coordinate_offset=(0, 0),
             on_detail=on_detail,
             **kwargs,
         )
+        img_array = getattr(segmenter, "prediction_image", img_array)
     else:
         result = segmenter.predict(
             img_array,

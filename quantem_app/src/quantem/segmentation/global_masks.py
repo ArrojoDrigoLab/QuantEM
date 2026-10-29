@@ -13,6 +13,7 @@ from quantem.assets.canonical_decode import decode_canonical_array
 from quantem.core.config import GLOBAL_MASKS_DIR
 from quantem.core.immutable_files import write_immutable_file
 from quantem.core.local_storage import storage_path, storage_relpath_for_path
+from quantem.core.mapped_arrays import MAX_HEAP_ARRAY_BYTES, working_array
 from quantem.seg_core.rasterize import paint_rings
 from quantem.segmentation.geometry import extract_polygons
 from quantem.segmentation.models import (
@@ -22,6 +23,8 @@ from quantem.segmentation.models import (
     SegmentObject,
 )
 from quantem.segmentation.mutations import record_change
+
+MASK_STRIPE_BYTES = 16 * 1024 * 1024
 
 
 def is_global_segmentation(segmentation: ImageSegmentation) -> bool:
@@ -37,6 +40,25 @@ def postprocess_global_prediction(
     holes. Object-only hole filling must never be applied here.
     """
     from skimage.morphology import closing, disk
+
+    from quantem.inference.resample import binarize_quantized
+
+    native = getattr(segmenter, "native_probability_map", None)
+    radius = max(0, int(getattr(getattr(segmenter, "_organelle", None), "close_radius", 0) or 0))
+    if native is not None and native.shape[0] * native.shape[1] >= MAX_HEAP_ARRAY_BYTES:
+        height, width = native.shape
+        rows = max(1, MASK_STRIPE_BYTES // width)
+        mask = working_array((height, width), bool)
+        # Closing has a two-radius dependency (dilate then erode). Each stripe
+        # reads that halo, so seams and image-edge behavior match the full pass.
+        for y in range(0, height, rows):
+            stop = min(height, y + rows)
+            start_halo, stop_halo = max(0, y - 2 * radius), min(height, stop + 2 * radius)
+            block = binarize_quantized(native.data[start_halo:stop_halo, :], threshold)
+            if radius:
+                block = closing(block, disk(radius))
+            mask[y:stop] = block[y - start_halo : stop - start_halo]
+        return mask, radius
 
     foreground = getattr(segmenter, "_foreground_mask", None)
     mask = np.asarray(
@@ -59,7 +81,10 @@ def preserve_completed_global_mask(segmentation: ImageSegmentation, mask: np.nda
     if not protected.is_empty:
         completed = _rasterize_geometries([protected], height=mask.shape[0], width=mask.shape[1])
         old_mask = load_global_mask(segmentation)
-        mask[completed] = old_mask[completed]
+        rows = max(1, (16 * 1024 * 1024) // mask.shape[1])
+        for y in range(0, mask.shape[0], rows):
+            selected = completed[y : y + rows]
+            mask[y : y + rows][selected] = old_mask[y : y + rows][selected]
     return mask
 
 
@@ -79,7 +104,8 @@ def _mask_path(segmentation: ImageSegmentation):
 def _rasterize_geometries(
     geometries: Iterable[BaseGeometry], *, height: int, width: int
 ) -> np.ndarray:
-    mask = np.zeros((height, width), dtype=np.uint8)
+    mask = working_array((height, width))
+    mask[:] = 0
     for geometry in geometries:
         for polygon in extract_polygons(geometry):
             rings = [
@@ -87,7 +113,7 @@ def _rasterize_geometries(
                 *(np.asarray(ring.coords, dtype=np.float64) for ring in polygon.interiors),
             ]
             paint_rings(mask, rings, 1, x0=0, y0=0)
-    return mask.astype(bool, copy=False)
+    return mask.view(bool)
 
 
 @transaction.atomic
@@ -113,13 +139,33 @@ def save_global_mask(
     record_change(segmentation, geometry=True)
     previous = GlobalMask.objects.filter(segmentation=segmentation).first()
 
+    large = binary.size >= MAX_HEAP_ARRAY_BYTES
+
     def write(temporary):
-        Image.fromarray(binary.astype(np.uint8) * 255, mode="L").save(
-            temporary, format="PNG", optimize=True
-        )
+        if large:
+            import tifffile
+
+            rows = max(1, (4 * 1024 * 1024) // width)
+            bands = (binary[y : y + rows].astype(np.uint8) * 255 for y in range(0, height, rows))
+            tifffile.imwrite(
+                temporary,
+                data=bands,
+                shape=(height, width),
+                dtype=np.uint8,
+                rowsperstrip=rows,
+                compression="deflate",
+                photometric="minisblack",
+            )
+        else:
+            Image.fromarray(binary.astype(np.uint8) * 255, mode="L").save(
+                temporary, format="PNG", optimize=True
+            )
 
     path = write_immutable_file(
-        _mask_path(segmentation).parent, prefix="mask", suffix=".png", write=write
+        _mask_path(segmentation).parent,
+        prefix="mask",
+        suffix=".tif" if large else ".png",
+        write=write,
     )
 
     record, _created = GlobalMask.objects.update_or_create(
@@ -191,7 +237,9 @@ def load_global_mask(
     # relation cache can still point to the previous immutable mask file.
     record = GlobalMask.objects.filter(segmentation=segmentation).first()
     if record is not None:
-        data = decode_canonical_array(storage_path(record.file_path)) > 0
+        plane = decode_canonical_array(storage_path(record.file_path))
+        data = working_array(plane.shape, bool)
+        np.greater(plane, 0, out=data)
         if data.shape != (height, width):
             raise ValueError(
                 f"Stored global mask shape {data.shape} does not match image shape "
@@ -199,7 +247,9 @@ def load_global_mask(
             )
         return data
     if not legacy_fallback:
-        return np.zeros((height, width), dtype=bool)
+        empty = working_array((height, width), bool)
+        empty[:] = False
+        return empty
     rows = SegmentObject.objects.filter(
         segmentation=segmentation,
         superseded_at__isnull=True,
@@ -238,7 +288,8 @@ def patch_global_mask(
     include_mask = _rasterize_geometries(include, height=height, width=width)
     exclude_mask = _rasterize_geometries(exclude, height=height, width=width)
     result |= include_mask
-    result &= ~exclude_mask
+    np.logical_not(exclude_mask, out=exclude_mask)
+    result &= exclude_mask
     return save_global_mask(
         segmentation,
         result,

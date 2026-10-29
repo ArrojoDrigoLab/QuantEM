@@ -183,7 +183,9 @@ def test_a_batch_that_does_not_fit_is_halved_and_said_so(tmp_path):
 
 
 def test_one_window_that_does_not_fit_moves_the_run_to_the_processor(tmp_path):
+    engine.clear_model_cache()
     model = _model(1, tmp_path)
+    engine.cache_model(model)
     rebuilt = SimpleNamespace(built=0)
 
     def forward(self, tiles):
@@ -204,6 +206,8 @@ def test_one_window_that_does_not_fit_moves_the_run_to_the_processor(tmp_path):
 
     assert rebuilt.built == 1
     assert model.device == "cpu"
+    assert engine.cached_model_keys() == [("omniem:mito", "cpu")]
+    engine.clear_model_cache()
     assert len(out) == 1 and float(out[0][0, 0]) == 0.25  # the run finished
     assert model.run_notices == [
         "This run moved to the processor part-way through: the graphics card ran "

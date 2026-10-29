@@ -4,6 +4,7 @@ import { BitmapLayer } from "@deck.gl/layers";
 import { MultiscaleImageLayer } from "@hms-dbmi/viv";
 import type { VivLoaderData } from "@/viewer/components/internal/vivUtils";
 import { PaletteBitmapLayer, NEAREST_SAMPLER } from "./PaletteBitmapLayer";
+import { accountOverlayTile, overlayTileBudget } from "./overlayTileBudget";
 
 /**
  * Renders an ID-map segmentation overlay: an integer `labels` raster coloured at
@@ -101,9 +102,16 @@ interface VivTileData {
 
 export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
   static layerName = "IdMapLabelLayer";
-  declare state: { paletteTexture?: Texture };
+  declare state: { paletteTexture?: Texture; resourceOwner?: symbol };
+
+  initializeState() {
+    this.setState({ resourceOwner: Symbol("overlay-generation") });
+  }
 
   updateState({ props, oldProps }: UpdateParameters<this>) {
+    if (this.state.resourceOwner) {
+      overlayTileBudget.register(this.state.resourceOwner, () => this.setNeedsUpdate());
+    }
     if (props.lut === oldProps.lut && props.maxLabel === oldProps.maxLabel && this.state.paletteTexture) return;
     this.state.paletteTexture?.destroy();
     const limit = this.context.device.limits.maxTextureDimension2D;
@@ -118,6 +126,7 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
   }
 
   finalizeState(context: LayerContext) {
+    if (this.state.resourceOwner) overlayTileBudget.release(this.state.resourceOwner);
     this.state.paletteTexture?.destroy();
     super.finalizeState(context);
   }
@@ -309,7 +318,8 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       extensions: NO_EXTENSIONS,
       onViewportLoad: this.props.onViewportLoad,
       onTileError: this.props.onTileError,
-      // Viv does not report byteLength on tile content; use a count bound.
+      onTileLoad: accountOverlayTile,
+      maxCacheByteSize: overlayTileBudget.bytesPerLayer,
       maxCacheSize: 128,
     });
     return new MultiscaleImageLayer(subLayerProps) as unknown as Layer;

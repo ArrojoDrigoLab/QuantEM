@@ -215,6 +215,58 @@ image overlays; SVG overlays remain useful for editing and optimistic feedback.
 
 ## Validation and remaining scaling costs
 
+### Workflow resource policy
+
+Published image pyramids supply window reads to released segmenters at 64 Mi
+pixels and above. A rescaled model grid reaching that limit also selects the
+disk-backed path even if its source image is small. Hann blending writes
+quantized native-coordinate probability bands to temporary Zarr. Resolution
+conversion uses mapped destinations with
+the same OpenCV interpolation and quantization as the resident path. Scratch
+space is checked before starting; mappings are released after resampling and
+the temporary probability store lives as long as its readers. Intermediate
+mappings disappear when a cancelled worker exits; subsequent predictions reclaim
+output workspaces older than one minute whose owning process has exited. TIFF
+decode and pyramid working planes above 64 MiB also use mappings. PNG decoding still uses
+Pillow's complete-image buffer. Disk-backed storage bounds private allocations,
+not the operating system's resident filesystem cache.
+
+CPU-only and small-profile machines share job capacity across resource labels;
+CPU fallback inference cannot occupy a separate accelerator allowance. SAM and
+segmentation workers coordinate through OS-released process locks. Pending SAM
+work runs before the next inference batch, with a 350 ms grace period for saving
+the answer and subsequent prompts. An executing tile cannot be preempted. On
+small CUDA devices a waiting segmentation model releases its device weights;
+SAM falls back to CPU when measured free VRAM cannot cover its encoder reserve.
+Other applications and already-running non-inference jobs are not preempted.
+
+Cold model loading is serialized within a process; cached lookups remain
+available while another load waits for space. Unpinned entries on the target
+device are evicted before allocating another model. Complete predictions pin
+their model, and CPU fallback updates its cache identity to the actual device.
+The weight-retention target is 12% of host RAM (512 MiB–4 GiB), or the smaller of
+45% of VRAM and VRAM minus 3 GiB (at least 512 MiB). The mandatory first model can
+exceed that target; activations, external references and separate processes are
+not a hard allocator limit. Failed numerical export repairs are remembered by
+weights/exporter/runtime/device fingerprint, so later workers do not repeat the same
+failed trace. Changing that fingerprint permits another repair attempt.
+
+HTTP responses expose `Server-Timing` and `X-QuantEM-Trace`; decode, pyramid,
+model-loading, inference, object extraction, candidate preparation/insertion and
+overlay stages also emit slow-stage logs. Parent timings include their nested
+stages and must not be summed. SAM adds
+bootstrap, queue, model, crop, encoder, decoder, geometry, storage and publication
+timings to its response. HTTP timing excludes a streamed response body's transfer.
+The viewer records `quantem.overlay.presentation` only after the matching pixels,
+palette and picking map are loaded and drawn; it measures the requested display
+generation through presentation, not the preceding API action or background job.
+Keep action acknowledgement and first correct frame separate in benchmarks.
+
+These policies still require validation on physical 8/16 GiB CPU machines,
+4/6/8 GiB GPUs and unified-memory Macs. Profile overrides and CPU affinity on a
+workstation exercise scheduling and allocation policy, not laptop thermals,
+memory pressure, storage bandwidth or graphics-driver behavior.
+
 Run the frontend unit suite and build with the scripts in `frontend/package.json`.
 Backend regressions live in `segmentation/tests/test_overlay_snapshots.py` and
 `segmentation/tests/test_result_overlays.py`, alongside the existing overlay, ROI,
@@ -254,15 +306,44 @@ and picking while palettes and replacement tiles are delayed, including opacity
 changes during loading, after the switch,
 after a failed replacement, and when hiding the overlay.
 
-Remaining costs include directory traversal when cloning a snapshot, writing its
-complete identity sidecar, fetching full palettes for server state changes, and
-loading the authoritative global boolean mask. A one-hour retention window can
-retain many versions during rapid geometry editing. The tile cache is bounded by
-count because Viv does not expose usable decoded-byte accounting on its content.
+Live-label membership uses two indexed scans and a hash intersection, avoiding
+the statistics-sensitive nested-loop plan immediately after dense imports.
+Palette reads fetch only identity and style columns; a cached binary palette
+does not require rebuilding an oversized JSON picking map. Draw operations are
+bucketed once by macrotile, preserving paint order and halo intersections.
+
+Synchronous partial repainting additionally requires at most 512 theoretical
+label/border chunks across the pyramid and at most 5,000 identities. Larger or
+denser stores queue partial publication, retaining the previous coherent display
+and optimistic editing feedback. Queue acknowledgement is not raster completion.
+Chunks that will be fully repainted are omitted from the clone. Unchanged files
+are cloned with bounded metadata concurrency; this still costs O(files), even
+when every chunk is a hard link.
+
+Derived snapshot retention combines a maximum of eight unleased generations,
+512 MiB of logical payload and one hour of age. The newest three and readers
+active within 60 seconds are protected, so these are reclamation targets rather
+than unconditional disk limits. Publication and manifest polls schedule bounded
+cleanup outside the request. Scientific saved results are never evicted by this policy.
+
+Base-image and overlay tile layers share one 128 MiB retained-tile allowance
+across views and old/replacement generations. Tile content reports decoded bytes
+plus a conservative allowance for packed pixels and textures before Deck counts
+it. Selected visible tiles, palettes, driver overhead and untiled bitmaps can
+exceed that allowance; it is not a hard process or GPU memory cap. The 128-tile
+per-layer ceiling remains as a secondary bound.
+
+Large authoritative masks use temporary mappings and compressed TIFF strips.
+Threshold/closing work uses stripes with a two-radius halo. Small masks retain
+PNG storage, and existing PNG/TIFF masks and revision archives remain readable.
+
+Remaining costs include directory cloning, complete identity sidecars and full
+palette delivery after server state changes. Disk-backed planes reduce private
+commit but still use the filesystem cache, I/O bandwidth and scratch capacity.
 
 If production profiling identifies those costs as dominant, the next steps are
 versioned chunk manifests that share references without directory cloning,
-palette deltas, explicit tile byte accounting, and chunked global-mask access.
+palette deltas, and chunk-addressable authoritative mask editing.
 On-demand tile rendering is another option, but requires snapshot-pinned geometry
 and label allocation to preserve consistency between pyramid levels and picking.
 It should replace the generation contract deliberately rather than introduce a

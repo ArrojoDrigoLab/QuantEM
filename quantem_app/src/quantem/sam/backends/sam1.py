@@ -64,6 +64,9 @@ class Sam1Backend:
         import torch
 
         from quantem.inference.device import select_device
+        from quantem.inference.engine import configure_torch_threads
+
+        configure_torch_threads()
 
         try:
             from quantem.sam._vendor.segment_anything import sam_model_registry
@@ -82,8 +85,24 @@ class Sam1Backend:
             raise CheckpointMissing(f"{CHECKPOINT.display_name} has not been downloaded yet.")
 
         self.device = select_device()
-        model = sam_model_registry[CHECKPOINT.architecture]()
-        missing, unexpected = model.load_state_dict(_load_state_dict(path), strict=False)
+        if self.device.startswith("cuda"):
+            # A separate worker's retained weights/allocator also consume VRAM.
+            # Admit the encoder's measured peak plus display headroom, rather
+            # than using total card capacity or waiting for a partial OOM.
+            try:
+                free, _ = torch.cuda.mem_get_info()
+                if free < 3200 * 1024**2:
+                    logger.info("SAM is using CPU to leave graphics memory for active work.")
+                    self.device = "cpu"
+            except (RuntimeError, AttributeError):
+                pass
+        from quantem.core.compute_admission import compute_slot
+
+        with compute_slot(self.device):
+            model = sam_model_registry[CHECKPOINT.architecture]()
+            missing, unexpected = model.load_state_dict(_load_state_dict(path), strict=False)
+            model.to(self.device)
+            model.eval()
         if missing or unexpected:
             # Not fatal -- a partially matching checkpoint still runs -- but it
             # means the weights are not the architecture we think they are, and
@@ -94,8 +113,6 @@ class Sam1Backend:
                 len(missing),
                 len(unexpected),
             )
-        model.to(self.device)
-        model.eval()
         self._predictor = SamPredictor(model)
         self._torch = torch
         logger.info("SAM backend %s ready on %s", self.identity, self.device)

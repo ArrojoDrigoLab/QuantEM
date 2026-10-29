@@ -1,4 +1,4 @@
-import { MultiscaleImageLayer } from "@hms-dbmi/viv";
+import { BudgetedImageLayer } from "./BudgetedImageLayer";
 import { type Layer } from "@deck.gl/core";
 import { BitmapLayer } from "@deck.gl/layers";
 import type {
@@ -60,7 +60,7 @@ export function buildViewerDeckLayers(config: {
     const source = loaderData[0];
     const channelCount = inferChannelCount(source);
     layers.push(
-      new MultiscaleImageLayer({
+      new BudgetedImageLayer({
         id: "viv-multiscale-image",
         loader: loaderData,
         dtype: source.dtype,
@@ -148,7 +148,7 @@ export function buildViewerDeckLayers(config: {
         ? RGB_CHANNEL_COLORS.slice(0, channelCount)
         : resolveTintColors(spec, channelCount);
     layers.push(
-      new MultiscaleImageLayer({
+      new BudgetedImageLayer({
         id: `viv-overlay-${spec.id}`,
         loader,
         dtype: source.dtype,

@@ -21,6 +21,7 @@ from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
+from quantem.core.performance import timed_stage
 from quantem.jobs.constants import (
     JOB_DEFAULTS,
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
@@ -81,7 +82,7 @@ from .paths import (
     get_overlay_version_dir,
     normalize_overlay_source_model,
 )
-from .snapshots import clone_store, detach_chunk, prune_snapshots, read_snapshot, write_snapshot
+from .snapshots import clone_store, read_snapshot, schedule_snapshot_prune, write_snapshot
 from .store import (
     _create_empty_label_store,
     _is_valid_label_store,
@@ -517,6 +518,20 @@ def _macro_tile_payloads(
     region_x1 = width if region_x1 is None else region_x1
     region_y1 = height if region_y1 is None else region_y1
     halo = OVERLAY_BORDER_WIDTH
+    columns = math.ceil((region_x1 - region_x0) / MACRO_TILE_SIZE)
+    rows = math.ceil((region_y1 - region_y0) / MACRO_TILE_SIZE)
+    # Assign each outline once to the macro tiles it can touch. Scanning all
+    # objects for every tile made sparse gigapixel images O(objects * tiles).
+    buckets: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for op in draw_ops:
+        x0, y0, x1, y1 = op["bbox"]
+        first_x = max(0, math.ceil((x0 - halo - region_x0) / MACRO_TILE_SIZE) - 1)
+        last_x = min(columns - 1, math.floor((x1 + halo - region_x0) / MACRO_TILE_SIZE))
+        first_y = max(0, math.ceil((y0 - halo - region_y0) / MACRO_TILE_SIZE) - 1)
+        last_y = min(rows - 1, math.floor((y1 + halo - region_y0) / MACRO_TILE_SIZE))
+        for cy in range(first_y, last_y + 1):
+            for cx in range(first_x, last_x + 1):
+                buckets.setdefault((cy, cx), []).append(op)
     payloads: list[dict[str, Any]] = []
     y = region_y0
     while y < region_y1:
@@ -528,7 +543,10 @@ def _macro_tile_payloads(
             ry0 = max(0, y - halo)
             rx1 = min(width, ix1 + halo)
             ry1 = min(height, iy1 + halo)
-            tile_ops = [op for op in draw_ops if _bbox_intersects(op["bbox"], rx0, ry0, rx1, ry1)]
+            candidates = buckets.get(
+                ((y - region_y0) // MACRO_TILE_SIZE, (x - region_x0) // MACRO_TILE_SIZE), ()
+            )
+            tile_ops = [op for op in candidates if _bbox_intersects(op["bbox"], rx0, ry0, rx1, ry1)]
             if tile_ops:
                 payloads.append(
                     {
@@ -899,11 +917,7 @@ def _publish_snapshot(
         else:
             # Old readers use immutable labels.json. Reclaim obsolete live
             # index rows on every partial publication without touching theirs.
-            SegmentationOverlayLabel.objects.filter(overlay_state=state).exclude(
-                object_uuid__in=labels_lut.bundle_queryset(
-                    segmentation, state.candidate_source_model
-                ).values("id")
-            ).delete()
+            labels_lut.remove_obsolete_labels(state, assignments)
             # Existing identities do not change on a partial build. Avoid
             # deleting/reinserting every object's row for a one-tile edit.
             SegmentationOverlayLabel.objects.bulk_create(
@@ -930,7 +944,7 @@ def _publish_snapshot(
     # A synchronous edit can publish several generations inside one outer
     # transaction. Its old database-visible snapshot must survive a rollback.
     def after_commit():
-        prune_snapshots(str(segmentation.id), state.candidate_source_model, version)
+        schedule_snapshot_prune(str(segmentation.id), state.candidate_source_model, version)
         _write_debug_manifest(segmentation, state)
 
     transaction.on_commit(after_commit, robust=True)
@@ -938,6 +952,7 @@ def _publish_snapshot(
 
 
 @_serialized_build
+@timed_stage("overlay_full")
 def rebuild_overlay_full(
     segmentation: ImageSegmentation,
     *,
@@ -1060,6 +1075,7 @@ def rebuild_overlay_full(
 
 
 @_serialized_build
+@timed_stage("overlay_partial")
 def apply_partial_overlay_update(
     segmentation: ImageSegmentation,
     *,
@@ -1086,8 +1102,19 @@ def apply_partial_overlay_update(
     stage_root = get_overlay_stage_bundle_path(
         str(segmentation.id), version, normalized_source_model
     )
+    parent_levels = []
+    coords = chunk_coords
+    for _ in range(1, len(_level_shapes(width, height))):
+        coords = {(x // 2, y // 2) for x, y in coords}
+        parent_levels.append(coords)
+    replaced_chunks = {
+        f"{key}/{level}/{y}.{x}"
+        for level, coordinates in enumerate([chunk_coords, *parent_levels])
+        for key in OVERLAY_ARRAY_KEYS
+        for x, y in coordinates
+    }
     # Never expose half-written levels or mutate bytes under an immutable URL.
-    clone_store(get_overlay_active_bundle_path(state), stage_root)
+    clone_store(get_overlay_active_bundle_path(state), stage_root, replaced_chunks=replaced_chunks)
     arrays = _open_label_arrays(state, store_root=stage_root)
     queryset = labels_lut.bundle_queryset(segmentation, normalized_source_model)
     label_map = labels_lut.existing_label_map(state, current_only=True)
@@ -1096,6 +1123,7 @@ def apply_partial_overlay_update(
         normalized_source_model,
         f"{state.bundle_version}-{state.applied_revision}",
         include_labels=False,
+        lease=False,
     )
     # A partial repaint cannot certify unchanged chunks against a different
     # canonical geometry generation. Retain certification for LUT-only work;
@@ -1109,11 +1137,6 @@ def apply_partial_overlay_update(
         high_watermark = max(labels_lut.existing_label_map(state).values(), default=0)
     next_label = int(high_watermark) + 1
     first_new_label = next_label
-    parent_levels = []
-    coords = chunk_coords
-    for _ in range(1, len(arrays[LABELS_ARRAY_KEY])):
-        coords = {(x // 2, y // 2) for x, y in coords}
-        parent_levels.append(coords)
     total = len(chunk_coords) + sum(map(len, parent_levels)) * len(OVERLAY_ARRAY_KEYS)
     completed = 0
     try:
@@ -1148,8 +1171,6 @@ def apply_partial_overlay_update(
                     "border_width": OVERLAY_BORDER_WIDTH,
                 }
             )
-            for array_key in OVERLAY_ARRAY_KEYS:
-                detach_chunk(stage_root, array_key, 0, chunk_x, chunk_y)
             _write_tile_result(arrays, result)
             completed += 1
             if on_progress is not None:
@@ -1159,13 +1180,16 @@ def apply_partial_overlay_update(
                 for chunk_x, chunk_y in sorted(parent_coords):
                     if cancel_check is not None:
                         cancel_check()
-                    detach_chunk(stage_root, array_key, level_idx, chunk_x, chunk_y)
-                    render_module.write_parent_chunk(
-                        arrays[array_key][level_idx - 1],
-                        arrays[array_key][level_idx],
-                        chunk_x=chunk_x,
-                        chunk_y=chunk_y,
-                        kind=array_key,
+                    _retry_on_windows_lock(
+                        lambda array_key=array_key, level_idx=level_idx, chunk_x=chunk_x, chunk_y=chunk_y: (
+                            render_module.write_parent_chunk(
+                                arrays[array_key][level_idx - 1],
+                                arrays[array_key][level_idx],
+                                chunk_x=chunk_x,
+                                chunk_y=chunk_y,
+                                kind=array_key,
+                            )
+                        )
                     )
                     completed += 1
                     if on_progress is not None:
@@ -1222,6 +1246,18 @@ def overlay_rebuild_policy(
     chunk_count = len(dirty_bbox_to_chunk_coords(dirty_bbox))
     if (
         allow_sync_partial
+        # A tiny changed area still clones the *entire* pyramid and rewrites
+        # its identity map. Bound those costs before entering a request-side
+        # transaction. Large/dense bundles use the coalescing background queue.
+        and sum(
+            math.ceil(h / OVERLAY_CHUNK_SIZE) * math.ceil(w / OVERLAY_CHUNK_SIZE)
+            for h, w in _level_shapes(width, height)
+        )
+        * len(OVERLAY_ARRAY_KEYS)
+        <= 512
+        and not SegmentationOverlayLabel.objects.filter(overlay_state=state).values_list(
+            "pk", flat=True
+        )[5000:5001]
         and state.status != SegmentationOverlayState.STATUS_BUILDING
         and not state.pending_full_rebuild
         and state.applied_revision == state.desired_revision

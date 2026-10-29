@@ -71,6 +71,10 @@ class SegmentationOverlayManifestView(APIView):
         )
         source_model = normalize_source_model(request.query_params.get("source_model"))
         payload = ensure_overlay_manifest(segmentation, source_model=source_model)
+        from quantem.segmentation.overlay_ngff.snapshots import schedule_snapshot_prune
+
+        state = get_or_create_overlay_state(segmentation, source_model)
+        schedule_snapshot_prune(str(segmentation.id), source_model, state.bundle_version)
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -129,6 +133,18 @@ class SegmentationOverlayLutView(APIView):
             state.updated_at,
             segmentation.segmentation_type.default_color,
         )
+        hidden_states = frozenset(
+            token.strip()
+            for token in (request.query_params.get("hide") or "").split(",")
+            if token.strip()
+        )
+        binary_key = (*cache_key, tuple(sorted(hidden_states)))
+        # A binary palette can fit even when the JSON map exceeds its budget.
+        # Check it before rebuilding the much larger visibility/picking map.
+        if request.query_params.get("format") != "json":
+            binary = palette_cache.get(binary_key)
+            if binary is not None:
+                return _binary_palette_response(binary, state)
         lut_json = palette_cache.get(cache_key)
         if lut_json is None:
             if snapshot_root is not None:
@@ -163,25 +179,23 @@ class SegmentationOverlayLutView(APIView):
             response = Response(lut_json, status=status.HTTP_200_OK)
             response["Cache-Control"] = "no-store"
             return response
-        hidden_states = frozenset(
-            token.strip()
-            for token in (request.query_params.get("hide") or "").split(",")
-            if token.strip()
-        )
         from quantem.segmentation.overlay_ngff.labels_lut import binary_from_json
 
-        binary_key = (*cache_key, tuple(sorted(hidden_states)))
         binary = palette_cache.get(binary_key)
         if binary is None:
             binary = binary_from_json(lut_json, hidden_states=hidden_states)
             palette_cache.put(binary_key, binary, len(binary[0]))
-        payload, max_label = binary
-        response = HttpResponse(payload, content_type="application/octet-stream")
-        response["X-Overlay-Lut-Revision"] = str(state.lut_revision)
-        response["X-Overlay-Bundle-Version"] = str(state.bundle_version)
-        response["X-Overlay-Max-Label"] = str(max_label)
-        response["Cache-Control"] = "no-store"
-        return response
+        return _binary_palette_response(binary, state)
+
+
+def _binary_palette_response(binary, state):
+    payload, max_label = binary
+    response = HttpResponse(payload, content_type="application/octet-stream")
+    response["X-Overlay-Lut-Revision"] = str(state.lut_revision)
+    response["X-Overlay-Bundle-Version"] = str(state.bundle_version)
+    response["X-Overlay-Max-Label"] = str(max_label)
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 class SegmentationOverlayRebuildView(APIView):

@@ -1040,6 +1040,10 @@ def _decode_once(asset_id: str):
         openable = get_asset_openable(asset, require=False)
         if openable is None:
             return None
+        from quantem.inference.mapped_prediction import STREAMING_MIN_PIXELS
+
+        if int(openable.width) * int(openable.height) >= STREAMING_MIN_PIXELS:
+            return None
         img_array, _ = load_image_array(openable)
         return img_array
     except Exception:

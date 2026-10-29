@@ -185,7 +185,7 @@ def free_memory_bytes(device: str) -> int | None:
     if device_type(device) != "cuda":
         return None
     try:
-        free, _total = _torch().cuda.mem_get_info()
+        free, _total = _torch().cuda.mem_get_info(device)
         return int(free)
     except Exception:
         logger.debug("could not read free VRAM for %s", device, exc_info=True)
@@ -197,7 +197,7 @@ def total_memory_bytes(device: str) -> int | None:
     if device_type(device) != "cuda":
         return None
     try:
-        _free, total = _torch().cuda.mem_get_info()
+        _free, total = _torch().cuda.mem_get_info(device)
         return int(total)
     except Exception:
         logger.debug("could not read total VRAM for %s", device, exc_info=True)
@@ -332,9 +332,10 @@ def empty_cache(device: str) -> None:
     """Release cached allocator blocks after a large run. Best-effort."""
     try:
         torch = _torch()
-        if device == "cuda":
-            torch.cuda.empty_cache()
-        elif device == "mps":
+        if device_type(device) == "cuda":
+            with torch.cuda.device(device):
+                torch.cuda.empty_cache()
+        elif device_type(device) == "mps":
             torch.mps.empty_cache()
     except Exception:
         logger.debug("empty_cache failed for %s", device, exc_info=True)

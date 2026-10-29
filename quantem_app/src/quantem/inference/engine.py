@@ -28,17 +28,23 @@ and loads a TorchScript artifact instead.
 
 from __future__ import annotations
 
+import functools
+import json
 import logging
 import os
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import numpy as np
+
+from quantem.core.performance import timed_stage
 
 from . import resample, tiling
 from .device import (
@@ -57,10 +63,9 @@ if TYPE_CHECKING:  # torch must not be imported at module scope; see _torch()
 
 logger = logging.getLogger(__name__)
 
-#: Fewest models kept resident, whatever the machine. Two is enough to flip
-#: between two families without thrashing, and it is what a small machine gets:
-#: a ViT-L pack is ~1 540 MB of VRAM at batch 1 and ViT-B 588-768 MB, so four
-#: resident ViT-L packs would not fit the 4 GB laptop floor of ruling R3.
+#: Default count ceiling. The byte budget can reduce this to one retained
+#: model: a ViT-L pack plus activations can exceed 1.5 GB, so retaining two
+#: such packs is not automatically safe on a 4 GB graphics card.
 #:
 #: KNOWN TENSION, measured, deliberately left in place. One run per image walks
 #: all four organelle packs in a single job, and at two slots that run evicts
@@ -216,6 +221,9 @@ class LoadedModel:
     #: :func:`predict_region` on entry and collected by it on the way out, so a
     #: cached model does not report last week's fallback on today's run.
     run_notices: list[str] = field(default_factory=list)
+    # Device parking and OOM recovery mutate the module. Two callers sharing
+    # this cached model must not move its weights during another forward pass.
+    _execution_lock: Any = field(default_factory=threading.RLock, repr=False, compare=False)
 
     @property
     def pack_id(self) -> str:
@@ -255,6 +263,10 @@ class LoadedModel:
         processor and the run finishes there. Both outcomes are recorded in
         :attr:`run_notices`.
         """
+        with self._execution_lock:
+            return self._forward_tiles(tiles)
+
+    def _forward_tiles(self, tiles: Sequence[np.ndarray]) -> list[np.ndarray]:
         if self.forward is not None:
             return [self.forward(tile) for tile in tiles]
         if not tiles:
@@ -267,7 +279,24 @@ class LoadedModel:
                 out.extend(self.forward_tiles(tiles[start : start + limit]))
             return out
         try:
-            return self._forward_batch(tiles)
+            from quantem.core.compute_admission import compute_slot
+
+            parked = False
+
+            def park() -> None:
+                nonlocal parked
+                total = total_memory_bytes(self.device)
+                if device_type(self.device) == "cuda" and total and total < 8 * 1024**3:
+                    self.module.to("cpu")
+                    empty_cache(self.device)
+                    parked = True
+
+            def resume() -> None:
+                if parked:
+                    self.module.to(self.device)
+
+            with compute_slot(self.device, on_yield=park, on_resume=resume):
+                return self._forward_batch(tiles)
         except Exception as exc:
             if not is_out_of_memory(exc):
                 raise
@@ -359,16 +388,27 @@ class LoadedModel:
             raise RuntimeError(
                 f"{self.spec.pack_id}: cannot move to the processor without the pack's files."
             ) from cause
-        module, tier = build_module(self.files, self.spec, "cpu")
-        if self.adapter_head_path is not None:
-            from quantem.finetune.adapt import load_head  # noqa: PLC0415
+        from quantem.core.compute_admission import compute_slot
 
-            load_head(module, self.adapter_head_path)
+        with compute_slot("cpu"):
+            module, tier = build_module(self.files, self.spec, "cpu")
+            if self.adapter_head_path is not None:
+                from quantem.finetune.adapt import load_head  # noqa: PLC0415
+
+                load_head(module, self.adapter_head_path)
         old, self.module = self.module, module
         self.device = "cpu"
         self.encoder_tier = tier
         self.tile_batch = 1
         del old
+        with _CACHE_CHANGED:
+            previous_keys = [key for key, value in _MODEL_CACHE.items() if value is self]
+            for key in previous_keys:
+                del _MODEL_CACHE[key]
+            if previous_keys and self.key not in _MODEL_CACHE:
+                _MODEL_CACHE[self.key] = self
+                _evict_to_fit("cpu")
+            _CACHE_CHANGED.notify_all()
         empty_cache(was)
         self._note_run(
             "This run moved to the processor part-way through: the graphics card "
@@ -531,16 +571,15 @@ def _export_path_for(files: ModelFiles, device: str) -> Path | None:
     return files.export_path
 
 
-#: ``(pack_id, device)`` pairs whose export this process has already tried and
-#: failed. Not persisted, and deliberately not: an install, a torch upgrade or a
-#: different card can all change the answer, and a stale file on disk claiming
-#: otherwise would be worse than repeating the work once per process.
+#: Fingerprints already refused in this process. Only numerical parity
+#: failures also persist; transient allocation and filesystem failures retry
+#: in the next worker. Runtime, hardware and weight changes invalidate them.
 #:
 #: It exists because a refusal is not free. A QuantEM ViT-B traced on CUDA does
 #: not survive its own verification (see export._VERIFY_PASSES), and paying the
 #: trace to be told so again on every cold start MEASURED 51 s against 25 s for
 #: the eager build alone -- for a file that will never be written.
-_EXPORT_REFUSED: set[tuple[str, str]] = set()
+_EXPORT_REFUSED: set[str] = set()
 
 
 def _repair_export(
@@ -578,12 +617,56 @@ def _repair_export(
     target = files.head_path.parent / _exported_encoder_name(device)
     if target.exists():
         return
-    memo = (spec.pack_id, device_type(device))
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        from .export import ExportParityError, export_built_encoder
+    except ImportError:
+        logger.warning("Export repair is unavailable", exc_info=True)
+        return
+    marker = target.with_suffix(target.suffix + ".refused.json")
+    fingerprint = {
+        "policy": 2,
+        "torch": str(_torch().__version__),
+        "device": device_type(device),
+        "tier": str(bundle.contract.tier),
+        "files": [],
+        "packages": {},
+    }
+    for package in ("quantem-app", "timm", "torchvision"):
+        try:
+            fingerprint["packages"][package] = version(package)
+        except PackageNotFoundError:
+            fingerprint["packages"][package] = None
+    if device_type(device) == "cuda":
+        with suppress(Exception):
+            fingerprint["gpu"] = [
+                _torch().cuda.get_device_name(device),
+                list(_torch().cuda.get_device_capability(device)),
+            ]
+            fingerprint["cuda"] = _torch().version.cuda
+    try:
+        for path in (
+            files.head_path,
+            files.encoder_path,
+            files.config_path,
+            Path(__file__).with_name("export.py"),
+        ):
+            if path is not None and path.is_file():
+                stat = path.stat()
+                fingerprint["files"].append([str(path), stat.st_size, stat.st_mtime_ns])
+    except OSError:
+        pass
+    memo = json.dumps(fingerprint, sort_keys=True)
     if memo in _EXPORT_REFUSED:
         return
     try:
-        from .export import export_built_encoder
-
+        if json.loads(marker.read_text(encoding="utf-8")).get("fingerprint") == fingerprint:
+            _EXPORT_REFUSED.add(memo)
+            return
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    try:
         result = export_built_encoder(
             spec.pack_id,
             bundle.module,
@@ -608,8 +691,21 @@ def _repair_export(
             result.path,
             result.max_abs_diff,
         )
-    except Exception:
+    except Exception as exc:
         _EXPORT_REFUSED.add(memo)
+        # Persist numerical refusals, not transient disk/memory failures.
+        # Changed weights, exporter code or torch runtime automatically retry.
+        if isinstance(exc, ExportParityError):
+            temporary = marker.with_name(f".{marker.name}.{uuid4().hex}.tmp")
+            with suppress(OSError):
+                try:
+                    temporary.write_text(
+                        json.dumps({"fingerprint": fingerprint, "reason": str(exc)}),
+                        encoding="utf-8",
+                    )
+                    temporary.replace(marker)
+                finally:
+                    temporary.unlink(missing_ok=True)
         logger.warning(
             "%s: could not write the TorchScript encoder for %s beside the "
             "pack; every cold start on this device keeps paying the eager "
@@ -890,6 +986,128 @@ def model_cache_slots(device: str = "cpu") -> int:
 
 _MODEL_CACHE: OrderedDict[tuple[str, str], LoadedModel] = OrderedDict()
 _CACHE_LOCK = threading.Lock()
+_CACHE_CHANGED = threading.Condition(_CACHE_LOCK)
+_LOAD_LOCK = threading.RLock()
+_PINNED: dict[int, int] = {}
+_PREDICTION_LOCAL = threading.local()
+
+
+@contextmanager
+def _model_lease(model: LoadedModel) -> Iterator[None]:
+    """Keep a model in the cache while a complete prediction uses it."""
+    identity = id(model)
+    with _CACHE_CHANGED:
+        _PINNED[identity] = _PINNED.get(identity, 0) + 1
+    previous = getattr(_PREDICTION_LOCAL, "models", set())
+    _PREDICTION_LOCAL.models = previous | {identity}
+    try:
+        yield
+    finally:
+        _PREDICTION_LOCAL.models = previous
+        with _CACHE_CHANGED:
+            count = _PINNED[identity] - 1
+            if count:
+                _PINNED[identity] = count
+            else:
+                del _PINNED[identity]
+            _CACHE_CHANGED.notify_all()
+
+
+def _pinned_prediction(function: Callable[..., Any]) -> Callable[..., Any]:
+    @functools.wraps(function)
+    def predict(model: LoadedModel, *args: Any, **kwargs: Any) -> Any:
+        with _model_lease(model):
+            return function(model, *args, **kwargs)
+
+    return predict
+
+
+def model_cache_budget_bytes(device: str) -> int:
+    """Weight retention after reserving room for inference, SAM and the desktop."""
+    gib = 1024**3
+    if device_type(device) == "cuda":
+        total = total_memory_bytes(device) or 4 * gib
+        return max(512 * 1024**2, min(int(total * 0.45), total - 3 * gib))
+    from quantem.core.machine import get_machine_profile
+
+    total = get_machine_profile().total_ram_bytes or 8 * gib
+    return max(512 * 1024**2, min(4 * gib, int(total * 0.12)))
+
+
+def model_resident_bytes(model: LoadedModel) -> int:
+    """Count unique parameter/buffer storage, including aliased export tensors."""
+    try:
+        storages = {}
+        for tensor in (*model.module.parameters(), *model.module.buffers()):
+            storage = tensor.untyped_storage()
+            storages[(str(tensor.device), storage.data_ptr())] = storage.nbytes()
+        return sum(storages.values())
+    except (AttributeError, TypeError):
+        # Stand-ins and unsupported runtimes still get conservative accounting.
+        return (1400 if model.spec.pack_id.startswith("omniem:") else 800) * 1024**2
+
+
+def _cached_or_load(
+    pack_id: str, device: str, identity: str, build: Callable[[], LoadedModel]
+) -> LoadedModel:
+    key = (identity, device)
+    # Cache hits must not wait behind a cold load that is itself waiting for
+    # their active prediction to finish. Progress callbacks may reuse a model.
+    with _CACHE_LOCK:
+        if key in _MODEL_CACHE:
+            _MODEL_CACHE.move_to_end(key)
+            return _MODEL_CACHE[key]
+    if getattr(_PREDICTION_LOCAL, "models", set()):
+        raise ModelUnavailableError("A new model cannot be loaded inside an active prediction.")
+    with _LOAD_LOCK:
+        with _CACHE_LOCK:
+            if key in _MODEL_CACHE:
+                _MODEL_CACHE.move_to_end(key)
+                return _MODEL_CACHE[key]
+        configure_torch_threads()
+        _make_load_room(pack_id, device)
+        loaded = build()
+        key = (identity, loaded.device)
+        with _CACHE_LOCK:
+            existing = _MODEL_CACHE.get(key)
+            if existing is not None:
+                return existing
+            _MODEL_CACHE[key] = loaded
+            _MODEL_CACHE.move_to_end(key)
+            _evict_to_fit(loaded.device)
+        logger.info(
+            "Loaded model %s on %s (encoder tier: %s)", identity, loaded.device, loaded.encoder_tier
+        )
+        return loaded
+
+
+def _models_on(device: str) -> dict[tuple[str, str], LoadedModel]:
+    return {key: model for key, model in _MODEL_CACHE.items() if model.device == device}
+
+
+def _make_load_room(pack_id: str, device: str) -> None:
+    incoming = (1400 if pack_id.startswith("omniem:") else 800) * 1024**2
+    budget = model_cache_budget_bytes(device)
+    with _CACHE_CHANGED:
+        while entries := _models_on(device):
+            if (
+                len(entries) < model_cache_slots(device)
+                and sum(model_resident_bytes(m) for m in entries.values()) + incoming <= budget
+            ):
+                break
+            key = next((key for key, model in entries.items() if id(model) not in _PINNED), None)
+            if key is None:
+                if getattr(_PREDICTION_LOCAL, "models", set()).intersection(
+                    id(model) for model in entries.values()
+                ):
+                    raise ModelUnavailableError("Cannot evict the caller's active prediction.")
+                _CACHE_CHANGED.wait(timeout=0.1)
+                continue
+            evicted = _MODEL_CACHE.pop(key)
+            previous_device = evicted.device
+            del evicted
+            empty_cache(previous_device)
+
 
 #: Whether this process has already told torch how wide to run. One decision per
 #: process, taken the first time a model is loaded.
@@ -935,12 +1153,26 @@ def configure_torch_threads() -> int | None:
 def _evict_to_fit(device: str) -> None:
     """Trim the cache to :func:`model_cache_slots`. Caller holds the lock."""
     slots = max(1, model_cache_slots(device))
-    while len(_MODEL_CACHE) > slots:
-        evicted_key, evicted = _MODEL_CACHE.popitem(last=False)
+    budget = model_cache_budget_bytes(device)
+    while len(entries := _models_on(device)) > 1:
+        if (
+            len(entries) <= slots
+            and sum(model_resident_bytes(m) for m in entries.values()) <= budget
+        ):
+            break
+        evicted_key = next(
+            (key for key, model in entries.items() if id(model) not in _PINNED), None
+        )
+        if evicted_key is None:
+            break
+        evicted = _MODEL_CACHE.pop(evicted_key)
         logger.info("Evicting cached model %s (%s)", *evicted_key)
-        empty_cache(evicted.device)
+        previous_device = evicted.device
+        del evicted
+        empty_cache(previous_device)
 
 
+@timed_stage("model_load")
 def load_model(pack_id: str, device: str | None = None) -> LoadedModel:
     """Load (or reuse) a model pack on the selected device.
 
@@ -962,35 +1194,12 @@ def load_model(pack_id: str, device: str | None = None) -> LoadedModel:
     if spec is None:
         raise ValueError(f"Unknown model pack: {pack_id!r}")
     resolved_device = select_device(device)
-    key = (pack_id, resolved_device)
-
-    with _CACHE_LOCK:
-        cached = _MODEL_CACHE.get(key)
-        if cached is not None:
-            _MODEL_CACHE.move_to_end(key)
-            return cached
-
-    configure_torch_threads()
-    # Loading is slow and must not hold the lock; a concurrent duplicate load is
-    # wasteful but harmless, and the second one is discarded below.
-    files = resolve_model_files(pack_id)
-    loaded = _build_and_prepare(spec, files, resolved_device)
-    logger.info(
-        "Loaded model pack %s on %s (encoder tier: %s)",
+    return _cached_or_load(
         pack_id,
-        loaded.device,
-        loaded.encoder_tier,
+        resolved_device,
+        pack_id,
+        lambda: _build_and_prepare(spec, resolve_model_files(pack_id), resolved_device),
     )
-
-    key = (pack_id, loaded.device)
-    with _CACHE_LOCK:
-        existing = _MODEL_CACHE.get(key)
-        if existing is not None:
-            return existing
-        _MODEL_CACHE[key] = loaded
-        _MODEL_CACHE.move_to_end(key)
-        _evict_to_fit(loaded.device)
-    return loaded
 
 
 def _build_and_prepare(
@@ -1029,12 +1238,30 @@ def _build_and_prepare(
 
     last: Exception | None = None
     tried_eager_here = False
+    from quantem.core.compute_admission import compute_slot
+
     for where, options in attempts:
         without_artifact = options.get("allow_exported_encoder") is False
         if without_artifact and tried_eager_here:
             continue  # the failing attempt was already the eager one
+        model = None
         try:
-            model = _build_on(spec, files, where, adapter_head, adapter_id, cache_key, **options)
+            # Admission follows the actual attempt, including CPU fallback.
+            # Do not hold an accelerator lane while waiting for a CPU lane.
+            with compute_slot(where):
+                model = _build_on(
+                    spec, files, where, adapter_head, adapter_id, cache_key, **options
+                )
+                prepare_for_device(model)
+        except AcceleratorUnusable as exc:
+            last = exc
+            tried_eager_here = tried_eager_here or (
+                model is not None and model.encoder_tier != "exported"
+            )
+            logger.warning("%s", exc)
+            del model
+            empty_cache(where)
+            continue
         except Exception as exc:
             # An out-of-memory here is the weights not fitting on the card at
             # all, before a single window has run. It belongs on this ladder for
@@ -1045,16 +1272,6 @@ def _build_and_prepare(
             last = _as_unusable(exc, spec, where)
             tried_eager_here = tried_eager_here or without_artifact
             logger.warning("%s: could not build on %s: %s", spec.pack_id, where, exc)
-            empty_cache(where)
-            continue
-        tier = model.encoder_tier
-        try:
-            prepare_for_device(model)
-        except AcceleratorUnusable as exc:
-            last = exc
-            tried_eager_here = tried_eager_here or tier != "exported"
-            logger.warning("%s", exc)
-            del model
             empty_cache(where)
             continue
         if on_accelerator and device_type(where) == "cpu":
@@ -1128,6 +1345,7 @@ def adapted_cache_key(pack_id: str, head_path: str | Path) -> str:
     return f"{pack_id}+head:{path}@{stamp}"
 
 
+@timed_stage("model_load")
 def load_adapted_model(
     pack_id: str,
     head_path: str | Path,
@@ -1169,40 +1387,20 @@ def load_adapted_model(
         )
 
     resolved_device = select_device(device)
-    key = (adapted_cache_key(pack_id, head_path), resolved_device)
-    with _CACHE_LOCK:
-        cached = _MODEL_CACHE.get(key)
-        if cached is not None:
-            _MODEL_CACHE.move_to_end(key)
-            return cached
-
-    files = resolve_model_files(pack_id)
-    loaded = _build_and_prepare(
-        spec,
-        files,
-        resolved_device,
-        adapter_head=head_path,
-        adapter_id=adapter_id,
-        cache_key=key[0],
-    )
-    logger.info(
-        "Loaded model pack %s on %s with adapted head %s (adapter=%s, encoder tier: %s)",
+    identity = adapted_cache_key(pack_id, head_path)
+    return _cached_or_load(
         pack_id,
-        loaded.device,
-        head_path,
-        adapter_id or "?",
-        loaded.encoder_tier,
+        resolved_device,
+        identity,
+        lambda: _build_and_prepare(
+            spec,
+            resolve_model_files(pack_id),
+            resolved_device,
+            adapter_head=head_path,
+            adapter_id=adapter_id,
+            cache_key=identity,
+        ),
     )
-
-    key = (key[0], loaded.device)
-    with _CACHE_LOCK:
-        existing = _MODEL_CACHE.get(key)
-        if existing is not None:
-            return existing
-        _MODEL_CACHE[key] = loaded
-        _MODEL_CACHE.move_to_end(key)
-        _evict_to_fit(loaded.device)
-    return loaded
 
 
 def cache_model(model: LoadedModel) -> None:
@@ -1275,6 +1473,8 @@ def estimate_tiles(
     )
 
 
+@timed_stage("inference")
+@_pinned_prediction
 def predict_region(
     model: LoadedModel,
     image: np.ndarray,
@@ -1350,6 +1550,8 @@ def _batch_predictor(
     return lambda tiles: model.forward_tiles([padded[tile.slices] for tile in tiles])
 
 
+@timed_stage("inference")
+@_pinned_prediction
 def predict_region_streaming(
     model: LoadedModel,
     plan: tiling.TilePlan,

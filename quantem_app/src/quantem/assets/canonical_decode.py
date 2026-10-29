@@ -75,6 +75,8 @@ import numpy as np
 import tifffile
 from PIL import Image
 
+from quantem.core.performance import timed_stage
+
 # Microscopy images are routinely far past Pillow's bomb threshold.
 Image.MAX_IMAGE_PIXELS = None
 
@@ -484,14 +486,18 @@ def _window_lut(window: tuple[int, int], domain: int, work) -> np.ndarray:
 
 
 def _apply_lut(plane: np.ndarray, lut: np.ndarray) -> np.ndarray:
-    out = np.empty(plane.shape, dtype=np.uint8)
+    from quantem.core.mapped_arrays import working_array
+
+    out = working_array(plane.shape)
     for start, stop in _blocked(plane):
         out[start:stop] = lut[plane[start:stop]]
     return out
 
 
 def _apply_scale(plane: np.ndarray, native_max: float, work: type) -> np.ndarray:
-    out = np.empty(plane.shape, dtype=np.uint8)
+    from quantem.core.mapped_arrays import working_array
+
+    out = working_array(plane.shape)
     factor = 255.0 / native_max
     for start, stop in _blocked(plane):
         block = plane[start:stop].astype(work) * factor
@@ -528,6 +534,8 @@ def _percent(fraction: float) -> str:
 
 
 def _to_uint8(plane: np.ndarray) -> tuple[np.ndarray, Conversion]:
+    from quantem.core.mapped_arrays import working_array
+
     dtype = plane.dtype
     if np.issubdtype(dtype, np.complexfloating):
         raise UnsupportedPixelType(
@@ -535,7 +543,7 @@ def _to_uint8(plane: np.ndarray) -> tuple[np.ndarray, Conversion]:
             "export the component you want to look at and import that"
         )
     if dtype == np.bool_:
-        out = np.empty(plane.shape, dtype=np.uint8)
+        out = working_array(plane.shape)
         for start, stop in _blocked(plane):
             out[start:stop] = plane[start:stop].astype(np.uint8) * 255
         return out, Conversion(
@@ -544,7 +552,7 @@ def _to_uint8(plane: np.ndarray) -> tuple[np.ndarray, Conversion]:
             label="bool->0/255",
         )
     if np.issubdtype(dtype, np.floating):
-        out = np.empty(plane.shape, dtype=np.uint8)
+        out = working_array(plane.shape)
         for start, stop in _blocked(plane):
             block = np.clip(plane[start:stop].astype(np.float32), 0, 255)
             out[start:stop] = np.nan_to_num(block, nan=0).astype(np.uint8)
@@ -576,7 +584,12 @@ def _to_uint8(plane: np.ndarray) -> tuple[np.ndarray, Conversion]:
     if np.issubdtype(dtype, np.unsignedinteger):
         width = dtype.itemsize * 8
         if width == 8:
-            return np.ascontiguousarray(plane, dtype=np.uint8), Conversion(
+            if not plane.flags.c_contiguous:
+                contiguous = working_array(plane.shape)
+                for start, stop in _blocked(plane):
+                    contiguous[start:stop] = plane[start:stop]
+                plane = contiguous
+            return plane, Conversion(
                 depth="8-bit",
                 strategy="identity",
                 label="uint8:identity",
@@ -669,10 +682,16 @@ class _Read:
 
 
 def _read_tiff(path: Path) -> _Read:
+    from quantem.core.machine import get_machine_profile
+    from quantem.core.mapped_arrays import working_array
+
     with tifffile.TiffFile(str(path)) as handle:
         series = handle.series[0]
         axes = str(series.axes or "")
-        array = np.asarray(handle.asarray())
+        output = working_array(series.shape, series.dtype)
+        array = np.asarray(
+            series.asarray(out=output, maxworkers=get_machine_profile().raster_workers)
+        )
         page = handle.pages[0]
         photometric = int(getattr(page, "photometric", 0) or 0)
         colormap = getattr(page, "colormap", None)
@@ -685,7 +704,9 @@ def _read_tiff(path: Path) -> _Read:
         lookup = np.asarray(colormap)
         # Band 0 of the resolved colour, for the same reason band 0 is taken
         # from every other multi-band container.
-        resolved = lookup[0][array]
+        resolved = working_array(array.shape, lookup.dtype)
+        for start, stop in _blocked(array):
+            resolved[start:stop] = lookup[0][array[start:stop]]
         return _Read(array=resolved, axes=axes, note="palette")
     return _Read(array=array, axes=axes, note="")
 
@@ -725,6 +746,7 @@ def _read(path: Path, container: str) -> _Read:
     return _read_png(path)
 
 
+@timed_stage("decode")
 def decode_canonical_plane(path, *, declared: dict | None = None) -> CanonicalPlane:
     """Decode ``path`` to the canonical grayscale plane, or refuse by name.
 

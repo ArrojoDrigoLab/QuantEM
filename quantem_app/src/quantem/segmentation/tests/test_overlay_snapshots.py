@@ -98,7 +98,7 @@ class OverlaySnapshotTests(TestCase):
 
     def test_publication_reclaims_old_snapshots_only_after_commit(self):
         self.object()
-        with patch("quantem.segmentation.overlay_ngff.mutations.prune_snapshots") as prune:
+        with patch("quantem.segmentation.overlay_ngff.mutations.schedule_snapshot_prune") as prune:
             with self.captureOnCommitCallbacks(execute=True):
                 rebuild_overlay_full(self.seg, desired_revision=1)
                 prune.assert_not_called()

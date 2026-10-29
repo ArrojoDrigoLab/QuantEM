@@ -6,7 +6,10 @@ import json
 import logging
 import os
 import shutil
+import threading
 import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
 
@@ -16,13 +19,57 @@ from .paths import OverlayStoreError, _remove_tree, get_overlay_version_dir
 logger = logging.getLogger(__name__)
 SNAPSHOT_FILENAME = "snapshot.json"
 LABEL_MAP_FILENAME = "labels.json"
-# Keep recent readers alive across rapid edits. Older snapshots remain for an
-# hour; the newest three are retained even after a quiet session.
+# Protect the newest three and active readers; other generations share count,
+# byte and age limits. Bytes are logical payload, not filesystem allocation.
 RETAIN_SNAPSHOTS = 3
 RETAIN_SECONDS = 3600
+MAX_UNLEASED_SNAPSHOTS = 8
+MAX_RETAINED_LOGICAL_BYTES = 512 * 1024 * 1024
+READER_GRACE_SECONDS = 60
+_PRUNE_SLOT = threading.Lock()
 
 
-def clone_store(source: Path, destination: Path) -> None:
+def _reader_lease(directory: Path) -> None:
+    from .cache import reader_lease_cache
+
+    if reader_lease_cache.get(str(directory)) is not None:
+        return
+    try:
+        (directory / ".reader").touch()
+        reader_lease_cache.put(str(directory), True)
+    except OSError:
+        # A read-only store remains readable; the newest generations still
+        # have retention protection and expired URLs fail explicitly.
+        pass
+
+
+def schedule_snapshot_prune(segmentation_id, source_model, active_version):
+    """Reclaim idle derived generations without putting file deletion in polls."""
+    from .cache import snapshot_prune_cache
+
+    key = (str(segmentation_id), source_model)
+    if active_version <= RETAIN_SNAPSHOTS or snapshot_prune_cache.get(key) is not None:
+        return
+    if not _PRUNE_SLOT.acquire(blocking=False):
+        return
+    snapshot_prune_cache.put(key, True)
+
+    def prune():
+        try:
+            prune_snapshots(str(segmentation_id), source_model, active_version)
+        finally:
+            _PRUNE_SLOT.release()
+
+    try:
+        threading.Thread(target=prune, name="overlay-snapshot-cleanup", daemon=True).start()
+    except RuntimeError:
+        _PRUNE_SLOT.release()
+        logger.warning("Could not start overlay snapshot cleanup", exc_info=True)
+
+
+def clone_store(
+    source: Path, destination: Path, *, replaced_chunks: set[str] | None = None
+) -> None:
     """Share unchanged chunks; detach each changed chunk before writing it.
 
     Filesystems without hard links fall back to copies. Explicit detachment
@@ -37,7 +84,40 @@ def clone_store(source: Path, destination: Path) -> None:
         except OSError:
             return shutil.copy2(src, dst)
 
-    shutil.copytree(source, destination, copy_function=link_or_copy)
+    from quantem.core.machine import get_machine_profile
+
+    workers = max(1, min(8, get_machine_profile().raster_workers))
+    replaced_chunks = replaced_chunks or set()
+
+    def link_batch(batch):
+        for src, dst in batch:
+            link_or_copy(src, dst)
+
+    # File-entry work dominates sparse stores on Windows. Overlap a bounded
+    # number of metadata operations, without submitting every file or copying
+    # complete arrays into memory. Readers still see only the final generation.
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="overlay-clone") as pool:
+        pending = deque()
+        batch = []
+        for root, _directories, files in os.walk(source):
+            folder = destination / Path(root).relative_to(source)
+            folder.mkdir(parents=True, exist_ok=True)
+            for name in files:
+                if (Path(root).relative_to(source) / name).as_posix() in replaced_chunks:
+                    # Repainting writes the complete chunk. Cloning and then
+                    # detaching its previous bytes is pure write amplification,
+                    # especially on filesystems where hard links fall back to copies.
+                    continue
+                batch.append((Path(root) / name, folder / name))
+                if len(batch) == 64:
+                    pending.append(pool.submit(link_batch, batch))
+                    batch = []
+                    if len(pending) >= workers * 2:
+                        pending.popleft().result()
+        if batch:
+            pending.append(pool.submit(link_batch, batch))
+        for future in pending:
+            future.result()
 
 
 def detach_chunk(store: Path, array_key: str, level: int, chunk_x: int, chunk_y: int) -> None:
@@ -62,12 +142,14 @@ def write_snapshot(
     max_label=None,
     geometry_revision=None,
 ) -> None:
+    logical_bytes = sum(path.stat().st_size for path in store.rglob("*") if path.is_file())
     (store.parent / SNAPSHOT_FILENAME).write_text(
         json.dumps(
             {
                 "bundle_version": bundle_version,
                 "applied_revision": applied_revision,
                 "geometry_revision": geometry_revision,
+                "logical_bytes": logical_bytes + len(assignments) * 48,
                 "max_label": max_label
                 if max_label is not None
                 else max((label for label, _ in assignments), default=0),
@@ -86,7 +168,12 @@ def write_snapshot(
 
 
 def read_snapshot(
-    segmentation_id: str, source_model: str | None, revision: str, *, include_labels=True
+    segmentation_id: str,
+    source_model: str | None,
+    revision: str,
+    *,
+    include_labels=True,
+    lease=True,
 ):
     """Resolve an exact version-revision pair, never silently substitute latest."""
     try:
@@ -97,6 +184,8 @@ def read_snapshot(
         payload = json.loads((directory / SNAPSHOT_FILENAME).read_text(encoding="utf-8"))
         if payload["bundle_version"] != version or payload["applied_revision"] != applied:
             raise ValueError
+        if lease:
+            _reader_lease(directory)
         # Tile requests read only the tiny identity record, never an O(N) map.
         if include_labels:
             payload["labels"] = json.loads(
@@ -116,10 +205,29 @@ def prune_snapshots(segmentation_id: str, source_model: str | None, active_versi
             key=lambda path: int(path.name),
             reverse=True,
         )
-        cutoff = time.time() - RETAIN_SECONDS
-        for path in versions[RETAIN_SNAPSHOTS:]:
-            if int(path.name) < active_version and path.stat().st_mtime < cutoff:
+        now = time.time()
+        retained_bytes = 0
+        for index, path in enumerate(versions):
+            try:
+                payload = json.loads((path / SNAPSHOT_FILENAME).read_text(encoding="utf-8"))
+                size = int(payload.get("logical_bytes", 0))
+            except (OSError, ValueError, TypeError, AttributeError):
+                size = 0
+            try:
+                leased = (path / ".reader").stat().st_mtime >= now - READER_GRACE_SECONDS
+            except OSError:
+                leased = False
+            over_budget = retained_bytes + size > MAX_RETAINED_LOGICAL_BYTES
+            expired = path.stat().st_mtime < now - RETAIN_SECONDS
+            if (
+                index >= RETAIN_SNAPSHOTS
+                and not leased
+                and int(path.name) < active_version
+                and (index >= MAX_UNLEASED_SNAPSHOTS or over_budget or expired)
+            ):
                 _remove_tree(path)
+            else:
+                retained_bytes += size
     except (OSError, OverlayStoreError):
         # Cleanup must not turn a successfully published overlay into a failure.
         logger.warning("Could not prune old overlay snapshots in %s", root, exc_info=True)

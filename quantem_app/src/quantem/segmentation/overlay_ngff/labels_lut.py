@@ -17,7 +17,7 @@ owns everything about what a label *means*:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 import numpy as np
@@ -136,37 +136,73 @@ def replace_bundle_labels(
 
 
 def existing_label_map(state: SegmentationOverlayState, *, current_only=False) -> dict[Any, int]:
-    rows = SegmentationOverlayLabel.objects.filter(overlay_state=state)
-    if current_only:
-        rows = rows.filter(
-            object_uuid__in=bundle_queryset(
-                state.segmentation, state.candidate_source_model
-            ).values("id")
-        )
-    return {row.object_uuid: row.label for row in rows.only("object_uuid", "label")}
+    # Do not express this as an IN subquery. Immediately after a bulk import,
+    # PostgreSQL can estimate one row on both sides and choose a quadratic
+    # nested loop (tens of seconds for 20k objects). Two indexed scans and a
+    # Python hash intersection remain linear even before ANALYZE runs.
+    rows = SegmentationOverlayLabel.objects.filter(overlay_state=state).values_list(
+        "object_uuid", "label"
+    )
+    labels = dict(rows.iterator(chunk_size=2000))
+    if not current_only or not labels:
+        return labels
+    return {
+        object_id: labels[object_id]
+        for object_id in bundle_queryset(state.segmentation, state.candidate_source_model)
+        .values_list("id", flat=True)
+        .iterator(chunk_size=2000)
+        if object_id in labels
+    }
+
+
+def remove_obsolete_labels(state: SegmentationOverlayState, assignments) -> None:
+    """Reclaim obsolete identities without another statistics-sensitive join."""
+    live = {object_id for _, object_id in assignments}
+    obsolete = []
+    for row_id, object_id in (
+        SegmentationOverlayLabel.objects.filter(overlay_state=state)
+        .values_list("id", "object_uuid")
+        .iterator(chunk_size=2000)
+    ):
+        if object_id not in live:
+            obsolete.append(row_id)
+    for start in range(0, len(obsolete), 1000):
+        SegmentationOverlayLabel.objects.filter(pk__in=obsolete[start : start + 1000]).delete()
 
 
 # ---------------------------------------------------------------------------
 # Render-time LUT
 # ---------------------------------------------------------------------------
+class _LabelIdentity(NamedTuple):
+    label: int
+    object_uuid: UUID
+
+
+class _LiveStyle(NamedTuple):
+    id: UUID
+    label_state: str
+    refined: str
+
+
 def _resolve_live_objects(
     state: SegmentationOverlayState,
     assignments=None,
-) -> tuple[list[SegmentationOverlayLabel], dict[Any, SegmentObject]]:
+) -> tuple[list[_LabelIdentity], dict[Any, _LiveStyle]]:
     rows = (
         [
-            SegmentationOverlayLabel(label=label, object_uuid=UUID(str(object_id)))
+            _LabelIdentity(label=int(label), object_uuid=UUID(str(object_id)))
             for label, object_id in assignments
         ]
         if assignments is not None
-        else list(
-            SegmentationOverlayLabel.objects.filter(overlay_state=state).only(
-                "label", "object_uuid"
-            )
-        )
+        else [
+            _LabelIdentity(*row)
+            for row in SegmentationOverlayLabel.objects.filter(overlay_state=state)
+            .values_list("label", "object_uuid")
+            .iterator(chunk_size=2000)
+        ]
     )
     object_ids = tuple({row.object_uuid for row in rows})
-    objects: dict[Any, SegmentObject] = {}
+    objects: dict[Any, _LiveStyle] = {}
     if object_ids:
         # Bound SQL parameters without scanning every object in a large
         # segmentation when this bundle contains only a small subset.
@@ -177,10 +213,10 @@ def _resolve_live_objects(
                     segmentation_id=state.segmentation_id,
                     superseded_at__isnull=True,
                 )
-                .only("id", "label_state", "refined", "status", "source_model")
+                .values_list("id", "label_state", "refined")
                 .iterator(chunk_size=1000)
             ):
-                objects[obj.id] = obj
+                objects[obj[0]] = _LiveStyle(*obj)
     return rows, objects
 
 

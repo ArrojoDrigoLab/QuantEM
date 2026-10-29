@@ -20,6 +20,7 @@ import { useViewerPointerInteractions } from "@/viewer/components/internal/useVi
 import { useViewerRasterOverlayLoader } from "@/viewer/components/internal/useViewerRasterOverlayLoader";
 import { useViewerIdMapLoaders } from "@/viewer/components/internal/useViewerIdMapLoader";
 import { useOverlayDisplaySnapshots } from "./internal/useOverlayDisplaySnapshots";
+import { PresentationTiming } from "./internal/presentationTiming";
 import { useViewerViewportState } from "@/viewer/components/internal/useViewerViewportState";
 import { sceneToOverlayList } from "@/viewer/overlays/scene";
 import "./ImageViewer.css";
@@ -193,6 +194,12 @@ export function ImageViewer({
   );
 
   const displayedKey = useRef("");
+  const presentationTiming = useRef(new PresentationTiming());
+  useEffect(() => {
+    for (const spec of idMapOverlays) {
+      presentationTiming.current.requested(`${spec.ngffUrl}:${spec.lutRevision}`);
+    }
+  }, [idMapOverlays]);
   useEffect(() => { displayedKey.current = ""; }, [image.ngffUrl]);
   const acknowledgeOverlayDraw = useCallback(() => {
     displaySnapshots.acceptLoaded(deckLayers);
@@ -205,6 +212,7 @@ export function ImageViewer({
     const key = `${spec.ngffUrl}:${spec.lutRevision}`;
     if (displayedKey.current === key) return;
     displayedKey.current = key;
+    presentationTiming.current.displayed(key);
     overlays?.onRasterRevisionDisplayed?.(spec.revision, spec.lutRevision);
   }, [deckLayers, displaySnapshots, idMapOverlays, overlays, tileErrors]);
 

@@ -76,6 +76,7 @@ from shapely.geometry import box as shapely_box
 from shapely.geometry.base import BaseGeometry
 
 from quantem.assets.models import ImageROI
+from quantem.core.performance import timed_stage
 from quantem.seg_core.base_segmenter import BaseSegmenter
 from quantem.seg_core.types import InferenceResult
 from quantem.segmentation.models import (
@@ -269,6 +270,7 @@ def drop_inside_finished_regions(
     return kept, len(absorbed)
 
 
+@timed_stage("extraction_and_store")
 @transaction.atomic
 def run_extraction(
     segmenter: BaseSegmenter,

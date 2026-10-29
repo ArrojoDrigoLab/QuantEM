@@ -40,6 +40,7 @@ from numcodecs import blosc as blosc_runtime
 from PIL import Image
 
 from quantem.core.machine import get_machine_profile
+from quantem.core.performance import timed_stage
 
 from .canonical_decode import DECODER_VERSION, CanonicalPlane
 from .pyramid_authority import (
@@ -441,7 +442,9 @@ def _downsample_plane(
     round-trip through the store that was just written.
     """
 
-    out = np.empty((target_height, target_width), dtype=np.uint8)
+    from quantem.core.mapped_arrays import working_array
+
+    out = working_array((target_height, target_width))
     source_height, source_width = source_plane.shape
     for chunk_x, chunk_y in _iter_level_chunks(target_width, target_height):
         x_min, y_min, x_max, y_max = _chunk_bounds(
@@ -794,6 +797,7 @@ def build_volume_pyramid(ticket: BuildTicket, image, source_path: Path) -> dict:
     return manifest
 
 
+@timed_stage("pyramid")
 def build_and_publish(
     image,
     plane=None,

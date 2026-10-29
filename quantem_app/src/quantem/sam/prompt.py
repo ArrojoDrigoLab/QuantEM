@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from shapely.geometry import Polygon
@@ -52,6 +52,12 @@ class PromptResult:
     backend_identity: str
     encode_ms: float
     decode_ms: float
+    queue_ms: float = 0.0
+    model_ms: float = 0.0
+    crop_ms: float = 0.0
+    geometry_ms: float = 0.0
+    total_ms: float = 0.0
+    bootstrap_ms: float = 0.0
 
     @property
     def top(self) -> Candidate:
@@ -71,7 +77,29 @@ def to_rgb(plane: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(np.stack([array, array, array], axis=-1).astype(np.uint8))
 
 
-def run_prompt(
+def run_prompt(**kwargs) -> PromptResult:
+    from quantem.core.compute_admission import interactive_request
+    from quantem.inference.device import empty_cache, select_device, total_memory_bytes
+
+    started = time.perf_counter()
+    device = select_device()
+    bootstrap_ms = (time.perf_counter() - started) * 1000
+    with interactive_request() as waited:
+        try:
+            result = _run_prompt(**kwargs)
+            return replace(
+                result,
+                bootstrap_ms=round(bootstrap_ms, 1),
+                queue_ms=round(result.queue_ms + waited * 1000, 1),
+                total_ms=round((time.perf_counter() - started) * 1000, 1),
+            )
+        finally:
+            total = total_memory_bytes(device)
+            if device.startswith("cuda") and total and total < 8 * 1024**3:
+                empty_cache(device)
+
+
+def _run_prompt(
     *,
     segmentation_id: str,
     openable,
@@ -85,8 +113,6 @@ def run_prompt(
     the pixels come from ``load_image_roi_array``, which reads NGFF level 0 when
     the pyramid is published and the source file otherwise.
     """
-    from quantem.assets.task_utils import load_image_roi_array
-
     if box.width <= 0 or box.height <= 0:
         raise PromptRefused("Draw a box with some width and height, then release.")
 
@@ -95,14 +121,31 @@ def run_prompt(
     if local_box is None:
         raise PromptRefused("That box falls outside the image.")
 
+    started = time.perf_counter()
     backend = get_backend()
+    model_ms = (time.perf_counter() - started) * 1000
+    from quantem.core.compute_admission import compute_slot
+
+    # A cached backend can be on CPU even when CUDA is available. Wait for
+    # that actual lane, not the device preference used at bootstrap.
+    with compute_slot(backend.device) as waited:
+        result = _predict_crop(segmentation_id, openable, crop, local_box, backend)
+    return replace(result, model_ms=round(model_ms, 1), queue_ms=round(waited * 1000, 1))
+
+
+def _predict_crop(segmentation_id, openable, crop, local_box, backend):
+    from quantem.assets.task_utils import load_image_roi_array
+
     key = cache_key(segmentation_id, backend.identity, crop)
 
     encode_ms = 0.0
+    crop_ms = 0.0
     embedding = EMBEDDINGS.get(key)
     cache_hit = embedding is not None
     if embedding is None:
+        started = time.perf_counter()
         plane = load_image_roi_array(openable, crop.x, crop.y, crop.width, crop.height)
+        crop_ms = (time.perf_counter() - started) * 1000
         started = time.perf_counter()
         embedding = backend.encode(to_rgb(plane))
         encode_ms = (time.perf_counter() - started) * 1000.0
@@ -112,6 +155,7 @@ def run_prompt(
     raw = backend.predict(embedding, local_box.as_tuple())
     decode_ms = (time.perf_counter() - started) * 1000.0
 
+    started = time.perf_counter()
     candidates: list[Candidate] = []
     for item in raw:
         placed = mask_to_global_polygon(item.mask, crop)
@@ -133,6 +177,8 @@ def run_prompt(
         backend_identity=backend.identity,
         encode_ms=round(encode_ms, 1),
         decode_ms=round(decode_ms, 1),
+        crop_ms=round(crop_ms, 1),
+        geometry_ms=round((time.perf_counter() - started) * 1000, 1),
     )
 
 

@@ -112,6 +112,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "quantem.core.middleware.LocalOnlyMiddleware",
+    "quantem.core.performance.PerformanceTimingMiddleware",
     # Above the rest so its process_exception runs last (Django unwinds
     # process_exception from the bottom up) and it is the final chance to turn
     # a request refused during parsing into JSON instead of Django's own 400
@@ -156,6 +157,8 @@ CORS_ALLOW_HEADERS = list(default_headers)
 # overlay LUT parser reads maxLabel/lut_revision/bundle_version as 0 -- which
 # blanks the ID-map overlay (maxLabel=0 => every label is skipped on colorize).
 CORS_EXPOSE_HEADERS = [
+    "Server-Timing",
+    "X-QuantEM-Trace",
     "X-Overlay-Lut-Revision",
     "X-Overlay-Bundle-Version",
     "X-Overlay-Max-Label",

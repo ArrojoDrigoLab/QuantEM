@@ -44,3 +44,5 @@ class BoundedCache:
 
 store_validation_cache = BoundedCache(max_entries=128, ttl=30)
 palette_cache = BoundedCache(ttl=120)
+reader_lease_cache = BoundedCache(max_entries=128, ttl=15)
+snapshot_prune_cache = BoundedCache(max_entries=128, ttl=30)
