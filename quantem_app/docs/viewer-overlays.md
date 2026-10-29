@@ -144,6 +144,26 @@ saved-result, analysis, and job tests. Detailed comparison tests cover parity wi
 actual confirmation, protected manual areas, global morphology and native pixels
 beyond the quick preview's resolution limit.
 
+The regression coverage follows these display contracts:
+
+| Capability | Verification |
+| --- | --- |
+| Current objects only | Snapshot tests exclude superseded objects from both palettes and rebuilt pixels. |
+| Global binary masks | Backend palette tests and layer-control tests cover binary visibility without object picking. |
+| Model fallback | Snapshot and manifest-hook tests retain the requested model's build lifecycle during aggregate fallback. |
+| Bounded regeneration | Snapshot tests cover disjoint dirty chunks and execution-time promotion; pool tests check memory bounds and byte equality. |
+| Consistent display generations | Snapshot tests pin pixels and identities; the handoff hook and browser harness retain the complete previous display until replacement tiles draw. |
+| State-only changes | Snapshot tests distinguish palette-only answers from overlap repainting. |
+| GPU updates and tile reuse | The GPU browser harness checks thresholding, palette changes, renderer fallback and repeated uniform-only updates. |
+| Local color and picking | Label-layer tests cover shared-source cache isolation; browser checks cover hidden and transparent pixels. |
+| ROI and restore invalidation | ROI, saved-result and snapshot regressions cover geometry restoration and completed-region visibility. |
+| Detailed comparisons | Result-overlay tests cover confirmation parity, native resolution, cancellation, retry, deduplication and stale-input rejection. |
+
+Cleanup regressions additionally check cached validation, shared palette scans,
+obsolete label-row reclamation and non-reused label identities. Frontend type
+checks cover the simplified segmentation-panel interfaces. The generic RGB
+overlay API and SVG editing feedback remain separate supported capabilities.
+
 For real GPU verification, start Vite from `frontend` and open
 `/tests/browser/overlay-gpu.html`. The harness reports PASS only after checking
 label byte decoding, colors, hidden labels, picking, and repeated display edits.
