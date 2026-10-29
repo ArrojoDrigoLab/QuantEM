@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from quantem.core.machine import get_machine_profile
-
 MIN_CACHE_MB = 32
 MAX_CACHE_MB = 65536
 
@@ -28,6 +26,8 @@ def cache_limits(total_ram_bytes: int | None) -> dict[str, int | None]:
 
 
 def machine_cache_limits() -> dict[str, int | None]:
+    from quantem.core.machine import get_machine_profile
+
     return cache_limits(get_machine_profile().total_ram_bytes)
 
 

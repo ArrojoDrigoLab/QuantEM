@@ -6,6 +6,7 @@ test. The harness is silent and writes exclusively beneath pytest's temp dir.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -14,7 +15,17 @@ from pathlib import Path
 
 import pytest
 
-from quantem.core.database_cache import cache_limits
+
+def _load_cache_limits():
+    module_path = Path(__file__).resolve().parents[3] / "src/quantem/core/database_cache.py"
+    spec = importlib.util.spec_from_file_location("_quantem_database_cache_policy", module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.cache_limits
+
+
+cache_limits = _load_cache_limits()
 
 
 def test_installer_cache_policy_and_upgrade_preservation(tmp_path):

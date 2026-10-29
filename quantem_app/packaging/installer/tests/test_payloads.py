@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import zipfile
@@ -117,7 +118,10 @@ def test_desktop_exports_are_explicitly_allowed_by_the_tauri_acl() -> None:
     assert {"allow-save-text-file", "allow-save-url-file"} <= permissions
 
     build_script = (tauri_root / "build.rs").read_text(encoding="utf-8")
-    assert '.commands(&["save_text_file", "save_url_file"])' in build_script
+    command_list = re.search(r"\.commands\(&\[(.*?)\]\)", build_script, flags=re.DOTALL)
+    assert command_list is not None
+    commands = set(re.findall(r'"([^"]+)"', command_list.group(1)))
+    assert {"save_text_file", "save_url_file"} <= commands
 
 
 def test_release_artifacts_are_short_lived_and_deleted_after_publication() -> None:
