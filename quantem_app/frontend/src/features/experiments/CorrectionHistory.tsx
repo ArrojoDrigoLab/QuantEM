@@ -20,10 +20,21 @@ export function CorrectionHistory({ assetId, onClose }: { assetId: string; onClo
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
-  useEffect(() => { void getAssetSegmentations(assetId).then((values) => {
-    setSegmentations(values); setSegId(new URLSearchParams(window.location.hash.split("?")[1]).get("seg") ?? values[0]?.id ?? "");
-    if (!values.length) setLoading(false);
-  }).catch((cause) => { setError(extractApiErrorMessage(cause, "Segmentations could not be loaded.")); setLoading(false); }); }, [assetId]);
+  useEffect(() => {
+    let current = true;
+    setSegmentations([]); setSegId(""); setRows([]); setRestoring(null); setLoading(true); setError("");
+    void getAssetSegmentations(assetId).then((values) => {
+      if (!current) return;
+      setSegmentations(values);
+      const requested = new URLSearchParams(window.location.hash.split("?")[1]).get("seg");
+      setSegId(values.find((seg) => seg.id === requested)?.id ?? values[0]?.id ?? "");
+      if (!values.length) setLoading(false);
+    }).catch((cause) => {
+      if (!current) return;
+      setError(extractApiErrorMessage(cause, "Segmentations could not be loaded.")); setLoading(false);
+    });
+    return () => { current = false; };
+  }, [assetId]);
   useEffect(() => {
     if (!segId) return;
     let current = true;
@@ -45,7 +56,7 @@ export function CorrectionHistory({ assetId, onClose }: { assetId: string; onClo
   return <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 p-5">
     <section ref={panelRef} role="dialog" aria-modal="true" aria-label="Correction history" className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-xl">
       <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Correction history</h2><Button onClick={onClose}>Close</Button></div>
-      <label>Segmentation <select className="rounded border p-2" value={segId} onChange={(e) => setSegId(e.target.value)}>
+      <label>Segmentation <select className="rounded border p-2" value={segId} disabled={busy} onChange={(e) => { setRestoring(null); setSegId(e.target.value); }}>
         {segmentations.map((seg) => <option key={seg.id} value={seg.id}>{seg.display_name || seg.segmentation_type.long_name}</option>)}</select></label>
       <form className="my-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <input aria-label="Revision name" className="min-w-0 flex-1 rounded border px-2" value={name} maxLength={255} onChange={(e) => setName(e.target.value)} />
@@ -58,7 +69,7 @@ export function CorrectionHistory({ assetId, onClose }: { assetId: string; onClo
         <div><strong>{revision.name}</strong><p className="text-xs text-slate-600">{new Date(revision.created_at).toLocaleString()} · {revision.object_count} objects</p></div>
         <Button disabled={busy} onClick={() => setRestoring(revision)}>Restore…</Button>
       </div>)}
-      <ConfirmDialog isOpen={Boolean(restoring)} title="Restore correction revision?" message={`Restore “${restoring?.name}”? Your current corrections will be saved first. Model probability previews are not restored.`}
+      <ConfirmDialog isOpen={Boolean(restoring)} title="Restore correction revision?" message={`Restore “${restoring?.name}”, including objects, labels, reviewed areas, and result settings? Your available current data will be backed up first. Model prediction files are not included in revisions.`}
         confirmText="Restore revision" cancelText="Cancel" onCancel={() => setRestoring(null)} onConfirm={() => { const revision = restoring; setRestoring(null); if (revision) void submit(revision); }} />
     </section>
   </div>;

@@ -799,7 +799,7 @@ export function SegmentationScreen() {
       />
       {route.currentSegmentation && <SavedResultsPanel key={route.currentSegmentation.id}
         segmentationId={route.currentSegmentation.id} image={route.image}
-        revision={route.currentSegmentation.updated_at ?? route.currentSegmentation.status_stage}
+        revision={String(route.currentSegmentation.scientific_revision ?? route.currentSegmentation.updated_at ?? route.currentSegmentation.status_stage)}
         open={compareRunsOpen}
         onClose={() => setCompareRunsOpen(false)}
         onResultsChange={handleSavedResultsChange}

@@ -186,11 +186,12 @@ class DeleteTests(_DeleteTestBase):
         prob_dir.mkdir(parents=True, exist_ok=True)
         (prob_dir / "mito_test_prob.png").write_bytes(b"png")
 
-        response = self.client.delete(
-            self.url,
-            data={"acknowledged_object_count": 3},
-            content_type="application/json",
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(
+                self.url,
+                data={"acknowledged_object_count": 3},
+                content_type="application/json",
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["deleted"]["object_count"], 3)

@@ -113,7 +113,16 @@ class AnalysisRunSummarySerializer(serializers.ModelSerializer):
         return obj.segmentation_id is None
 
     def get_superseded(self, obj):
-        return obj.superseded_at is not None
+        from quantem.analysis.identity import run_is_current
+
+        if obj.status != AnalysisRun.STATUS_SUCCESS:
+            return False
+        return obj.superseded_at is not None or (
+            bool(obj.input_fingerprint)
+            and not run_is_current(
+                obj, fingerprints=self.context.setdefault("_input_fingerprints", {})
+            )
+        )
 
     def get_n_objects(self, obj: AnalysisRun) -> int | None:
         return ((obj.results or {}).get("objects") or {}).get("n")
@@ -215,7 +224,11 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
     def get_current(self, obj):
         from quantem.analysis.identity import run_is_current
 
-        return run_is_current(obj) if obj.input_fingerprint else None
+        return (
+            run_is_current(obj, fingerprints=self.context.setdefault("_input_fingerprints", {}))
+            if obj.status == AnalysisRun.STATUS_SUCCESS and obj.input_fingerprint
+            else None
+        )
 
     def get_segmentation_deleted(self, obj: AnalysisRun) -> bool:
         """True when the segmentation this run measured has since been deleted.

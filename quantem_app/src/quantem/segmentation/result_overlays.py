@@ -13,12 +13,13 @@ import numpy as np
 from django.db.models import Count, Max
 from shapely.geometry.base import BaseGeometry
 
+from quantem.segmentation.composition import protected_annotation
 from quantem.segmentation.models import (
     CompletedROI,
     GlobalMask,
+    ImageSegmentation,
     RoiSegmentationStatus,
     SavedSegmentationResult,
-    SegmentationOverlayState,
     SegmentObject,
 )
 from quantem.segmentation.overlay_ngff.constants import (
@@ -55,13 +56,11 @@ def comparison_identity(result: SavedSegmentationResult) -> str:
         segmentation_dimensions(segmentation),
         segmentation.manual_full_image,
     ]
-    # Bulk label/geometry edits may intentionally omit per-object timestamps.
-    # Their registered display revisions still invalidate the scientific view.
+    # Scientific changes invalidate comparisons independently of whether any
+    # display work was requested or completed.
     identity.append(
-        list(
-            SegmentationOverlayState.objects.filter(
-                segmentation=segmentation, candidate_source_model=""
-            ).values_list("desired_revision", "lut_revision")
+        ImageSegmentation.objects.values_list("scientific_revision", flat=True).get(
+            pk=segmentation.pk
         )
     )
     for model in (SegmentObject, CompletedROI, RoiSegmentationStatus, GlobalMask):
@@ -169,17 +168,15 @@ def comparison_geometries(
     if not protected.is_empty:
         for row in live.only("geometry_wkb", "label_state", "source_model"):
             geometry = row.geometry
-            kept = geometry.intersection(protected)
+            kept, retained_state = protected_annotation(geometry, protected, row.label_state)
             if kept.is_empty:
                 continue
-            if row.label_state == "EXCLUDED" and row.source_model in {
+            if retained_state == "EXCLUDED" and row.source_model in {
                 result.source_model,
                 SOURCE_MODEL_MANUAL,
             }:
                 rejected.extend(extract_polygons(kept))
-            elif row.label_state == "CONFIRMED" or (
-                row.label_state in {"CANDIDATE", "INFERRED"} and kept.equals(geometry)
-            ):
+            elif retained_state == "CONFIRMED":
                 preserved.extend(extract_polygons(kept))
     protection = ProtectionIndex([], rejected)
     pairs = [(segment, to_valid_polygon(segment.polygon_coords)) for segment in extracted]

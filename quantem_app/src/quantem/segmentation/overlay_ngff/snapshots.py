@@ -54,13 +54,20 @@ def detach_chunk(store: Path, array_key: str, level: int, chunk_x: int, chunk_y:
 
 
 def write_snapshot(
-    store: Path, *, bundle_version: int, applied_revision: int, assignments, max_label=None
+    store: Path,
+    *,
+    bundle_version: int,
+    applied_revision: int,
+    assignments,
+    max_label=None,
+    geometry_revision=None,
 ) -> None:
     (store.parent / SNAPSHOT_FILENAME).write_text(
         json.dumps(
             {
                 "bundle_version": bundle_version,
                 "applied_revision": applied_revision,
+                "geometry_revision": geometry_revision,
                 "max_label": max_label
                 if max_label is not None
                 else max((label for label, _ in assignments), default=0),

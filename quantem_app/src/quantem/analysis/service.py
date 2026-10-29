@@ -1729,6 +1729,7 @@ def run_for_segmentation(
     *,
     progress: ProgressFn | None = None,
     cancel_check=None,
+    apply_output_selection=False,
 ) -> dict[str, Any]:
     """Run one :class:`~quantem.analysis.models.AnalysisRun` end to end.
 
@@ -1750,20 +1751,33 @@ def run_for_segmentation(
         load_inputs,
     )
     from .models import AnalysisRun as _AnalysisRun
+    from .publication import input_guard, publish, staging_directory
+
+    analysis_run.refresh_from_db()
+    if analysis_run.status == _AnalysisRun.STATUS_SUCCESS:
+        return analysis_run.results
 
     def report(percent: float, message: str) -> None:
         if progress is not None:
             progress(percent, message)
 
-    _AnalysisRun.objects.filter(id=analysis_run.id).update(
-        status=_AnalysisRun.STATUS_RUNNING,
-        started_at=timezone.now(),
-        error="",
+    started = (
+        _AnalysisRun.objects.filter(id=analysis_run.id)
+        .exclude(status="SUCCESS")
+        .update(
+            status=_AnalysisRun.STATUS_RUNNING,
+            started_at=timezone.now(),
+            error="",
+        )
     )
+    if not started:
+        analysis_run.refresh_from_db()
+        return analysis_run.results
     analysis_run.status = _AnalysisRun.STATUS_RUNNING
 
     written: Path | None = None
     try:
+        expected = input_guard(analysis_run)
         report(5.0, "loading masks")
         loaded = load_inputs(
             analysis_run,
@@ -1861,7 +1875,7 @@ def run_for_segmentation(
             )
 
         report(80.0, "writing export bundle")
-        out_dir = export_dir_for_run(analysis_run.id)
+        out_dir = staging_directory(analysis_run)
         # Claimed before the write, not after: a write that fails half way
         # leaves the same unreachable directory a write that succeeds into a
         # run that then fails does.
@@ -1875,21 +1889,17 @@ def run_for_segmentation(
 
         stored = {k: v for k, v in result.items() if not k.startswith("_")}
         stored["n_object_rows"] = len(result.get("_object_metrics", []))
-        finished = timezone.now()
-        _AnalysisRun.objects.filter(id=analysis_run.id).update(
-            status=_AnalysisRun.STATUS_SUCCESS,
+        report(99.0, "validating measurement inputs")
+        publish(
+            analysis_run,
+            out_dir,
+            expected=expected,
             results=stored,
-            export_dir=str(out_dir),
             group=loaded.inputs.group,
             params=loaded.params,
-            finished_at=finished,
-            error="",
+            cancel_check=cancel_check,
+            apply_output_selection=apply_output_selection,
         )
-        analysis_run.status = _AnalysisRun.STATUS_SUCCESS
-        analysis_run.results = stored
-        analysis_run.export_dir = str(out_dir)
-        analysis_run.finished_at = finished
-        report(100.0, "analysis complete")
         return result
     except Exception as exc:
         message = str(exc) or exc.__class__.__name__
@@ -1907,7 +1917,7 @@ def run_for_segmentation(
                 "the run failed before it could be recorded, so nothing would "
                 "have been able to name it.)"
             )
-        _AnalysisRun.objects.filter(id=analysis_run.id).update(
+        _AnalysisRun.objects.filter(id=analysis_run.id).exclude(status="SUCCESS").update(
             status=_AnalysisRun.STATUS_FAILED,
             finished_at=timezone.now(),
             error=message,

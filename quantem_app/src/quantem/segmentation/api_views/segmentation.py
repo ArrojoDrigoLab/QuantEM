@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
 
 from django.apps import apps
 from django.db import transaction
@@ -112,6 +111,7 @@ class AssetSegmentationListCreateView(APIView):
         serializer = ImageSegmentationSerializer(segmentations, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def post(self, request, asset_id):
         asset = _resolve_public_asset_image(asset_id)
         return _create_segmentation_for_asset(request, asset=asset)
@@ -312,20 +312,14 @@ def _segmentation_delete_preview(segmentation: ImageSegmentation) -> dict:
 
 
 def _remove_segmentation_files(segmentation_id: str) -> None:
-    """Best-effort removal of this segmentation's on-disk artifacts.
-
-    Called *after* the database rows are gone: a leftover directory with no row
-    pointing at it is an orphan nothing will ever read, while a row whose files
-    were deleted first would claim artifacts that do not exist. Failures are
-    logged and swallowed for the same reason -- the deletion the user asked for
-    has already happened.
-    """
+    """Commit retryable cleanup intents with the segmentation's deletion."""
     from quantem.core.config import (  # noqa: PLC0415
         DATA_DIR,
         GLOBAL_MASKS_DIR,
         PROB_MAPS_DIR,
         TMP_DIR,
     )
+    from quantem.segmentation.artifact_cleanup import retire_artifact
     from quantem.segmentation.overlay_ngff.paths import get_overlay_root  # noqa: PLC0415
 
     for path in (
@@ -335,15 +329,7 @@ def _remove_segmentation_files(segmentation_id: str) -> None:
         TMP_DIR / "prob_maps" / segmentation_id,
         DATA_DIR / "correction_revisions" / segmentation_id,
     ):
-        try:
-            shutil.rmtree(path, ignore_errors=True)
-        except OSError:  # pragma: no cover - rmtree(ignore_errors) rarely raises
-            logger.warning(
-                "Could not remove %s while deleting segmentation %s.",
-                path,
-                segmentation_id,
-                exc_info=True,
-            )
+        retire_artifact(path, is_directory=True)
 
 
 class SegmentationDetailView(APIView):
@@ -387,6 +373,7 @@ class SegmentationDetailView(APIView):
         payload["delete_preview"] = _segmentation_delete_preview(segmentation)
         return Response(payload, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def delete(self, request, seg_id):
         from quantem.segmentation.api_views.shared import (  # noqa: PLC0415
             active_segmentation_job,
@@ -518,6 +505,7 @@ class SegmentationCompleteView(APIView):
             {**completion_preview(segmentation), "coverage": coverage_state(segmentation)}
         )
 
+    @transaction.atomic
     def post(self, request, seg_id):
         from quantem.jobs.constants import ACTIVE_SEGMENTATION_JOB_TYPES
         from quantem.segmentation.api_views.shared import active_segmentation_job
@@ -575,7 +563,7 @@ class SegmentationCompleteView(APIView):
         }
         from shapely.geometry import box
 
-        from quantem.analysis.superseded import mark_superseded
+        from quantem.segmentation.mutations import record_change
 
         with transaction.atomic():
             CompletedROI.objects.create(
@@ -584,7 +572,7 @@ class SegmentationCompleteView(APIView):
                     0, 0, segmentation.asset.logical_width, segmentation.asset.logical_height
                 ),
             )
-            mark_superseded(segmentation)
+            record_change(segmentation)
             segmentation.save(
                 update_fields=[
                     "manual_full_image",
@@ -596,14 +584,17 @@ class SegmentationCompleteView(APIView):
             )
         return Response(ImageSegmentationSerializer(segmentation).data)
 
+    @transaction.atomic
     def delete(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         # Compatibility for older installations: recover any objects archived by
         # the former completion action, without reclaiming prediction files.
         restored = restore_last_archive(segmentation)
+        from quantem.segmentation.mutations import (
+            register_state_mutation,
+        )
         from quantem.segmentation.overlay_ngff import (
             queue_full_overlay_rebuild,
-            register_state_mutation,
         )
 
         if restored:

@@ -117,10 +117,12 @@ def handle_reextract_at_include_level(
         ProbabilityMap,
         SavedSegmentationResult,
     )
+    from quantem.segmentation.mutations import (
+        register_overlay_mutation_all_bundles,
+    )
     from quantem.segmentation.organelle_tasks import zero_object_outcome
     from quantem.segmentation.overlay_ngff import (
         full_image_dirty_bbox,
-        register_overlay_mutation_all_bundles,
     )
     from quantem.segmentation.run_identity import (
         RUN_SCOPE_FULL,
@@ -257,15 +259,6 @@ def handle_reextract_at_include_level(
 
         mask, close_radius = postprocess_global_prediction(segmenter, result.prob, include_level)
 
-        if roi is not None:
-            full_mask = load_global_mask(segmentation)
-            y0, x0 = int(roi.y), int(roi.x)
-            y1, x1 = y0 + mask.shape[0], x0 + mask.shape[1]
-            full_mask[y0:y1, x0:x1] = mask
-            mask = full_mask
-        else:
-            mask = preserve_completed_global_mask(segmentation, mask)
-
         metadata = {
             **stored_metadata,
             "include_level": include_level,
@@ -285,7 +278,15 @@ def handle_reextract_at_include_level(
         history.append({**metadata, "scope": "patch" if roi is not None else "full"})
         metadata["inference_runs"] = history
         with transaction.atomic():
+            ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
             cancel.check_cancelled()
+            if roi is not None:
+                full_mask = load_global_mask(segmentation)
+                y0, x0 = int(roi.y), int(roi.x)
+                y1, x1 = y0 + mask.shape[0], x0 + mask.shape[1]
+                full_mask[y0:y1, x0:x1] = mask
+                mask = full_mask
+            mask = preserve_completed_global_mask(segmentation, mask)
             save_global_mask(segmentation, mask, source="model", metadata=metadata)
             segmentation.include_level = include_level
             segmentation.save(update_fields=["include_level", "updated_at"])

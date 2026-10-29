@@ -374,6 +374,7 @@ class SpotCheckAnswerView(APIView):
     what the lock protects. The refusal names the way out, as those endpoints do.
     """
 
+    @transaction.atomic
     def post(self, request, seg_id):
         segmentation = _segmentation_or_404(seg_id)
         locked = completion_lock_response(segmentation)
@@ -449,7 +450,9 @@ class SpotCheckAnswerView(APIView):
         segment.refined = "UNREFINED"
         segment.save()
 
-        from quantem.segmentation.overlay_ngff import register_label_state_mutation
+        from quantem.segmentation.mutations import (
+            register_label_state_mutation,
+        )
 
         overlay = register_label_state_mutation(
             segmentation,
@@ -497,6 +500,7 @@ class CountBoxView(APIView):
         )
         return Response(payload, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def post(self, request, seg_id):
         segmentation = _segmentation_or_404(seg_id)
         locked = completion_lock_response(segmentation)

@@ -27,13 +27,13 @@ from quantem.segmentation.geometry_serialization import (
     normalize_geometry_detail,
 )
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
+from quantem.segmentation.mutations import (
+    register_overlay_mutation,
+    register_overlay_mutation_all_bundles,
+)
 from quantem.segmentation.overlay_ngff.dirty import (
     full_image_dirty_bbox,
     merge_dirty_bboxes,
-)
-from quantem.segmentation.overlay_ngff.mutations import (
-    register_overlay_mutation,
-    register_overlay_mutation_all_bundles,
 )
 from quantem.segmentation.segment_status import normalize_segment_status
 from quantem.segmentation.selection import select_non_overlapping_inferred_segments

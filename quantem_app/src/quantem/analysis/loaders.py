@@ -37,7 +37,7 @@ import numpy as np
 from django.db.models import Count, QuerySet
 
 from quantem.segmentation.area_instances import materialize_legacy_area_instances
-from quantem.segmentation.features.measure import MEASURED_MARKER_KEY
+from quantem.segmentation.features.measure import clear_measured_features, measurements_current
 from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.instance_params import (
     INSTANCE_PARAM_KEYS,
@@ -200,8 +200,14 @@ def object_features(segmentation: ImageSegmentation) -> dict[str, dict[str, Any]
     converts them, and refuses to when ``pixel_size_nm`` is unknown.
     """
     return {
-        str(object_id): (features or {})
-        for object_id, features in confirmed_objects(segmentation).values_list("id", "features")
+        str(object_id): (
+            features
+            if measurements_current(features, geometry, segmentation.asset.source_sha256)
+            else clear_measured_features(features)
+        )
+        for object_id, features, geometry in confirmed_objects(segmentation).values_list(
+            "id", "features", "geometry_wkb"
+        )
     }
 
 
@@ -230,7 +236,10 @@ def source_counts(segmentation: ImageSegmentation) -> dict[str, int]:
 
 def object_centroids(segmentation: ImageSegmentation) -> np.ndarray:
     """Confirmed object centroids as an ``(N, 2)`` array of ``(x, y)`` pixels."""
-    rows = list(confirmed_objects(segmentation).values_list("centroid_x", "centroid_y"))
+    rows = [
+        (obj.geometry.centroid.x, obj.geometry.centroid.y)
+        for obj in confirmed_objects(segmentation)
+    ]
     if not rows:
         return np.empty((0, 2), dtype=float)
     return np.asarray(rows, dtype=float)
@@ -255,11 +264,11 @@ def ensure_confirmed_object_measurements(
     on a large image put tens of thousands of round trips in front of the first
     mask.
     """
-    rows = confirmed_objects(segmentation).values_list("id", "features")
+    rows = confirmed_objects(segmentation).values_list("id", "features", "geometry_wkb")
     missing = [
         str(segment_id)
-        for segment_id, features in rows.iterator(chunk_size=1000)
-        if not isinstance(features, dict) or MEASURED_MARKER_KEY not in features
+        for segment_id, features, geometry in rows.iterator(chunk_size=1000)
+        if not measurements_current(features, geometry, segmentation.asset.source_sha256)
     ]
     if not missing:
         return 0
@@ -293,6 +302,9 @@ def _settled_overlay_mask(
     missing display is only a cache miss: callers fall back to canonical DB
     geometry and never wait for a display job.
     """
+    source_revision = ImageSegmentation.objects.values_list(
+        "scientific_revision", "geometry_revision"
+    ).get(pk=segmentation.pk)
     sources = source_counts(segmentation)
     source_model = ""
     if len(sources) == 1:
@@ -347,6 +359,8 @@ def _settled_overlay_mask(
             state.candidate_source_model,
             f"{state.bundle_version}-{state.applied_revision}",
         )
+        if snapshot.get("geometry_revision") != source_revision[1]:
+            return None
         labels = zarr.open_array(
             str(root / "labels" / "0"),
             mode="r",
@@ -359,6 +373,8 @@ def _settled_overlay_mask(
     confirmed_ids = {
         str(value) for value in confirmed_objects(segmentation).values_list("id", flat=True)
     }
+    if not confirmed_ids.issubset({object_id for _, object_id in snapshot["labels"]}):
+        return None
     visible_labels = [
         label for label, object_id in snapshot["labels"] if object_id in confirmed_ids
     ]
@@ -385,6 +401,13 @@ def _settled_overlay_mask(
             done += 1
             if on_progress is not None:
                 on_progress(done, total, "reading the saved segmentation display")
+    if (
+        ImageSegmentation.objects.values_list("scientific_revision", "geometry_revision").get(
+            pk=segmentation.pk
+        )
+        != source_revision
+    ):
+        return None
     return mask
 
 

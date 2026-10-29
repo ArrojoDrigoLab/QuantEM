@@ -68,11 +68,11 @@ from quantem.segmentation.models import (
     SegmentationResultVersion,
     SegmentObject,
 )
-from quantem.segmentation.overlay_ngff.dirty import merge_dirty_bboxes
-from quantem.segmentation.overlay_ngff.mutations import (
+from quantem.segmentation.mutations import (
     register_overlay_mutation_all_bundles,
     register_state_mutation,
 )
+from quantem.segmentation.overlay_ngff.dirty import merge_dirty_bboxes
 from quantem.segmentation.prob_maps.persistence import stored_map_readiness
 from quantem.segmentation.prob_maps.preview import (
     ensure_probability_preview,
@@ -936,6 +936,7 @@ class SegmentationIncludeLevelView(APIView):
             status=status.HTTP_200_OK,
         )
 
+    @transaction.atomic
     def post(self, request, seg_id):
         segmentation = get_object_or_404(
             ImageSegmentation.objects.select_related("asset", "segmentation_type"),
@@ -1046,9 +1047,12 @@ class SegmentationConfirmModelOutputView(APIView):
     button says it confirmed the whole result.
     """
 
+    @transaction.atomic
     def post(self, request, seg_id):
         segmentation = get_object_or_404(
-            ImageSegmentation.objects.select_related("asset", "segmentation_type"),
+            ImageSegmentation.objects.select_for_update(of=("self",)).select_related(
+                "asset", "segmentation_type"
+            ),
             id=seg_id,
         )
         locked = completion_lock_response(segmentation)

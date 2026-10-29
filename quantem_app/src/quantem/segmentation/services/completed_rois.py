@@ -6,7 +6,9 @@ from shapely.geometry.base import BaseGeometry
 
 from quantem.segmentation.geometry import extract_polygons, normalize_polygonal_geometry
 from quantem.segmentation.models import CompletedROI, ImageSegmentation
-from quantem.segmentation.overlay_ngff import register_state_mutation
+from quantem.segmentation.mutations import (
+    register_state_mutation,
+)
 from quantem.segmentation.services.spatial_lookup import (
     bbox_intersects_filter,
 )
@@ -95,6 +97,7 @@ def save_completed_roi(
     segmentation: ImageSegmentation,
     polygon_coords: object,
 ) -> tuple[CompletedROI, bool]:
+    ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
     draft = _parse_polygon_coords(polygon_coords)
     _validate_polygon_within_image(segmentation=segmentation, polygon=draft)
 
@@ -183,6 +186,7 @@ def subtract_completed_roi(
     re-normalized back into one CompletedROI row per disjoint polygon so the
     layer always stays a clean set of valid polygons.
     """
+    ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
     cut = _parse_polygon_coords(polygon_coords)
 
     rows_qs = CompletedROI.objects.select_for_update().filter(segmentation=segmentation)

@@ -143,7 +143,8 @@ class GlobalMaskPersistenceTests(TestCase):
         path = storage_path(record.file_path)
         self.assertTrue(path.exists())
 
-        response = self.client.delete(f"/api/segmentations/{self.segmentation.id}/")
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(f"/api/segmentations/{self.segmentation.id}/")
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertFalse(path.exists())

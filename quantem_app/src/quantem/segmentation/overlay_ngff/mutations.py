@@ -871,6 +871,7 @@ def _publish_snapshot(
     assignments,
     new_assignments=None,
     max_label=None,
+    geometry_revision=None,
 ):
     """Publish pixels and their label map as one database-visible generation."""
     # Another serialized writer may have completed while this job waited for
@@ -882,6 +883,7 @@ def _publish_snapshot(
         applied_revision=revision,
         assignments=assignments,
         max_label=max_label,
+        geometry_revision=geometry_revision,
     )
     version_dir = get_overlay_version_dir(
         str(segmentation.id), version, state.candidate_source_model
@@ -944,6 +946,9 @@ def rebuild_overlay_full(
     on_progress=None,
     cancel_check=None,
 ) -> SegmentationOverlayState:
+    geometry_revision = ImageSegmentation.objects.values_list("geometry_revision", flat=True).get(
+        pk=segmentation.pk
+    )
     normalized_source_model = normalize_overlay_source_model(source_model)
     state = get_or_create_overlay_state(segmentation, normalized_source_model)
     next_bundle_version = max(1, int(state.bundle_version) + 1)
@@ -1050,6 +1055,7 @@ def rebuild_overlay_full(
         version=next_bundle_version,
         revision=int(applied_revision),
         assignments=assignments,
+        geometry_revision=geometry_revision,
     )
 
 
@@ -1064,6 +1070,9 @@ def apply_partial_overlay_update(
     cancel_check=None,
     dirty_chunks: set[tuple[int, int]] | None = None,
 ) -> SegmentationOverlayState:
+    geometry_revision = ImageSegmentation.objects.values_list("geometry_revision", flat=True).get(
+        pk=segmentation.pk
+    )
     normalized_source_model = normalize_overlay_source_model(source_model)
     state = get_or_create_overlay_state(segmentation, normalized_source_model)
     chunk_coords = (
@@ -1088,6 +1097,11 @@ def apply_partial_overlay_update(
         f"{state.bundle_version}-{state.applied_revision}",
         include_labels=False,
     )
+    # A partial repaint cannot certify unchanged chunks against a different
+    # canonical geometry generation. Retain certification for LUT-only work;
+    # otherwise analysis rasterizes vectors until a full build certifies them.
+    if previous_snapshot.get("geometry_revision") != geometry_revision:
+        geometry_revision = None
     # Never recycle a deleted label into unchanged pixels. The small snapshot
     # watermark survives row reclamation; full builds can safely renumber.
     high_watermark = previous_snapshot.get("max_label")
@@ -1168,6 +1182,7 @@ def apply_partial_overlay_update(
         revision=int(desired_revision),
         assignments=[(label, object_id) for object_id, label in label_map.items()],
         max_label=next_label - 1,
+        geometry_revision=geometry_revision,
         new_assignments=[
             (label, object_id) for object_id, label in label_map.items() if label >= first_new_label
         ],
@@ -1282,11 +1297,8 @@ def register_label_state_mutation(segmentation, objects, *, source_model=None):
     state changes paint priority, so an overlapping answer needs a bounded
     asynchronous repaint in addition to its immediate palette update.
     """
-    from quantem.analysis.superseded import mark_superseded
-
     from .dirty import merge_dirty_bboxes
 
-    mark_superseded(segmentation)
     response = register_state_mutation(segmentation, source_model=source_model)
     contested = []
     sources = set()
@@ -1511,9 +1523,6 @@ def register_overlay_mutation_all_bundles(
     bundle, and an image segmented by two models therefore cost twice as much
     per keystroke as one segmented by one.
     """
-    from quantem.analysis.superseded import mark_superseded
-
-    mark_superseded(segmentation)
     normalized_source_model = normalize_overlay_source_model(source_model)
     if source_models is not None:
         # The union over the sources involved, not the sources themselves: a

@@ -47,4 +47,15 @@ def select_export_files(run):
                 for name, value in manifest["outputs"].items()
                 if selection.get(name, True)
             }
-        path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
+        files = (
+            manifest.get("outputs", {}).get("files")
+            if isinstance(manifest.get("outputs"), dict)
+            else None
+        )
+        if isinstance(files, list):
+            manifest["outputs"]["files"] = [
+                entry for entry in files if selection.get(entry.get("filename"), True)
+            ]
+        path.write_text(
+            json.dumps(manifest, indent=2, default=str, ensure_ascii=False), encoding="utf-8"
+        )

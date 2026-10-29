@@ -202,7 +202,7 @@ class CellObjectApiTests(TestCase):
         materialize.assert_not_called()
 
     def test_geometry_metadata_and_deletion_supersede_existing_analysis(self):
-        superseded = "quantem.segmentation.api_views.analysis_masks.mark_superseded"
+        superseded = "quantem.analysis.superseded.mark_superseded"
         with patch(superseded) as mark:
             created = self.client.post(
                 self.url,

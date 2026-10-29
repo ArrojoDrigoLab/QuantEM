@@ -63,6 +63,7 @@ come back for it.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 from collections.abc import Iterable, Sequence
@@ -106,6 +107,26 @@ MEASUREMENT_KEYS: tuple[str, ...] = (
 #: writes it -- ``regionprops`` cannot produce any of the others without it --
 #: so its absence is the one reliable marker of "never measured".
 MEASURED_MARKER_KEY = "area"
+MEASUREMENT_STAMP_KEY = "measurement_input"
+MEASUREMENT_VERSION = 1
+
+
+def measurement_stamp(geometry_wkb, image_hash):
+    """Identity of geometry, image content, and the feature algorithm."""
+    return {
+        "version": MEASUREMENT_VERSION,
+        "geometry": hashlib.sha256(bytes(geometry_wkb)).hexdigest(),
+        "image": str(image_hash or ""),
+    }
+
+
+def measurements_current(features, geometry_wkb, image_hash):
+    return (
+        isinstance(features, dict)
+        and features.get(MEASURED_MARKER_KEY) is not None
+        and features.get(MEASUREMENT_STAMP_KEY) == measurement_stamp(geometry_wkb, image_hash)
+    )
+
 
 #: The probability of the *outline*, under the names the extractor writes it
 #: under: ``mean_prob`` plus one ``mean_prob_<map>`` per named probability map
@@ -166,6 +187,7 @@ def clear_measured_features(existing: object) -> dict:
     features = dict(existing) if isinstance(existing, dict) else {}
     for key in MEASUREMENT_KEYS:
         features.pop(key, None)
+    features.pop(MEASUREMENT_STAMP_KEY, None)
     return features
 
 
@@ -432,6 +454,9 @@ def measure_segments(
         measured = measurements.get(MEASURED_MARKER_KEY) is not None
         if measured:
             features = merge_measured_features(segment.features, measurements)
+            features[MEASUREMENT_STAMP_KEY] = measurement_stamp(
+                segment.geometry_wkb, segmentation.asset.source_sha256
+            )
         else:
             # Nothing measurable: an empty polygon, a shape that rasterises to
             # no pixel, or a read that failed for this one object. Whatever was

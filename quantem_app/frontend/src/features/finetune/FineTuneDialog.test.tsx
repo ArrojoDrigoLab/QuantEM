@@ -807,10 +807,11 @@ describe("FineTuneDialog", () => {
       () => expect(applied).toHaveBeenCalledWith(["img-1", "img-2"]),
       { timeout: ASYNC_UI_TIMEOUT_MS }
     );
-    expect(await screen.findByTestId("finetune-applied")).toHaveTextContent(
+    // Observing the request does not mean its response has reached React yet.
+    expect(await screen.findByTestId("finetune-applied", {}, { timeout: ASYNC_UI_TIMEOUT_MS })).toHaveTextContent(
       "Queued on 2 images"
     );
-    const applyStatus = await screen.findByTestId("finetune-apply-progress");
+    const applyStatus = await screen.findByTestId("finetune-apply-progress", {}, { timeout: ASYNC_UI_TIMEOUT_MS });
     expect(applyStatus).toHaveTextContent("2 of 2 complete; 1 failed");
     expect(applyStatus).toHaveTextContent("model could not be loaded");
     await waitFor(() =>

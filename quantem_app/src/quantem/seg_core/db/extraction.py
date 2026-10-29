@@ -70,6 +70,7 @@ from collections.abc import Callable, Sequence
 
 import numpy as np
 import shapely
+from django.db import transaction
 from shapely import STRtree
 from shapely.geometry import box as shapely_box
 from shapely.geometry.base import BaseGeometry
@@ -268,6 +269,7 @@ def drop_inside_finished_regions(
     return kept, len(absorbed)
 
 
+@transaction.atomic
 def run_extraction(
     segmenter: BaseSegmenter,
     segmentation: ImageSegmentation,
@@ -348,6 +350,10 @@ def run_extraction(
     # the module docstring: this is a question about where the pass may write,
     # which is why it is answered before the shapes reach the protection index.
     publishing = bool(getattr(segmentation, "_publish_full_result", False))
+    from quantem.segmentation.mutations import record_change
+
+    # Retention/clipping can change the accepted set even when extraction is empty.
+    record_change(segmentation, geometry=True)
     extracted, absorbed_by_finished = drop_inside_finished_regions(
         extracted, [] if publishing else finished_regions(segmentation)
     )
@@ -430,7 +436,7 @@ def run_extraction(
             f"{len(extracted) - write_result.written} filtered"
         )
 
-    if deleted_count > 0 or write_result.written > 0:
+    if publishing or deleted_count > 0 or write_result.written > 0:
         # The candidate set is not what it was, so every judgement recorded
         # against the old one is about objects that are no longer on screen.
         # This is the only event that says so: numbering the new result is what

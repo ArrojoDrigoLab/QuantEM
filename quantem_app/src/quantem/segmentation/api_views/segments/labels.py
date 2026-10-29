@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from django.db import transaction
 
-from quantem.segmentation.overlay_ngff import register_label_state_mutation
+from quantem.segmentation.mutations import (
+    register_label_state_mutation,
+)
 from quantem.segmentation.revisions import save_revision
 from quantem.segmentation.segment_status import status_for_segment_lifecycle
 from quantem.segmentation.source_models import normalize_source_model
@@ -44,11 +46,14 @@ _BBOX_ONLY_FIELDS = (
 class SegmentLabelUpdateView(APIView):
     """Update a segment's label state."""
 
+    @transaction.atomic
     def post(self, request, segment_id):
         segment = get_object_or_404(
             SegmentObject.objects.select_related("segmentation__asset"),
             id=segment_id,
         )
+        ImageSegmentation.objects.select_for_update().get(pk=segment.segmentation_id)
+        segment.refresh_from_db()
         locked = completion_lock_response(segment.segmentation)
         if locked is not None:
             return locked
@@ -107,6 +112,7 @@ class SegmentLabelUpdateView(APIView):
 class SegmentBatchLabelUpdateView(APIView):
     """Batch update segment labels."""
 
+    @transaction.atomic
     def post(self, request):
         labels = request.data.get("labels", [])
         if not isinstance(labels, list) or not labels:
@@ -116,6 +122,13 @@ class SegmentBatchLabelUpdateView(APIView):
             )
 
         segment_ids = [item.get("id") for item in labels if item.get("id")]
+        list(
+            ImageSegmentation.objects.select_for_update()
+            .filter(
+                pk__in=SegmentObject.objects.filter(pk__in=segment_ids).values("segmentation_id")
+            )
+            .order_by("pk")
+        )
         segments = SegmentObject.objects.select_related("segmentation__asset").filter(
             id__in=segment_ids
         )

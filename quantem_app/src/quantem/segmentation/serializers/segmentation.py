@@ -260,6 +260,8 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             # no matching object set is a claim about objects that do not exist.
             "include_level",
             "status_stage",
+            "scientific_revision",
+            "geometry_revision",
             "status_stage_display",
             "status_progress",
             "status_error",
@@ -272,6 +274,8 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             "display_name",
             "include_level",
             "final_result_provenance",
+            "scientific_revision",
+            "geometry_revision",
             "status_progress",
             "status_error",
             "created_at",

@@ -14,7 +14,6 @@ from rest_framework.views import APIView
 from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
 
-from quantem.analysis.superseded import mark_superseded
 from quantem.segmentation.api_views.segments.shared import (
     outline_geometry,
     parse_outline_pieces,
@@ -33,10 +32,11 @@ from quantem.segmentation.models import (
     GlobalMask,
     ImageSegmentation,
 )
-from quantem.segmentation.overlay_ngff.dirty import full_image_dirty_bbox
-from quantem.segmentation.overlay_ngff.mutations import (
+from quantem.segmentation.mutations import (
+    record_change,
     register_overlay_mutation_all_bundles,
 )
+from quantem.segmentation.overlay_ngff.dirty import full_image_dirty_bbox
 from quantem.segmentation.services.confirm_batch.geometry import (
     safe_difference,
     safe_union,
@@ -260,10 +260,18 @@ def _rebuild(segmentation: ImageSegmentation):
 
 
 def _foreground_pixels(segmentation: ImageSegmentation) -> int:
-    try:
-        return int(segmentation.global_mask.foreground_pixels)
-    except Exception:
-        return 0
+    from quantem.segmentation.area_pixels import count_geometry_pixels
+
+    # These endpoints materialize legacy masks before editing/listing. Count
+    # current vectors directly, including the intentionally empty collection.
+    return count_geometry_pixels(
+        (
+            obj.geometry
+            for obj in AnalysisMaskObject.objects.filter(segmentation=segmentation).iterator()
+        ),
+        height=int(segmentation.asset.logical_height or 0),
+        width=int(segmentation.asset.logical_width or 0),
+    )
 
 
 def _register_overlay(segmentation: ImageSegmentation):
@@ -298,6 +306,7 @@ class AnalysisMaskObjectListCreateView(APIView):
             status=status.HTTP_200_OK,
         )
 
+    @transaction.atomic
     def post(self, request, seg_id):
         try:
             segmentation = _analysis_segmentation(seg_id)
@@ -330,7 +339,7 @@ class AnalysisMaskObjectListCreateView(APIView):
             # New Cells do not enter the legacy materializer anymore, so take
             # the parent lock explicitly to serialize Cell names/sort orders.
             segmentation = (
-                ImageSegmentation.objects.select_for_update()
+                ImageSegmentation.objects.select_for_update(of=("self",))
                 .select_related("asset", "segmentation_type")
                 .get(pk=segmentation.pk)
             )
@@ -392,7 +401,7 @@ class AnalysisMaskObjectListCreateView(APIView):
             # Vector rows are now the durable Cell/Sample Area source. The old
             # raster save used to invalidate dependent analyses as a side
             # effect; keep that integrity guarantee when autosaving vectors.
-            mark_superseded(segmentation)
+            record_change(segmentation, geometry=True, area_vectors=True)
         # WKB is the durable editing representation. Do not rewrite a
         # full-image PNG or rebuild its pyramid for every brush stroke: that
         # was the long pause after R. Compatibility consumers can materialize
@@ -413,6 +422,7 @@ class AnalysisMaskObjectDetailView(APIView):
 
     def _get(self, seg_id, object_id):
         segmentation = _analysis_segmentation(seg_id)
+        ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
         obj = get_object_or_404(
             AnalysisMaskObject,
             id=object_id,
@@ -420,6 +430,7 @@ class AnalysisMaskObjectDetailView(APIView):
         )
         return segmentation, obj
 
+    @transaction.atomic
     def patch(self, request, seg_id, object_id):
         try:
             segmentation, obj = self._get(seg_id, object_id)
@@ -457,9 +468,10 @@ class AnalysisMaskObjectDetailView(APIView):
                     defaults={"tags": tags},
                 )
                 obj.annotation = annotation
-            mark_superseded(segmentation)
+            record_change(segmentation)
         return Response(_object_payload(obj), status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def delete(self, request, seg_id, object_id):
         del request
         try:
@@ -469,7 +481,7 @@ class AnalysisMaskObjectDetailView(APIView):
         deleted_id = str(obj.id)
         with transaction.atomic():
             obj.delete()
-            mark_superseded(segmentation)
+            record_change(segmentation, geometry=True, area_vectors=True)
         return Response(
             {
                 "deleted_id": deleted_id,
@@ -483,6 +495,7 @@ class AnalysisMaskObjectDetailView(APIView):
 class AnalysisMaskObjectSaveView(APIView):
     """Materialize every named object into the one analysis binary mask."""
 
+    @transaction.atomic
     def post(self, request, seg_id):
         del request
         try:
@@ -490,6 +503,7 @@ class AnalysisMaskObjectSaveView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
+            ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
             _materialize_legacy_objects_if_needed(segmentation)
             record = _rebuild(segmentation)
             if segmentation.status_stage != "CANDIDATES_READY":

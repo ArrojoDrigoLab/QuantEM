@@ -7,9 +7,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import OperationalError, transaction
 
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
+from quantem.segmentation.mutations import (
+    register_overlay_mutation_all_bundles,
+)
 from quantem.segmentation.overlay_ngff import (
     merge_dirty_bboxes,
-    register_overlay_mutation_all_bundles,
 )
 from quantem.segmentation.services.confirm_batch import (
     _ConfirmedFamily,
@@ -143,6 +145,7 @@ class Command(BaseCommand):
         affected_geometries = []
 
         with transaction.atomic():
+            ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
             confirmed_segments = list(
                 SegmentObject.objects.filter(
                     segmentation=segmentation,
@@ -215,13 +218,12 @@ class Command(BaseCommand):
                 feature_refresh_ids.extend(persist_result["refresh_ids"])
                 affected_geometries.extend(family.polygons)
 
-        if created > 0 or updated > 0 or deleted > 0:
-            # Normalizes CONFIRMED-object geometry; confirmed objects belong to
-            # every bundle, so the edit must fan out to all of them.
-            register_overlay_mutation_all_bundles(
-                segmentation,
-                dirty_bbox=merge_dirty_bboxes(segmentation, affected_geometries),
-            )
+            if created > 0 or updated > 0 or deleted > 0:
+                # Canonical geometry and its invalidation commit together.
+                register_overlay_mutation_all_bundles(
+                    segmentation,
+                    dirty_bbox=merge_dirty_bboxes(segmentation, affected_geometries),
+                )
 
         try:
             _enqueue_segment_feature_refresh(

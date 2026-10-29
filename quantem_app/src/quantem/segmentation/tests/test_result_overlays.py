@@ -166,7 +166,7 @@ def test_detail_retry_replaces_an_incomplete_artifact(segmentation):
 
 
 def test_comparison_identity_includes_bulk_label_edits(segmentation):
-    from quantem.segmentation.overlay_ngff import register_state_mutation
+    from quantem.segmentation.mutations import register_state_mutation
 
     result = run(segmentation)
     key = comparison_identity(result)

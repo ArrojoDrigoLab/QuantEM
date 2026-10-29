@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from quantem import __version__
 from quantem.core.local_storage import StorageError
+from quantem.segmentation.composition import protected_annotation
 from quantem.segmentation.coverage import completed_geometry
 from quantem.segmentation.geometry import extract_polygons
 from quantem.segmentation.models import (
@@ -65,15 +66,15 @@ def retain_completed_annotations(segmentation):
         rows.update(superseded_at=timezone.now())
         return
     for row in rows.iterator(chunk_size=500):
-        kept = row.geometry.intersection(protected)
+        kept, retained_state = protected_annotation(row.geometry, protected, row.label_state)
         if kept.equals(row.geometry):
             # A completed area's objects and empty spaces are authoritative.
-            if row.label_state in {"INFERRED", "CANDIDATE"}:
-                row.label_state = "CONFIRMED"
+            if row.label_state != retained_state:
+                row.label_state = retained_state
                 row.status = SegmentObject.STATUS_CONFIRMED
                 row.save(update_fields=["label_state", "status"])
         else:
-            _replace_geometry(row, kept, label_state=row.label_state)
+            _replace_geometry(row, kept, label_state=retained_state)
 
 
 def accept_model_area(segmentation):
@@ -100,9 +101,9 @@ def publish_result(
 ):
     """Publish coverage only after extraction succeeds; deletions are explicit."""
     ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
-    from quantem.analysis.superseded import mark_superseded
+    from quantem.segmentation.mutations import record_change
 
-    mark_superseded(segmentation)
+    record_change(segmentation)
     metadata = dict(probability_map.metadata or {})
     if metadata.get("roi_id") or metadata.get("composite"):
         raise ValueError("Only a full-image prediction can be used as a full-image result.")
@@ -201,14 +202,26 @@ def cleanup_deleted_results(segmentation, *, result_ids):
 
 def prune_deleted_maps(segmentation):
     """Reclaim a deleted prediction only when no retained version shares it."""
-    from quantem.seg_core.db.prob_maps import _unlink_unshared_probability_map_file
+    from quantem.core.local_storage import storage_path
+    from quantem.segmentation.artifact_cleanup import retire_artifact
     from quantem.segmentation.models import ProbabilityMap
+    from quantem.segmentation.prob_maps.preview import (
+        probability_preview_path,
+        result_preview_cache_path,
+    )
 
     candidates = ProbabilityMap.objects.filter(
         segmentation=segmentation, saved_results__deleted_at__isnull=False
     ).distinct()
     for probability_map in candidates:
-        if probability_map.saved_results.filter(deleted_at=None).exists():
-            continue
-        probability_map.delete()
-        _unlink_unshared_probability_map_file(probability_map)
+        with transaction.atomic():
+            ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
+            if probability_map.saved_results.filter(deleted_at=None).exists():
+                continue
+            path = storage_path(probability_map.file_path)
+            probability_map.delete()
+            if ProbabilityMap.objects.filter(file_path=probability_map.file_path).exists():
+                continue
+            retire_artifact(path, is_directory=path.suffix == ".zarr")
+            retire_artifact(probability_preview_path(path))
+            retire_artifact(result_preview_cache_path(path), is_directory=True)

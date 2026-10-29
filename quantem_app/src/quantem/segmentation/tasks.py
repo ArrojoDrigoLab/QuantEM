@@ -18,7 +18,12 @@ from django.db import transaction
 from quantem.assets.asset_openable import get_asset_openable
 from quantem.assets.task_utils import load_image_array, load_image_roi_array
 from quantem.segmentation.features.extraction import compute_segment_features
-from quantem.segmentation.features.measure import merge_measured_features
+from quantem.segmentation.features.measure import (
+    MEASURED_MARKER_KEY,
+    MEASUREMENT_STAMP_KEY,
+    measurement_stamp,
+    merge_measured_features,
+)
 from quantem.segmentation.prob_maps.features import (
     compute_prob_map_percentiles_from_data,
     load_probability_map_float,
@@ -221,6 +226,10 @@ def _measured_features_for(
         measurements = {}
 
     features = merge_measured_features(segment.features, measurements)
+    if features.get(MEASURED_MARKER_KEY) is not None:
+        features[MEASUREMENT_STAMP_KEY] = measurement_stamp(
+            segment.geometry_wkb, segmentation.asset.source_sha256
+        )
 
     for prob_map in prob_maps:
         features = _apply_prob_map_stats(
@@ -325,6 +334,7 @@ def measure_segments_batched(
                 logger.warning("Segment %s missing for feature task", missing_id)
 
         written: list[SegmentObject] = []
+        originals = {obj.pk: (bytes(obj.geometry_wkb), obj.features) for obj in segments}
         try:
             for segment in segments:
                 if cancel_check is not None:
@@ -342,7 +352,17 @@ def measure_segments_batched(
         finally:
             if written:
                 with transaction.atomic():
-                    SegmentObject.objects.bulk_update(written, ["features"], batch_size=step)
+                    current = {
+                        obj.pk: (bytes(obj.geometry_wkb), obj.features)
+                        for obj in SegmentObject.objects.select_for_update().filter(
+                            pk__in=[obj.pk for obj in written]
+                        )
+                    }
+                    unchanged = [obj for obj in written if current.get(obj.pk) == originals[obj.pk]]
+                    # A queued measurement must not overwrite an edit made
+                    # while the image window was being measured.
+                    if unchanged:
+                        SegmentObject.objects.bulk_update(unchanged, ["features"], batch_size=step)
     return measured
 
 

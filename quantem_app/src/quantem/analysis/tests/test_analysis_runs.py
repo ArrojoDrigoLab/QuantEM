@@ -98,6 +98,8 @@ class AnalysisRunTestCase(TestCase):
     def _segment(
         segmentation: ImageSegmentation, polygon: Polygon, label_state: str
     ) -> SegmentObject:
+        from quantem.segmentation.features.measure import measurement_stamp
+
         return SegmentObject.objects.create(
             segmentation=segmentation,
             geometry=polygon,
@@ -105,6 +107,9 @@ class AnalysisRunTestCase(TestCase):
             bbox=polygon.envelope,
             label_state=label_state,
             features={
+                "measurement_input": measurement_stamp(
+                    polygon.wkb, segmentation.asset.source_sha256
+                ),
                 "area": polygon.area,
                 "perimeter": polygon.length,
                 "eccentricity": 0.25,

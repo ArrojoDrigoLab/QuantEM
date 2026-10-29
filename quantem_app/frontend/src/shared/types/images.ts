@@ -460,6 +460,10 @@ export interface ImageSegmentation {
   objects_pixel_size?: SegmentationObjectsPixelSize | null;
   /** True only when this layer has a saved non-empty mask/object set. */
   has_saved_area?: boolean;
+  /** Authoritative annotation changes; independent of display build revisions. */
+  scientific_revision?: number;
+  /** Geometry changes used to certify derived display rasters. */
+  geometry_revision?: number;
   status_stage: StatusStage;
   status_stage_display?: string;
   status_progress: number;

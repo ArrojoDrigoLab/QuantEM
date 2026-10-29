@@ -125,9 +125,87 @@ builds have explicit errors and retry controls. Quick previews use ETags; detail
 tiles use immutable URLs. Old detailed generations follow the three-version,
 one-hour retention policy, and both caches are reclaimed with the last retained
 reference to their probability map. Opacity changes do not rebuild either mode.
-Bulk annotation edits invalidate comparisons through the registered display
-revisions even when individual object timestamps are not rewritten. Comparison
-and confirmation share the global-mask postprocessing and protection helpers.
+Bulk annotation edits invalidate comparisons through the scientific revision,
+independently of display rebuilds and individual object timestamps. Comparison
+and confirmation share global-mask postprocessing and protection helpers, and
+the pure object-retention rule in `segmentation/composition.py`.
+
+## Scientific authority and invalidation
+
+`ImageSegmentation.scientific_revision` advances with authoritative changes.
+`geometry_revision` advances when the raster geometry can change. Both are
+monotonic invalidation tokens, not counts of user actions: one action may make
+several scientific changes. Display-only rebuilds advance neither token.
+The API exposes both as read-only fields. Saved-result comparisons refresh from
+the scientific revision; raster display requests continue to use their own
+display-generation tokens.
+
+| Representation | Authority and ownership |
+| --- | --- |
+| Probability map and saved-result recipe | Retained model input for replay; selecting or comparing it does not replace accepted annotations. |
+| Current object rows | Live, non-superseded geometry and labels; analysis uses confirmed objects. |
+| Completed regions and ROI review states | Exhaustive annotation, including empty space, scoped to one segmentation. |
+| Global organelle mask | The current database pointer owns an immutable native-pixel binary file. |
+| Area objects | Authoritative after vector adoption, including an intentionally empty collection. An older saved raster cannot resurrect deleted objects. |
+| Correction revision | Versioned archive of objects, annotations, ROI reviews, mask bytes, manual coverage, canonical-result association, and final provenance. |
+| Display and comparison pyramids | Disposable derived files. They never establish scientific coverage. |
+| Feature values and centroids | Derived from current geometry. Feature reuse requires a geometry/image/algorithm stamp; analysis derives centroids from geometry. |
+| Saved measurements | Immutable historical results. Input fingerprints and supersession determine whether they remain current. |
+
+Scientific writers use `segmentation/mutations.py` inside the transaction that
+writes authoritative data. The parent segmentation lock serializes scientific
+revision updates with measurement publication. `overlay_ngff` owns display work
+only. Callers must not substitute a display-only invalidation for a scientific
+mutation. Raw ORM bulk updates outside these services must explicitly record the
+change in the same transaction.
+
+| Mutation | Scientific effect | Derived work |
+| --- | --- | --- |
+| Rerun / rethreshold / accept retained prediction | Replace model-owned data while retaining completed annotation; publish recipe and coverage together. Empty extractions still invalidate. | Geometry revision; affected displays/comparisons; dependent measurements become stale. |
+| Confirm / reject existing object | Change scientific membership. | Scientific revision; palette only unless overlap priority requires repainting. |
+| Draw / edit / delete object or global pixels | Change canonical geometry. | Both revisions; geometry-derived measurements must be refreshed. |
+| Complete / reopen / remove reviewed region | Change coverage and model protection. | Scientific revision, visibility update, comparison and measurement invalidation. |
+| Edit area metadata | Change scientific annotation metadata. | Scientific revision and dependent measurement invalidation. |
+| Restore revision | Restore the archived semantic state and current geometry together. | New scientific/geometry revisions; full display rebuild. |
+| Delete saved prediction / segmentation | Remove the intended database ownership; historical analysis survives segmentation deletion. | Commit retryable artifact-deletion intents with the database change. |
+
+Full display builds capture their source geometry revision before reading
+objects. Analysis accepts a raster only when that stamp matches current geometry,
+the display is settled, every confirmed object has a snapshot label, and no
+unconfirmed manual/refined object can occlude confirmed pixels. It checks the
+scientific revision again after reading. Missing or older stamps are cache misses.
+Partial repaints retain certification only when their base has the same geometry
+revision; otherwise analysis uses canonical vectors until a full build certifies
+the raster. Palette-only changes retain the fast path.
+
+Both analysis runners prepare exports in a unique `.pending-...` directory.
+The shared finalizer locks dependencies, validates the original fingerprint,
+renames the complete bundle, and records success. Rejected or cancelled work
+never first appears as a successful measurement. Schema-versioned fingerprints
+make older measurement semantics explicit. Successful runs are idempotent and
+are not overwritten by a repeated job.
+
+Global-mask saves and revision restores use fresh filenames. Database rollback
+therefore preserves the bytes behind the old pointer. Filesystem publication and
+database commit are not one atomic operation: abrupt termination can leave an
+unreferenced file or staging directory. `audit_result_artifacts` reports missing
+references and old unreferenced candidates; it does not delete those candidates.
+`audit_result_artifacts --retry-cleanup` retries committed deletion intents and
+saved-result tombstones, rechecking surviving references before removal. Legacy
+revision archives without semantic metadata restore their explicit annotations
+conservatively and do not inherit later whole-image/model coverage.
+Restoring an intact revision can repair a missing current mask. Its automatic
+backup preserves the remaining records and is named `mask unavailable`; that
+incomplete backup cannot promise restoration of the missing pixels. Damaged
+archives return an actionable error without changing current annotations.
+
+Revision archives contain current objects and their annotations, rather than
+copying inactive object history into every backup. Area-edit responses count
+occupied tiles using the canonical pixel convention, keeping temporary raster
+memory bounded even on sparse montages. History responses reuse fingerprint
+work for identical recipes only within that response; unfinished runs are never
+reported as current measurements. Artifact cleanup checks database references
+for the retired path rather than resolving every file in the library.
 
 The unused ER preview control/store/API island, obsolete CPU probability
 colorizer, no-op tile invalidator, and unused mutable label allocation helpers

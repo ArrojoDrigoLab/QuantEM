@@ -12,10 +12,12 @@ from quantem.segmentation.features.measure import (
     measure_segments,
 )
 from quantem.segmentation.models import ImageSegmentation, SegmentObject
+from quantem.segmentation.mutations import (
+    register_overlay_mutation_all_bundles,
+)
 from quantem.segmentation.overlay_ngff import (
     DirtyBBox,
     merge_dirty_bboxes,
-    register_overlay_mutation_all_bundles,
 )
 from quantem.segmentation.services.spatial_lookup import (
     bbox_intersects_filter,
@@ -155,6 +157,9 @@ def _confirm_manual_segments(
     )
 
     with transaction.atomic():
+        from quantem.segmentation.mutations import record_change
+
+        record_change(segmentation, geometry=True)
         confirmed_qs = SegmentObject.objects.filter(
             segmentation=segmentation,
             label_state="CONFIRMED",
@@ -402,6 +407,9 @@ def confirm_segment_geometries(
     candidate_cleanup = None
 
     with transaction.atomic():
+        from quantem.segmentation.mutations import record_change
+
+        record_change(segmentation, geometry=True)
         if not merge_overlaps:
             for item in incoming:
                 geometry = item["geometry"]

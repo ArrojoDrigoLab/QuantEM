@@ -39,6 +39,16 @@ def run_job(payload: dict[str, Any], reporter: JobReporter, cancel: CancelToken)
     )
     if run is None:
         raise ValueError(f"Analysis run {run_id} not found")
+    if run.status == AnalysisRun.STATUS_SUCCESS:
+        return {
+            "analysis_run_id": str(run.id),
+            "segmentation_id": str(run.segmentation_id),
+            "status": run.status,
+            "export_dir": run.export_dir,
+            "n_objects": (run.results.get("objects") or {}).get("n"),
+            "calibrated": run.results.get("calibrated"),
+            "caveats": run.results.get("caveats", []),
+        }
 
     def progress(percent: float, message: str) -> None:
         # This is both the per-chunk progress hook and the service's coarse
@@ -49,43 +59,31 @@ def run_job(payload: dict[str, Any], reporter: JobReporter, cancel: CancelToken)
 
     try:
         from quantem.analysis.global_runs import run_global_area
-        from quantem.analysis.identity import input_fingerprint
         from quantem.analysis.input_contract import require_complete_organelles
 
         require_complete_organelles(run.segmentation, run.params)
 
-        if (
-            run.input_fingerprint
-            and input_fingerprint(run.segmentation, run.params) != run.input_fingerprint
-        ):
-            raise ValueError("Inputs changed while this analysis was queued. Start a new batch.")
         runner = run_global_area if run.params.get("global_area") else run_for_segmentation
         result = runner(
             run,
             progress=progress,
             cancel_check=cancel.check_cancelled,
+            apply_output_selection=True,
         )
-        from quantem.analysis.export_selection import select_export_files
-
-        select_export_files(run)
-        if (
-            run.input_fingerprint
-            and input_fingerprint(run.segmentation, run.params) != run.input_fingerprint
-        ):
-            raise ValueError(
-                "Inputs changed during measurement. Re-run to measure one consistent version."
-            )
     except JobCancelledError:
         # The service has already marked the run FAILED with the cancellation
         # exception's text; replace it with something a user asked for.
-        AnalysisRun.objects.filter(id=run.id).update(
+        AnalysisRun.objects.filter(id=run.id).exclude(status="SUCCESS").update(
             error="Cancelled before the analysis finished."
         )
         raise
     except Exception as exc:
-        AnalysisRun.objects.filter(id=run.id).update(status="FAILED", error=str(exc), export_dir="")
+        AnalysisRun.objects.filter(id=run.id).exclude(status="SUCCESS").update(
+            status="FAILED", error=str(exc), export_dir=""
+        )
         raise
 
+    reporter.update(progress=100.0, message="analysis complete")
     reporter.log(
         "info",
         f"Wrote the export bundle to {run.export_dir}",

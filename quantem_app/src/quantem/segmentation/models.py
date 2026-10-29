@@ -34,6 +34,16 @@ from .source_models import (
 
 logger = logging.getLogger(__name__)
 
+
+class RetiredResultArtifact(models.Model):
+    """Durable deletion intent, committed with removal of an artifact pointer."""
+
+    path = models.CharField(max_length=1024, unique=True)
+    is_directory = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+    last_error = models.TextField(blank=True, default="")
+
+
 # Geometry is stored as shapely WKB in image pixel space, plus indexed float
 # columns for the derived bbox and centroid. See ``segmentation/geometry/fields.py``.
 
@@ -137,6 +147,11 @@ class ImageSegmentation(TimeStampedModel):
 
     # Distinguishes an unopened ROI workspace from an intentionally empty one.
     rois_initialized = models.BooleanField(default=False)
+    # Scientific identity is independent of job progress and display generations.
+    scientific_revision = models.PositiveBigIntegerField(default=0)
+    geometry_revision = models.PositiveBigIntegerField(default=0)
+    # Empty vectors are an intentional empty area, not a request to reload a raster.
+    area_vectors_authoritative = models.BooleanField(default=False)
 
     asset = models.ForeignKey(
         Asset,

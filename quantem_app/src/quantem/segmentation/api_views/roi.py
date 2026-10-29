@@ -20,9 +20,11 @@ from quantem.assets.utils import create_roi_image_from_image
 from quantem.core.config import ROIS_DIR
 from quantem.seg_core.db.prob_maps import delete_probability_maps_for_roi
 from quantem.segmentation.models import ImageSegmentation, RoiSegmentationStatus, SegmentObject
+from quantem.segmentation.mutations import (
+    register_overlay_mutation_all_bundles,
+)
 from quantem.segmentation.overlay_ngff import (
     merge_dirty_bboxes,
-    register_overlay_mutation_all_bundles,
 )
 from quantem.segmentation.roi_selection import select_roi_for_image
 from quantem.segmentation.serializers import (
@@ -89,6 +91,7 @@ class CompletedRoiListCreateView(APIView):
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def post(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         # A completed area is proofreading state that belongs to this
@@ -120,6 +123,7 @@ class CompletedRoiListCreateView(APIView):
 class CompletedRoiSubtractView(APIView):
     """Subtract a freehand polygon from the confirmed-area layer."""
 
+    @transaction.atomic
     def post(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         locked = completion_lock_response(segmentation)
@@ -262,6 +266,7 @@ class SegmentationRoiListCreateView(APIView):
 class SegmentationRoiCompleteView(APIView):
     """Mark the active ROI as complete."""
 
+    @transaction.atomic
     def post(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         # This compatibility endpoint uses the same per-organelle state as the
@@ -286,9 +291,9 @@ class SegmentationRoiCompleteView(APIView):
             )
             status_row.set_complete(True)
             status_row.save()
-            from quantem.analysis.superseded import mark_superseded
+            from quantem.segmentation.mutations import record_change
 
-            mark_superseded(segmentation)
+            record_change(segmentation)
             candidate_cleanup = _delete_candidates_for_completed_roi(
                 segmentation,
                 roi_image,
@@ -323,9 +328,11 @@ class SegmentationRoiSegmentationCompleteView(APIView):
     ``POST`` marks the ROI complete for the segmentation; ``DELETE`` reverts it.
     """
 
+    @transaction.atomic
     def post(self, request, seg_id, roi_id):
         return self._set_complete(seg_id, roi_id, is_complete=True)
 
+    @transaction.atomic
     def delete(self, request, seg_id, roi_id):
         return self._set_complete(seg_id, roi_id, is_complete=False)
 
@@ -353,9 +360,9 @@ class SegmentationRoiSegmentationCompleteView(APIView):
                 segmentation=segmentation,
             )
             status_row.set_complete(is_complete)
-            from quantem.analysis.superseded import mark_superseded
+            from quantem.segmentation.mutations import record_change
 
-            mark_superseded(segmentation)
+            record_change(segmentation)
             status_row.save(update_fields=["is_complete", "completed_at", "updated_at"])
             if is_complete:
                 candidate_cleanup = _delete_candidates_for_completed_roi(
@@ -407,11 +414,11 @@ class SegmentationRoiDetailView(APIView):
             _roi_queryset_for_segmentation(segmentation).select_for_update(),
             id=roi_id,
         )
-        from quantem.analysis.superseded import mark_superseded
+        from quantem.segmentation.mutations import record_change
 
         active = get_active_roi_for_segmentation(segmentation)
         was_active = active is not None and active.pk == roi_image.pk
-        mark_superseded(segmentation)
+        record_change(segmentation)
         RoiSegmentationStatus.objects.filter(
             image_roi=roi_image, segmentation=segmentation
         ).delete()

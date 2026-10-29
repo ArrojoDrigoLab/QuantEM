@@ -56,8 +56,9 @@ _BBOX_ONLY_FIELDS = (
 class SegmentCreateView(APIView):
     """Create a new segment from geometry coordinates."""
 
+    @transaction.atomic
     def post(self, request, seg_id):
-        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        segmentation = get_object_or_404(ImageSegmentation.objects.select_for_update(), id=seg_id)
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked
@@ -166,8 +167,9 @@ class SegmentationConfirmBatchView(APIView):
     request was well-formed -- but the response now says what is missing.
     """
 
+    @transaction.atomic
     def post(self, request, seg_id):
-        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        segmentation = get_object_or_404(ImageSegmentation.objects.select_for_update(), id=seg_id)
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked
@@ -379,8 +381,9 @@ class SegmentationRemoveAreaView(APIView):
     stayed in ``objects.csv`` as part of the object.
     """
 
+    @transaction.atomic
     def post(self, request, seg_id):
-        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        segmentation = get_object_or_404(ImageSegmentation.objects.select_for_update(), id=seg_id)
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked
@@ -609,8 +612,9 @@ class SegmentBatchDeleteView(APIView):
     CONFIRMED).
     """
 
+    @transaction.atomic
     def post(self, request, seg_id):
-        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        segmentation = get_object_or_404(ImageSegmentation.objects.select_for_update(), id=seg_id)
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked

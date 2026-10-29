@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import uuid
 from collections.abc import Iterable
 
 import numpy as np
@@ -13,10 +11,17 @@ from shapely.geometry.base import BaseGeometry
 
 from quantem.assets.canonical_decode import decode_canonical_array
 from quantem.core.config import GLOBAL_MASKS_DIR
+from quantem.core.immutable_files import write_immutable_file
 from quantem.core.local_storage import storage_path, storage_relpath_for_path
 from quantem.seg_core.rasterize import paint_rings
 from quantem.segmentation.geometry import extract_polygons
-from quantem.segmentation.models import GlobalMask, ImageSegmentation, SegmentObject
+from quantem.segmentation.models import (
+    AnalysisMaskObject,
+    GlobalMask,
+    ImageSegmentation,
+    SegmentObject,
+)
+from quantem.segmentation.mutations import record_change
 
 
 def is_global_segmentation(segmentation: ImageSegmentation) -> bool:
@@ -85,6 +90,7 @@ def _rasterize_geometries(
     return mask.astype(bool, copy=False)
 
 
+@transaction.atomic
 def save_global_mask(
     segmentation: ImageSegmentation,
     mask: np.ndarray,
@@ -104,17 +110,17 @@ def save_global_mask(
 
     # Publish a new file so a surrounding database rollback still points to the
     # previous mask. Never overwrite the bytes behind an accepted result.
+    record_change(segmentation, geometry=True)
     previous = GlobalMask.objects.filter(segmentation=segmentation).first()
-    path = _mask_path(segmentation).with_name(f"mask-{uuid.uuid4().hex}.png")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
+
+    def write(temporary):
         Image.fromarray(binary.astype(np.uint8) * 255, mode="L").save(
             temporary, format="PNG", optimize=True
         )
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+
+    path = write_immutable_file(
+        _mask_path(segmentation).parent, prefix="mask", suffix=".png", write=write
+    )
 
     record, _created = GlobalMask.objects.update_or_create(
         segmentation=segmentation,
@@ -128,23 +134,10 @@ def save_global_mask(
         },
     )
     if previous and previous.file_path != record.file_path:
+        from quantem.segmentation.artifact_cleanup import retire_artifact
 
-        def remove_previous():
-            try:
-                storage_path(previous.file_path).unlink(missing_ok=True)
-            except OSError:
-                # Reclamation must never turn a successful save into a failure.
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "Could not reclaim an older mask file", exc_info=True
-                )
-
-        transaction.on_commit(remove_previous)
+        retire_artifact(storage_path(previous.file_path))
     segmentation._state.fields_cache.pop("global_mask", None)
-    from quantem.analysis.superseded import mark_superseded
-
-    mark_superseded(segmentation)
     return record
 
 
@@ -183,6 +176,17 @@ def load_global_mask(
     therefore reopen their confirmed global results without a lossy migration.
     """
     height, width = _dimensions(segmentation)
+    if segmentation.segmentation_type.category == "area":
+        rows = AnalysisMaskObject.objects.filter(segmentation=segmentation)
+        authoritative = ImageSegmentation.objects.filter(
+            pk=segmentation.pk, area_vectors_authoritative=True
+        ).exists()
+        if authoritative or rows.exists():
+            return _rasterize_geometries(
+                (row.geometry for row in rows.iterator() if row.geometry is not None),
+                height=height,
+                width=width,
+            )
     # Callers may hold the segmentation across several edits. Its reverse
     # relation cache can still point to the previous immutable mask file.
     record = GlobalMask.objects.filter(segmentation=segmentation).first()
@@ -206,6 +210,7 @@ def load_global_mask(
     )
 
 
+@transaction.atomic
 def patch_global_mask(
     segmentation: ImageSegmentation,
     *,
@@ -214,6 +219,8 @@ def patch_global_mask(
     source: str = "manual",
 ) -> GlobalMask:
     """Apply ``union(include) - union(exclude)`` to the stored mask."""
+    # Serialize read-modify-write, including two independent brush requests.
+    ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
     height, width = _dimensions(segmentation)
     result = load_global_mask(segmentation)
     current = GlobalMask.objects.filter(segmentation=segmentation).first()

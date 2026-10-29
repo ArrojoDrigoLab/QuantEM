@@ -75,7 +75,7 @@ class IndependentRoiMigrationTests(TransactionTestCase):
         executor = MigrationExecutor(connection)
         executor.migrate([AFTER])
         for segmentation in (mito, nucleus):
-            segmentation.refresh_from_db()
+            segmentation.refresh_from_db(fields=["rois_initialized"])
             self.assertTrue(segmentation.rois_initialized)
             self.assertEqual(
                 set(segmentation.rois.values_list("pk", flat=True)), {roi.pk, spare.pk}

@@ -110,7 +110,7 @@ def materialize_legacy_area_instances(
     # The canonical layer's own raster is materialized only when it has no
     # vector objects. Superseded source rasters are processed independently so
     # two legacy masks merged into Cells do not silently lose the second one.
-    if not existing:
+    if not existing and not segmentation.area_vectors_authoritative:
         sources.insert(0, segmentation)
 
     next_number = 1
@@ -130,6 +130,9 @@ def materialize_legacy_area_instances(
         try:
             mask = load_global_mask(source).astype(bool, copy=False)
         except Exception:
+            # A failed migration is not an intentionally empty annotation.
+            if global_record is not None:
+                raise
             continue
         if not mask.any():
             if global_record is not None:
@@ -172,4 +175,8 @@ def materialize_legacy_area_instances(
             global_record.save(update_fields=["metadata", "updated_at"])
     if created:
         AnalysisMaskObject.objects.bulk_create(created)
+    if created or not segmentation.area_vectors_authoritative:
+        from quantem.segmentation.mutations import record_change
+
+        record_change(segmentation, geometry=True, area_vectors=True)
     return list(AnalysisMaskObject.objects.filter(segmentation=segmentation))

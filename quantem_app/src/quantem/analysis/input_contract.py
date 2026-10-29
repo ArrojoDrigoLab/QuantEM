@@ -56,6 +56,10 @@ def require_complete_organelles(segmentation: ImageSegmentation, params: dict) -
 def has_saved_area(segmentation: ImageSegmentation) -> bool:
     if segmentation.analysis_mask_objects.exclude(geometry_wkb__isnull=True).exists():
         return True
+    if ImageSegmentation.objects.filter(
+        pk=segmentation.pk, area_vectors_authoritative=True
+    ).exists():
+        return False
     from quantem.segmentation.models import GlobalMask
 
     return GlobalMask.objects.filter(

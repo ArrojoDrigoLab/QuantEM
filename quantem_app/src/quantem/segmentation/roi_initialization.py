@@ -4,12 +4,13 @@ from django.db import transaction
 from shapely.geometry import box
 
 from quantem.segmentation.coverage import completed_geometry
-from quantem.segmentation.models import SegmentObject
+from quantem.segmentation.models import ImageSegmentation, SegmentObject
 from quantem.segmentation.saved_results import _replace_geometry
 
 
 @transaction.atomic
 def initialize_roi(segmentation, roi, *, prepopulate):
+    ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
     region = box(roi.x, roi.y, roi.x + roi.width, roi.y + roi.height).difference(
         completed_geometry(segmentation)
     )
@@ -20,9 +21,11 @@ def initialize_roi(segmentation, roi, *, prepopulate):
         load_global_mask,
         save_global_mask,
     )
+    from quantem.segmentation.mutations import (
+        register_overlay_mutation_all_bundles,
+    )
     from quantem.segmentation.overlay_ngff import (
         merge_dirty_bboxes,
-        register_overlay_mutation_all_bundles,
     )
     from quantem.segmentation.revisions import save_revision
 
