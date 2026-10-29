@@ -54,10 +54,16 @@ use serde::Deserialize;
 use tauri::{Manager, RunEvent, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
-/// How long the first launch may take before we give up. Cold start pays for
-/// the frozen torch import plus the initial database migration.
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
+/// How long startup may take before we give up. Besides the frozen torch
+/// import and initial migration, PostgreSQL may need to replay a large WAL
+/// after an interrupted upgrade. The Python side allows 15 minutes for that
+/// recovery, so the shell must outlive it.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+/// Allow the sidecar's 15-minute clean PostgreSQL checkpoint to finish. The
+/// Windows job object remains the final fallback after this deadline.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(16 * 60);
 const MIGRATION_PROGRESS_PREFIX: &str = "QUANTEM_MIGRATION_PROGRESS ";
+const DATABASE_RECOVERY_PREFIX: &str = "database recovery:";
 const MIGRATION_STALL_WARNING: Duration = Duration::from_secs(5 * 60);
 
 // ---------------------------------------------------------------------------
@@ -143,7 +149,7 @@ impl Sidecar {
                             .and_then(|response| response.error_for_status())
                     });
                 if result.is_ok() {
-                    let deadline = Instant::now() + Duration::from_secs(12);
+                    let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
                     while Instant::now() < deadline {
                         if matches!(child.try_wait(), Ok(Some(_))) {
                             break;
@@ -829,6 +835,11 @@ fn main() {
                                         *last = Instant::now();
                                     }
                                     eval_on_main(&progress_handle, script);
+                                } else if line.starts_with(DATABASE_RECOVERY_PREFIX) {
+                                    set_status(
+                                        &progress_handle,
+                                        "Recovering the database after an interrupted shutdown… this can take several minutes. Do not close QuantEM.",
+                                    );
                                 }
                             }
                         }
@@ -905,7 +916,7 @@ fn main() {
                     } else if started.elapsed() > Duration::from_secs(20) {
                         set_status(
                             &h,
-                            "Still starting… the first launch migrates the database.",
+                            "Still starting… database preparation or recovery can take several minutes. Do not close QuantEM.",
                         );
                     }
                     std::thread::sleep(Duration::from_millis(300));

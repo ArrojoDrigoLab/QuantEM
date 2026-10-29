@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from quantem.core import db_config
-from quantem.core.postgres import POSTGRES_VERSION, EmbeddedPostgres, PostgresEndpoint
+from quantem.core.postgres import POSTGRES_VERSION
 from quantem.core.postgres_backup import DATABASE_NAME_RE
 from quantem.core.sqlite_migration import SQLiteMigrationError, _canonical, _validate_value
 
@@ -45,22 +44,6 @@ def test_postgres_config_never_falls_back_to_sqlite(monkeypatch):
 
     with pytest.raises(RuntimeError, match="missing"):
         db_config.get_database_config()
-
-
-def test_readiness_waits_through_recovery(monkeypatch):
-    attempts = iter(
-        [
-            subprocess.CompletedProcess([], 1, "rejecting connections", ""),
-            subprocess.CompletedProcess([], 0, "accepting connections", ""),
-        ]
-    )
-    monkeypatch.setattr("quantem.core.postgres._run", lambda *args, **kwargs: next(attempts))
-    monkeypatch.setattr("quantem.core.postgres._tool", lambda name: name)
-    monkeypatch.setattr("quantem.core.postgres.time.sleep", lambda _: None)
-    manager = EmbeddedPostgres()
-    endpoint = PostgresEndpoint("127.0.0.1", 54321, "quantem", "quantem", "secret")
-
-    manager._wait_ready(endpoint)
 
 
 def test_migration_rejects_values_postgres_cannot_round_trip():

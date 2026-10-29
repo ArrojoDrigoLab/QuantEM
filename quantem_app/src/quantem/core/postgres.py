@@ -36,6 +36,27 @@ POSTGRES_MAJOR = "17"
 DEFAULT_DATABASE = "quantem"
 DEFAULT_USER = "quantem"
 
+# A normal private-cluster start is effectively immediate. Crash recovery is
+# different: replaying the WAL produced by a multi-gigabyte SQLite cutover can
+# take several minutes on slower disks. Keep a short deadline for a server that
+# never answers at all, but do not kill a healthy postmaster that explicitly
+# reports that it is still recovering.
+POSTGRES_STARTUP_TIMEOUT_SECONDS = 60
+POSTGRES_RECOVERY_TIMEOUT_SECONDS = 15 * 60
+
+# pg_ctl performs a clean checkpoint during a fast shutdown. That checkpoint
+# can be as large as the preceding database import, so the desktop shell and
+# this process must both allow it to finish instead of forcing crash recovery
+# on the next launch.
+POSTGRES_SHUTDOWN_TIMEOUT_SECONDS = 15 * 60
+
+POSTGRES_RUNTIME_OPTIONS = (
+    "max_wal_size=4GB",
+    "min_wal_size=256MB",
+    "checkpoint_timeout=15min",
+    "checkpoint_completion_target=0.9",
+)
+
 
 class PostgresError(RuntimeError):
     """The private database server could not be started or managed safely."""
@@ -203,6 +224,54 @@ def _free_loopback_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _postgres_server_arguments(port: int) -> list[str]:
+    """Return postgres arguments shared by new and upgraded clusters.
+
+    The same settings are written when QuantEM creates a cluster, but launch
+    arguments are intentional as well: an existing v0.1.8 cluster otherwise
+    keeps PostgreSQL's smaller WAL defaults during the v0.1.9 cutover.
+    """
+
+    arguments = [
+        "-D",
+        str(POSTGRES_CLUSTER_DIR),
+        "-p",
+        str(port),
+        "-h",
+        "127.0.0.1",
+    ]
+    for option in POSTGRES_RUNTIME_OPTIONS:
+        arguments.extend(("-c", option))
+    return arguments
+
+
+def _postgres_server_options(port: int) -> str:
+    """Return the pg_ctl ``-o`` form of the managed server arguments."""
+
+    options = [f"-p {port}", "-h 127.0.0.1"]
+    options.extend(f"-c {option}" for option in POSTGRES_RUNTIME_OPTIONS)
+    return " ".join(options)
+
+
+def _cluster_requires_recovery() -> bool:
+    """Return whether pg_control records an interrupted prior shutdown."""
+
+    result = _run(
+        [_tool("pg_controldata"), "-D", POSTGRES_CLUSTER_DIR],
+        timeout=15,
+    )
+    prefix = "database cluster state:"
+    for line in result.stdout.splitlines():
+        normalized = line.strip().lower()
+        if normalized.startswith(prefix):
+            state = normalized.removeprefix(prefix).strip()
+            return state != "shut down"
+    raise PostgresError(
+        "PostgreSQL did not report the private cluster state; startup was stopped "
+        "before changing the database."
+    )
+
+
 def _cluster_major() -> str | None:
     version_file = POSTGRES_CLUSTER_DIR / "PG_VERSION"
     if not version_file.exists():
@@ -303,12 +372,12 @@ def _recover_stale_postmaster() -> None:
             POSTGRES_CLUSTER_DIR,
             "-w",
             "-t",
-            "60",
+            str(POSTGRES_SHUTDOWN_TIMEOUT_SECONDS),
             "stop",
             "-m",
             "fast",
         ],
-        timeout=75,
+        timeout=POSTGRES_SHUTDOWN_TIMEOUT_SECONDS + 15,
         check=False,
     )
     if stopped.returncode:
@@ -363,6 +432,7 @@ class EmbeddedPostgres:
             credentials = _load_or_create_credentials()
             _initialize_cluster(credentials)
             _recover_stale_postmaster()
+            recovery_expected = _cluster_requires_recovery()
             port = _free_loopback_port()
             endpoint = PostgresEndpoint(
                 host="127.0.0.1",
@@ -381,15 +451,7 @@ class EmbeddedPostgres:
                 # contract and remains in QuantEM's process tree.
                 self._log_handle = POSTGRES_LOG_PATH.open("ab")
                 self._process = subprocess.Popen(
-                    [
-                        str(_tool("postgres")),
-                        "-D",
-                        str(POSTGRES_CLUSTER_DIR),
-                        "-p",
-                        str(port),
-                        "-h",
-                        "127.0.0.1",
-                    ],
+                    [str(_tool("postgres")), *_postgres_server_arguments(port)],
                     stdin=subprocess.DEVNULL,
                     stdout=self._log_handle,
                     stderr=subprocess.STDOUT,
@@ -403,18 +465,22 @@ class EmbeddedPostgres:
                         POSTGRES_CLUSTER_DIR,
                         "-l",
                         POSTGRES_LOG_PATH,
-                        "-w",
-                        "-t",
-                        "60",
                         "start",
+                        # Return after launching; _wait_ready below owns the
+                        # normal-vs-recovery deadlines on every platform.
+                        "-W",
                         "-o",
-                        f"-p {port} -h 127.0.0.1",
+                        _postgres_server_options(port),
                     ],
-                    timeout=90,
+                    timeout=15,
                 )
             self._started = True
             self.endpoint = endpoint
-            self._wait_ready(endpoint, database="postgres")
+            self._wait_ready(
+                endpoint,
+                database="postgres",
+                recovery_expected=recovery_expected,
+            )
             if endpoint.database == credentials["database"]:
                 self._ensure_application_database(endpoint)
             self._wait_ready(endpoint)
@@ -482,9 +548,27 @@ class EmbeddedPostgres:
             env=self._command_env(endpoint),
         )
 
-    def _wait_ready(self, endpoint: PostgresEndpoint, *, database: str | None = None) -> None:
-        deadline = time.monotonic() + 60
+    def _wait_ready(
+        self,
+        endpoint: PostgresEndpoint,
+        *,
+        database: str | None = None,
+        recovery_expected: bool = False,
+    ) -> None:
+        started_at = time.monotonic()
+        timeout_seconds = (
+            POSTGRES_RECOVERY_TIMEOUT_SECONDS
+            if recovery_expected
+            else POSTGRES_STARTUP_TIMEOUT_SECONDS
+        )
+        deadline = started_at + timeout_seconds
         detail = "no readiness response"
+        if recovery_expected:
+            print(
+                "database recovery: replaying changes after an interrupted shutdown; "
+                "this can take several minutes, so do not close QuantEM",
+                flush=True,
+            )
         while time.monotonic() < deadline:
             result = _run(
                 [
@@ -511,7 +595,8 @@ class EmbeddedPostgres:
                 break
             time.sleep(0.25)
         raise PostgresError(
-            "The private PostgreSQL server did not become ready within 60 seconds: " + detail
+            "The private PostgreSQL server did not become ready within "
+            f"{timeout_seconds} seconds: {detail}"
         )
 
     def stop(self) -> None:
@@ -525,12 +610,12 @@ class EmbeddedPostgres:
                         POSTGRES_CLUSTER_DIR,
                         "-w",
                         "-t",
-                        "60",
+                        str(POSTGRES_SHUTDOWN_TIMEOUT_SECONDS),
                         "stop",
                         "-m",
                         "fast",
                     ],
-                    timeout=75,
+                    timeout=POSTGRES_SHUTDOWN_TIMEOUT_SECONDS + 15,
                     check=False,
                 )
                 stopped = result.returncode == 0
