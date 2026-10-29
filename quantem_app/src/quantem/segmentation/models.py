@@ -135,6 +135,9 @@ def _build_check_constraint(*, expression, name: str) -> models.CheckConstraint:
 class ImageSegmentation(TimeStampedModel):
     """Represents a segmentation instance for a specific image and segmentation type."""
 
+    # Distinguishes an unopened ROI workspace from an intentionally empty one.
+    rois_initialized = models.BooleanField(default=False)
+
     asset = models.ForeignKey(
         Asset,
         on_delete=models.PROTECT,
@@ -653,6 +656,7 @@ class RoiSegmentationStatus(TimeStampedModel):
         related_name="roi_statuses",
     )
     is_complete = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -661,7 +665,12 @@ class RoiSegmentationStatus(TimeStampedModel):
             models.UniqueConstraint(
                 fields=["image_roi", "segmentation"],
                 name="uniq_roi_segmentation_status",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["segmentation"],
+                condition=models.Q(is_active=True),
+                name="unique_active_roi_per_segmentation",
+            ),
         ]
         indexes = [
             models.Index(fields=["segmentation", "is_complete"]),

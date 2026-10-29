@@ -11,7 +11,7 @@ from rest_framework.response import Response
 
 from quantem.assets.asset_openable import get_asset_openable
 from quantem.assets.models import ImageROI
-from quantem.assets.roi_state import get_active_roi_for_asset
+from quantem.assets.roi_state import get_active_roi_for_segmentation
 from quantem.assets.utils import create_roi_image_from_image
 from quantem.jobs.constants import ACTIVE_SEGMENTATION_JOB_TYPES, JOB_TYPE_LABELS
 from quantem.jobs.models import Job
@@ -25,10 +25,9 @@ _ACTIVE_JOB_STATUSES = frozenset({"PENDING", "RUNNING", "RETRY"})
 _ORGANELLE_ACTION_JOB_TYPES = ACTIVE_SEGMENTATION_JOB_TYPES
 
 
-def get_or_create_roi_image(image) -> ImageROI:
-    asset = getattr(image, "asset", None)
-    existing = get_active_roi_for_asset(asset)
-    if existing:
+def get_or_create_roi_image(image, segmentation: ImageSegmentation) -> ImageROI | None:
+    existing = get_active_roi_for_segmentation(segmentation)
+    if existing or segmentation.rois_initialized:
         return existing
 
     roi_min_size = int(os.environ.get("ROI_MIN_IMAGE_SIZE", "512"))
@@ -43,6 +42,8 @@ def get_or_create_roi_image(image) -> ImageROI:
             height=roi_result.height,
             source="AUTO",
             is_active=True,
+            segmentation=segmentation,
+            initialize_workspace=True,
         )
 
     return create_roi_image_from_image(
@@ -53,6 +54,8 @@ def get_or_create_roi_image(image) -> ImageROI:
         height=image.height,
         source="AUTO",
         is_active=True,
+        segmentation=segmentation,
+        initialize_workspace=True,
     )
 
 

@@ -20,7 +20,10 @@ def initialize_roi(segmentation, roi, *, prepopulate):
         load_global_mask,
         save_global_mask,
     )
-    from quantem.segmentation.overlay_ngff import register_overlay_mutation_all_bundles
+    from quantem.segmentation.overlay_ngff import (
+        merge_dirty_bboxes,
+        register_overlay_mutation_all_bundles,
+    )
     from quantem.segmentation.revisions import save_revision
 
     if segmentation.segmentation_type.measurement_mode == "global":
@@ -56,5 +59,8 @@ def initialize_roi(segmentation, roi, *, prepopulate):
             if prepopulate:
                 _replace_geometry(row, inside, label_state="CONFIRMED")
     register_overlay_mutation_all_bundles(
-        segmentation, dirty_bbox=region.bounds, allow_sync_partial=False
+        segmentation,
+        dirty_bbox=merge_dirty_bboxes(segmentation, [region]),
+        allow_sync_partial=False,
+        force_full_rebuild=segmentation.segmentation_type.measurement_mode == "global",
     )

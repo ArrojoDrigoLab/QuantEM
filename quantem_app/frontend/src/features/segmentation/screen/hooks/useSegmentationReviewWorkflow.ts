@@ -1,3 +1,4 @@
+import type { OverlayRevisionTarget } from "@/shared/types/segmentation";
 import { useCallback, useMemo } from "react";
 import { useDrawing } from "@/hooks/useDrawing";
 import { useReviewDrawController } from "@/features/segmentation/screen/hooks/review/useReviewDrawController";
@@ -35,10 +36,10 @@ interface UseSegmentationReviewWorkflowArgs {
   rollbackOptimisticLabel: (segmentId: string) => void;
   hideOptimisticallyDeletedSegment: (segmentId: string) => boolean;
   rollbackOptimisticallyDeletedSegment: (segmentId: string) => void;
-  stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: number | null) => void;
+  stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: OverlayRevisionTarget | null) => void;
   getOptimisticTargetRevision: (
     overlay: SegmentationOverlayMutationState | null | undefined
-  ) => number | null;
+  ) => OverlayRevisionTarget | null;
   handleOverlayMutationRefresh: (
     overlay: SegmentationOverlayMutationState | null | undefined
   ) => void;

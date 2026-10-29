@@ -1,150 +1,74 @@
 import { useEffect, useMemo, useState } from "react";
 import { loadOmeZarrCached } from "@/viewer/imageViewerCache";
 import type { ViewerIdMapOverlaySpec } from "@/viewer/types";
-import type { VivLoaderData } from "@/viewer/components/internal/vivUtils";
+import type { VivLoaderData } from "./vivUtils";
 
 export interface IdMapLoaderData {
   labelsData: VivLoaderData | null;
   borderData: VivLoaderData | null;
-  /** Exact bundle URL and revision represented by the loaded sources. */
   ngffUrl: string;
   revision: number | null;
+  error?: string;
 }
 
-function revisionForSpec(spec: ViewerIdMapOverlaySpec): number | null {
-  if (typeof spec.revision === "number" && Number.isFinite(spec.revision)) {
-    return spec.revision;
-  }
-  try {
-    const revisionToken = new URL(spec.ngffUrl, window.location.origin).searchParams.get("rev");
-    const finalPart = revisionToken?.split("-").at(-1);
-    const revision = Number(finalPart);
-    return finalPart && Number.isFinite(revision) ? revision : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Insert a sub-path before any query string: `a.zarr?rev=1` -> `a.zarr/labels?rev=1`. */
 function withSubPath(url: string, sub: string): string {
-  const queryIndex = url.indexOf("?");
-  const path = queryIndex >= 0 ? url.slice(0, queryIndex) : url;
-  const query = queryIndex >= 0 ? url.slice(queryIndex) : "";
-  return `${path}/${sub}${query}`;
+  const index = url.indexOf("?");
+  return index < 0 ? `${url}/${sub}` : `${url.slice(0, index)}/${sub}${url.slice(index)}`;
 }
 
-/**
- * Loads the `labels` and `border` viv multiscale sources for an ID-map overlay
- * bundle. Returns `null` for each until loaded. The `?rev=<bundle_version>`
- * cache key on the spec URL means a new raster bundle reloads automatically,
- * while LUT-only changes (recolour) never touch these loaders.
- */
-export function useViewerIdMapLoader(spec: ViewerIdMapOverlaySpec | null | undefined): {
-  labelsData: VivLoaderData | null;
-  borderData: VivLoaderData | null;
-} {
-  const [labelsData, setLabelsData] = useState<VivLoaderData | null>(null);
-  const [borderData, setBorderData] = useState<VivLoaderData | null>(null);
-  const url = spec?.ngffUrl ?? null;
+const combined = new WeakMap<VivLoaderData, WeakMap<VivLoaderData, VivLoaderData>>();
 
-  useEffect(() => {
-    if (!url) {
-      setLabelsData(null);
-      setBorderData(null);
-      return;
-    }
-    let cancelled = false;
-    loadOmeZarrCached(withSubPath(url, "labels"))
-      .then((data) => {
-        if (!cancelled) setLabelsData(data);
-      })
-      .catch(() => {
-        if (!cancelled) setLabelsData(null);
-      });
-    loadOmeZarrCached(withSubPath(url, "border"))
-      .then((data) => {
-        if (!cancelled) setBorderData(data);
-      })
-      .catch(() => {
-        if (!cancelled) setBorderData(null);
-      });
-    return () => {
-      cancelled = true;
+/** Viv fetches two selections per tile: IDs and the halo-correct baked border. */
+export function combineOverlaySources(labels: VivLoaderData, borders: VivLoaderData): VivLoaderData {
+  let byBorder = combined.get(labels);
+  if (!byBorder) { byBorder = new WeakMap(); combined.set(labels, byBorder); }
+  const cached = byBorder.get(borders);
+  if (cached) return cached;
+  const sources = labels.map((source, level) => {
+    const combinedSource = Object.create(source) as typeof source;
+    combinedSource.getTile = (options) => {
+      const selection = options.selection as Record<string, number>;
+      const selected = selection.overlayArray === 1 ? borders[level] : source;
+      return selected.getTile({ ...options, selection: {} });
     };
-  }, [url]);
-
-  return { labelsData, borderData };
+    return combinedSource;
+  });
+  byBorder.set(borders, sources);
+  return sources;
 }
 
-/**
- * Loads the `labels` and `border` viv sources for any number of ID-map overlay
- * bundles, keyed by `spec.id`. Mirrors the dynamic loading pattern in
- * `useViewerRasterOverlayLoader`: each distinct bundle URL is loaded once and a
- * recolour (LUT-only change, same `?rev=`) never reloads the rasters. Stale
- * bundles drop out of the returned record when their spec is removed.
- */
-export function useViewerIdMapLoaders(
-  specs: ViewerIdMapOverlaySpec[],
-  onOverlayRevisionDisplayed?: (revision: number | null) => void
-): Record<string, IdMapLoaderData> {
+/** Metadata loading is not a displayed revision; ImageViewer acknowledges draws. */
+export function useViewerIdMapLoaders(specs: ViewerIdMapOverlaySpec[]): Record<string, IdMapLoaderData> {
   const [dataById, setDataById] = useState<Record<string, IdMapLoaderData>>({});
-
-  // Stable identity over (id -> bundle URL); a recolour keeps the same URLs so
-  // this effect does not refire and the rasters are not reloaded.
-  const specIdentity = useMemo(
-    () => specs.map((spec) => `${spec.id}=${spec.ngffUrl}`).join("|"),
-    [specs]
-  );
-
+  const identity = useMemo(() => specs.map(({ id, ngffUrl }) => `${id}=${ngffUrl}`).join("|"), [specs]);
   useEffect(() => {
     let cancelled = false;
-    const desiredIds = new Set(specs.map((spec) => spec.id));
-
-    // Drop any specs that are no longer present.
-    setDataById((prev) => {
-      const entries = Object.entries(prev).filter(([id]) => desiredIds.has(id));
-      if (entries.length === Object.keys(prev).length) return prev;
-      return Object.fromEntries(entries);
-    });
-
+    const desired = new Map(specs.map((spec) => [spec.id, spec.ngffUrl]));
+    setDataById((prev) => Object.fromEntries(Object.entries(prev).filter(([id, data]) => desired.get(id) === data.ngffUrl)));
     for (const spec of specs) {
-      const url = spec.ngffUrl;
-      if (!url) continue;
       void Promise.all([
-        loadOmeZarrCached(withSubPath(url, "labels")).catch(() => null),
-        loadOmeZarrCached(withSubPath(url, "border")).catch(() => null),
-      ]).then(([labelsData, borderData]) => {
+        loadOmeZarrCached(withSubPath(spec.ngffUrl, "labels")),
+        loadOmeZarrCached(withSubPath(spec.ngffUrl, "border")),
+      ]).then(([labels, borders]) => {
         if (cancelled) return;
-        setDataById((prev) => ({
-          ...prev,
-          [spec.id]: {
-            labelsData,
-            borderData,
-            ngffUrl: spec.ngffUrl,
-            revision: revisionForSpec(spec),
-          },
-        }));
+        setDataById((prev) => ({ ...prev, [spec.id]: {
+          labelsData: combineOverlaySources(labels, borders), borderData: borders,
+          ngffUrl: spec.ngffUrl, revision: spec.revision ?? null,
+        } }));
+      }).catch((error: unknown) => {
+        if (cancelled) return;
+        setDataById((prev) => ({ ...prev, [spec.id]: {
+          labelsData: null, borderData: null, ngffUrl: spec.ngffUrl,
+          revision: null, error: error instanceof Error ? error.message : String(error),
+        } }));
       });
     }
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
+    // Palette changes keep the same loaders and decoded tiles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [specIdentity]);
-
-  useEffect(() => {
-    if (!onOverlayRevisionDisplayed || specs.length === 0) return;
-    const displayedRevisions = specs.map((spec) => {
-      const loaded = dataById[spec.id];
-      if (!loaded?.labelsData || loaded.ngffUrl !== spec.ngffUrl) return null;
-      return loaded.revision;
-    });
-    if (displayedRevisions.some((revision) => revision === null)) return;
-    onOverlayRevisionDisplayed(
-      Math.min(...(displayedRevisions as number[]))
-    );
-  }, [dataById, onOverlayRevisionDisplayed, specs]);
-
-  return dataById;
+  }, [identity]);
+  return useMemo(() => Object.fromEntries(specs.flatMap((spec) => {
+    const data = dataById[spec.id];
+    return data?.ngffUrl === spec.ngffUrl ? [[spec.id, data]] : [];
+  })), [specs, dataById]);
 }

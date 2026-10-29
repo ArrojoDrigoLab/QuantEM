@@ -1,7 +1,9 @@
-import { CompositeLayer, type Layer } from "@deck.gl/core";
+import { CompositeLayer, type Layer, type LayerContext, type UpdateParameters } from "@deck.gl/core";
+import type { Texture } from "@luma.gl/core";
 import { BitmapLayer } from "@deck.gl/layers";
 import { MultiscaleImageLayer } from "@hms-dbmi/viv";
 import type { VivLoaderData } from "@/viewer/components/internal/vivUtils";
+import { PaletteBitmapLayer, NEAREST_SAMPLER } from "./PaletteBitmapLayer";
 
 /**
  * Renders an ID-map segmentation overlay: an integer `labels` raster coloured at
@@ -9,10 +11,9 @@ import type { VivLoaderData } from "@/viewer/components/internal/vivUtils";
  *
  * Tiling/zoom/coordinates are delegated to viv's `MultiscaleImageLayer` (so it
  * fetches exactly the levels+tiles the viewport needs and aligns with the base
- * image); we only override its per-tile `renderSubLayers` to map the decoded
- * label tile to RGBA on the CPU via the LUT and draw it with a `BitmapLayer`.
- * Borders are computed per-tile from label adjacency. Recolouring (LUT change)
- * is a cheap re-colorization with no tile refetch.
+ * image). Integer labels are uploaded once and colored by a shared GPU palette.
+ * Baked borders include neighboring pixels across tile seams. A CPU fallback
+ * handles palettes exceeding the device's texture dimensions.
  */
 const BORDER_DARKEN = 0.5;
 
@@ -22,16 +23,33 @@ const BORDER_DARKEN = 0.5;
 // the whole tile cache and refetch every tile forever. We bypass viv's XRLayer
 // via renderSubLayers, so the contrast/colour/channel values are unused; only
 // their reference stability matters.
-const LABEL_SELECTIONS = [{}];
+const LABEL_SELECTIONS = [{ overlayArray: 0 }, { overlayArray: 1 }];
 const CHANNELS_VISIBLE = [true];
 const CHANNEL_COLORS: Array<[number, number, number]> = [[255, 255, 255]];
 const NO_EXTENSIONS: never[] = [];
+const paletteIds = new WeakMap<Uint8Array, number>();
+const reversePickMaps = new WeakMap<Map<number, string>, Map<string, number>>();
+function highlightedLabelFor(props: IdMapLabelLayerProps): number {
+  if (!props.highlightedSegmentId || !props.pickMap) return 0;
+  let reverse = reversePickMaps.get(props.pickMap);
+  if (!reverse) {
+    reverse = new Map(Array.from(props.pickMap, ([label, uuid]) => [uuid, label]));
+    reversePickMaps.set(props.pickMap, reverse);
+  }
+  return reverse.get(props.highlightedSegmentId) ?? 0;
+}
+let nextPaletteId = 1;
+function paletteId(lut: Uint8Array): number {
+  let id = paletteIds.get(lut);
+  if (!id) { id = nextPaletteId++; paletteIds.set(lut, id); }
+  return id;
+}
 
 export interface IdMapLabelLayerProps {
   id: string;
   /** viv loader sources for the `labels` pyramid (index 0 = full resolution). */
   labelsData: VivLoaderData;
-  /** Reserved for a future baked-border path; unused (borders are per-tile). */
+  /** Baked border pyramid, paired with labels by combineOverlaySources. */
   borderData?: VivLoaderData | null;
   /** Flat RGBA8 palette indexed by dense label. */
   lut: Uint8Array;
@@ -51,18 +69,42 @@ export interface IdMapLabelLayerProps {
   showBorders: boolean;
   /** Dense label -> object uuid; when present, the raster tiles become pickable. */
   pickMap?: Map<number, string>;
+  onViewportLoad?: () => void;
+  onTileError?: (error: Error) => void;
 }
 
 interface VivTileData {
   data: Array<Uint32Array | Uint16Array | Uint8Array>;
   width: number;
   height: number;
+  _packedLabels?: { data: Uint8Array; width: number; height: number };
+  _border?: { data: Uint8Array; width: number; height: number };
   /** One source tile may feed candidate and confirmed layers with different LUTs. */
-  _idmapCache?: Record<string, { signature: string; image: ImageData }>;
+  _idmapCache?: Record<string, { signature: string; lut: Uint8Array; pickMap?: Map<number, string>; image: ImageData }>;
 }
 
 export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
   static layerName = "IdMapLabelLayer";
+  declare state: { paletteTexture?: Texture };
+
+  updateState({ props, oldProps }: UpdateParameters<this>) {
+    if (props.lut === oldProps.lut && props.maxLabel === oldProps.maxLabel && this.state.paletteTexture) return;
+    this.state.paletteTexture?.destroy();
+    const limit = this.context.device.limits.maxTextureDimension2D;
+    const width = Math.min(1024, limit, Math.max(1, props.maxLabel + 1));
+    const height = Math.ceil((props.maxLabel + 1) / width);
+    if (height > limit) { this.setState({ paletteTexture: undefined }); return; }
+    const data = new Uint8Array(width * height * 4);
+    data.set(props.lut.subarray(0, data.length));
+    this.setState({ paletteTexture: this.context.device.createTexture({
+      data, width, height, format: "rgba8unorm", sampler: NEAREST_SAMPLER,
+    }) });
+  }
+
+  finalizeState(context: LayerContext) {
+    this.state.paletteTexture?.destroy();
+    super.finalizeState(context);
+  }
 
   private _colorize(tile: VivTileData): ImageData {
     const {
@@ -76,9 +118,9 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       borderOpacity,
       showBorders,
     } = this.props;
-    const sig = `${lutRevision}|${visualRevision}|${highlightRevision}|${highlightedSegmentId ?? ""}|${fillOpacity}|${borderOpacity}|${showBorders}`;
+    const sig = `${maxLabel}|${lutRevision}|${visualRevision}|${highlightRevision}|${highlightedSegmentId ?? ""}|${fillOpacity}|${borderOpacity}|${showBorders}`;
     const cached = tile._idmapCache?.[this.props.id];
-    if (cached?.signature === sig) return cached.image;
+    if (cached?.signature === sig && cached.lut === lut && cached.pickMap === this.props.pickMap) return cached.image;
 
     const labels = tile.data[0];
     const { width, height } = tile;
@@ -86,14 +128,7 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
     const out = new Uint8ClampedArray(pixelCount * 4);
     const fillAlpha = Math.round(Math.min(1, Math.max(0, fillOpacity)) * 255);
     const borderAlpha = Math.round(Math.min(1, Math.max(0, borderOpacity)) * 255);
-    let highlightedLabel = 0;
-    if (highlightedSegmentId !== null && this.props.pickMap) {
-      for (const [label, segmentId] of this.props.pickMap) {
-        if (segmentId !== highlightedSegmentId) continue;
-        highlightedLabel = label;
-        break;
-      }
-    }
+    const highlightedLabel = highlightedLabelFor(this.props);
 
     for (let i = 0; i < pixelCount; i += 1) {
       const id = labels[i];
@@ -104,7 +139,9 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
 
       const isHighlighted = highlightedLabel !== 0 && id === highlightedLabel;
       let isBorder = false;
-      if (showBorders || isHighlighted) {
+      if ((showBorders || isHighlighted) && tile.data[1]) {
+        isBorder = tile.data[1][i] !== 0;
+      } else if (showBorders || isHighlighted) {
         const x = i % width;
         const y = (i - x) / width;
         isBorder =
@@ -133,7 +170,7 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
     }
     const image = new ImageData(out, width, height);
     tile._idmapCache ??= {};
-    tile._idmapCache[this.props.id] = { signature: sig, image };
+    tile._idmapCache[this.props.id] = { signature: sig, lut, pickMap: this.props.pickMap, image };
     return image;
   }
 
@@ -159,6 +196,29 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       top,
     ];
     const pickable = Boolean(this.props.pickMap);
+    if (this.state?.paletteTexture && tile.data[1]) {
+      if (!tile._packedLabels) {
+        const data = new Uint8Array(tile.width * tile.height * 4);
+        for (let i = 0; i < tile.data[0].length; i++) {
+          const label = tile.data[0][i];
+          data[i * 4] = label & 255;
+          data[i * 4 + 1] = (label >>> 8) & 255;
+          data[i * 4 + 2] = (label >>> 16) & 255;
+          data[i * 4 + 3] = label >>> 24;
+        }
+        tile._packedLabels = { data, width: tile.width, height: tile.height };
+        tile._border = { data: tile.data[1] as Uint8Array, width: tile.width, height: tile.height };
+      }
+      const highlightedLabel = highlightedLabelFor(this.props);
+      return new PaletteBitmapLayer(props, {
+        id: `${this.props.id}-bitmap-${index.x}-${index.y}-${index.z}`,
+        image: tile._packedLabels, border: tile._border!, bounds, pickable,
+        palette: this.state.paletteTexture, maxLabel: this.props.maxLabel, highlightedLabel,
+        fillOpacity: this.props.fillOpacity, borderOpacity: this.props.borderOpacity,
+        showBorders: this.props.showBorders, textureParameters: NEAREST_SAMPLER,
+        idLabels: tile.data[0], idTileWidth: tile.width,
+      });
+    }
     return new BitmapLayer(props, {
       id: `${this.props.id}-bitmap-${index.x}-${index.y}-${index.z}`,
       image: this._colorize(tile),
@@ -175,14 +235,16 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
   // label (from the retained label tile) -> uuid (from pickMap).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getPickingInfo({ info }: { info: any }): any {
-    const sourceProps = info?.sourceLayer?.props;
+    // Deck replaces sourceLayer at each composite boundary. TileLayer retains
+    // the actual bitmap under sourceTileSubLayer while Viv forwards the pick.
+    const sourceProps = info?.sourceTileSubLayer?.props ?? info?.sourceLayer?.props;
     const labels = sourceProps?.idLabels as Uint32Array | Uint16Array | Uint8Array | undefined;
     const width = sourceProps?.idTileWidth as number | undefined;
     if (info?.bitmap?.pixel && labels && width) {
       const [px, py] = info.bitmap.pixel;
       if (px >= 0 && py >= 0 && px < width) {
         const label = labels[py * width + px];
-        if (label > 0) {
+        if (label > 0 && label <= this.props.maxLabel && this.props.lut[label * 4 + 3] !== 0) {
           info.object = { label, uuid: this.props.pickMap?.get(label) ?? null };
           return info;
         }
@@ -201,6 +263,7 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       [this.props.borderOpacity, this.props.showBorders ? 1 : 0],
       [this.props.visualRevision, 0],
       [this.props.highlightRevision, 0],
+      [paletteId(this.props.lut), this.props.maxLabel],
     ];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -220,11 +283,15 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
       // Suppress viv's low-res Background-Image layer: it renders via XRLayer
       // (uncoloured white/grayscale wash) and would bypass our colorization.
       excludeBackground: true,
-      // Override viv's per-tile renderer with our CPU LUT colorization.
+      // Override Viv's grayscale renderer with label-aware palette shading.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       renderSubLayers: (props: any) => this._renderTile(props),
       // Bypass viv's default ColorPaletteExtension; we colour in renderSubLayers.
       extensions: NO_EXTENSIONS,
+      onViewportLoad: this.props.onViewportLoad,
+      onTileError: this.props.onTileError,
+      // Viv does not report byteLength on tile content; use a count bound.
+      maxCacheSize: 128,
     });
     return new MultiscaleImageLayer(subLayerProps) as unknown as Layer;
   }

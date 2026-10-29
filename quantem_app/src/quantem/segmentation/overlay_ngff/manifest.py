@@ -7,6 +7,8 @@ import logging
 from typing import Any
 from urllib.parse import urlencode
 
+from django.utils import timezone
+
 from quantem.segmentation.models import ImageSegmentation, SegmentationOverlayState
 
 from .constants import OVERLAY_ARRAY_KEYS, OVERLAY_CHUNK_SIZE
@@ -20,6 +22,17 @@ from .paths import (
 from .store import _is_valid_label_store, _level_shapes
 
 logger = logging.getLogger(__name__)
+
+
+def _save_manifest_state(state, update_fields):
+    """A poll must never overwrite a writer that finished after its read."""
+    values = {field: getattr(state, field) for field in update_fields if field != "updated_at"}
+    values["updated_at"] = timezone.now()
+    SegmentationOverlayState.objects.filter(pk=state.pk, updated_at=state.updated_at).update(
+        **values
+    )
+    state.refresh_from_db()
+
 
 #: How many times the *manifest poll* may re-queue a rebuild that keeps failing
 #: before it stops asking and reports the failure instead. Counted since the
@@ -124,7 +137,7 @@ def _record_manifest_failure(
         return
     state.status = SegmentationOverlayState.STATUS_FAILED
     state.last_error = reason
-    state.save(update_fields=["status", "last_error", "updated_at"])
+    _save_manifest_state(state, update_fields=["status", "last_error", "updated_at"])
 
 
 def _try_queue_overlay_rebuild(
@@ -312,7 +325,6 @@ def ensure_overlay_manifest(
             # again. The user's own next edit, or the rebuild button, clears it
             # and retries; see ``mutations._register_overlay_mutation_one``.
             manifest = build_overlay_manifest(segmentation, state)
-            _write_debug_manifest(segmentation, state)
             return manifest
         if has_pending_work and not overlay_job_active:
             _try_queue_overlay_rebuild(
@@ -336,9 +348,8 @@ def ensure_overlay_manifest(
         if state.status != next_status or state.last_error:
             state.status = next_status
             state.last_error = ""
-            state.save(update_fields=["status", "last_error", "updated_at"])
+            _save_manifest_state(state, update_fields=["status", "last_error", "updated_at"])
         manifest = build_overlay_manifest(segmentation, state)
-        _write_debug_manifest(segmentation, state)
         return manifest
 
     overlay_job_active = _overlay_job_exists(
@@ -391,13 +402,14 @@ def ensure_overlay_manifest(
                 state.status = SegmentationOverlayState.STATUS_BUILDING
                 state.pending_full_rebuild = True
                 state.last_error = ""
-                state.save(
+                _save_manifest_state(
+                    state,
                     update_fields=[
                         "status",
                         "pending_full_rebuild",
                         "last_error",
                         "updated_at",
-                    ]
+                    ],
                 )
             _try_queue_overlay_rebuild(
                 segmentation,
@@ -418,17 +430,21 @@ def ensure_overlay_manifest(
             width=width,
             height=height,
         ):
-            _write_debug_manifest(segmentation, state)
             fallback = build_overlay_manifest(segmentation, aggregate_state)
             # Draw the aggregate, but do not let it swallow the news that this
             # model's own bundle failed: the two are different pictures, and a
             # user comparing models has to know they are looking at the other
             # one.
-            state.refresh_from_db(fields=["status", "last_error"])
-            if state.status == SegmentationOverlayState.STATUS_FAILED and state.last_error:
-                fallback["last_error"] = state.last_error
+            state.refresh_from_db()
+            requested = build_overlay_manifest(segmentation, state)
+            # Drawing identity remains the aggregate's; lifecycle always refers
+            # to the requested model. Never compare the two revision counters.
+            for key in ("status", "last_error", "update_job"):
+                fallback[key] = requested[key]
+            fallback["requested_source_model"] = state.candidate_source_model
+            fallback["requested_desired_revision"] = state.desired_revision
+            fallback["is_fallback"] = True
             return fallback
 
     manifest = build_overlay_manifest(segmentation, state)
-    _write_debug_manifest(segmentation, state)
     return manifest

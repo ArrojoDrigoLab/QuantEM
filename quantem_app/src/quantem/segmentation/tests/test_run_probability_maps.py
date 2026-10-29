@@ -233,7 +233,14 @@ class ProbabilityMapPersistedByRunTests(TestCase):
     def test_an_roi_run_records_the_window_so_it_is_read_at_the_right_offset(self):
         self._annotate()
         roi = create_roi_image_from_image(
-            self.image, x=20, y=20, width=120, height=120, source="AUTO", is_active=True
+            self.image,
+            x=20,
+            y=20,
+            width=120,
+            height=120,
+            source="AUTO",
+            is_active=True,
+            segmentation=self.segmentation,
         )
         prob = np.full((SIZE, SIZE), 0.02, dtype=np.float32)
         prob[40:100, 40:100] = 0.95

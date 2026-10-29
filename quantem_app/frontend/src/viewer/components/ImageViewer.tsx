@@ -65,10 +65,12 @@ export function ImageViewer({
     onOverlayRevisionDisplayed:
       idMapOverlays.length === 0 ? overlays?.onRasterRevisionDisplayed : undefined,
   });
-  const idMapDataById = useViewerIdMapLoaders(
-    idMapOverlays,
-    idMapOverlays.length > 0 ? overlays?.onRasterRevisionDisplayed : undefined
-  );
+  const idMapDataById = useViewerIdMapLoaders(idMapOverlays);
+  const [tileErrors, setTileErrors] = useState<Record<string, string>>({});
+  const handleIdMapTileError = useCallback((url: string, error: Error) => {
+    setTileErrors((prev) => prev[url] ? prev : { ...prev, [url]: error.message });
+  }, []);
+  useEffect(() => { setTileErrors({}); }, [image.ngffUrl]);
   const resolvedImageWidth = image.width ?? inferredSize?.width ?? 1;
   const resolvedImageHeight = image.height ?? inferredSize?.height ?? 1;
   const viewportState = useViewerViewportState({
@@ -174,17 +176,34 @@ export function ImageViewer({
         idMapDataById,
         bitmapOverlays,
         zIndex: clampedZIndex,
+        onIdMapTileError: handleIdMapTileError,
       }),
     [
       bitmapOverlays,
       clampedZIndex,
       displayedOverlayNgffLayers,
-      idMapDataById,
       idMapOverlays,
+      idMapDataById,
       loaderData,
       overlayLoaderDataByUrl,
+      handleIdMapTileError,
     ]
   );
+
+  const displayedKey = useRef("");
+  useEffect(() => { displayedKey.current = ""; }, [image.ngffUrl]);
+  const acknowledgeOverlayDraw = useCallback(() => {
+    const spec = idMapOverlays.find((item) => item.revisionRole === "confirmed") ??
+      (idMapOverlays.length === 1 && !idMapOverlays[0].revisionRole ? idMapOverlays[0] : undefined);
+    if (!spec || spec.revision == null) return;
+    const loaded = idMapDataById[spec.id];
+    const layer = deckLayers.find((item) => item.id === `idmap-overlay-${spec.id}`);
+    if (loaded?.ngffUrl !== spec.ngffUrl || !layer?.isLoaded || tileErrors[spec.ngffUrl] || spec.loadError) return;
+    const key = `${spec.ngffUrl}:${spec.lutRevision}`;
+    if (displayedKey.current === key) return;
+    displayedKey.current = key;
+    overlays?.onRasterRevisionDisplayed?.(spec.revision, spec.lutRevision);
+  }, [deckLayers, idMapDataById, idMapOverlays, overlays, tileErrors]);
 
   const showControls = viewport?.showControls ?? true;
   const containerClass = `image-viewer ${className || ""} ${brushMode ? "brush-active" : ""}`.trim();
@@ -215,7 +234,13 @@ export function ImageViewer({
         viewState={viewportState.deckViewState}
         controller={false}
         layers={deckLayers}
+        onAfterRender={acknowledgeOverlayDraw}
       />
+      {(Object.values(idMapDataById).some((data) => data.error) || idMapOverlays.some((spec) => tileErrors[spec.ngffUrl] || spec.loadError)) && (
+        <div role="alert" style={{ position: "absolute", top: 8, left: 8, zIndex: 5, background: "#1f2937", color: "white", padding: 8 }}>
+          An overlay could not be loaded. Reload the display to retry.
+        </div>
+      )}
       <div
         ref={interactionLayerRef}
         style={{ position: "absolute", inset: 0, touchAction: "none" }}

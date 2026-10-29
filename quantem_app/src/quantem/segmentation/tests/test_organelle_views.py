@@ -291,6 +291,7 @@ class OrganelleRerunRoiViewTests(TestCase):
     def test_rerun_roi_enqueues_with_active_roi(self):
         roi = create_roi_image_from_image(
             self.image,
+            segmentation=self.segmentation,
             x=0,
             y=0,
             width=min(self.image.width, 128),
@@ -312,6 +313,7 @@ class OrganelleRerunRoiViewTests(TestCase):
     def test_rerun_roi_uses_explicit_roi_id(self):
         roi_old = create_roi_image_from_image(
             self.image,
+            segmentation=self.segmentation,
             x=0,
             y=0,
             width=min(self.image.width, 128),
@@ -320,6 +322,7 @@ class OrganelleRerunRoiViewTests(TestCase):
         )
         create_roi_image_from_image(
             self.image,
+            segmentation=self.segmentation,
             x=32,
             y=32,
             width=min(self.image.width, 96),
@@ -339,6 +342,7 @@ class OrganelleRerunRoiViewTests(TestCase):
     def test_rerun_roi_uses_active_roi_not_latest_created(self):
         roi_old = create_roi_image_from_image(
             self.image,
+            segmentation=self.segmentation,
             x=0,
             y=0,
             width=min(self.image.width, 128),
@@ -347,13 +351,14 @@ class OrganelleRerunRoiViewTests(TestCase):
         )
         create_roi_image_from_image(
             self.image,
+            segmentation=self.segmentation,
             x=32,
             y=32,
             width=min(self.image.width, 96),
             height=min(self.image.height, 96),
             source="MANUAL",
         )
-        activate_roi(roi_old)
+        activate_roi(roi_old, self.segmentation)
 
         response = self.client.post(
             f"/api/segmentations/{self.segmentation.id}/rerun-roi/",

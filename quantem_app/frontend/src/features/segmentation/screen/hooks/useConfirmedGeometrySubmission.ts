@@ -1,3 +1,4 @@
+import type { OverlayRevisionTarget } from "@/shared/types/segmentation";
 import { useCallback } from "react";
 import { confirmSegmentsBatch } from "@/shared/api/segmentations/annotations";
 import {
@@ -15,13 +16,13 @@ interface UseConfirmedGeometrySubmissionArgs {
   registerAnnotationActivity: () => void;
   stageOptimisticSegments: (
     items: SegmentObject[],
-    targetRevision?: number | null
+    targetRevision?: OverlayRevisionTarget | null
   ) => void;
   clearOptimisticSegments: (segmentIds: string[]) => void;
-  stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: number | null) => void;
+  stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: OverlayRevisionTarget | null) => void;
   getOptimisticTargetRevision: (
     overlay: SegmentationOverlayMutationState | null | undefined
-  ) => number | null;
+  ) => OverlayRevisionTarget | null;
   handleOverlayMutationRefresh: (
     overlay: SegmentationOverlayMutationState | null | undefined
   ) => void;

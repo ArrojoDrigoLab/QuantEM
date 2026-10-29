@@ -21,7 +21,6 @@ from .shared import (
     _extract_polygons,
     _filter_supported_polygons,
     _geometries_overlap,
-    _invalidate_tiles_for_segmentation,
     _parse_optional_sam_score,
     bbox_intersects_filter,
     completion_lock_response,
@@ -110,7 +109,6 @@ class SegmentCreateView(APIView):
         # default, so a drawn object reached objects.csv with every morphometric
         # column blank while `calibrated` said True next to it.
         measurement = measure_segments(segmentation, [segment])
-        _invalidate_tiles_for_segmentation(str(segmentation.id))
         # A CONFIRMED object is a member of every bundle; a candidate is scoped
         # to its one source bundle.
         overlay_mutation = (
@@ -299,7 +297,6 @@ class SegmentationConfirmBatchView(APIView):
                 include=[effective_geometry],
                 source="manual",
             )
-            _invalidate_tiles_for_segmentation(str(segmentation.id))
             overlay = register_overlay_mutation_all_bundles(
                 segmentation,
                 dirty_bbox=full_image_dirty_bbox(segmentation),
@@ -356,7 +353,6 @@ class SegmentationConfirmBatchView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         overlay = None
         if result.get("created", 0) or result.get("updated", 0) or result.get("deleted", 0):
-            _invalidate_tiles_for_segmentation(str(segmentation.id))
             overlay = register_confirmation_overlay_mutation(
                 segmentation=segmentation,
                 result=result,
@@ -449,7 +445,6 @@ class SegmentationRemoveAreaView(APIView):
                 exclude=[remove_geometry],
                 source="manual-remove",
             )
-            _invalidate_tiles_for_segmentation(str(segmentation.id))
             overlay = register_overlay_mutation_all_bundles(
                 segmentation,
                 dirty_bbox=full_image_dirty_bbox(segmentation),
@@ -585,7 +580,6 @@ class SegmentationRemoveAreaView(APIView):
 
         overlay = None
         if created > 0 or updated > 0 or deleted > 0:
-            _invalidate_tiles_for_segmentation(str(segmentation.id))
             # Edits confirmed objects, which belong to every bundle.
             overlay = register_overlay_mutation_all_bundles(
                 segmentation,
@@ -636,7 +630,6 @@ class SegmentBatchDeleteView(APIView):
 
         overlay = None
         if deleted:
-            _invalidate_tiles_for_segmentation(str(segmentation.id))
             # Hard-deletes objects (CANDIDATE or CONFIRMED); fan to every bundle
             # so a deleted confirmed object is removed everywhere.
             overlay = register_overlay_mutation_all_bundles(

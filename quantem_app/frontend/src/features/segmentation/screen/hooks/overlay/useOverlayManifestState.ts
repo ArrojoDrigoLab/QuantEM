@@ -34,6 +34,7 @@ export function useOverlayManifestState({
     useState(true);
   const [leftDisplayedOverlayRevision, setLeftDisplayedOverlayRevision] =
     useState<number | null>(null);
+  const [leftDisplayedOverlayLutRevision, setLeftDisplayedOverlayLutRevision] = useState<number | null>(null);
   const [rightDisplayedOverlayRevision, setRightDisplayedOverlayRevision] =
     useState<number | null>(null);
   const { manifest: overlayManifest, refetch: refetchModelOverlayManifest } =
@@ -63,9 +64,13 @@ export function useOverlayManifestState({
 
   useEffect(() => {
     setOverlayManifestPollingEnabled(true);
-    setLeftDisplayedOverlayRevision(null);
-    setRightDisplayedOverlayRevision(null);
   }, [activeSourceModel, currentSegmentationId]);
+
+  useEffect(() => {
+    setLeftDisplayedOverlayRevision(null);
+    setLeftDisplayedOverlayLutRevision(null);
+    setRightDisplayedOverlayRevision(null);
+  }, [currentSegmentationId]);
 
   /**
    * A FAILED build is terminal, so this is false on one: the server has
@@ -156,8 +161,9 @@ export function useOverlayManifestState({
     void refetchOverlayManifest();
   }, [refetchOverlayManifest]);
 
-  const handleLeftOverlayRevisionDisplayed = useCallback((revision: number | null) => {
+  const handleLeftOverlayRevisionDisplayed = useCallback((revision: number | null, lutRevision?: number) => {
     setLeftDisplayedOverlayRevision(revision);
+    setLeftDisplayedOverlayLutRevision(lutRevision ?? null);
   }, []);
 
   const handleRightOverlayRevisionDisplayed = useCallback((revision: number | null) => {
@@ -188,6 +194,7 @@ export function useOverlayManifestState({
     handleLeftOverlayRevisionDisplayed,
     handleRightOverlayRevisionDisplayed,
     leftDisplayedOverlayRevision,
+    leftDisplayedOverlayLutRevision,
     rightDisplayedOverlayRevision,
   };
 }

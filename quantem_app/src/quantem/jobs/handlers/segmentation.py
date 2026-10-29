@@ -1,5 +1,9 @@
 """Job handlers that run, re-measure or re-render a segmentation."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from quantem.jobs.constants import (
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
     JOB_TYPE_REFRESH_SEGMENT_FEATURES,
@@ -10,25 +14,9 @@ from quantem.jobs.constants import (
 from quantem.jobs.handlers.common import _as_bool
 from quantem.jobs.registry import job_handler
 from quantem.jobs.reporter import CancelToken, JobReporter
-from quantem.seg_core.registry import get_segmenter_or_none
-from quantem.segmentation.features.measure import MEASURED_MARKER_KEY
-from quantem.segmentation.models import (
-    ImageSegmentation,
-    SegmentObject,
-)
-from quantem.segmentation.organelle_tasks import (
-    NO_OBJECTS_MESSAGE,
-    run_segmentation_for_image_task,
-    run_segmentation_full_task,
-    run_segmentation_roi_task,
-    zero_object_outcome,
-)
-from quantem.segmentation.overlay_ngff import run_overlay_rebuild_job
-from quantem.segmentation.source_models import (
-    normalize_source_model,
-    resolve_segmenter_internal_name,
-)
-from quantem.segmentation.tasks import measure_segments_batched
+
+if TYPE_CHECKING:
+    from quantem.segmentation.models import ImageSegmentation
 
 
 def _segmentation_run_outcome(
@@ -49,6 +37,8 @@ def _segmentation_run_outcome(
     See :func:`quantem.segmentation.organelle_tasks.zero_object_outcome`.
     Without it, the caller gets the nothing-is-labelled wording.
     """
+    from quantem.segmentation.organelle_tasks import NO_OBJECTS_MESSAGE, zero_object_outcome
+
     if segment_count > 0:
         return (
             f"completed: {segment_count} objects found",
@@ -73,6 +63,13 @@ def _segmentation_run_outcome(
 
 
 def _validate_segmentation_payload(payload: dict) -> ImageSegmentation:
+    from quantem.seg_core.registry import get_segmenter_or_none
+    from quantem.segmentation.models import ImageSegmentation
+    from quantem.segmentation.source_models import (
+        normalize_source_model,
+        resolve_segmenter_internal_name,
+    )
+
     segmentation_id = str(payload.get("segmentation_id") or "").strip()
     payload_segmentation_type = str(payload.get("segmentation_type") or "").strip()
     if not segmentation_id:
@@ -118,6 +115,9 @@ def _validate_segmentation_payload(payload: dict) -> ImageSegmentation:
 def handle_run_segmentation_roi_task(
     payload: dict, reporter: JobReporter, cancel: CancelToken
 ) -> dict:
+    from quantem.segmentation.organelle_tasks import run_segmentation_roi_task
+    from quantem.segmentation.source_models import normalize_source_model
+
     cancel.check_cancelled()
     segmentation = _validate_segmentation_payload(payload)
     roi_id = payload.get("roi_id")
@@ -151,6 +151,9 @@ def handle_run_segmentation_roi_task(
 def handle_run_segmentation_full_task(
     payload: dict, reporter: JobReporter, cancel: CancelToken
 ) -> dict:
+    from quantem.segmentation.organelle_tasks import run_segmentation_full_task
+    from quantem.segmentation.source_models import normalize_source_model
+
     cancel.check_cancelled()
     segmentation = _validate_segmentation_payload(payload)
     force_recompute_prob_maps = _as_bool(
@@ -188,6 +191,9 @@ def handle_run_segmentation_for_image(
     the single-run validation applied leg by leg, so a bad request is refused
     here rather than half-way through a twenty-minute run.
     """
+    from quantem.segmentation.organelle_tasks import run_segmentation_for_image_task
+    from quantem.segmentation.source_models import normalize_source_model
+
     cancel.check_cancelled()
     asset_id = str(payload.get("asset_id") or "").strip()
     if not asset_id:
@@ -240,6 +246,9 @@ def _unmeasured_segment_ids(segmentation_id: str) -> list[str]:
     in a background job over one indexed filter, and the answer is normally an
     empty list.
     """
+    from quantem.segmentation.features.measure import MEASURED_MARKER_KEY
+    from quantem.segmentation.models import SegmentObject
+
     rows = SegmentObject.objects.filter(segmentation_id=segmentation_id).values_list(
         "id", "features"
     )
@@ -268,6 +277,8 @@ def handle_refresh_segment_features(
     now says which objects it looked at and how many needed work, so "complete"
     over nothing is distinguishable from "complete" over something.
     """
+    from quantem.segmentation.tasks import measure_segments_batched
+
     cancel.check_cancelled()
     segmentation_id = str(payload.get("segmentation_id") or "").strip()
     raw_segment_ids = payload.get("segment_ids") or []
@@ -337,6 +348,10 @@ def handle_refresh_segment_features(
 def handle_rebuild_segmentation_overlay(
     payload: dict, reporter: JobReporter, cancel: CancelToken
 ) -> dict:
+    from quantem.segmentation.models import ImageSegmentation
+    from quantem.segmentation.overlay_ngff import run_overlay_rebuild_job
+    from quantem.segmentation.source_models import normalize_source_model
+
     cancel.check_cancelled()
     segmentation_id = str(payload.get("segmentation_id") or "").strip()
     if not segmentation_id:

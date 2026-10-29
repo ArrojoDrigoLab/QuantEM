@@ -12,7 +12,7 @@ import { LeftPanelStatusMessage } from "@/features/segmentation/components/leftP
 import { OverlayLayerMenu } from "@/features/segmentation/components/OverlayLayerMenu";
 import type { SegmentationLeftPanelProps } from "@/features/segmentation/components/leftPanel/types";
 import { useThresholdPreviewStore } from "@/features/segmentation/components/threshold/useThresholdPreviewStore";
-import { colorizeProb } from "@/features/segmentation/erPreview/overlayCanvas";
+import { prepareProbabilityImage } from "@/features/segmentation/erPreview/overlayCanvas";
 import {
   selectSegmentGeometryCoords,
   selectSegmentHoleCoords,
@@ -39,7 +39,7 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
   const thresholdCanvas = useMemo(
     () =>
       thresholdOverlay && !props.workflow.readOnly
-          ? colorizeProb(thresholdOverlay, threshold, thresholdOpacity, {
+          ? prepareProbabilityImage(thresholdOverlay, {
             // The threshold map is a raw model view beneath accepted work.
             // Erase confirmed pixels from the bitmap itself as well as drawing
             // the green vectors later, so transparency settings can never let
@@ -58,8 +58,6 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
       confirmedMasks,
       props.roi.completedRois,
       props.workflow.readOnly,
-      threshold,
-      thresholdOpacity,
       thresholdOverlay,
     ]
   );
@@ -73,16 +71,17 @@ export function SegmentationLeftPanel(props: SegmentationLeftPanelProps) {
         ...config.overlays,
         bitmapOverlays: [
           {
-            id: `threshold-preview-${thresholdOverlay.sourceModel}-${threshold.toFixed(2)}`,
+            id: `threshold-preview-${thresholdOverlay.sourceModel}`,
             image: thresholdCanvas,
             bounds: thresholdOverlay.bounds,
-            opacity: 1,
+            opacity: thresholdOpacity,
+            probability: { threshold, color: thresholdOverlay.color },
           },
         ],
       };
     }
     return config;
-  }, [overlayScene, props, thresholdOverlay, thresholdCanvas, threshold]);
+  }, [overlayScene, props, thresholdOverlay, thresholdCanvas, threshold, thresholdOpacity]);
 
   return (
     <section className="seg-left">

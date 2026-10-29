@@ -12,7 +12,7 @@ import {
   LABELING_ROI_SIZE,
   useErRoiWorkflow,
 } from "@/features/segmentation/screen/hooks/useErRoiWorkflow";
-import { setRoiCompleteForSegmentation } from "@/shared/api/segmentations/rois";
+import { createSegmentationRoi, setRoiCompleteForSegmentation } from "@/shared/api/segmentations/rois";
 import type {
   RoiCompletionResponse,
   SegmentationRoi,
@@ -37,7 +37,98 @@ function makeRoi(): SegmentationRoi {
 
 describe("useErRoiWorkflow", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+  });
+
+  it("clears an unfinished ROI edit when switching organelles", () => {
+    const { result, rerender } = renderHook(
+      ({ id }) => useErRoiWorkflow({
+        currentSegmentationId: id,
+        enabled: true,
+        image: { width: 2048, height: 1536 },
+        isPointInsideImageBounds: () => true,
+        refetchSegmentationRois: vi.fn(),
+        showErrorToast: vi.fn(),
+      }),
+      { initialProps: { id: "seg-1" } }
+    );
+    act(() => result.current.editRoi(makeRoi()));
+    expect(result.current.pendingRoi).not.toBeNull();
+    rerender({ id: "nucleus" });
+    expect(result.current.pendingRoi).toBeNull();
+    expect(result.current.placementActive).toBe(false);
+    expect(result.current.relocatingRoiId).toBeNull();
+  });
+
+  it("does not clear a new organelle's edit when an old save finishes", async () => {
+    let resolve!: (roi: SegmentationRoi) => void;
+    vi.mocked(createSegmentationRoi).mockReturnValue(new Promise((done) => { resolve = done; }));
+    const confirmed = vi.fn();
+    const refresh = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ id }) => useErRoiWorkflow({
+        currentSegmentationId: id,
+        enabled: true,
+        image: { width: 2048, height: 1536 },
+        isPointInsideImageBounds: () => true,
+        refetchSegmentationRois: refresh,
+        onRoiConfirmed: confirmed,
+        showErrorToast: vi.fn(),
+      }),
+      { initialProps: { id: "seg-1" } }
+    );
+    act(() => result.current.editRoi(makeRoi()));
+    let save!: Promise<void>;
+    act(() => { save = result.current.confirmRoi(); });
+    rerender({ id: "nucleus" });
+    act(() => result.current.editRoi({ ...makeRoi(), id: "nucleus-roi", segmentation: "nucleus" }));
+    await act(async () => { resolve(makeRoi()); await save; });
+    expect(result.current.pendingRoi?.roiId).toBe("nucleus-roi");
+    expect(result.current.placementActive).toBe(true);
+    expect(confirmed).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("finishes saving without refreshing a viewer that has been unmounted", async () => {
+    let resolve!: (roi: SegmentationRoi) => void;
+    vi.mocked(createSegmentationRoi).mockReturnValue(new Promise((done) => { resolve = done; }));
+    const refresh = vi.fn();
+    const confirmed = vi.fn();
+    const { result, unmount } = renderHook(() => useErRoiWorkflow({
+      currentSegmentationId: "seg-1",
+      enabled: true,
+      image: { width: 2048, height: 1536 },
+      isPointInsideImageBounds: () => true,
+      refetchSegmentationRois: refresh,
+      onRoiConfirmed: confirmed,
+      showErrorToast: vi.fn(),
+    }));
+    act(() => result.current.editRoi(makeRoi()));
+    let save!: Promise<void>;
+    act(() => { save = result.current.confirmRoi(); });
+    unmount();
+    await act(async () => { resolve(makeRoi()); await save; });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(confirmed).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed refresh after saving without rejecting the event handler", async () => {
+    vi.mocked(createSegmentationRoi).mockResolvedValue(makeRoi());
+    const refresh = vi.fn().mockRejectedValue(new Error("Network unavailable"));
+    const showErrorToast = vi.fn();
+    const { result } = renderHook(() => useErRoiWorkflow({
+      currentSegmentationId: "seg-1",
+      enabled: true,
+      image: { width: 2048, height: 1536 },
+      isPointInsideImageBounds: () => true,
+      refetchSegmentationRois: refresh,
+      showErrorToast,
+    }));
+    act(() => result.current.editRoi(makeRoi()));
+    await act(async () => { await result.current.confirmRoi(); });
+    expect(result.current.confirming).toBe(false);
+    expect(result.current.pendingRoi).toBeNull();
+    expect(showErrorToast).toHaveBeenCalledWith(expect.stringContaining("saved, but its list"));
   });
 
   it("places new ROIs at 1024 square pixels by default", () => {

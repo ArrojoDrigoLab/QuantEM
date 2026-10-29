@@ -43,38 +43,14 @@ visibly only when a queued row of that type fails in a frozen build.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-import numpy as np
-from django.db import transaction
-from skimage.morphology import closing, disk
-
-from quantem.assets.models import ImageROI
 from quantem.jobs.constants import JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL
 from quantem.jobs.registry import job_handler
 from quantem.jobs.reporter import CancelToken, JobReporter
-from quantem.seg_core.db.extraction import extract_and_save_segments, resolve_min_area
-from quantem.seg_core.db.inference import replay_stored_probability_map
-from quantem.seg_core.registry import get_segmenter_or_none
-from quantem.segmentation.global_masks import load_global_mask, save_global_mask
-from quantem.segmentation.models import ImageSegmentation, ProbabilityMap, SavedSegmentationResult
-from quantem.segmentation.organelle_tasks import zero_object_outcome
-from quantem.segmentation.overlay_ngff import (
-    full_image_dirty_bbox,
-    register_overlay_mutation_all_bundles,
-)
-from quantem.segmentation.run_identity import (
-    RUN_SCOPE_FULL,
-    RUN_SCOPE_PATCH,
-    run_identity_from_segmenter,
-)
-from quantem.segmentation.saved_results import accept_model_area, publish_result
-from quantem.segmentation.services.confirm_batch.feature_refresh import (
-    _enqueue_segment_feature_refresh,
-)
-from quantem.segmentation.source_models import (
-    normalize_source_model,
-    resolve_segmenter_internal_name,
-)
+
+if TYPE_CHECKING:
+    from quantem.segmentation.models import ImageSegmentation
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +101,42 @@ def handle_reextract_at_include_level(
 
     Also accepts ``include_level`` (required), ``source_model`` and ``roi_id``.
     """
+    # Retresholding needs NumPy, scikit-image, and most of the segmentation
+    # stack. Import them in the worker instead of making every ordinary app
+    # launch load them merely to register this handler.
+    import numpy as np
+    from django.db import transaction
+    from skimage.morphology import closing, disk
+
+    from quantem.assets.models import ImageROI
+    from quantem.seg_core.db.extraction import extract_and_save_segments, resolve_min_area
+    from quantem.seg_core.db.inference import replay_stored_probability_map
+    from quantem.seg_core.registry import get_segmenter_or_none
+    from quantem.segmentation.global_masks import load_global_mask, save_global_mask
+    from quantem.segmentation.models import (
+        ImageSegmentation,
+        ProbabilityMap,
+        SavedSegmentationResult,
+    )
+    from quantem.segmentation.organelle_tasks import zero_object_outcome
+    from quantem.segmentation.overlay_ngff import (
+        full_image_dirty_bbox,
+        register_overlay_mutation_all_bundles,
+    )
+    from quantem.segmentation.run_identity import (
+        RUN_SCOPE_FULL,
+        RUN_SCOPE_PATCH,
+        run_identity_from_segmenter,
+    )
+    from quantem.segmentation.saved_results import accept_model_area, publish_result
+    from quantem.segmentation.services.confirm_batch.feature_refresh import (
+        _enqueue_segment_feature_refresh,
+    )
+    from quantem.segmentation.source_models import (
+        normalize_source_model,
+        resolve_segmenter_internal_name,
+    )
+
     cancel.check_cancelled()
 
     segmentation_id = str(payload.get("segmentation_id") or "").strip()
@@ -162,7 +174,9 @@ def handle_reextract_at_include_level(
     roi = None
     roi_id = str(payload.get("roi_id") or "").strip()
     if roi_id:
-        roi = ImageROI.objects.filter(asset=segmentation.asset, id=roi_id).first()
+        roi = ImageROI.objects.filter(
+            asset=segmentation.asset, segmentations=segmentation, id=roi_id
+        ).first()
         if roi is None:
             raise ValueError("The region this task was queued for is no longer here.")
 

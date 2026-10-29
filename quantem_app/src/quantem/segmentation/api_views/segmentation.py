@@ -14,7 +14,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from quantem.assets.asset_resolver import get_active_asset
-from quantem.assets.roi_state import get_active_roi_for_asset
+from quantem.assets.roi_state import (
+    get_active_roi_for_segmentation,
+    initialize_roi_from_template,
+)
 from quantem.jobs.constants import JOB_TYPE_RUN_SEGMENTATION_ROI, QUEUE_P3_ROI
 from quantem.jobs.models import Job
 from quantem.seg_core.registry import get_segmenter_or_none
@@ -221,9 +224,7 @@ def _create_segmentation_for_asset(request, *, asset):
         if updates:
             image_segmentation.save(update_fields=updates)
     if not manual_only_workflow:
-        existing_roi = get_active_roi_for_asset(asset)
-        if existing_roi:
-            existing_roi.segmentations.add(image_segmentation)
+        initialize_roi_from_template(image_segmentation)
 
         SegmentationConfig.objects.get_or_create(segmentation=image_segmentation)
 
@@ -248,7 +249,7 @@ def _create_segmentation_for_asset(request, *, asset):
             f"segmentation_type:{segmentation_type.internal_name}",
             f"source_model:{source_model}",
         ]
-        roi_image = get_active_roi_for_asset(asset)
+        roi_image = get_active_roi_for_segmentation(image_segmentation)
         roi_id = str(roi_image.id) if roi_image else None
         Job.enqueue(
             job_type=JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -600,6 +601,15 @@ class SegmentationCompleteView(APIView):
         # Compatibility for older installations: recover any objects archived by
         # the former completion action, without reclaiming prediction files.
         restored = restore_last_archive(segmentation)
+        from quantem.segmentation.overlay_ngff import (
+            queue_full_overlay_rebuild,
+            register_state_mutation,
+        )
+
+        if restored:
+            queue_full_overlay_rebuild(segmentation)
+        else:
+            register_state_mutation(segmentation)
         segmentation.manual_full_image = False
         if segmentation.status_stage == "COMPLETED":
             segmentation.status_stage = "CANDIDATES_READY"

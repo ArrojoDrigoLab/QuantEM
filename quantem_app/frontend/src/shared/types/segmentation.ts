@@ -92,6 +92,8 @@ export interface SegmentObject {
   updated_at: string;
 }
 
+export type OverlayRevisionTarget = number | { revision: number; lutRevision: number };
+
 export interface SegmentationOverlayMutationState {
   desired_revision: number;
   applied_revision: number;
@@ -102,6 +104,7 @@ export interface SegmentationOverlayMutationState {
   source_model?: string | null;
   /** Desired revision of the separate source-less confirmed-display bundle. */
   confirmed_display_desired_revision?: number;
+  confirmed_display_lut_revision?: number;
 }
 
 export interface RoiCompletionResponse extends SegmentationRoi {
@@ -140,6 +143,9 @@ export interface SegmentationOverlayManifest {
   label_dtype: "uint32";
   source_model?: string | null;
   display_role?: "model" | "confirmed";
+  is_fallback?: boolean;
+  requested_source_model?: string;
+  requested_desired_revision?: number;
   data_ready?: boolean;
   update_job?: {
     id: string;
@@ -168,6 +174,7 @@ export interface OverlayLutObject {
   is_cell: boolean;
   state: string;
   color: string;
+  hidden_by_completed_roi?: boolean;
 }
 
 export interface OverlayLutJson {

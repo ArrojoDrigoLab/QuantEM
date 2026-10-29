@@ -73,7 +73,7 @@ def get_overlay_chunk_shape(
     level: int,
     chunk_coords: tuple[int, int],
 ) -> tuple[int, int] | None:
-    """Return the (height, width) of a 2D chunk, clamped to the level bounds."""
+    """Return the encoded chunk shape, including padding on partial edge chunks."""
     width, height = segmentation_dimensions(segmentation)
     level_shapes = _level_shapes(width, height)
     if level < 0 or level >= len(level_shapes):
@@ -82,11 +82,11 @@ def get_overlay_chunk_shape(
     level_height, level_width = level_shapes[level]
     y_min = chunk_y * OVERLAY_CHUNK_SIZE
     x_min = chunk_x * OVERLAY_CHUNK_SIZE
-    if y_min >= level_height or x_min >= level_width:
+    if min(chunk_coords) < 0 or y_min >= level_height or x_min >= level_width:
         return None
     return (
-        min(OVERLAY_CHUNK_SIZE, level_height - y_min),
-        min(OVERLAY_CHUNK_SIZE, level_width - x_min),
+        min(OVERLAY_CHUNK_SIZE, level_height),
+        min(OVERLAY_CHUNK_SIZE, level_width),
     )
 
 
@@ -247,10 +247,12 @@ def _is_valid_label_store(
 
 def _open_label_arrays(
     state: SegmentationOverlayState,
+    *,
+    store_root: Path | None = None,
 ) -> dict[str, list[zarr.Array]]:
     if state.bundle_version <= 0:
         raise OverlayStoreError("overlay bundle_version is not set")
-    store_root = get_overlay_active_bundle_path(state)
+    store_root = store_root or get_overlay_active_bundle_path(state)
     width, height = segmentation_dimensions(state.segmentation)
     if not _is_valid_label_store(store_root, width=width, height=height):
         raise OverlayStoreError(f"Invalid overlay store at {store_root}")

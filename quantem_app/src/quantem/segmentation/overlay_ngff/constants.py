@@ -5,25 +5,16 @@ The overlay is an integer **label image** (``labels`` array, ``uint32``) plus a
 holds a *dense label* (``1..N``, ``0`` = background) that the frontend maps to a
 colour at render time via a lookup table (LUT). Object *state* (confirmed /
 candidate / excluded / refined / labeled) lives entirely in the LUT, so state
-changes never touch the raster -- only geometry edits do.
+changes update the palette; contested overlaps also repaint priority.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-# v6 changes named-bundle membership from ``confirmed OR manual OR selected
-# model`` to ``the selected model plus the hand-drawn objects``.  Another
-# model's objects now stay out, which is what makes a confirmation a LUT-only
-# update instead of a rebuild of every model's bundle.  Hand-drawn objects stay
-# in because owner ruling R13 forbids hiding what the user annotated: the
-# candidate layer reads this bundle, and it is the only layer that paints an
-# outline the user drew but has not confirmed -- the source-less bundle is
-# rendered through a confirmed-only LUT and would leave it invisible.  Bumping
-# the format makes every v5 bundle fail validation and rebuild under the new
-# contract instead of silently showing cross-model objects from its old label
-# map.
-OVERLAY_FORMAT_VERSION = 6
+# v7 excludes historical objects and publishes immutable raster snapshots with
+# an accompanying label map. Old stores rebuild instead of retaining stale IDs.
+OVERLAY_FORMAT_VERSION = 7
 OVERLAY_CHUNK_SIZE = 256
 
 # In-memory rasterisation uses int32 (OpenCV's label-image depth, CV_32SC1);

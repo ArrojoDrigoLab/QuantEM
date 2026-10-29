@@ -38,19 +38,8 @@ const CANDIDATE_LAYER_HIDDEN_STATES = ["confirmed", "excluded"];
 const CONFIRMED_LAYER_HIDDEN_STATES = ["candidate", "excluded"];
 const NO_HIDDEN_SEGMENTS = new Set<string>();
 
-/**
- * Appends/overwrites a `?rev=` cache key on the bundle URL so the browser and
- * the zarr loader refetch the raster whenever its pixels change.
- *
- * The raster changes on BOTH full rebuilds (which bump `bundle_version` and
- * renumber labels) AND in-place partial geometry updates (which edit the active
- * bundle and bump `applied_revision` but NOT `bundle_version`). Keying on
- * `bundle_version` alone -- as this once did -- left partial updates serving the
- * stale, pre-edit raster (newly drawn/confirmed objects invisible until a hard
- * refresh). Keying on `<bundle_version>-<applied_revision>` busts on either.
- * LUT-only state edits (confirm/recolour/show-hide) bump `lut_revision` only --
- * neither token here -- so they still never reload the rasters.
- */
+/** A full or partial build publishes a new immutable version-revision token.
+ * Palette-only edits retain this URL and all decoded raster tiles. */
 function withRasterRevision(
   url: string,
   bundleVersion: number,
@@ -105,13 +94,15 @@ export function useOverlayLayerControls({
     segmentationId,
     sourceModel: modelManifest?.source_model ?? null,
     lutRevision: modelManifest?.lut_revision ?? null,
-    enabled: !!modelManifest?.ngff_url,
+    rasterRevision: modelManifest ? `${modelManifest.bundle_version}-${modelManifest.applied_revision}` : null,
+    enabled: !!modelManifest?.ngff_url && !modelManifest.is_fallback,
     hiddenStates: CANDIDATE_LAYER_HIDDEN_STATES,
   });
   const confirmedLut = useOverlayLut({
     segmentationId,
     sourceModel: null,
     lutRevision: confirmedManifest?.lut_revision ?? null,
+    rasterRevision: confirmedManifest ? `${confirmedManifest.bundle_version}-${confirmedManifest.applied_revision}` : null,
     enabled: !!confirmedManifest?.ngff_url,
     hiddenStates: CONFIRMED_LAYER_HIDDEN_STATES,
   });
@@ -123,7 +114,7 @@ export function useOverlayLayerControls({
       modelManifest != null
         ? `${modelManifest.bundle_version}-${modelManifest.applied_revision}`
         : null,
-    enabled: !!modelManifest?.ngff_url,
+    enabled: !!modelManifest?.ngff_url && !modelManifest.is_fallback,
   });
   const confirmedPickMap = useOverlayPickMap({
     segmentationId,
@@ -143,7 +134,9 @@ export function useOverlayLayerControls({
     [confirmedLut, confirmedPickMap, hiddenSegmentIds]
   );
 
-  const candidateNgffUrl = modelManifest?.ngff_url
+  // The aggregate fallback keeps accepted annotations visible through the
+  // confirmed layer. Its other models' candidates cannot represent this model.
+  const candidateNgffUrl = modelManifest?.ngff_url && !modelManifest.is_fallback
     ? withRasterRevision(
         modelManifest.ngff_url,
         modelManifest.bundle_version,
@@ -165,9 +158,11 @@ export function useOverlayLayerControls({
         id: "label-left-candidates-idmap",
         ngffUrl: candidateNgffUrl,
         revision: modelManifest?.applied_revision,
+        revisionRole: "model",
         lut: visibleCandidateLut.rgba,
         maxLabel: visibleCandidateLut.maxLabel,
         lutRevision: visibleCandidateLut.lutRevision,
+        loadError: visibleCandidateLut.loadError,
         visualRevision: hiddenSegmentVisualRevision,
         fillOpacity: leftPanelLayerStyles.candidateFillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,
@@ -180,9 +175,11 @@ export function useOverlayLayerControls({
         id: "label-left-confirmed-idmap",
         ngffUrl: confirmedNgffUrl,
         revision: confirmedManifest?.applied_revision,
+        revisionRole: "confirmed",
         lut: visibleConfirmedLut.rgba,
         maxLabel: visibleConfirmedLut.maxLabel,
         lutRevision: visibleConfirmedLut.lutRevision,
+        loadError: visibleConfirmedLut.loadError,
         visualRevision: hiddenSegmentVisualRevision,
         fillOpacity: leftPanelLayerStyles.confirmedFillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,
@@ -214,9 +211,11 @@ export function useOverlayLayerControls({
         id: "label-right-confirmed-idmap",
         ngffUrl: confirmedNgffUrl,
         revision: confirmedManifest?.applied_revision,
+        revisionRole: "confirmed",
         lut: visibleConfirmedLut.rgba,
         maxLabel: visibleConfirmedLut.maxLabel,
         lutRevision: visibleConfirmedLut.lutRevision,
+        loadError: visibleConfirmedLut.loadError,
         visualRevision: hiddenSegmentVisualRevision,
         fillOpacity: rightPanelConfirmedStyle.fillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,

@@ -4,8 +4,10 @@ DRF views for the local image library.
 
 from __future__ import annotations
 
+import hmac
 import importlib
 import logging
+import os
 from functools import lru_cache
 from uuid import UUID
 
@@ -482,7 +484,15 @@ class SystemSettingsView(APIView):
         # does not wait for another application upgrade to happen.
         from quantem.core.migration_safety import prune_pre_migration_snapshots
 
-        removed = prune_pre_migration_snapshots(app_settings=updated)
+        backup_keys = {
+            "pre_migration_backup_retention_count",
+            "pre_migration_backup_retention_days",
+        }
+        removed = (
+            prune_pre_migration_snapshots(app_settings=updated)
+            if backup_keys.intersection(request.data)
+            else []
+        )
         return Response(
             {
                 **updated.as_dict(),
@@ -497,6 +507,12 @@ class SystemHandshakeView(APIView):
     """
 
     def get(self, request):
+        expected = os.environ.get("QUANTEM_STARTUP_TOKEN", "")
+        supplied = request.headers.get("X-QuantEM-Startup-Token", "")
+        if expected and not hmac.compare_digest(supplied, expected):
+            # Do not disclose that this is the selected desktop port to an
+            # unrelated local process which won the port race.
+            raise Http404
         return Response(
             {
                 "status": "ok",

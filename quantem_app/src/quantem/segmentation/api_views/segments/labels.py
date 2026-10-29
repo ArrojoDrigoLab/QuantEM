@@ -1,36 +1,15 @@
-"""Label-oriented segment API views.
+"""Label answers recolor immediately without raster work in the request.
 
-**No answer in this module paints the overlay inside the request.** Keeping an
-object, removing one, un-marking one, clearing the manual labels: each registers
-the edit, bumps the revision and leaves the raster to the rebuild queue, which
-is what ``allow_sync_partial=False`` says at every call site below.
-
-Why, in the reviewer's terms. Proofreading is a rhythm -- hover, key, hover, key
--- and every one of those keys used to open the bundle's zarr store, paint the
-dirty tile, rewrite every pyramid level above it and close the store again,
-*before the response was written*. Measured on a 1024x1024 fixture with one
-object that is 185 ms at p95 and 12.8 s for a hundred answers; on a real
-gigapixel image with two source bundles it was 543 ms and 54 s. The picture was
-correct a frame sooner and the person was slower for the rest of the session.
-
-It also cost correctness, not only time. Two answers arriving together took the
-synchronous path together, so two writers rewrote one store at once, and on
-Windows the colliding rename inside zarr's atomic write surfaced as an HTTP 500:
-7 of 24 simultaneous confirms, each of them a red toast over an answer the
-reviewer had in fact given.
-
-Nothing is lost by deferring. ``desired_revision`` still advances on the answer,
-the dirty region is still recorded, and the queued rebuild still applies it; the
-client already distinguishes "applied" from "desired" and holds its optimistic
-overlay until the bundle catches up. A *geometry* edit -- a drawn outline, a
-reshape, a cut -- keeps the synchronous path, because it changes pixels the user
-is looking at and is a deliberate single gesture rather than a stream.
+An uncontested answer only changes the palette. When objects overlap, paint
+priority can change too: queue a bounded repaint and retain the optimistic
+outline until the confirmed raster and palette have both been displayed.
 """
 
 from __future__ import annotations
 
 from django.db import transaction
 
+from quantem.segmentation.overlay_ngff import register_label_state_mutation
 from quantem.segmentation.revisions import save_revision
 from quantem.segmentation.segment_status import status_for_segment_lifecycle
 from quantem.segmentation.source_models import normalize_source_model
@@ -43,14 +22,12 @@ from .shared import (
     SegmentObjectLabelUpdateSerializer,
     SegmentObjectSerializer,
     _enqueue_segment_feature_refresh,
-    _invalidate_tiles_for_segmentation,
     _run_with_sqlite_lock_retry,
     completion_lock_response,
     full_image_dirty_bbox,
     get_object_or_404,
     logger,
     merge_dirty_bboxes,
-    register_overlay_mutation,
     register_overlay_mutation_all_bundles,
     status,
 )
@@ -90,22 +67,10 @@ class SegmentLabelUpdateView(APIView):
             refined=segment.refined,
         )
         _run_with_sqlite_lock_retry(lambda: segment.save())
-        _invalidate_tiles_for_segmentation(str(segment.segmentation_id))
-        # A flip to/from CONFIRMED changes all-bundle membership, so the edit must
-        # fan out to every bundle; otherwise it is scoped to the one source bundle.
-        confirmed_membership_changed = (
-            new_label_state == "CONFIRMED" or old_label_state == "CONFIRMED"
-        )
-        overlay_mutation = (
-            register_overlay_mutation_all_bundles
-            if confirmed_membership_changed
-            else register_overlay_mutation
-        )
-        overlay = overlay_mutation(
+        overlay = register_label_state_mutation(
             segment.segmentation,
-            dirty_bbox=merge_dirty_bboxes(segment.segmentation, [segment.geometry]),
+            [segment],
             source_model=normalize_source_model(request.data.get("source_model")),
-            allow_sync_partial=False,
         )
 
         if label_changed and (
@@ -173,8 +138,7 @@ class SegmentBatchLabelUpdateView(APIView):
         segments_by_id = {str(segment.id): segment for segment in segments}
         segments_to_update: list[SegmentObject] = []
         touched_segmentations: set[str] = set()
-        geometries_by_segmentation: dict[str, list] = {}
-        confirmed_membership_changed_by_segmentation: dict[str, bool] = {}
+        objects_by_segmentation: dict[str, list[SegmentObject]] = {}
         active_source_model = normalize_source_model(request.data.get("source_model"))
 
         for item in labels:
@@ -192,7 +156,6 @@ class SegmentBatchLabelUpdateView(APIView):
             if segment.label_state == new_label:
                 continue
 
-            old_label = segment.label_state
             segment.label_state = new_label
             segment.refined = "UNREFINED"
             segment.status = status_for_segment_lifecycle(
@@ -202,9 +165,7 @@ class SegmentBatchLabelUpdateView(APIView):
             segments_to_update.append(segment)
             segmentation_key = str(segment.segmentation_id)
             touched_segmentations.add(segmentation_key)
-            geometries_by_segmentation.setdefault(segmentation_key, []).append(segment.geometry)
-            if old_label == "CONFIRMED" or new_label == "CONFIRMED":
-                confirmed_membership_changed_by_segmentation[segmentation_key] = True
+            objects_by_segmentation.setdefault(segmentation_key, []).append(segment)
 
         updated_count = 0
         updated_ids: list[str] = []
@@ -223,7 +184,6 @@ class SegmentBatchLabelUpdateView(APIView):
                 str(segment.segmentation_id): segment.segmentation for segment in segments_to_update
             }
             for seg_id in touched_segmentations:
-                _invalidate_tiles_for_segmentation(seg_id)
                 try:
                     _enqueue_segment_feature_refresh(
                         segmentation_id=seg_id,
@@ -245,22 +205,10 @@ class SegmentBatchLabelUpdateView(APIView):
                     )
                     continue
             for seg_id, segmentation in segmentations_by_id.items():
-                # A flip to/from CONFIRMED changes all-bundle membership, so the
-                # edit must fan out to every bundle; otherwise it is scoped to the
-                # one source bundle.
-                overlay_mutation = (
-                    register_overlay_mutation_all_bundles
-                    if confirmed_membership_changed_by_segmentation.get(seg_id, False)
-                    else register_overlay_mutation
-                )
-                overlays[seg_id] = overlay_mutation(
+                overlays[seg_id] = register_label_state_mutation(
                     segmentation,
-                    dirty_bbox=merge_dirty_bboxes(
-                        segmentation,
-                        geometries_by_segmentation.get(seg_id, []),
-                    ),
+                    objects_by_segmentation[seg_id],
                     source_model=active_source_model,
-                    allow_sync_partial=False,
                 )
 
         return Response(
@@ -283,7 +231,7 @@ class SegmentationClearManualLabelsView(APIView):
     @transaction.atomic
     def post(self, request, seg_id):
         segmentation = get_object_or_404(
-            ImageSegmentation.objects.select_related("asset").select_for_update(),
+            ImageSegmentation.objects.select_related("asset").select_for_update(of=("self",)),
             id=seg_id,
         )
         locked = completion_lock_response(segmentation)
@@ -306,7 +254,6 @@ class SegmentationClearManualLabelsView(APIView):
         )
         deleted, _ = manual_qs.delete()
         if deleted > 0:
-            _invalidate_tiles_for_segmentation(str(segmentation.id))
             # Deleting confirmed/excluded objects removes them from every bundle.
             overlay = register_overlay_mutation_all_bundles(
                 segmentation,

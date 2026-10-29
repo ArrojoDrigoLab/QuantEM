@@ -43,6 +43,7 @@ export function useSegmentationOverlayState({
     // disk. Keep it until the always-mounted left viewer has loaded that exact
     // revision, otherwise a large bundle produces a visible blank interval.
     settledOverlayRevision: manifest.leftDisplayedOverlayRevision,
+    settledOverlayLutRevision: manifest.leftDisplayedOverlayLutRevision,
   });
   const refresh = useOverlayRefreshScheduler({
     currentSegmentationId,

@@ -88,7 +88,7 @@ export function useSegmentationProcessingState({
   const instanceParamsSegmentationRef = useRef<string | null>(null);
 
   const {
-    data: segmentationRois,
+    data: fetchedSegmentationRois,
     loading: segmentationRoisLoading,
     refetch: refetchSegmentationRois,
   } = useApiQuery(
@@ -97,6 +97,15 @@ export function useSegmentationProcessingState({
       return getSegmentationRois(currentSegmentation.id);
     },
     [currentSegmentation?.id]
+  );
+
+  // The query retains its previous data while fetching. Never expose another
+  // organelle's ROI IDs to controls during that transition.
+  const segmentationRois = useMemo(
+    () => fetchedSegmentationRois?.filter(
+      (roi) => roi.segmentation === currentSegmentation?.id
+    ) ?? null,
+    [fetchedSegmentationRois, currentSegmentation?.id]
   );
 
   const activeRoi = useMemo(

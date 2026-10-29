@@ -10,7 +10,7 @@ from shapely.geometry.base import BaseGeometry
 
 from quantem.segmentation.models import ImageSegmentation
 
-from .constants import OVERLAY_CHUNK_SIZE
+from .constants import OVERLAY_BORDER_WIDTH, OVERLAY_CHUNK_SIZE
 from .dimensions import segmentation_dimensions
 
 
@@ -75,10 +75,10 @@ def _normalize_dirty_bbox(
     image_width: int,
     image_height: int,
 ) -> DirtyBBox | None:
-    padded_min_x = max(0, int(math.floor(min_x)) - 1)
-    padded_min_y = max(0, int(math.floor(min_y)) - 1)
-    padded_max_x = min(image_width, int(math.ceil(max_x)) + 1)
-    padded_max_y = min(image_height, int(math.ceil(max_y)) + 1)
+    padded_min_x = max(0, int(math.floor(min_x)) - OVERLAY_BORDER_WIDTH)
+    padded_min_y = max(0, int(math.floor(min_y)) - OVERLAY_BORDER_WIDTH)
+    padded_max_x = min(image_width, int(math.ceil(max_x)) + OVERLAY_BORDER_WIDTH)
+    padded_max_y = min(image_height, int(math.ceil(max_y)) + OVERLAY_BORDER_WIDTH)
     if padded_max_x <= padded_min_x or padded_max_y <= padded_min_y:
         return None
     return DirtyBBox(
@@ -187,3 +187,13 @@ def _merge_dirty_runs_to_bbox(
         x_max=min(width, max(item.x_max for item in dirty_boxes)),
         y_max=min(height, max(item.y_max for item in dirty_boxes)),
     )
+
+
+def dirty_runs_to_chunk_coords(segmentation, runs) -> set[tuple[int, int]]:
+    """Union dirty chunks without filling the empty space between edits."""
+    coords: set[tuple[int, int]] = set()
+    for run in runs:
+        bbox = _merge_dirty_runs_to_bbox(segmentation, [run])
+        if bbox is not None:
+            coords.update(dirty_bbox_to_chunk_coords(bbox))
+    return coords

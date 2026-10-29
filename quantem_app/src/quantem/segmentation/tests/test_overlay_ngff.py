@@ -670,9 +670,9 @@ class SegmentationOverlaySyncPartialTests(TestCase):
         # colour comes from the LUT rather than the raster -- so this asserts
         # both that the dense label survived and that the LUT already resolves
         # the confirmed colour, with `applied_revision` still behind.
-        self.assertEqual(response.data["overlay"]["rebuild_mode"], "async_partial")
-        self.assertFalse(response.data["overlay"]["sync_applied"])
-        self.assertGreater(
+        self.assertEqual(response.data["overlay"]["rebuild_mode"], "metadata_only")
+        self.assertTrue(response.data["overlay"]["sync_applied"])
+        self.assertEqual(
             response.data["overlay"]["desired_revision"],
             response.data["overlay"]["applied_revision"],
         )
@@ -744,7 +744,7 @@ class SegmentationOverlaySparseChunkTests(TestCase):
         self.assertFalse(missing_chunk_path.exists())
 
         response = self.client.get(
-            f"/segmentation-overlays/{self.segmentation.id}.zarr/labels/0/2.0?rev=0"
+            f"/segmentation-overlays/{self.segmentation.id}.zarr/labels/0/2.0?rev={state.bundle_version}-{state.applied_revision}"
         )
 
         self.assertEqual(response.status_code, 200)
@@ -771,7 +771,7 @@ class SegmentationOverlaySparseChunkTests(TestCase):
         chunk_w = min(256, int(labels0.shape[1]))
 
         response = self.client.get(
-            f"/segmentation-overlays/{self.segmentation.id}.zarr/labels/0/2.0?rev=0"
+            f"/segmentation-overlays/{self.segmentation.id}.zarr/labels/0/2.0?rev={state.bundle_version}-{state.applied_revision}"
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(

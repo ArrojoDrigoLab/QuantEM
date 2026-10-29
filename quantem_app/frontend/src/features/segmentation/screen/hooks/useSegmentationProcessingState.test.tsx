@@ -12,7 +12,7 @@ import {
   unlockSegmentation,
 } from "@/shared/api/segmentations/annotations";
 import { getJobQueueStatus } from "@/shared/api/jobs";
-import { rerunSegmentationRoi } from "@/shared/api/segmentations/rois";
+import { getSegmentationRois, rerunSegmentationRoi } from "@/shared/api/segmentations/rois";
 import { ensureModelInstalled } from "@/features/models/ensureModelInstalled";
 import type { JobQueueItem, JobQueueStatus } from "@/shared/types/jobs";
 
@@ -30,6 +30,31 @@ describe("useSegmentationProcessingState", () => {
     vi.mocked(ensureModelInstalled).mockImplementation(
       async (packId) => ({ id: packId }) as Awaited<ReturnType<typeof ensureModelInstalled>>
     );
+  });
+
+  it("hides the previous organelle's ROIs while the new list is loading", async () => {
+    const mito = makeSegmentation();
+    vi.mocked(getSegmentationRois).mockResolvedValueOnce([{
+      id: "mito-roi", segmentation: mito.id, x: 0, y: 0, width: 64, height: 64,
+      source: "MANUAL", is_active: true, is_complete: false,
+      completed_for_segmentation: false, created_at: "", updated_at: "",
+    }]).mockReturnValueOnce(new Promise(() => {}));
+    const { result, rerender } = renderHook(
+      ({ segmentation }) => useSegmentationProcessingState({
+        currentSegmentation: segmentation,
+        activeSourceModel: null,
+        supportsPointFeedback: false,
+        supportsInstanceParams: false,
+        currentInstanceParams: null,
+        refetchSegmentations: vi.fn(),
+        refreshSegmentViews: vi.fn(async () => {}),
+      }),
+      { initialProps: { segmentation: mito }, wrapper: RouterWrapper }
+    );
+    await waitFor(() => expect(result.current.activeRoi?.id).toBe("mito-roi"));
+    rerender({ segmentation: makeSegmentation({ id: "nucleus" }) });
+    expect(result.current.segmentationRois).toEqual([]);
+    expect(result.current.activeRoi).toBeNull();
   });
 
   it("refreshes segment views after marking a segmentation complete", async () => {

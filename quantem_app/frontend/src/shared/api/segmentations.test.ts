@@ -52,8 +52,8 @@ describe("shared/api/segmentations", () => {
   });
 
   it("builds overlay NGFF URLs against the configured API base", () => {
-    expect(getSegmentationOverlayNgffUrl("seg-1", "rev-4")).toBe(
-      "http://127.0.0.1:9000/segmentation-overlays/seg-1.zarr?v=rev-4"
+    expect(getSegmentationOverlayNgffUrl("seg-1", "1-4")).toBe(
+      "http://127.0.0.1:9000/segmentation-overlays/seg-1.zarr?rev=1-4"
     );
   });
 

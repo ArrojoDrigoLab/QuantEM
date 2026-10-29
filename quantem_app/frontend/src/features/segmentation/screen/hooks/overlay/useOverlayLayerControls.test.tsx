@@ -41,6 +41,14 @@ function manifest(): SegmentationOverlayManifest {
 }
 
 describe("useOverlayLayerControls", () => {
+  it("does not present aggregate fallback candidates as a selected model", () => {
+    const { result } = renderHook(() => useOverlayLayerControls({
+      segmentationId: "seg-1",
+      modelManifest: { ...manifest(), is_fallback: true, status: "BUILDING", source_model: null },
+      confirmedManifest: manifest(),
+    }));
+    expect(result.current.leftIdMapOverlays.map((overlay) => overlay.revisionRole)).toEqual(["confirmed"]);
+  });
   it("builds independent candidate, left-confirmed, and right-confirmed raster layers", () => {
     const { result } = renderHook(() =>
       useOverlayLayerControls({

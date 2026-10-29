@@ -105,4 +105,6 @@ def test_upgrade_from_either_feature_history_preserves_data(
                 .category
                 == "area"
             )
-        assert executor.loader.graph.leaf_nodes("segmentation") == [final]
+        leaves = executor.loader.graph.leaf_nodes("segmentation")
+        assert len(leaves) == 1
+        assert final in executor.loader.graph.forwards_plan(leaves[0])

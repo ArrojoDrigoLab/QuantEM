@@ -1053,7 +1053,9 @@ def create_roi_image_from_image(
     display_name: str | None = None,
     is_active: bool = True,
     is_complete: bool = False,
-) -> ImageROI:
+    segmentation=None,
+    initialize_workspace: bool = False,
+) -> ImageROI | None:
     """Create an ROI image from an asset-backed openable and save its PNG.
 
     Cropping and encoding deliberately happen before the transaction.
@@ -1065,6 +1067,12 @@ def create_roi_image_from_image(
     Only the row count, active-ROI handoff, and row insert need to be atomic.
     If that short commit fails, remove the PNG that no row can reference.
     """
+
+    asset = getattr(image, "asset", None)
+    if segmentation is not None and segmentation.asset_id != getattr(asset, "pk", None):
+        raise ValueError("The ROI image must belong to the segmentation's asset.")
+    if initialize_workspace and segmentation is None:
+        raise ValueError("A default ROI requires a segmentation.")
 
     ROIS_DIR.mkdir(parents=True, exist_ok=True)
     roi_id = uuid.uuid4()
@@ -1136,17 +1144,31 @@ def create_roi_image_from_image(
         roi.save(roi_path)
 
     asset = getattr(image, "asset", None)
+    discard_crop = False
     try:
         with transaction.atomic():
+            if segmentation is not None:
+                from quantem.assets.roi_state import activate_roi, get_active_roi_for_segmentation
+                from quantem.segmentation.models import ImageSegmentation
+
+                locked = ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
+                if initialize_workspace and locked.rois_initialized:
+                    # Another first-open request already initialized it, or the
+                    # user deleted its last ROI while the crop was being read.
+                    discard_crop = True
+                    return get_active_roi_for_segmentation(locked)
+                scope = ImageROI.objects.filter(segmentations=segmentation)
+            else:
+                scope = ImageROI.objects.filter(asset=asset, segmentations__isnull=True)
             resolved_display_name = display_name
             if resolved_display_name is None:
-                current_roi_count = ImageROI.objects.filter(asset=asset).count()
+                current_roi_count = scope.count()
                 resolved_display_name = f"{image.display_name} ROI {current_roi_count + 1}"
 
-            if is_active and asset is not None:
-                ImageROI.objects.filter(asset=asset).update(is_active=False)
+            if is_active and asset is not None and segmentation is None:
+                scope.update(is_active=False)
 
-            return ImageROI.objects.create(
+            roi = ImageROI.objects.create(
                 id=roi_id,
                 asset=asset,
                 display_name=resolved_display_name,
@@ -1155,12 +1177,25 @@ def create_roi_image_from_image(
                 width=width,
                 height=height,
                 source=source,
-                is_active=is_active,
+                is_active=is_active if segmentation is None else False,
                 is_complete=is_complete,
             )
+            if segmentation is not None:
+                roi.segmentations.add(segmentation)
+                ImageSegmentation.objects.filter(pk=segmentation.pk).update(rois_initialized=True)
+                segmentation.rois_initialized = True
+                if is_active:
+                    activate_roi(roi, segmentation)
+            return roi
     except BaseException:
         try:
             roi_path.unlink(missing_ok=True)
         except OSError:
             logger.warning("Could not remove unreferenced ROI image %s", roi_path)
         raise
+    finally:
+        if discard_crop:
+            try:
+                roi_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Could not remove unused default ROI image %s", roi_path)

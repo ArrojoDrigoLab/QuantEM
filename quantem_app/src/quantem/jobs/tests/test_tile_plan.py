@@ -152,6 +152,7 @@ class ThePlanIsOnTheRowBeforeTheRunStarts(TestCase):
     def test_an_roi_run_plans_the_crop_and_not_the_whole_image(self):
         segmentation = _segmentation(self.asset, get_or_create_mitochondria_type)
         roi = ImageROI.objects.create(asset=self.asset, x=0, y=0, width=1024, height=1024)
+        roi.segmentations.add(segmentation)
 
         job = Job.enqueue(
             job_type=JOB_TYPE_RUN_SEGMENTATION_ROI,

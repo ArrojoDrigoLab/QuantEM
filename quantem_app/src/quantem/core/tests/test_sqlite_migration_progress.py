@@ -5,12 +5,12 @@ import sqlite3
 import subprocess
 from pathlib import Path
 
-from quantem.cli import MIGRATION_PROGRESS_PREFIX, _emit_migration_progress
 from quantem.core import postgres
 from quantem.core.sqlite_migration import (
     _MigrationProgress,
     create_consistent_sqlite_backup,
 )
+from quantem.core.startup_progress import STARTUP_PROGRESS_PREFIX, emit_startup_progress
 
 
 def test_progress_reports_measured_percent_and_stage_eta() -> None:
@@ -84,7 +84,7 @@ def test_consistent_backup_reports_copy_integrity_and_checksum_progress(tmp_path
 
 
 def test_desktop_progress_event_is_one_prefixed_json_line(capsys) -> None:
-    _emit_migration_progress(
+    emit_startup_progress(
         {
             "phase": "copy",
             "stage": 6,
@@ -93,11 +93,11 @@ def test_desktop_progress_event_is_one_prefixed_json_line(capsys) -> None:
         }
     )
 
-    line = capsys.readouterr().out
+    line = capsys.readouterr().err
     assert line.endswith("\n")
     assert line.count("\n") == 1
-    assert line.startswith(MIGRATION_PROGRESS_PREFIX)
-    assert json.loads(line.removeprefix(MIGRATION_PROGRESS_PREFIX))["percent"] == 42.5
+    assert line.startswith(STARTUP_PROGRESS_PREFIX)
+    assert json.loads(line.removeprefix(STARTUP_PROGRESS_PREFIX))["percent"] == 42.5
 
 
 def test_new_private_cluster_has_cutover_wal_headroom(monkeypatch, tmp_path) -> None:

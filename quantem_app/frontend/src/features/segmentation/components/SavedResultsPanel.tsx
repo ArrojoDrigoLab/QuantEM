@@ -260,6 +260,7 @@ export function SavedResultsPanel({
         <div>
           <h3>Compare runs</h3>
           <p>The confirmed run is shown first. Choose a different retained run on either side.</p>
+          <p>Overlays are reduced-resolution thresholded predictions. Confirming a run applies object filtering and preserves your completed annotations.</p>
         </div>
         <label className="saved-results-opacity">
           Opacity

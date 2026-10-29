@@ -7,17 +7,18 @@ owns everything about what a label *means*:
   ``(priority, state, colour)`` (used both for build paint-order and for LUT
   colours).
 * :func:`bundle_queryset` -- the set of objects a bundle renders.
-* :func:`allocate_labels` / :func:`replace_bundle_labels` -- dense-label
+* :func:`replace_bundle_labels` -- dense-label
   bookkeeping in :class:`SegmentationOverlayLabel`.
 * :func:`build_label_lut_binary` / :func:`build_label_lut_json` -- the
   render-time LUT served to the client. Because the label -> object mapping is
   stable across state changes, confirming/recolouring an object only changes
-  what these functions emit -- never the raster.
+  what these functions emit. Contested overlaps also need a priority repaint.
 """
 
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import numpy as np
 from django.db.models import QuerySet
@@ -101,7 +102,7 @@ def bundle_queryset(
     :func:`~quantem.segmentation.source_models.overlay_bundle_source_filter`
     for the R13 failure that rule exists to prevent.
     """
-    queryset = SegmentObject.objects.filter(segmentation=segmentation)
+    queryset = SegmentObject.objects.filter(segmentation=segmentation, superseded_at__isnull=True)
     source_filter = overlay_bundle_source_filter(source_model)
     if source_filter is not None:
         queryset = queryset.filter(source_filter)
@@ -116,7 +117,7 @@ def replace_bundle_labels(
     *,
     assignments: list[tuple[int, Any]],
 ) -> None:
-    """Replace all label rows for a bundle (used on full rebuild).
+    """Replace all label rows for a bundle (published with each snapshot).
 
     ``assignments`` is ``[(label, object_uuid), ...]``.
     """
@@ -143,65 +144,29 @@ def existing_label_map(state: SegmentationOverlayState) -> dict[Any, int]:
     }
 
 
-def allocate_labels(
-    state: SegmentationOverlayState,
-    *,
-    new_objects: list[Any],
-) -> dict[Any, int]:
-    """Assign dense labels to newly created objects, reusing freed gaps.
-
-    Returns a ``{object_uuid: label}`` map for the supplied objects. Existing
-    objects keep their labels (full rebuild is the only renumbering event).
-    """
-    if not new_objects:
-        return {}
-    used = set(
-        SegmentationOverlayLabel.objects.filter(overlay_state=state).values_list("label", flat=True)
-    )
-    assigned: dict[Any, int] = {}
-    rows: list[SegmentationOverlayLabel] = []
-    candidate = 1
-    for object_uuid in new_objects:
-        while candidate in used:
-            candidate += 1
-        used.add(candidate)
-        assigned[object_uuid] = candidate
-        rows.append(
-            SegmentationOverlayLabel(
-                overlay_state=state,
-                label=candidate,
-                object_uuid=object_uuid,
-            )
-        )
-    SegmentationOverlayLabel.objects.bulk_create(rows, batch_size=2000)
-    return assigned
-
-
-def remove_labels_for_objects(
-    state: SegmentationOverlayState,
-    *,
-    object_uuids: list[Any],
-) -> None:
-    if not object_uuids:
-        return
-    SegmentationOverlayLabel.objects.filter(
-        overlay_state=state, object_uuid__in=object_uuids
-    ).delete()
-
-
 # ---------------------------------------------------------------------------
 # Render-time LUT
 # ---------------------------------------------------------------------------
 def _resolve_live_objects(
     state: SegmentationOverlayState,
+    assignments=None,
 ) -> tuple[list[SegmentationOverlayLabel], dict[Any, SegmentObject]]:
-    rows = list(
-        SegmentationOverlayLabel.objects.filter(overlay_state=state).only("label", "object_uuid")
+    rows = (
+        [
+            SegmentationOverlayLabel(label=label, object_uuid=UUID(str(object_id)))
+            for label, object_id in assignments
+        ]
+        if assignments is not None
+        else list(
+            SegmentationOverlayLabel.objects.filter(overlay_state=state).only(
+                "label", "object_uuid"
+            )
+        )
     )
     object_ids = [row.object_uuid for row in rows]
     objects: dict[Any, SegmentObject] = {}
     if object_ids:
-        for obj in SegmentObject.objects.filter(id__in=object_ids).only(
+        for obj in SegmentObject.objects.filter(id__in=object_ids, superseded_at__isnull=True).only(
             "id", "label_state", "refined", "status", "source_model"
         ):
             objects[obj.id] = obj
@@ -238,7 +203,7 @@ def candidate_ids_inside_completed_rois(state: SegmentationOverlayState) -> set[
     if prefilter is None:
         return set()
     candidates = (
-        SegmentObject.objects.filter(segmentation_id=segmentation_id)
+        SegmentObject.objects.filter(segmentation_id=segmentation_id, superseded_at__isnull=True)
         .filter(prefilter)
         .exclude(label_state="CONFIRMED")
         .only("id", "centroid_x", "centroid_y")
@@ -257,6 +222,7 @@ def build_label_lut_binary(
     state: SegmentationOverlayState,
     *,
     hidden_states: frozenset[str] = frozenset(),
+    assignments=None,
 ) -> tuple[bytes, int]:
     """Return ``(rgba_bytes, max_label)``.
 
@@ -279,7 +245,7 @@ def build_label_lut_binary(
         buffer[1] = (red, green, blue, 255 if visible else 0)
         return buffer.tobytes(), 1
 
-    rows, objects = _resolve_live_objects(state)
+    rows, objects = _resolve_live_objects(state, assignments)
     suppressed = candidate_ids_inside_completed_rois(state)
     max_label = max((row.label for row in rows), default=0)
     buffer = np.zeros((max_label + 1, 4), dtype=np.uint8)
@@ -296,7 +262,7 @@ def build_label_lut_binary(
     return buffer.tobytes(), int(max_label)
 
 
-def build_label_lut_json(state: SegmentationOverlayState) -> dict[str, Any]:
+def build_label_lut_json(state: SegmentationOverlayState, *, assignments=None) -> dict[str, Any]:
     """Return the label -> object map for picking and client-side toggles."""
     if state.segmentation.segmentation_type.measurement_mode == "global":
         color = str(state.segmentation.segmentation_type.default_color or "#33CC66")
@@ -309,7 +275,7 @@ def build_label_lut_json(state: SegmentationOverlayState) -> dict[str, Any]:
             "color": color,
             "objects": [],
         }
-    rows, objects = _resolve_live_objects(state)
+    rows, objects = _resolve_live_objects(state, assignments)
     suppressed = candidate_ids_inside_completed_rois(state)
     entries: list[dict[str, Any]] = []
     for row in rows:

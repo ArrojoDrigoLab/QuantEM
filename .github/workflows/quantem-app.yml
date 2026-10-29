@@ -126,6 +126,11 @@ jobs:
             src/quantem/segmentation/tests/test_postgresql_area_concurrency.py \
             src/quantem/segmentation/tests/test_area_definition_migration.py \
             src/quantem/segmentation/tests/test_reconciled_schema.py \
+            src/quantem/segmentation/tests/test_independent_roi_migration.py \
+            src/quantem/segmentation/tests/test_independent_rois.py \
+            src/quantem/segmentation/tests/test_roi_views.py \
+            src/quantem/segmentation/tests/test_roi_segmentation_complete.py \
+            src/quantem/segmentation/tests/test_correction_revisions.py \
             src/quantem/segmentation/tests/test_bulk_model_runs.py \
             src/quantem/segmentation/tests/test_saved_results.py \
             src/quantem/finetune/tests/test_evaluation.py \

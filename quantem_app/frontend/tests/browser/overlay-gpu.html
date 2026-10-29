@@ -1,0 +1,77 @@
+<!doctype html><html><head><title>Overlay GPU regression probe</title></head><body>
+<canvas id="canvas" width="128" height="128"></canvas><pre id="result">Starting GPU probe...</pre>
+<script type="module">
+import {Deck, OrthographicView} from '@deck.gl/core';
+import {PaletteBitmapLayer, NEAREST_SAMPLER} from '/src/viewer/components/internal/PaletteBitmapLayer.ts';
+import {IdMapLabelLayer} from '/src/viewer/components/internal/IdMapLabelLayer.ts';
+import {combineOverlaySources} from '/src/viewer/components/internal/useViewerIdMapLoader.ts';
+import {ProbabilityBitmapLayer} from '/src/viewer/components/internal/ProbabilityBitmapLayer.ts';
+let device, pending;
+const results = [];
+const output = document.getElementById('result');
+const deck = new Deck({canvas: 'canvas', width: 128, height: 128,
+  views: new OrthographicView({id: 'probe'}), initialViewState: {target: [0.5, 0.5, 0], zoom: 7},
+  controller: false, useDevicePixels: false,
+  onDeviceInitialized(value) { device = value; setTimeout(run, 0); },
+  onError(error) { output.textContent = 'ERROR: ' + (error.stack ?? error); },
+  onAfterRender() {
+    if (!pending) return;
+    if (pending.frames++ < 3 || !pending.layer.isLoaded) { setTimeout(() => deck.redraw(true), 50); return; }
+    const bytes = new Uint8Array(4);
+    device.gl.readPixels(64, 64, 1, 1, device.gl.RGBA, device.gl.UNSIGNED_BYTE, bytes);
+    const resolve = pending.resolve; pending = null; resolve([...bytes]);
+  }, layers: []
+});
+function frame(layer) { return new Promise(resolve => { pending = {resolve, layer, frames:0}; deck.setProps({layers: [layer]}); deck.redraw(true); }); }
+async function run() {
+  try {
+    const palette = device.createTexture({width: 257, height: 1, format:'rgba8unorm', sampler:NEAREST_SAMPLER,
+      data: new Uint8Array(257*4).map((_, i) => (i === 4 || i === 7 || i === 1025 || i === 1027) ? 255 : 0)});
+    const image = {data:new Uint8Array([1,0,0,0]), width:1, height:1};
+    const border = {data:new Uint8Array([0]), width:1, height:1};
+    const props = {id:'palette', image, border, palette, bounds:[0,1,1,0], maxLabel:256,
+      highlightedLabel:0, fillOpacity:1, borderOpacity:1, showBorders:true, textureParameters:NEAREST_SAMPLER};
+    results.push(['label 1 red', await frame(new PaletteBitmapLayer(props))]);
+    results.push(['highlight cyan', await frame(new PaletteBitmapLayer({...props, highlightedLabel:1}))]);
+    results.push(['label 256 green', await frame(new PaletteBitmapLayer({...props, image:{...image,data:new Uint8Array([0,1,0,0])}}))]);
+    results.push(['high label invisible', await frame(new PaletteBitmapLayer({...props, image:{...image,data:new Uint8Array([1,0,0,1])}}))]);
+    const probability = {id:'probability', image:{width:1,height:1,data:new Uint8Array([128,128,128,255])}, bounds:[0,1,1,0], color:[255,0,0], threshold:0.4, opacity:1, textureParameters:NEAREST_SAMPLER};
+    results.push(['threshold below', await frame(new ProbabilityBitmapLayer(probability))]);
+    results.push(['threshold above', await frame(new ProbabilityBitmapLayer({...probability, threshold:0.7}))]);
+    let tileCalls = 0, textureUploads = 0;
+    const createTexture = device.createTexture.bind(device);
+    device.createTexture = (...args) => { textureUploads++; return createTexture(...args); };
+    const source = {shape:[256,256], labels:['y','x'], dtype:'Uint32', tileSize:256,
+      async getTile() { tileCalls++; return {data:new Uint32Array(256*256).fill(1),width:256,height:256}; }};
+    const borders = {...source, dtype:'Uint8', async getTile() { tileCalls++; return {data:new Uint8Array(256*256),width:256,height:256}; }};
+    const combined = combineOverlaySources([source], [borders]);
+    deck.setProps({viewState:{target:[128,128,0],zoom:-1}});
+    const tiled = {id:'tiled',labelsData:combined,borderData:[borders],lut:new Uint8Array([0,0,0,0,255,0,0,255]),maxLabel:1,lutRevision:1,visualRevision:0,
+      highlightedSegmentId:null,highlightRevision:0,imageWidth:256,imageHeight:256,fillOpacity:1,borderOpacity:1,showBorders:true,pickMap:new Map([[1,'object-1']]),pickable:true};
+    results.push(['tiled red',await frame(new IdMapLabelLayer(tiled))]);
+    results.push(['picking',deck.pickObject({x:64,y:64})?.object]);
+    const callsAfterLoad = tileCalls;
+    results.push(['tiled local green',await frame(new IdMapLabelLayer({...tiled,lut:new Uint8Array([0,0,0,0,0,255,0,255])}))]);
+    results.push(['tiled highlight',await frame(new IdMapLabelLayer({...tiled,highlightedSegmentId:'object-1',highlightRevision:1}))]);
+    results.push(['tiled opacity',await frame(new IdMapLabelLayer({...tiled,fillOpacity:0.5}))]);
+    results.push(['tiled hidden',await frame(new IdMapLabelLayer({...tiled,lut:new Uint8Array(8)}))]);
+    results.push(['hidden picking',deck.pickObject({x:64,y:64})?.object ?? null]);
+    results.push(['tile reads before/after display changes',[callsAfterLoad,tileCalls]]);
+    await frame(new IdMapLabelLayer(tiled));
+    const uploadsBefore = textureUploads;
+    for (let i=0;i<50;i++) await frame(new IdMapLabelLayer({...tiled,fillOpacity:i/50}));
+    results.push(['50 opacity updates: extra tile reads / texture uploads',[tileCalls-callsAfterLoad,textureUploads-uploadsBefore]]);
+    const expected = {'label 1 red':[255,0,0,255], 'highlight cyan':[0,255,255,255], 'label 256 green':[0,255,0,255],
+      'high label invisible':[0,0,0,0], 'threshold above':[0,0,0,0], 'tiled red':[255,0,0,255],
+      'tiled local green':[0,255,0,255], 'tiled highlight':[0,255,255,255], 'tiled hidden':[0,0,0,0],
+      '50 opacity updates: extra tile reads / texture uploads':[0,0]};
+    for (const [name,value] of results) {
+      if (expected[name] && JSON.stringify(value) !== JSON.stringify(expected[name])) throw new Error(name+': '+JSON.stringify(value));
+    }
+    if (results.find(([name]) => name==='picking')[1]?.uuid !== 'object-1') throw new Error('Visible object was not picked');
+    if (results.find(([name]) => name==='hidden picking')[1] !== null) throw new Error('Hidden object was picked');
+    device.createTexture = createTexture;
+    output.textContent = JSON.stringify({status:"PASS", renderer:device.info, results}, null, 2);
+  } catch(error) { output.textContent = 'ERROR: ' + error.stack; }
+}
+</script></body></html>

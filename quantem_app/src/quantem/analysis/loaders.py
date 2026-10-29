@@ -47,7 +47,6 @@ from quantem.segmentation.models import (
     AnalysisMaskObject,
     GlobalMask,
     ImageSegmentation,
-    SegmentationOverlayLabel,
     SegmentationOverlayState,
     SegmentObject,
 )
@@ -321,12 +320,35 @@ def _settled_overlay_mask(
         return None
 
     from quantem.segmentation.overlay_ngff import get_overlay_active_bundle_path
+    from quantem.segmentation.overlay_ngff.snapshots import read_snapshot
+    from quantem.segmentation.overlay_ngff.store import _is_valid_label_store
+
+    # A single winning ID is not the union of confirmed geometry if an
+    # unconfirmed manual/refined object can occlude it. Use canonical polygons.
+    if (
+        SegmentObject.objects.filter(
+            segmentation=segmentation,
+            superseded_at__isnull=True,
+            refined__in=["MANUAL", "AUTOMATIC"],
+        )
+        .exclude(label_state="CONFIRMED")
+        .exists()
+    ):
+        return None
 
     try:
         import zarr
 
+        root = get_overlay_active_bundle_path(state)
+        if not _is_valid_label_store(root, width=shape[1], height=shape[0]):
+            return None
+        _, snapshot = read_snapshot(
+            str(segmentation.id),
+            state.candidate_source_model,
+            f"{state.bundle_version}-{state.applied_revision}",
+        )
         labels = zarr.open_array(
-            str(get_overlay_active_bundle_path(state) / "labels" / "0"),
+            str(root / "labels" / "0"),
             mode="r",
         )
     except Exception:
@@ -334,20 +356,13 @@ def _settled_overlay_mask(
     if tuple(labels.shape) != tuple(shape):
         return None
 
-    confirmed_ids = confirmed_objects(segmentation).values_list("id", flat=True)
-    visible_labels = list(
-        SegmentationOverlayLabel.objects.filter(
-            overlay_state=state,
-            object_uuid__in=confirmed_ids,
-        ).values_list("label", flat=True)
-    )
-    max_label = int(
-        SegmentationOverlayLabel.objects.filter(overlay_state=state)
-        .order_by("-label")
-        .values_list("label", flat=True)
-        .first()
-        or 0
-    )
+    confirmed_ids = {
+        str(value) for value in confirmed_objects(segmentation).values_list("id", flat=True)
+    }
+    visible_labels = [
+        label for label, object_id in snapshot["labels"] if object_id in confirmed_ids
+    ]
+    max_label = max((label for label, _ in snapshot["labels"]), default=0)
     visible = np.zeros(max_label + 1, dtype=bool)
     if visible_labels:
         visible[np.asarray(visible_labels, dtype=np.int64)] = True

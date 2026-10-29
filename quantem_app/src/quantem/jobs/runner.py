@@ -225,6 +225,15 @@ def _run_job_in_subprocess(job_id: str, device_name: str | None = None) -> None:
             message="completed",
             heartbeat_at=timezone.now(),
         )
+        # An edit can arrive after an overlay worker snapshots its work. Once
+        # this job releases its queue claim, enqueue that tail without relying
+        # on an open viewer's manifest polling to notice it.
+        from quantem.jobs.constants import JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY
+
+        if job.type == JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY:
+            from quantem.segmentation.overlay_ngff.mutations import queue_overlay_followup
+
+            queue_overlay_followup(job.payload_json)
     except JobCancelledError:
         release_storage_artifact_leases(job)
         Job.objects.filter(id=job_id).update(

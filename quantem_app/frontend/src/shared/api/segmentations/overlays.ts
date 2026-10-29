@@ -49,7 +49,7 @@ export function getSegmentationOverlayNgffUrl(
   sourceModel?: string | null
 ): string {
   const params = new URLSearchParams();
-  if (cacheKey) params.set("v", cacheKey);
+  if (cacheKey) params.set("rev", cacheKey);
   if (sourceModel) params.set("source_model", sourceModel);
   const base = resolveApiUrl(`/segmentation-overlays/${segmentationId}.zarr`);
   const query = params.toString();
@@ -59,11 +59,13 @@ export function getSegmentationOverlayNgffUrl(
 function overlayLutBaseUrl(
   segmentationId: string,
   sourceModel?: string | null,
-  hiddenStates?: string[]
+  hiddenStates?: string[],
+  rasterRevision?: string | null
 ): string {
   const params = new URLSearchParams();
   if (sourceModel) params.set("source_model", sourceModel);
   if (hiddenStates && hiddenStates.length > 0) params.set("hide", hiddenStates.join(","));
+  if (rasterRevision) params.set("rev", rasterRevision);
   const base = resolveApiUrl(`/api/segmentations/${segmentationId}/overlay-lut/`);
   const qs = params.toString();
   return qs ? `${base}?${qs}` : base;
@@ -77,9 +79,10 @@ function overlayLutBaseUrl(
 export async function getSegmentationOverlayLut(
   segmentationId: string,
   sourceModel?: string | null,
-  hiddenStates?: string[]
+  hiddenStates?: string[],
+  rasterRevision?: string | null
 ): Promise<OverlayLutBinary> {
-  const response = await fetch(overlayLutBaseUrl(segmentationId, sourceModel, hiddenStates), {
+  const response = await fetch(overlayLutBaseUrl(segmentationId, sourceModel, hiddenStates, rasterRevision), {
     headers: getApiAuthHeaders(),
   });
   if (!response.ok) {
@@ -107,10 +110,12 @@ export async function getSegmentationOverlayLut(
 /** Fetch the label -> object map used for picking and per-state toggles. */
 export function getSegmentationOverlayLutJson(
   segmentationId: string,
-  sourceModel?: string | null
+  sourceModel?: string | null,
+  rasterRevision?: string | null
 ): Promise<OverlayLutJson> {
   const params = new URLSearchParams({ format: "json" });
   if (sourceModel) params.set("source_model", sourceModel);
+  if (rasterRevision) params.set("rev", rasterRevision);
   return apiRequest<OverlayLutJson>(
     `/api/segmentations/${segmentationId}/overlay-lut/?${params.toString()}`
   );

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   activateSegmentationRoi,
@@ -78,6 +78,7 @@ export function useErRoiWorkflow({
   const [markingRoiDone, setMarkingRoiDone] = useState<boolean | null>(null);
   const [deletingRoiId, setDeletingRoiId] = useState<string | null>(null);
   const [activatingRoiId, setActivatingRoiId] = useState<string | null>(null);
+  const workspaceRef = useRef(0);
   const editGestureRef = useRef<{
     handle: RoiEditHandle;
     dragStart: Point;
@@ -119,6 +120,19 @@ export function useErRoiWorkflow({
     setRelocatingRoiId(null);
     editGestureRef.current = null;
   }, []);
+
+  useEffect(() => {
+    workspaceRef.current += 1;
+    cancelPlacement();
+    setConfirming(false);
+    setMarkingRoiId(null);
+    setMarkingRoiDone(null);
+    setDeletingRoiId(null);
+    setActivatingRoiId(null);
+    return () => {
+      workspaceRef.current += 1;
+    };
+  }, [currentSegmentationId, cancelPlacement]);
 
   const resolvePendingRoi = useCallback(
     (point: Point): PendingRoi | null => {
@@ -174,8 +188,10 @@ export function useErRoiWorkflow({
   const confirmRoi = useCallback(async (prepopulate = true) => {
     if (!currentSegmentationId || !pendingRoi || confirming) return;
 
+    const workspace = workspaceRef.current;
     setConfirming(true);
     let created = false;
+    let replacementRemoved = false;
     try {
       await createSegmentationRoi(currentSegmentationId, {
         x: pendingRoi.x,
@@ -190,8 +206,11 @@ export function useErRoiWorkflow({
       if (pendingRoi.roiId) {
         await deleteSegmentationRoi(currentSegmentationId, pendingRoi.roiId);
       }
+      replacementRemoved = true;
 
+      if (workspace !== workspaceRef.current) return;
       await refetchSegmentationRois();
+      if (workspace !== workspaceRef.current) return;
       setPendingRoi(null);
       setPlacementActive(false);
       setRelocatingRoiId(null);
@@ -199,22 +218,31 @@ export function useErRoiWorkflow({
       registerAnnotationActivity?.();
       onRoiConfirmed?.();
     } catch (error) {
+      if (workspace !== workspaceRef.current) return;
       if (created) {
         // The replacement exists and is active even if deleting the old window
         // failed. Refresh before reporting it so the user can remove it later.
-        await refetchSegmentationRois();
+        try {
+          await refetchSegmentationRois();
+        } catch {
+          // Keep the original save/refresh error useful even if recovery also
+          // fails. A rejected recovery must not escape this event handler.
+        }
+        if (workspace !== workspaceRef.current) return;
         setPendingRoi(null);
         setPlacementActive(false);
         setRelocatingRoiId(null);
         editGestureRef.current = null;
         showErrorToast(
-          "The new ROI was created, but the previous ROI could not be removed."
+          replacementRemoved
+            ? "The ROI was saved, but its list could not be refreshed. Reload the view to see it."
+            : "The new ROI was created, but the previous ROI could not be removed."
         );
       } else {
         showErrorToast(errorMessage(error, "Failed to create ROI."));
       }
     } finally {
-      setConfirming(false);
+      if (workspace === workspaceRef.current) setConfirming(false);
     }
   }, [
     confirming,
@@ -229,6 +257,7 @@ export function useErRoiWorkflow({
   const markRoiDone = useCallback(
     async (roiId: string, done: boolean) => {
       if (!currentSegmentationId || markingRoiId) return;
+      const workspace = workspaceRef.current;
       setMarkingRoiId(roiId);
       setMarkingRoiDone(done);
       try {
@@ -237,6 +266,7 @@ export function useErRoiWorkflow({
           roiId,
           done
         );
+        if (workspace !== workspaceRef.current) return;
         await Promise.all([
           Promise.resolve(refetchSegmentationRois()),
           refreshSegmentViews?.({
@@ -244,10 +274,13 @@ export function useErRoiWorkflow({
           }) ?? Promise.resolve(),
         ]);
       } catch (error) {
+        if (workspace !== workspaceRef.current) return;
         showErrorToast(errorMessage(error, "Failed to update ROI status."));
       } finally {
-        setMarkingRoiId(null);
-        setMarkingRoiDone(null);
+        if (workspace === workspaceRef.current) {
+          setMarkingRoiId(null);
+          setMarkingRoiDone(null);
+        }
       }
     },
     [
@@ -262,16 +295,19 @@ export function useErRoiWorkflow({
   const activateRoi = useCallback(
     async (roiId: string) => {
       if (!currentSegmentationId || activatingRoiId) return false;
+      const workspace = workspaceRef.current;
       setActivatingRoiId(roiId);
       try {
         await activateSegmentationRoi(currentSegmentationId, roiId);
+        if (workspace !== workspaceRef.current) return false;
         await refetchSegmentationRois();
-        return true;
+        return workspace === workspaceRef.current;
       } catch (error) {
+        if (workspace !== workspaceRef.current) return false;
         showErrorToast(errorMessage(error, "Failed to switch ROI."));
         return false;
       } finally {
-        setActivatingRoiId(null);
+        if (workspace === workspaceRef.current) setActivatingRoiId(null);
       }
     },
     [activatingRoiId, currentSegmentationId, refetchSegmentationRois, showErrorToast]
@@ -280,15 +316,19 @@ export function useErRoiWorkflow({
   const deleteRoi = useCallback(
     async (roiId: string) => {
       if (!currentSegmentationId) return;
+      const workspace = workspaceRef.current;
       setDeletingRoiId(roiId);
       try {
         await deleteSegmentationRoi(currentSegmentationId, roiId);
+        if (workspace !== workspaceRef.current) return;
         await refetchSegmentationRois();
+        if (workspace !== workspaceRef.current) return;
         registerAnnotationActivity?.();
       } catch (error) {
+        if (workspace !== workspaceRef.current) return;
         showErrorToast(errorMessage(error, "Failed to delete ROI."));
       } finally {
-        setDeletingRoiId(null);
+        if (workspace === workspaceRef.current) setDeletingRoiId(null);
       }
     },
     [

@@ -52,15 +52,15 @@ def test_training_overlap_is_flagged_but_permitted_and_evaluation_does_not_mutat
     job = Job.objects.get()
     assert job.resource_class == "gpu"
     with (
-        patch("quantem.jobs.handlers.evaluation.engine.load_model"),
+        patch("quantem.inference.engine.load_model"),
         patch(
-            "quantem.jobs.handlers.evaluation.engine.predict_region",
+            "quantem.inference.engine.predict_region",
             side_effect=lambda model, image, **kw: SimpleNamespace(
                 prob=np.ones(image.shape[:2]), context=None
             ),
         ),
         patch(
-            "quantem.jobs.handlers.evaluation.resample.probability_to_native_uint8",
+            "quantem.inference.resample.probability_to_native_uint8",
             side_effect=lambda prob, context: (prob * 255).astype(np.uint8),
         ),
     ):
@@ -88,7 +88,7 @@ def test_changed_annotations_refuse_stale_evaluation(evaluation):
     )
     assert response.status_code == 202
     seg.completed_rois.all().delete()
-    with patch("quantem.jobs.handlers.evaluation.engine.load_model") as load:
+    with patch("quantem.inference.engine.load_model") as load:
         with pytest.raises(ValueError, match="annotations changed"):
             handle_evaluate_model(
                 Job.objects.get().payload_json, InlineReporter(), InlineCancellation()

@@ -499,7 +499,9 @@ def _run_segmentation(
 
     roi = None
     if roi_id:
-        roi = ImageROI.objects.filter(id=roi_id).first()
+        roi = ImageROI.objects.filter(
+            asset_id=segmentation.asset_id, segmentations=segmentation, id=roi_id
+        ).first()
         if roi is None:
             raise ValueError(f"ROI {roi_id} not found")
 

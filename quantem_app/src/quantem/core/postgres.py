@@ -31,6 +31,10 @@ from quantem.core.config import (
     POSTGRES_LOCK_PATH,
     POSTGRES_LOG_PATH,
 )
+from quantem.core.startup_progress import (
+    StartupProgressCallback,
+    emit_startup_progress,
+)
 
 POSTGRES_VERSION = "17.11"
 POSTGRES_MAJOR = "17"
@@ -39,13 +43,12 @@ DEFAULT_USER = "quantem"
 
 # A normal private-cluster start is effectively immediate. Crash recovery is
 # different: replaying the WAL produced by a multi-gigabyte SQLite cutover can
-# take minutes or hours on slower disks. Keep a short deadline for a server that
-# never answers at all, but judge known recovery by measurable WAL/phase
-# progress rather than total wall-clock time.
+# take minutes or hours on slower disks. Keep a short deadline for an ordinary
+# server that never answers at all, but never terminate a live recovery because
+# a disk-bound replay or checkpoint exceeded a wall-clock estimate.
 POSTGRES_STARTUP_TIMEOUT_SECONDS = 60
-POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS = 30 * 60
+POSTGRES_RECOVERY_STALL_WARNING_SECONDS = 30 * 60
 POSTGRES_RECOVERY_HEARTBEAT_SECONDS = 15
-DATABASE_RECOVERY_PROGRESS_PREFIX = "QUANTEM_DATABASE_RECOVERY_PROGRESS "
 
 # pg_ctl performs a clean checkpoint during a fast shutdown. That checkpoint
 # can be as large as the preceding database import, so the desktop shell and
@@ -159,11 +162,22 @@ class _RecoveryLogMonitor:
         }
 
 
-def _emit_recovery_progress(event: dict[str, object]) -> None:
-    print(
-        DATABASE_RECOVERY_PROGRESS_PREFIX
-        + json.dumps(event, separators=(",", ":"), sort_keys=True),
-        flush=True,
+def _emit_recovery_progress(
+    event: dict[str, object],
+    callback: StartupProgressCallback | None = None,
+) -> None:
+    """Send recovery liveness through the general startup protocol."""
+
+    if callback is not None:
+        callback(event)
+        return
+    emit_startup_progress(
+        {
+            **event,
+            "category": "database-recovery",
+            "critical": True,
+            "can_close": False,
+        }
     )
 
 
@@ -528,7 +542,10 @@ class EmbeddedPostgres:
         self._process: subprocess.Popen[bytes] | None = None
         self._log_handle: BinaryIO | None = None
 
-    def start(self) -> PostgresEndpoint:
+    def start(
+        self,
+        progress_callback: StartupProgressCallback | None = None,
+    ) -> PostgresEndpoint:
         if self.endpoint is not None:
             return self.endpoint
         _check_runtime_version()
@@ -589,6 +606,7 @@ class EmbeddedPostgres:
                 database="postgres",
                 recovery_expected=recovery_expected,
                 recovery_log_offset=recovery_log_offset,
+                progress_callback=progress_callback,
             )
             if endpoint.database == credentials["database"]:
                 self._ensure_application_database(endpoint)
@@ -664,6 +682,7 @@ class EmbeddedPostgres:
         database: str | None = None,
         recovery_expected: bool = False,
         recovery_log_offset: int = 0,
+        progress_callback: StartupProgressCallback | None = None,
     ) -> None:
         started_at = time.monotonic()
         deadline = started_at + POSTGRES_STARTUP_TIMEOUT_SECONDS
@@ -671,6 +690,7 @@ class EmbeddedPostgres:
         monitor = _RecoveryLogMonitor(recovery_log_offset)
         last_progress_at = started_at
         last_emit_at = started_at
+        stall_warning_emitted = False
         if recovery_expected:
             _emit_recovery_progress(
                 monitor.event(
@@ -678,7 +698,8 @@ class EmbeddedPostgres:
                     last_progress_at=last_progress_at,
                     now=started_at,
                     heartbeat=False,
-                )
+                ),
+                progress_callback,
             )
         while True:
             now = time.monotonic()
@@ -690,13 +711,15 @@ class EmbeddedPostgres:
             progress_changed = recovery_expected and monitor.poll()
             if progress_changed:
                 last_progress_at = now
+                stall_warning_emitted = False
                 _emit_recovery_progress(
                     monitor.event(
                         started_at=started_at,
                         last_progress_at=last_progress_at,
                         now=now,
                         heartbeat=False,
-                    )
+                    ),
+                    progress_callback,
                 )
                 last_emit_at = now
 
@@ -727,7 +750,8 @@ class EmbeddedPostgres:
                             last_progress_at=now,
                             now=now,
                             heartbeat=False,
-                        )
+                        ),
+                        progress_callback,
                     )
                 return
             detail = (result.stderr or result.stdout).strip() or detail
@@ -736,11 +760,14 @@ class EmbeddedPostgres:
                 break
             if recovery_expected:
                 stalled_for = now - last_progress_at
-                if stalled_for >= POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS:
+                if (
+                    stalled_for >= POSTGRES_RECOVERY_STALL_WARNING_SECONDS
+                    and not stall_warning_emitted
+                ):
                     monitor.phase = "stalled"
                     monitor.detail = (
                         "PostgreSQL is still running but its recovery position has not "
-                        "advanced for 30 minutes."
+                        "advanced for 30 minutes. QuantEM will keep waiting safely."
                     )
                     _emit_recovery_progress(
                         monitor.event(
@@ -748,12 +775,11 @@ class EmbeddedPostgres:
                             last_progress_at=last_progress_at,
                             now=now,
                             heartbeat=False,
-                        )
+                        ),
+                        progress_callback,
                     )
-                    raise PostgresError(
-                        "The private PostgreSQL server made no measurable recovery "
-                        f"progress for {POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS} seconds: " + detail
-                    )
+                    last_emit_at = now
+                    stall_warning_emitted = True
                 if now - last_emit_at >= POSTGRES_RECOVERY_HEARTBEAT_SECONDS:
                     _emit_recovery_progress(
                         monitor.event(
@@ -761,12 +787,17 @@ class EmbeddedPostgres:
                             last_progress_at=last_progress_at,
                             now=now,
                             heartbeat=True,
-                        )
+                        ),
+                        progress_callback,
                     )
                     last_emit_at = now
-                time.sleep(1.0)
+                # pg_isready is a subprocess. Back off once recovery has been
+                # running long enough that sub-second polling cannot improve
+                # perceived readiness but can add thousands of processes and
+                # repetitive authentication noise to the PostgreSQL log.
+                time.sleep(1.0 if now - started_at < 30 else 3.0)
             else:
-                time.sleep(0.25)
+                time.sleep(0.25 if now - started_at < 5 else 1.0)
         raise PostgresError("The private PostgreSQL server exited during startup: " + detail)
 
     def stop(self) -> None:
@@ -816,7 +847,9 @@ class EmbeddedPostgres:
 _MANAGED_SERVER: EmbeddedPostgres | None = None
 
 
-def start_managed_postgres() -> EmbeddedPostgres | None:
+def start_managed_postgres(
+    progress_callback: StartupProgressCallback | None = None,
+) -> EmbeddedPostgres | None:
     """Start and publish the private server unless SQLite was explicitly selected."""
 
     global _MANAGED_SERVER
@@ -827,7 +860,7 @@ def start_managed_postgres() -> EmbeddedPostgres | None:
         return None
     if _MANAGED_SERVER is None:
         _MANAGED_SERVER = EmbeddedPostgres()
-        _MANAGED_SERVER.start()
+        _MANAGED_SERVER.start(progress_callback=progress_callback)
         atexit.register(_MANAGED_SERVER.stop)
     return _MANAGED_SERVER
 

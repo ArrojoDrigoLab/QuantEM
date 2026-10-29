@@ -122,6 +122,9 @@ describe("IdMapLabelLayer", () => {
 
     expect(Array.from(candidateImage.data)).toEqual([255, 0, 0, 128]);
     expect(Array.from(confirmedImage.data)).toEqual([0, 255, 0, 128]);
+    // A local color picker changes the palette without changing server counters.
+    const recolored = colorize(makeLayer("candidate-layer", [0, 0, 255]), sharedTile);
+    expect(Array.from(recolored.data)).toEqual([0, 0, 255, 128]);
   });
 
   it("changes Viv's no-refetch render revision when visual controls change", () => {
@@ -132,18 +135,32 @@ describe("IdMapLabelLayer", () => {
       props: { contrastLimits: Array<[number, number]> };
     };
 
-    expect(first.props.contrastLimits).toEqual([
+    expect(first.props.contrastLimits.slice(0, 4)).toEqual([
       [7, 0.2],
       [0.9, 1],
       [0, 0],
       [0, 0],
     ]);
-    expect(second.props.contrastLimits).toEqual([
+    expect(second.props.contrastLimits.slice(0, 4)).toEqual([
       [7, 0],
       [0.9, 0],
       [0, 0],
       [0, 0],
     ]);
+    expect(first.props.contrastLimits[4]).not.toEqual(second.props.contrastLimits[4]);
+  });
+
+  it("resolves a pick through Viv's composite boundary and rejects hidden labels", () => {
+    const layer = makeLayer("pick", [255, 0, 0]);
+    layer.props.pickMap = new Map([[1, "uuid-1"]]);
+    const info = {
+      bitmap: { pixel: [0, 0] },
+      sourceLayer: { props: {} },
+      sourceTileSubLayer: { props: { idLabels: new Uint32Array([1]), idTileWidth: 1 } },
+    };
+    expect(layer.getPickingInfo({ info }).object).toEqual({ label: 1, uuid: "uuid-1" });
+    layer.props.lut[7] = 0;
+    expect(layer.getPickingInfo({ info }).object).toBeNull();
   });
 
   it("highlights a picked UUID in cyan without changing the LUT", () => {

@@ -190,6 +190,13 @@ def test_old_files_are_deleted_only_after_replacement_commits(
     second = run(segmentation, 0.7)
     kept_path = resolve_probability_map_path(first.probability_map)
     deleted_path = resolve_probability_map_path(second.probability_map)
+    from quantem.segmentation.prob_maps.preview import result_preview_cache_path
+
+    response = APIClient().get(f"/api/segmentations/{segmentation.id}/results/{second.id}/preview/")
+    assert response.status_code == 200
+    b"".join(response.streaming_content)
+    derived = result_preview_cache_path(deleted_path)
+    assert derived.is_dir()
     with django_capture_on_commit_callbacks(execute=True):
         replay(segmentation, first, delete_ids=[str(second.id)])
         assert segmentation.saved_results.get(is_canonical=True).id == first.id
@@ -200,6 +207,7 @@ def test_old_files_are_deleted_only_after_replacement_commits(
         assert deleted_path.is_file()
     assert kept_path.is_file()
     assert not deleted_path.exists()
+    assert not derived.exists()
     second.refresh_from_db()
     assert second.deleted_at is not None
     assert second.probability_map_id is None
@@ -219,7 +227,7 @@ def test_late_failure_rolls_back_confirmation_and_cancels_file_deletion(
 
     with django_capture_on_commit_callbacks(execute=True) as callbacks:
         with patch(
-            "quantem.jobs.handlers.rethreshold.publish_result", side_effect=fail_after_publishing
+            "quantem.segmentation.saved_results.publish_result", side_effect=fail_after_publishing
         ):
             with pytest.raises(RuntimeError, match="Interrupted before commit"):
                 replay(segmentation, first, delete_ids=[str(second.id)])
@@ -234,9 +242,17 @@ def test_preview_leaves_foreground_opacity_to_each_comparison_pane(segmentation)
     result = run(segmentation)
     response = APIClient().get(f"/api/segmentations/{segmentation.id}/results/{result.id}/preview/")
     assert response.status_code == 200
-    with Image.open(BytesIO(response.content)) as image:
+    with Image.open(BytesIO(b"".join(response.streaming_content))) as image:
         alpha = np.asarray(image)[:, :, 3]
     assert set(np.unique(alpha)) == {0, 255}
+    url = f"/api/segmentations/{segmentation.id}/results/{result.id}/preview/"
+    with patch("quantem.segmentation.api_views.saved_results.decode_canonical_plane") as decode:
+        cached = APIClient().get(url)
+        assert cached.status_code == 200
+        b"".join(cached.streaming_content)
+        unchanged = APIClient().get(url, HTTP_IF_NONE_MATCH=response["ETag"])
+        assert unchanged.status_code == 304
+        decode.assert_not_called()
 
 
 def test_manual_completion_requires_both_acknowledgements(segmentation):
@@ -256,7 +272,7 @@ def test_failed_replacement_keeps_canonical_geometry_and_history(segmentation):
     first = run(segmentation)
     expected = outlines(segmentation)
     with patch(
-        "quantem.jobs.handlers.rethreshold.publish_result", side_effect=RuntimeError("Interrupted")
+        "quantem.segmentation.saved_results.publish_result", side_effect=RuntimeError("Interrupted")
     ):
         with pytest.raises(RuntimeError, match="Interrupted"):
             replay(segmentation, threshold=0.9, delete_ids=[str(first.id)])

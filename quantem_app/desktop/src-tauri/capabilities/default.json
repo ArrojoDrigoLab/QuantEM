@@ -11,6 +11,9 @@
     "updater:default",
     "process:default",
     "allow-save-text-file",
-    "allow-save-url-file"
+    "allow-save-url-file",
+    "allow-open-startup-logs",
+    "allow-retry-startup",
+    "allow-quit-app"
   ]
 }

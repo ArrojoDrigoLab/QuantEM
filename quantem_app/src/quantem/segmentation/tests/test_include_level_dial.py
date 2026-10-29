@@ -166,6 +166,7 @@ class IncludeLevelDialTestCase(TestCase):
     def run_the_model_on_roi(self):
         roi = create_roi_image_from_image(
             self.image,
+            segmentation=self.segmentation,
             x=24,
             y=32,
             width=128,
@@ -868,6 +869,7 @@ class ConfirmWholeModelOutputTests(IncludeLevelDialTestCase):
         )
         reviewed_roi = create_roi_image_from_image(
             self.image,
+            segmentation=self.segmentation,
             x=100,
             y=100,
             width=64,

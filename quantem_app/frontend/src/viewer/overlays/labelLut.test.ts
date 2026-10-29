@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { buildTintedLut } from "@/viewer/overlays/labelLut";
 
 describe("buildTintedLut", () => {
+  it("colors a global binary mask without object rows", () => {
+    const { rgba, maxLabel } = buildTintedLut([], "#33cc66", new Set(["confirmed"]), { overlay_kind: "binary_mask", max_label: 1 });
+    expect(maxLabel).toBe(1);
+    expect(Array.from(rgba)).toEqual([0, 0, 0, 0, 51, 204, 102, 255]);
+  });
+
+  it("keeps background and completed-ROI candidates transparent", () => {
+    const { rgba } = buildTintedLut([
+      { label: 0, state: "confirmed" },
+      { label: 1, state: "candidate", hidden_by_completed_roi: true },
+      { label: 2, state: "candidate" },
+    ], "#ffffff", new Set(["confirmed", "candidate"]));
+    expect([rgba[3], rgba[7], rgba[11]]).toEqual([0, 0, 255]);
+  });
   it("tints labels whose state is in the visible set at full alpha", () => {
     const { rgba } = buildTintedLut(
       [{ label: 2, state: "confirmed" }],

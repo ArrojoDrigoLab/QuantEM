@@ -75,11 +75,6 @@ _SQLITE_LOCK_RETRY_ATTEMPTS = 3
 _SQLITE_LOCK_RETRY_BASE_DELAY_SECONDS = 0.2
 
 
-def _invalidate_tiles_for_segmentation(segmentation_id: str) -> None:
-    del segmentation_id
-    return None
-
-
 def measurement_response_status(outcome: MeasurementOutcome) -> int:
     """``200`` when every edited object was measured, ``207`` when some were not.
 

@@ -52,10 +52,6 @@ from quantem.segmentation.models import (
     SegmentationResultVersion,
     SegmentObject,
 )
-from quantem.segmentation.overlay_ngff.dirty import merge_dirty_bboxes
-from quantem.segmentation.overlay_ngff.mutations import (
-    register_overlay_mutation_all_bundles,
-)
 from quantem.segmentation.quality_sampling import (
     COUNT_BOX_SIZE_PX,
     DEFAULT_SPOT_CHECK_SAMPLE,
@@ -453,9 +449,11 @@ class SpotCheckAnswerView(APIView):
         segment.refined = "UNREFINED"
         segment.save()
 
-        overlay = register_overlay_mutation_all_bundles(
+        from quantem.segmentation.overlay_ngff import register_label_state_mutation
+
+        overlay = register_label_state_mutation(
             segmentation,
-            dirty_bbox=merge_dirty_bboxes(segmentation, [segment.geometry]),
+            [segment],
             source_model=normalize_source_model(segment.source_model),
         )
         try:

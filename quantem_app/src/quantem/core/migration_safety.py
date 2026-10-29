@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sqlite3
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,6 +25,8 @@ from quantem.core.config import DB_PATH, STORAGE_DIR
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from quantem.core.startup_progress import StartupProgressCallback
 
 
 SNAPSHOT_ROOT = STORAGE_DIR / "backups" / "pre-migration"
@@ -101,8 +105,8 @@ def prune_pre_migration_snapshots(
     """Apply the configured count and age limits to migration snapshots.
 
     The newest snapshot is protected only while it is within the configured
-    age. Cleanup runs on every launch, after every new snapshot, and whenever
-    the user changes the policy in Settings.
+    age. Cleanup runs shortly after launch and whenever the user changes the
+    policy in Settings, keeping it off the readiness-critical startup path.
     """
 
     if not SNAPSHOT_ROOT.is_dir():
@@ -139,7 +143,11 @@ def _snapshot_name() -> str:
     return f"{timestamp}-to-{version}"
 
 
-def create_pre_migration_snapshot(pending: Sequence[str]) -> Path | None:
+def create_pre_migration_snapshot(
+    pending: Sequence[str],
+    *,
+    progress_callback: StartupProgressCallback | None = None,
+) -> Path | None:
     """Snapshot the existing application database before migrations run.
 
     A new installation has no database to preserve.  Existing databases are
@@ -169,11 +177,11 @@ def create_pre_migration_snapshot(pending: Sequence[str]) -> Path | None:
                 snapshot_dir / "quantem.dump",
                 reason="pre-migration",
                 pending_migrations=list(pending),
+                progress_callback=progress_callback,
             )
         except Exception:
             _remove_snapshot(snapshot_dir)
             raise
-        prune_pre_migration_snapshots()
         return snapshot_dir
 
     if connection.vendor != "sqlite":
@@ -240,7 +248,6 @@ def create_pre_migration_snapshot(pending: Sequence[str]) -> Path | None:
         _remove_snapshot(snapshot_dir)
         raise
 
-    prune_pre_migration_snapshots()
     return snapshot_dir
 
 
@@ -249,9 +256,26 @@ def snapshot_before_pending_migrations() -> tuple[list[str], Path | None]:
 
     pending = pending_migration_labels()
     snapshot = create_pre_migration_snapshot(pending)
-    # No pending migration means no new snapshot, but expired snapshots must
-    # still disappear. Running this on every launch gives the age policy a
-    # reliable cleanup point even during long stretches without schema changes.
-    if snapshot is None:
-        prune_pre_migration_snapshots()
     return pending, snapshot
+
+
+def schedule_pre_migration_snapshot_cleanup(*, delay_seconds: float = 30.0) -> None:
+    """Prune expired recovery points after startup without blocking readiness."""
+
+    def cleanup() -> None:
+        try:
+            removed = prune_pre_migration_snapshots()
+        except Exception:
+            logging.getLogger("quantem.serve").exception(
+                "Deferred pre-migration backup cleanup failed."
+            )
+            return
+        if removed:
+            logging.getLogger("quantem.serve").info(
+                "Removed %s expired pre-migration backup(s).", len(removed)
+            )
+
+    timer = threading.Timer(delay_seconds, cleanup)
+    timer.name = "quantem-backup-retention"
+    timer.daemon = True
+    timer.start()

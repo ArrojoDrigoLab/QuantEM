@@ -1,3 +1,4 @@
+import type { OverlayRevisionTarget } from "@/shared/types/segmentation";
 import { useCallback } from "react";
 import {
   deleteSegmentsBatch,
@@ -31,10 +32,10 @@ interface UseReviewPointActionsArgs {
   rollbackOptimisticallyDeletedSegment: (segmentId: string) => void;
   clearHoverInteraction: () => void;
   registerAnnotationActivity: () => void;
-  stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: number | null) => void;
+  stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: OverlayRevisionTarget | null) => void;
   getOptimisticTargetRevision: (
     overlay: SegmentationOverlayMutationState | null | undefined
-  ) => number | null;
+  ) => OverlayRevisionTarget | null;
   handleOverlayMutationRefresh: (
     overlay: SegmentationOverlayMutationState | null | undefined
   ) => void;

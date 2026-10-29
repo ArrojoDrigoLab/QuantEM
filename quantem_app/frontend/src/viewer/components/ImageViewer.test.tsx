@@ -19,11 +19,13 @@ type MockVivResult = {
 };
 
 type MockLayerInstance = {
+  isLoaded?: boolean;
   id: string;
   props: Record<string, unknown>;
 };
 
 type MockDeckProps = {
+  onAfterRender?: () => void;
   layers?: MockLayerInstance[];
 };
 
@@ -271,7 +273,13 @@ describe("ImageViewer", () => {
       />
     );
 
-    await waitFor(() => expect(onRevisionDisplayed).toHaveBeenCalledWith(5));
+    await waitFor(() => expect(getLayerIds()).toContain("idmap-overlay-review-id-map"));
+    expect(onRevisionDisplayed).not.toHaveBeenCalled();
+    act(() => deckPropsSpy.mock.calls.at(-1)?.[0].onAfterRender?.());
+    expect(onRevisionDisplayed).not.toHaveBeenCalled();
+    getLayerById("idmap-overlay-review-id-map").isLoaded = true;
+    act(() => deckPropsSpy.mock.calls.at(-1)?.[0].onAfterRender?.());
+    expect(onRevisionDisplayed).toHaveBeenCalledWith(5, 5);
     rerender(
       <ImageViewer
         image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }}
@@ -288,13 +296,17 @@ describe("ImageViewer", () => {
         { type: "multiscales" }
       )
     );
-    expect(onRevisionDisplayed).not.toHaveBeenCalledWith(6);
+    expect(onRevisionDisplayed).not.toHaveBeenCalledWith(6, 6);
 
     await act(async () => {
       nextRevision.resolve(makeVivResult());
       await nextRevision.promise;
     });
-    await waitFor(() => expect(onRevisionDisplayed).toHaveBeenCalledWith(6));
+    await waitFor(() => expect(getLayerIds()).toContain("idmap-overlay-review-id-map"));
+    expect(onRevisionDisplayed).not.toHaveBeenCalledWith(6, 6);
+    getLayerById("idmap-overlay-review-id-map").isLoaded = true;
+    act(() => deckPropsSpy.mock.calls.at(-1)?.[0].onAfterRender?.());
+    expect(onRevisionDisplayed).toHaveBeenCalledWith(6, 6);
   });
 
   it("shares OME-Zarr loads across viewers for identical URLs", async () => {
@@ -322,6 +334,24 @@ describe("ImageViewer", () => {
         ["/overlay.zarr?rev=1", { type: "multiscales" }],
       ])
     );
+  });
+
+  it("acknowledges the confirmed bundle independently of the model counter", async () => {
+    loadOmeZarrMock.mockResolvedValue(makeVivResult());
+    const acknowledge = vi.fn();
+    render(<ImageViewer image={{ ngffUrl: "/image.zarr", width: 256, height: 256 }} overlays={{
+      idMapOverlays: [
+        { ...makeIdMapSpec(100), id: "model", revisionRole: "model" },
+        { ...makeIdMapSpec(5), id: "confirmed", revisionRole: "confirmed" },
+      ], onRasterRevisionDisplayed: acknowledge,
+    }} />);
+    await waitFor(() => expect(getLayerIds()).toContain("idmap-overlay-confirmed"));
+    getLayerById("idmap-overlay-model").isLoaded = true;
+    act(() => deckPropsSpy.mock.calls.at(-1)?.[0].onAfterRender?.());
+    expect(acknowledge).not.toHaveBeenCalled();
+    getLayerById("idmap-overlay-confirmed").isLoaded = true;
+    act(() => deckPropsSpy.mock.calls.at(-1)?.[0].onAfterRender?.());
+    expect(acknowledge).toHaveBeenCalledExactlyOnceWith(5, 5);
   });
 
   it("renders rgb overlays with identity channel colors and transparent black", async () => {

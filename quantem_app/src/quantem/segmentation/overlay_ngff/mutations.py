@@ -13,6 +13,7 @@ from collections import deque
 from collections.abc import Iterable, Iterator
 from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
+from functools import wraps
 from typing import Any
 
 import numpy as np
@@ -28,7 +29,11 @@ from quantem.jobs.models import Job
 from quantem.jobs.pool import django_pool_initializer
 from quantem.jobs.reporter import JobCancelledError
 from quantem.segmentation.global_masks import load_global_mask
-from quantem.segmentation.models import ImageSegmentation, SegmentationOverlayState
+from quantem.segmentation.models import (
+    ImageSegmentation,
+    SegmentationOverlayLabel,
+    SegmentationOverlayState,
+)
 from quantem.segmentation.services.spatial_lookup import (
     bbox_intersects_filter,
     make_bbox,
@@ -46,6 +51,7 @@ from .constants import (
     MACRO_TILE_SIZE,
     OVERLAY_ARRAY_KEYS,
     OVERLAY_BORDER_WIDTH,
+    OVERLAY_CHUNK_SIZE,
     PYRAMID_BLOCK_SIZE,
     RASTER_POOL_MIN_OBJECTS,
     RASTER_POOL_MIN_PYRAMID_BLOCKS,
@@ -58,8 +64,8 @@ from .dimensions import segmentation_dimensions
 from .dirty import (
     DirtyBBox,
     _dirty_run_payload,
-    _merge_dirty_runs_to_bbox,
     dirty_bbox_to_chunk_coords,
+    dirty_runs_to_chunk_coords,
     full_image_dirty_bbox,
 )
 from .failure_text import describe_failure
@@ -75,6 +81,7 @@ from .paths import (
     get_overlay_version_dir,
     normalize_overlay_source_model,
 )
+from .snapshots import clone_store, detach_chunk, prune_snapshots, write_snapshot
 from .store import (
     _create_empty_label_store,
     _is_valid_label_store,
@@ -198,31 +205,13 @@ def bundle_write_lock(
     *,
     timeout: float = BUNDLE_WRITE_LOCK_TIMEOUT_SECONDS,
 ) -> Iterator[None]:
-    """Serialise in-place writers of one overlay bundle's store.
+    """Serialize full and partial snapshot writers for one bundle.
 
-    An in-place partial update is a read-modify-write of the *active* store:
-    open the arrays, paint the dirty tile, rewrite the pyramid chunks above it,
-    close. Two of those at once on the same bundle interleave chunk writes, and
-    on Windows the colliding ``os.replace`` inside zarr's atomic write raises
-    ``PermissionError`` -- measured at 7 failures in 24 simultaneous confirms
-    before this package, each of them an HTTP 500 in the reviewer's face.
-
-    Scoped to the bundle, not the segmentation: the aggregate overlay and each
-    per-source overlay are separate stores in separate directories, and
-    serialising them against each other would only make one wait for the other
-    for no reason.
-
-    Both a thread lock and an OS file lock, because both kinds of writer exist:
-    request threads inside the server process, and job workers, which are
-    spawned processes. The file lock alone would not serialise two threads of
-    one process (the handle is per-process on Windows and per-open on Linux),
-    and the thread lock alone would not see the job worker at all.
-
-    A full rebuild does not take this: it writes a *staging* directory nobody
-    else can name, and only publishes it with a directory move.
-
-    Raises:
-        OverlayStoreError: the bundle was still held after ``timeout`` seconds.
+    Both paths choose the next version, stage pixels and publish label mappings
+    under this lock. Threads and worker processes share the OS file lock; the
+    kernel releases it if a writer exits. Request transactions use a nonblocking
+    attempt so they cannot hold a database row while waiting for a job that
+    needs that row to publish.
     """
     bundle_root = get_overlay_root(str(segmentation_id), source_model)
     key = str(bundle_root)
@@ -309,6 +298,7 @@ def _overlay_job_exists(segmentation_id: str, source_model: str | None = None) -
     )
 
 
+@transaction.atomic
 def queue_overlay_rebuild(
     segmentation: ImageSegmentation,
     *,
@@ -316,6 +306,10 @@ def queue_overlay_rebuild(
     source_model: str | None = None,
 ) -> Job | None:
     normalized_source_model = normalize_overlay_source_model(source_model)
+    state = get_or_create_overlay_state(segmentation, normalized_source_model)
+    # UPDATE also takes the write lock on SQLite, where select_for_update is a
+    # no-op. The existence check and enqueue must be one serialized operation.
+    SegmentationOverlayState.objects.filter(pk=state.pk).update(lut_revision=F("lut_revision"))
     if _overlay_job_exists(str(segmentation.id), source_model=normalized_source_model):
         return None
     payload = {
@@ -857,6 +851,73 @@ def _build_pyramid(
         executor.shutdown()
 
 
+def _serialized_build(function):
+    @wraps(function)
+    def build(segmentation, *, source_model=None, **kwargs):
+        timeout = kwargs.pop("_lock_timeout", BUNDLE_WRITE_LOCK_TIMEOUT_SECONDS)
+        with bundle_write_lock(str(segmentation.id), source_model, timeout=timeout):
+            return function(segmentation, source_model=source_model, **kwargs)
+
+    return build
+
+
+def _publish_snapshot(
+    segmentation, state, stage_root, *, version, revision, assignments, new_assignments=None
+):
+    """Publish pixels and their label map as one database-visible generation."""
+    # Another serialized writer may have completed while this job waited for
+    # the file lock. Never publish a token older than the starting snapshot.
+    revision = max(int(revision), int(state.applied_revision))
+    write_snapshot(
+        stage_root, bundle_version=version, applied_revision=revision, assignments=assignments
+    )
+    version_dir = get_overlay_version_dir(
+        str(segmentation.id), version, state.candidate_source_model
+    )
+    if version_dir.exists():
+        # An earlier attempt may have moved its files and died before commit.
+        _remove_tree(version_dir)
+    version_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(stage_root.parent), str(version_dir))
+    with transaction.atomic():
+        if new_assignments is None:
+            labels_lut.replace_bundle_labels(state, assignments=assignments)
+        else:
+            # Old readers use immutable labels.json. Reclaim obsolete live
+            # index rows on every partial publication without touching theirs.
+            SegmentationOverlayLabel.objects.filter(overlay_state=state).exclude(
+                object_uuid__in=labels_lut.bundle_queryset(
+                    segmentation, state.candidate_source_model
+                ).values("id")
+            ).delete()
+            # Existing identities do not change on a partial build. Avoid
+            # deleting/reinserting every object's row for a one-tile edit.
+            SegmentationOverlayLabel.objects.bulk_create(
+                [
+                    SegmentationOverlayLabel(
+                        overlay_state=state, label=label, object_uuid=object_id
+                    )
+                    for label, object_id in new_assignments
+                ],
+                batch_size=2000,
+            )
+        state = _finalize_overlay_rebuild_state(
+            segmentation,
+            source_model=state.candidate_source_model,
+            applied_revision=revision,
+            bundle_version=version,
+            last_built_at=timezone.now(),
+        )
+        SegmentationOverlayState.objects.filter(pk=state.pk).update(
+            lut_revision=F("lut_revision") + 1
+        )
+        state.refresh_from_db(fields=["lut_revision"])
+    prune_snapshots(str(segmentation.id), state.candidate_source_model, version)
+    _write_debug_manifest(segmentation, state)
+    return state
+
+
+@_serialized_build
 def rebuild_overlay_full(
     segmentation: ImageSegmentation,
     *,
@@ -896,14 +957,27 @@ def rebuild_overlay_full(
     try:
         if is_global:
             mask = load_global_mask(segmentation)
-            labels = mask.astype(np.uint32, copy=False)
-            border = render_module._compute_border(labels, width=OVERLAY_BORDER_WIDTH)
-            _retry_on_windows_lock(
-                lambda: arrays[LABELS_ARRAY_KEY][0].__setitem__((slice(None), slice(None)), labels)
-            )
-            _retry_on_windows_lock(
-                lambda: arrays[BORDER_ARRAY_KEY][0].__setitem__((slice(None), slice(None)), border)
-            )
+            total = math.ceil(width / MACRO_TILE_SIZE) * math.ceil(height / MACRO_TILE_SIZE)
+            done = 0
+            for y0 in range(0, height, MACRO_TILE_SIZE):
+                for x0 in range(0, width, MACRO_TILE_SIZE):
+                    if cancel_check is not None:
+                        cancel_check()
+                    x1, y1 = min(width, x0 + MACRO_TILE_SIZE), min(height, y0 + MACRO_TILE_SIZE)
+                    rx0, ry0 = max(0, x0 - OVERLAY_BORDER_WIDTH), max(0, y0 - OVERLAY_BORDER_WIDTH)
+                    rx1, ry1 = (
+                        min(width, x1 + OVERLAY_BORDER_WIDTH),
+                        min(height, y1 + OVERLAY_BORDER_WIDTH),
+                    )
+                    block = mask[ry0:ry1, rx0:rx1]
+                    if block.any():
+                        labels = block.astype(np.uint32)
+                        border = render_module._compute_border(labels, width=OVERLAY_BORDER_WIDTH)
+                        interior = (slice(y0 - ry0, y1 - ry0), slice(x0 - rx0, x1 - rx0))
+                        _write_tile_result(arrays, (x0, y0, labels[interior], border[interior]))
+                    done += 1
+                    if on_progress is not None:
+                        on_progress("raster", done, total)
             occupied_rows = np.flatnonzero(mask.any(axis=1))
             occupied_cols = np.flatnonzero(mask.any(axis=0))
             if occupied_rows.size and occupied_cols.size:
@@ -950,137 +1024,124 @@ def rebuild_overlay_full(
     if not _is_valid_label_store(stage_root, width=width, height=height):
         raise OverlayStoreError(f"Generated overlay store is invalid at {stage_root}")
 
-    version_dir = get_overlay_version_dir(
-        str(segmentation.id),
-        next_bundle_version,
-        normalized_source_model,
-    )
-    if version_dir.exists():
-        _remove_tree(version_dir)
-    version_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(stage_root.parent), str(version_dir))
-
-    labels_lut.replace_bundle_labels(state, assignments=assignments)
-
     applied_revision = desired_revision if desired_revision is not None else state.desired_revision
-    now = timezone.now()
-    state = _finalize_overlay_rebuild_state(
+    return _publish_snapshot(
         segmentation,
-        source_model=normalized_source_model,
-        applied_revision=int(applied_revision),
-        bundle_version=next_bundle_version,
-        last_built_at=now,
+        state,
+        stage_root,
+        version=next_bundle_version,
+        revision=int(applied_revision),
+        assignments=assignments,
     )
-    # A full rebuild renumbers labels, so clients must refetch the LUT.
-    SegmentationOverlayState.objects.filter(pk=state.pk).update(lut_revision=F("lut_revision") + 1)
-    state.refresh_from_db(fields=["lut_revision"])
-    _write_debug_manifest(segmentation, state)
-    return state
 
 
+@_serialized_build
 def apply_partial_overlay_update(
     segmentation: ImageSegmentation,
     *,
-    dirty_bbox: DirtyBBox,
+    dirty_bbox: DirtyBBox | None,
     desired_revision: int,
     source_model: str | None = None,
     on_progress=None,
     cancel_check=None,
+    dirty_chunks: set[tuple[int, int]] | None = None,
 ) -> SegmentationOverlayState:
     normalized_source_model = normalize_overlay_source_model(source_model)
     state = get_or_create_overlay_state(segmentation, normalized_source_model)
-    chunk_coords = dirty_bbox_to_chunk_coords(dirty_bbox)
-    if not chunk_coords:
-        _set_overlay_state(
-            state,
-            status_value=SegmentationOverlayState.STATUS_READY,
-            applied_revision=desired_revision,
-            desired_revision=desired_revision,
-            last_error="",
-        )
-        _write_debug_manifest(segmentation, state)
-        return state
-
+    chunk_coords = (
+        dirty_chunks
+        if dirty_chunks is not None
+        else (dirty_bbox_to_chunk_coords(dirty_bbox) if dirty_bbox is not None else set())
+    )
     width, height = segmentation_dimensions(segmentation)
     halo = OVERLAY_BORDER_WIDTH
-    interior_x0 = max(0, dirty_bbox.x_min)
-    interior_y0 = max(0, dirty_bbox.y_min)
-    interior_x1 = min(width, dirty_bbox.x_max)
-    interior_y1 = min(height, dirty_bbox.y_max)
-    region_x0 = max(0, interior_x0 - halo)
-    region_y0 = max(0, interior_y0 - halo)
-    region_x1 = min(width, interior_x1 + halo)
-    region_y1 = min(height, interior_y1 + halo)
-
-    # ``bbox__intersects=region_box`` becomes a numeric range filter on the
-    # indexed bbox columns -- an axis-aligned rectangle needs no shapely refine.
-    region_box = make_bbox(region_x0, region_y0, region_x1, region_y1)
+    version = int(state.bundle_version) + 1
+    stage_root = get_overlay_stage_bundle_path(
+        str(segmentation.id), version, normalized_source_model
+    )
+    # Never expose half-written levels or mutate bytes under an immutable URL.
+    clone_store(get_overlay_active_bundle_path(state), stage_root)
+    arrays = _open_label_arrays(state, store_root=stage_root)
     queryset = labels_lut.bundle_queryset(segmentation, normalized_source_model)
-    objects = list(queryset.filter(bbox_intersects_filter(region_box)).only(*_object_only_fields()))
     label_map = labels_lut.existing_label_map(state)
-    new_objects = [obj.id for obj in objects if obj.id not in label_map]
-    if new_objects:
-        label_map.update(labels_lut.allocate_labels(state, new_objects=new_objects))
-
-    # The whole read-modify-write of the live store, under one bundle lock: the
-    # tile write and the pyramid chunks above it are one edit, and a second
-    # writer landing between them would publish a level that disagrees with the
-    # level below it.
-    with bundle_write_lock(str(segmentation.id), normalized_source_model):
-        arrays = _open_label_arrays(state)
-        try:
+    next_label = max(label_map.values(), default=0) + 1
+    first_new_label = next_label
+    parent_levels = []
+    coords = chunk_coords
+    for _ in range(1, len(arrays[LABELS_ARRAY_KEY])):
+        coords = {(x // 2, y // 2) for x, y in coords}
+        parent_levels.append(coords)
+    total = len(chunk_coords) + sum(map(len, parent_levels)) * len(OVERLAY_ARRAY_KEYS)
+    completed = 0
+    try:
+        # Each raster allocation is at most one chunk plus its border halo.
+        # Disjoint changes stay disjoint, including when many edits coalesce.
+        for chunk_x, chunk_y in sorted(chunk_coords):
+            if cancel_check is not None:
+                cancel_check()
+            x0, y0 = chunk_x * OVERLAY_CHUNK_SIZE, chunk_y * OVERLAY_CHUNK_SIZE
+            x1, y1 = min(width, x0 + OVERLAY_CHUNK_SIZE), min(height, y0 + OVERLAY_CHUNK_SIZE)
+            region = (
+                max(0, x0 - halo),
+                max(0, y0 - halo),
+                min(width, x1 + halo),
+                min(height, y1 + halo),
+            )
+            objects = list(
+                queryset.filter(bbox_intersects_filter(make_bbox(*region))).only(
+                    *_object_only_fields()
+                )
+            )
+            for obj in objects:
+                if obj.id not in label_map:
+                    label_map[obj.id] = next_label
+                    next_label += 1
             draw_ops = _build_draw_ops(objects, label_map=label_map)
             result = render_module.rasterize_tile_worker(
                 {
-                    "region": (region_x0, region_y0, region_x1, region_y1),
-                    "interior": (interior_x0, interior_y0, interior_x1, interior_y1),
+                    "region": region,
+                    "interior": (x0, y0, x1, y1),
                     "draw_ops": draw_ops,
                     "border_width": OVERLAY_BORDER_WIDTH,
                 }
             )
+            for array_key in OVERLAY_ARRAY_KEYS:
+                detach_chunk(stage_root, array_key, 0, chunk_x, chunk_y)
             _write_tile_result(arrays, result)
-
-            parent_total = 1
-            next_coords = chunk_coords
-            for _level_idx in range(1, len(arrays[LABELS_ARRAY_KEY])):
-                next_coords = {(chunk_x // 2, chunk_y // 2) for chunk_x, chunk_y in next_coords}
-                parent_total += len(next_coords) * len(OVERLAY_ARRAY_KEYS)
-            completed = 1
+            completed += 1
             if on_progress is not None:
-                on_progress("partial", completed, parent_total)
-
-            child_coords = chunk_coords
-            for level_idx in range(1, len(arrays[LABELS_ARRAY_KEY])):
-                parent_coords = {(chunk_x // 2, chunk_y // 2) for chunk_x, chunk_y in child_coords}
-                for array_key in OVERLAY_ARRAY_KEYS:
-                    for chunk_x, chunk_y in sorted(parent_coords):
-                        if cancel_check is not None:
-                            cancel_check()
-                        render_module.write_parent_chunk(
-                            arrays[array_key][level_idx - 1],
-                            arrays[array_key][level_idx],
-                            chunk_x=chunk_x,
-                            chunk_y=chunk_y,
-                            kind=array_key,
-                        )
-                        completed += 1
-                        if on_progress is not None:
-                            on_progress("partial", completed, parent_total)
-                child_coords = parent_coords
-        finally:
-            _close_overlay_arrays(arrays)
-
-    state = _finalize_overlay_rebuild_state(
+                on_progress("partial", completed, total)
+        for level_idx, parent_coords in enumerate(parent_levels, start=1):
+            for array_key in OVERLAY_ARRAY_KEYS:
+                for chunk_x, chunk_y in sorted(parent_coords):
+                    if cancel_check is not None:
+                        cancel_check()
+                    detach_chunk(stage_root, array_key, level_idx, chunk_x, chunk_y)
+                    render_module.write_parent_chunk(
+                        arrays[array_key][level_idx - 1],
+                        arrays[array_key][level_idx],
+                        chunk_x=chunk_x,
+                        chunk_y=chunk_y,
+                        kind=array_key,
+                    )
+                    completed += 1
+                    if on_progress is not None:
+                        on_progress("partial", completed, total)
+    finally:
+        _close_overlay_arrays(arrays)
+    if cancel_check is not None:
+        cancel_check()
+    return _publish_snapshot(
         segmentation,
-        source_model=normalized_source_model,
-        applied_revision=int(desired_revision),
-        last_built_at=timezone.now(),
+        state,
+        stage_root,
+        version=version,
+        revision=int(desired_revision),
+        assignments=[(label, object_id) for object_id, label in label_map.items()],
+        new_assignments=[
+            (label, object_id) for object_id, label in label_map.items() if label >= first_new_label
+        ],
     )
-    # Geometry edits can add/remove labels, so clients must refetch the LUT.
-    SegmentationOverlayState.objects.filter(pk=state.pk).update(lut_revision=F("lut_revision") + 1)
-    state.refresh_from_db(fields=["lut_revision"])
-    _write_debug_manifest(segmentation, state)
-    return state
 
 
 def overlay_rebuild_policy(
@@ -1113,11 +1174,12 @@ def overlay_rebuild_policy(
         height=height,
     ):
         return "async_full"
-    if state.pending_full_rebuild or state.applied_revision != state.desired_revision:
-        return "async_partial"
     chunk_count = len(dirty_bbox_to_chunk_coords(dirty_bbox))
     if (
         allow_sync_partial
+        and state.status != SegmentationOverlayState.STATUS_BUILDING
+        and not state.pending_full_rebuild
+        and state.applied_revision == state.desired_revision
         and chunk_count <= SYNC_PARTIAL_MAX_LEVEL0_CHUNKS
         and dirty_bbox.area <= SYNC_PARTIAL_MAX_CHANGED_PIXELS
     ):
@@ -1138,6 +1200,11 @@ def build_overlay_mutation_response(
     sync_applied: bool,
     rebuild_mode: str,
 ) -> dict[str, Any]:
+    confirmed = (
+        state
+        if not state.candidate_source_model
+        else get_or_create_overlay_state(state.segmentation, None)
+    )
     return {
         "desired_revision": int(state.desired_revision),
         "applied_revision": int(state.applied_revision),
@@ -1146,6 +1213,8 @@ def build_overlay_mutation_response(
         "sync_applied": bool(sync_applied),
         "rebuild_mode": rebuild_mode,
         "source_model": state.candidate_source_model or None,
+        "confirmed_display_desired_revision": int(confirmed.desired_revision),
+        "confirmed_display_lut_revision": int(confirmed.lut_revision),
     }
 
 
@@ -1174,6 +1243,44 @@ def register_state_mutation(
         sync_applied=True,
         rebuild_mode="metadata_only",
     )
+
+
+def register_label_state_mutation(segmentation, objects, *, source_model=None):
+    """Recolour answers immediately; repaint only where object ownership can change.
+
+    One integer raster can store only one winner at an overlapping pixel. Label
+    state changes paint priority, so an overlapping answer needs a bounded
+    asynchronous repaint in addition to its immediate palette update.
+    """
+    from quantem.analysis.superseded import mark_superseded
+
+    from .dirty import merge_dirty_bboxes
+
+    mark_superseded(segmentation)
+    response = register_state_mutation(segmentation, source_model=source_model)
+    contested = []
+    sources = set()
+    live = labels_lut.bundle_queryset(segmentation, None)
+    for obj in objects:
+        geometry = obj.geometry
+        if geometry is None or geometry.is_empty:
+            continue
+        neighbors = live.exclude(pk=obj.pk).filter(bbox_intersects_filter(geometry.envelope))
+        if any(
+            geometry.intersection(other.geometry).area > 0
+            for other in neighbors.only("geometry_wkb")
+        ):
+            contested.append(geometry)
+            sources.add(obj.source_model)
+    if contested:
+        response = register_overlay_mutation_all_bundles(
+            segmentation,
+            dirty_bbox=merge_dirty_bboxes(segmentation, contested),
+            source_model=source_model,
+            source_models=sources,
+            allow_sync_partial=False,
+        )
+    return response
 
 
 def _existing_bundle_source_models(segmentation: ImageSegmentation) -> list[str]:
@@ -1219,6 +1326,7 @@ def _bundles_containing_source_model(
     ]
 
 
+@transaction.atomic
 def _register_overlay_mutation_one(
     segmentation: ImageSegmentation,
     *,
@@ -1229,6 +1337,8 @@ def _register_overlay_mutation_one(
 ) -> dict[str, Any]:
     normalized_source_model = normalize_overlay_source_model(source_model)
     state = get_or_create_overlay_state(segmentation, normalized_source_model)
+    SegmentationOverlayState.objects.filter(pk=state.pk).update(lut_revision=F("lut_revision"))
+    state.refresh_from_db()
     desired_revision = int(state.desired_revision) + 1
     rebuild_mode = overlay_rebuild_policy(
         segmentation,
@@ -1247,6 +1357,7 @@ def _register_overlay_mutation_one(
                 dirty_bbox=dirty_bbox,
                 desired_revision=desired_revision,
                 source_model=normalized_source_model,
+                _lock_timeout=0,
             )
             return build_overlay_mutation_response(
                 state,
@@ -1430,6 +1541,31 @@ def queue_full_overlay_rebuild(
     )
 
 
+def queue_overlay_followup(payload: dict) -> None:
+    """Retry owed work after a successful job has released its queue claim."""
+    try:
+        state = (
+            SegmentationOverlayState.objects.select_related("segmentation")
+            .filter(
+                segmentation_id=payload.get("segmentation_id"),
+                candidate_source_model=normalize_overlay_source_model(payload.get("source_model")),
+            )
+            .first()
+        )
+        if state is None or state.status == SegmentationOverlayState.STATUS_FAILED:
+            return
+        if state.pending_full_rebuild or state.desired_revision > state.applied_revision:
+            queue_overlay_rebuild(
+                state.segmentation,
+                source_model=state.candidate_source_model,
+                mode="full" if state.pending_full_rebuild else "partial",
+            )
+    except Exception:
+        # Publication already succeeded. A queue/database outage here must not
+        # retroactively fail that job; manifest polling can recover the tail.
+        logger.warning("Could not enqueue the remaining overlay edits", exc_info=True)
+
+
 def run_overlay_rebuild_job(
     segmentation: ImageSegmentation,
     *,
@@ -1459,23 +1595,38 @@ def run_overlay_rebuild_job(
                 cancel_check=cancel_check,
             )
 
-        dirty_bbox = _merge_dirty_runs_to_bbox(segmentation, list(state.dirty_chunk_runs or []))
-        if dirty_bbox is None:
-            _set_overlay_state(
-                state,
-                status_value=SegmentationOverlayState.STATUS_READY,
-                applied_revision=int(state.desired_revision),
-                dirty_chunk_runs=[],
-                pending_full_rebuild=False,
-                last_error="",
-                last_built_at=timezone.now(),
+        dirty_chunks = dirty_runs_to_chunk_coords(segmentation, list(state.dirty_chunk_runs or []))
+        if not dirty_chunks:
+            # A revision without recorded regions cannot be acknowledged under
+            # the previous snapshot's token. Reconstruct it conservatively.
+            return rebuild_overlay_full(
+                segmentation,
+                source_model=normalized_source_model,
+                desired_revision=int(state.desired_revision),
+                on_progress=on_progress,
+                cancel_check=cancel_check,
             )
-            _write_debug_manifest(segmentation, state)
-            return state
+
+        width, height = segmentation_dimensions(segmentation)
+        total_chunks = math.ceil(width / OVERLAY_CHUNK_SIZE) * math.ceil(
+            height / OVERLAY_CHUNK_SIZE
+        )
+        if (
+            len(dirty_chunks) > ASYNC_PARTIAL_MAX_LEVEL0_CHUNKS
+            or len(dirty_chunks) / total_chunks > ASYNC_PARTIAL_MAX_IMAGE_COVERAGE
+        ):
+            return rebuild_overlay_full(
+                segmentation,
+                source_model=normalized_source_model,
+                desired_revision=int(state.desired_revision),
+                on_progress=on_progress,
+                cancel_check=cancel_check,
+            )
 
         return apply_partial_overlay_update(
             segmentation,
-            dirty_bbox=dirty_bbox,
+            dirty_bbox=None,
+            dirty_chunks=dirty_chunks,
             desired_revision=int(state.desired_revision),
             source_model=normalized_source_model,
             on_progress=on_progress,

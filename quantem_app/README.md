@@ -34,6 +34,18 @@ done. Train on those examples, then evaluate and repeat. **Score against ROIs** 
 completed annotations without training or changing segmentations. Images used in the
 model's training history are flagged, but can still be evaluated.
 
+Labeling ROIs belong to each image's organelle workspace. Creating, selecting,
+editing, removing, or marking a mitochondria ROI done leaves nucleus and other
+organelle ROIs unchanged. Each new workspace starts with its own default ROI;
+removing its last ROI leaves the workspace empty until another is added.
+
+On upgrade, existing shared windows remain available in each organelle already
+present on the image, with their original per-organelle completion records.
+Subsequent edits and removals are independent. The migration preserves crop IDs,
+annotations, prediction files and revision history, and runs through the normal
+startup migration backup. Older releases used shared ROI lists; restoring an
+older database backup also restores that older behavior.
+
 Use **Apply models** to apply released defaults or a saved fine-tune to the shared image
 selection. The readiness check explains unavailable images and required downloads before
 queueing work. Model defaults follow the same installed-model policy as the image viewer.
@@ -234,6 +246,8 @@ indeterminate bar but continue to report liveness and the time since the last me
 There is no fixed migration deadline: QuantEM keeps monitoring a live sidecar until it finishes or
 exits, and shows a non-fatal warning if liveness events stop for five minutes. Large libraries can
 therefore take longer than two hours without the loading page abandoning a healthy transaction.
+The sidecar-to-shell event contract is documented in
+[Desktop startup progress protocol](docs/startup-progress.md).
 
 The live SQLite files are moved into that verified snapshot after PostgreSQL commits successfully.
 The snapshot is the first **Database upgrade backup** and follows the configured count and age
@@ -280,7 +294,7 @@ PostgreSQL minor releases keep the same on-disk format. A QuantEM update may rep
 Whenever an app launch detects pending database-schema migrations, QuantEM automatically creates
 and verifies that backup before changing the schema. By default it retains only the newest
 pre-migration backup and removes it after 30 days. Both limits are editable under **Settings →
-Database upgrade backups**; cleanup runs at startup, after a new migration backup, and when the
+Database upgrade backups**; cleanup runs in the background shortly after startup and whenever the
 policy is saved. This policy does not remove backups created explicitly with `database backup`.
 A future PostgreSQL major upgrade is a separate release operation: back up with the old QuantEM
 version, create a fresh cluster with the new major version, restore and validate it, and retain the

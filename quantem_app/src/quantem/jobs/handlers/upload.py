@@ -3,13 +3,6 @@
 import logging
 
 from quantem.assets.models import Asset
-from quantem.assets.preprocess_status import set_stage
-from quantem.assets.tasks import (
-    ensure_ngff_for_asset_task,
-    ensure_roi_for_asset_task,
-    prepare_asset_renditions_task,
-)
-from quantem.assets.volume_tasks import encode_asset_volume_to_ome_tiff_task
 from quantem.jobs.constants import (
     JOB_TYPE_ENSURE_IMAGE_NGFF,
     JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -69,6 +62,8 @@ def handle_ensure_image_ngff(
     reporter: JobReporter,
     cancel: CancelToken,
 ) -> dict:
+    from quantem.assets.tasks import ensure_ngff_for_asset_task
+
     cancel.check_cancelled()
     asset = _asset_for_payload(payload)
     if asset is None:
@@ -81,6 +76,10 @@ def handle_ensure_image_ngff(
 
 @job_handler(JOB_TYPE_UPLOAD_IMAGE_PIPELINE)
 def handle_upload_image_pipeline(payload: dict, reporter: JobReporter, cancel: CancelToken) -> dict:
+    from quantem.assets.preprocess_status import set_stage
+    from quantem.assets.roi_state import initialize_roi_from_template
+    from quantem.assets.tasks import ensure_roi_for_asset_task, prepare_asset_renditions_task
+
     cancel.check_cancelled()
     asset = _asset_for_payload(payload)
     if asset is None:
@@ -128,15 +127,14 @@ def handle_upload_image_pipeline(payload: dict, reporter: JobReporter, cancel: C
 
     reporter.update(progress=70.0, message="creating ROI")
     roi = ensure_roi_for_asset_task(str(asset.id))
-    roi_id = str(roi.id) if roi else None
-    if roi:
-        roi_segmentations = [seg_instance for seg_instance, _ in segmentations]
-        if roi_segmentations:
-            roi.segmentations.add(*roi_segmentations)
-
     cancel.check_cancelled()
 
     for seg_instance, _ in segmentations:
+        selected_roi = initialize_roi_from_template(seg_instance, roi)
+        if selected_roi is None and seg_instance.rois_initialized:
+            # The user removed the last ROI while preprocessing was running.
+            continue
+        roi_id = str(selected_roi.pk) if selected_roi else None
         segmentation_type_internal_name = seg_instance.segmentation_type.internal_name
         Job.enqueue(
             job_type=JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -181,6 +179,9 @@ def _run_volume_upload_pipeline(
     tell the user instead of leaving them waiting for overlays that will never
     appear.
     """
+    from quantem.assets.preprocess_status import set_stage
+    from quantem.assets.tasks import ensure_ngff_for_asset_task
+    from quantem.assets.volume_tasks import encode_asset_volume_to_ome_tiff_task
 
     if requested_organelles:
         logger.info(

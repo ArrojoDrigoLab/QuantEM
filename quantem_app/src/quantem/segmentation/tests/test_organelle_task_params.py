@@ -93,6 +93,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
     ):
         roi = create_roi_image_from_image(
             self.image,
+            segmentation=self.mito_segmentation,
             x=0,
             y=0,
             width=min(self.image.width, 96),
@@ -175,6 +176,7 @@ class OrganelleTaskInstanceParamsTests(TestCase):
     ):
         roi = create_roi_image_from_image(
             self.image,
+            segmentation=self.mito_segmentation,
             x=0,
             y=0,
             width=min(self.image.width, 96),

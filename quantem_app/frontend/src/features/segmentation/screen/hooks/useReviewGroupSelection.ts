@@ -1,3 +1,4 @@
+import type { OverlayRevisionTarget } from "@/shared/types/segmentation";
 import type {
   LeftMode,
   WorkflowMode,
@@ -37,10 +38,10 @@ interface UseReviewGroupSelectionArgs {
   ) => void;
   rollbackOptimisticLabel: (segmentId: string) => void;
   clearHoverInteraction: () => void;
-  stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: number | null) => void;
+  stageOptimisticRevisionTargets: (segmentIds: string[], targetRevision?: OverlayRevisionTarget | null) => void;
   getOptimisticTargetRevision: (
     overlay: SegmentationOverlayMutationState | null | undefined
-  ) => number | null;
+  ) => OverlayRevisionTarget | null;
   handleOverlayMutationRefresh: (
     overlay: SegmentationOverlayMutationState | null | undefined
   ) => void;

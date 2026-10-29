@@ -68,6 +68,11 @@ def probability_preview_path(
     return source_path.with_name(f"{stem}_preview_{max_dimension}.png")
 
 
+def result_preview_cache_path(source_path: Path) -> Path:
+    """Owned derived images, reclaimed with the last reference to this map."""
+    return source_path.with_name(f"{source_path.name}.result-previews")
+
+
 def _preview_shape(width: int, height: int, max_dimension: int) -> tuple[int, int, int]:
     factor = max(1, math.ceil(max(width, height) / max_dimension))
     return math.ceil(width / factor), math.ceil(height / factor), factor

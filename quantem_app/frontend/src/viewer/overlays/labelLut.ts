@@ -15,21 +15,25 @@ export interface TintedLutResult {
  * user-chosen colour.
  */
 export function buildTintedLut(
-  objects: { label: number; state: string }[],
+  objects: { label: number; state: string; hidden_by_completed_roi?: boolean }[],
   color: string,
-  visibleStates: Set<string>
+  visibleStates: Set<string>,
+  options: { overlay_kind?: string; max_label?: number } = {}
 ): TintedLutResult {
-  let maxLabel = 0;
+  let maxLabel = Math.max(0, options.max_label ?? 0, options.overlay_kind === "binary_mask" ? 1 : 0);
   for (const object of objects) {
     if (object.label > maxLabel) maxLabel = object.label;
   }
 
   const rgba = new Uint8Array((maxLabel + 1) * 4);
   const [r, g, b] = parseHexColor(color);
+  if (options.overlay_kind === "binary_mask" && visibleStates.has("confirmed")) {
+    rgba.set([r, g, b, 255], 4);
+  }
 
   for (const object of objects) {
-    if (!visibleStates.has(object.state)) continue;
-    if (object.label < 0 || object.label > maxLabel) continue;
+    if (!visibleStates.has(object.state) || object.hidden_by_completed_roi) continue;
+    if (object.label <= 0 || object.label > maxLabel) continue;
     const offset = object.label * 4;
     rgba[offset] = r;
     rgba[offset + 1] = g;

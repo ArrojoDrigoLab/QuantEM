@@ -1,3 +1,4 @@
+import type { OverlayRevisionTarget } from "@/shared/types/segmentation";
 import { useCallback, useEffect, useRef } from "react";
 import { updateSegmentLabelsBatch } from "@/shared/api/segmentations/annotations";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
@@ -37,11 +38,11 @@ interface UseLabelAnswerQueueArgs {
   rollbackOptimisticLabel: (segmentId: string) => void;
   stageOptimisticRevisionTargets: (
     segmentIds: string[],
-    targetRevision?: number | null
+    targetRevision?: OverlayRevisionTarget | null
   ) => void;
   getOptimisticTargetRevision: (
     overlay: SegmentationOverlayMutationState | null | undefined
-  ) => number | null;
+  ) => OverlayRevisionTarget | null;
   handleOverlayMutationRefresh: (
     overlay: SegmentationOverlayMutationState | null | undefined
   ) => void;

@@ -115,8 +115,8 @@ def rasterize_region(
 
     A pixel is an object's when its centre is inside the outline
     (:mod:`quantem.seg_core.rasterize`), so the pixels counted here are the area
-    of the polygon. Holes are punched back to background exactly as before, and
-    each ring costs only its own bounding box, not a pass over the region.
+    of the polygon. Holes preserve previously drawn objects. Each ring costs
+    only its own bounding box, not a pass over the region.
     """
     height = max(0, y1 - y0)
     width = max(0, x1 - x0)
@@ -128,9 +128,23 @@ def rasterize_region(
     for op in ordered:
         label = int(op["label"])
         for exterior, holes in op["rings"]:
+            if holes:
+                # A hole leaves the lower-priority object visible; painting it
+                # as label zero would erase a different object's valid pixels.
+                bx0 = max(x0, math.floor(float(exterior[:, 0].min())))
+                by0 = max(y0, math.floor(float(exterior[:, 1].min())))
+                bx1 = min(x1, math.ceil(float(exterior[:, 0].max())))
+                by1 = min(y1, math.ceil(float(exterior[:, 1].max())))
+                if bx1 <= bx0 or by1 <= by0:
+                    continue
+                coverage = np.zeros((by1 - by0, bx1 - bx0), dtype=np.uint8)
+                paint_ring(coverage, exterior, 1, x0=bx0, y0=by0)
+                for hole in holes:
+                    paint_ring(coverage, hole, 0, x0=bx0, y0=by0)
+                target = labels[by0 - y0 : by1 - y0, bx0 - x0 : bx1 - x0]
+                target[coverage != 0] = label
+                continue
             paint_ring(labels, exterior, label, x0=x0, y0=y0)
-            for hole in holes:
-                paint_ring(labels, hole, 0, x0=x0, y0=y0)
 
     border = _compute_border(labels, width=border_width)
     return labels, border

@@ -54,7 +54,7 @@ export interface ImageViewerOverlayConfig {
   /** ID-map segmentation overlays (labels + border + render-time LUT). */
   idMapOverlays?: ViewerIdMapOverlaySpec[];
   bitmapOverlays?: ViewerBitmapOverlaySpec[];
-  onRasterRevisionDisplayed?: (revision: number | null) => void;
+  onRasterRevisionDisplayed?: (revision: number | null, lutRevision?: number) => void;
 }
 
 export interface ImageViewerInteractionConfig {

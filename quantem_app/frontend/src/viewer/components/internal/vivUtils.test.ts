@@ -11,6 +11,11 @@ function source(labels: string[], shape: number[]): VivLoaderSource {
 }
 
 describe("buildVivSelection", () => {
+  it("preserves selection identity until the plane changes", () => {
+    const image = source(["c", "z", "y", "x"], [1, 20, 256, 256]);
+    expect(buildVivSelections(image, { zIndex: 3 })).toBe(buildVivSelections(image, { zIndex: 3 }));
+    expect(buildVivSelections(image, { zIndex: 3 })).not.toBe(buildVivSelections(image, { zIndex: 4 }));
+  });
   it("returns an empty selection for a 2D [c, y, x] source", () => {
     expect(buildVivSelection(source(["c", "y", "x"], [1, 256, 256]))).toEqual({});
   });

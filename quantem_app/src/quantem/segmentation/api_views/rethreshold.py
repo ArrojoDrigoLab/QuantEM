@@ -861,9 +861,11 @@ class SegmentationIncludeLevelMapView(APIView):
         roi_id = request.query_params.get("roi_id")
         roi = None
         if roi_id:
-            roi = ImageROI.objects.filter(asset=segmentation.asset, id=roi_id).first()
+            roi = ImageROI.objects.filter(
+                asset=segmentation.asset, segmentations=segmentation, id=roi_id
+            ).first()
             if roi is None:
-                return _refusal("That region is no longer on this image.")
+                return _refusal("That region is no longer in this organelle's ROI list.")
         segmenter, resolved = _resolve_segmenter(segmentation, source_model)
         if segmenter is None:
             return _refusal(resolved)
@@ -919,9 +921,11 @@ class SegmentationIncludeLevelView(APIView):
         roi_id = request.query_params.get("roi_id")
         roi = None
         if roi_id:
-            roi = ImageROI.objects.filter(asset=segmentation.asset, id=roi_id).first()
+            roi = ImageROI.objects.filter(
+                asset=segmentation.asset, segmentations=segmentation, id=roi_id
+            ).first()
             if roi is None:
-                return _refusal("That region is no longer on this image.")
+                return _refusal("That region is no longer in this organelle's ROI list.")
         return Response(
             _dial_state(
                 segmentation,
@@ -956,9 +960,11 @@ class SegmentationIncludeLevelView(APIView):
 
         roi = None
         if roi_id is not None:
-            roi = ImageROI.objects.filter(asset=segmentation.asset, id=roi_id).first()
+            roi = ImageROI.objects.filter(
+                asset=segmentation.asset, segmentations=segmentation, id=roi_id
+            ).first()
             if roi is None:
-                return _refusal("That region is no longer on this image.")
+                return _refusal("That region is no longer in this organelle's ROI list.")
 
         readiness = stored_map_readiness(
             segmentation=segmentation,

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { retryOverlayRequest } from "@/viewer/overlays/retryOverlayRequest";
 import {
   getSegmentationOverlayLut,
   getSegmentationOverlayLutJson,
@@ -10,9 +11,9 @@ export interface OverlayLutState {
   maxLabel: number;
   /** Server LUT revision this palette reflects. */
   lutRevision: number;
+  bundleVersion?: number;
+  loadError?: string;
 }
-
-const EMPTY_LUT: OverlayLutState = { rgba: new Uint8Array(0), maxLabel: 0, lutRevision: 0 };
 
 /**
  * Fetches the render-time colour LUT for a segmentation overlay and refetches
@@ -24,13 +25,15 @@ export function useOverlayLut(args: {
   segmentationId: string | null;
   sourceModel?: string | null;
   lutRevision: number | null;
+  rasterRevision?: string | null;
   enabled?: boolean;
   /** States to force-hide (alpha 0), e.g. ["candidate","inferred"] for review. */
   hiddenStates?: string[];
 }): OverlayLutState | null {
-  const { segmentationId, sourceModel = null, lutRevision, enabled = true } = args;
+  const { segmentationId, sourceModel = null, lutRevision, rasterRevision = null, enabled = true } = args;
   const hideKey = (args.hiddenStates ?? []).join(",");
-  const [lut, setLut] = useState<OverlayLutState | null>(null);
+  const key = `${segmentationId}|${sourceModel}|${hideKey}|${rasterRevision}`;
+  const [lut, setLut] = useState<{ key: string; value: OverlayLutState } | null>(null);
 
   useEffect(() => {
     if (!enabled || !segmentationId || lutRevision == null) {
@@ -38,25 +41,32 @@ export function useOverlayLut(args: {
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
     const hiddenStates = hideKey ? hideKey.split(",") : undefined;
-    getSegmentationOverlayLut(segmentationId, sourceModel, hiddenStates)
+    retryOverlayRequest(() => getSegmentationOverlayLut(segmentationId, sourceModel, hiddenStates, rasterRevision), controller.signal)
       .then((result) => {
         if (cancelled) return;
-        setLut({
+        if (rasterRevision && result.bundleVersion !== Number(rasterRevision.split("-")[0])) return;
+        setLut({ key, value: {
           rgba: result.rgba,
           maxLabel: result.maxLabel,
           lutRevision: result.lutRevision,
-        });
+          bundleVersion: result.bundleVersion,
+        } });
       })
-      .catch(() => {
-        if (!cancelled) setLut(EMPTY_LUT);
+      .catch((error) => {
+        if (!cancelled) setLut((prev) => ({ key, value: {
+          ...(prev?.key === key ? prev.value : { rgba: new Uint8Array(4), maxLabel: 0, lutRevision: -1 }),
+          loadError: error instanceof Error ? error.message : String(error),
+        } }));
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [enabled, segmentationId, sourceModel, lutRevision, hideKey]);
+  }, [enabled, segmentationId, sourceModel, lutRevision, rasterRevision, hideKey, key]);
 
-  return lut;
+  return enabled && lut?.key === key ? lut.value : null;
 }
 
 /**
@@ -64,7 +74,7 @@ export function useOverlayLut(args: {
  * object uuid map used to resolve a picked raster label back to a domain object.
  * Keyed on `rasterRevision` (a `<bundle_version>-<applied_revision>` token), not
  * `lutRevision`: the label->object mapping changes whenever the raster's labels
- * change -- full rebuilds (renumber) AND in-place partial geometry updates (new
+ * change -- full rebuilds (renumber) AND partial geometry snapshots (new
  * labels allocated) -- but NOT on a state-only recolour, so confirm/recolour
  * never refetches this potentially large map.
  */
@@ -75,32 +85,32 @@ export function useOverlayPickMap(args: {
   enabled?: boolean;
 }): Map<number, string> | null {
   const { segmentationId, sourceModel = null, rasterRevision, enabled = true } = args;
-  const [pickMap, setPickMap] = useState<Map<number, string> | null>(null);
-  const cacheKey = useRef<string>("");
+  const key = `${segmentationId}|${sourceModel ?? ""}|${rasterRevision}`;
+  const [pickMap, setPickMap] = useState<{ key: string; value: Map<number, string> } | null>(null);
 
   useEffect(() => {
     if (!enabled || !segmentationId || !rasterRevision) {
       setPickMap(null);
       return;
     }
-    const key = `${segmentationId}|${sourceModel ?? ""}|${rasterRevision}`;
-    if (key === cacheKey.current && pickMap) return;
     let cancelled = false;
-    getSegmentationOverlayLutJson(segmentationId, sourceModel)
+    const controller = new AbortController();
+    retryOverlayRequest(() => getSegmentationOverlayLutJson(segmentationId, sourceModel, rasterRevision), controller.signal)
       .then((json) => {
         if (cancelled) return;
+        if (json.bundle_version !== Number(rasterRevision.split("-")[0])) return;
         const map = new Map<number, string>();
         for (const entry of json.objects) map.set(entry.label, entry.uuid);
-        cacheKey.current = key;
-        setPickMap(map);
+        setPickMap({ key, value: map });
       })
       .catch(() => {
         if (!cancelled) setPickMap(null);
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [enabled, segmentationId, sourceModel, rasterRevision, pickMap]);
+  }, [enabled, segmentationId, sourceModel, rasterRevision, key]);
 
-  return pickMap;
+  return enabled && pickMap?.key === key ? pickMap.value : null;
 }

@@ -57,11 +57,14 @@ export interface ViewerNgffOverlayLayerSpec {
  * appends `/labels` and `/border`); the LUT is supplied separately as a texture.
  */
 export interface ViewerIdMapOverlaySpec {
+  loadError?: string;
   id: string;
   /** Bundle root zarr URL (already carries the `?rev=<bundle_version>` cache key). */
   ngffUrl: string;
   /** Geometry revision represented by this bundle. */
   revision?: number;
+  /** Identifies the counter used to retire annotation bridges. */
+  revisionRole?: "model" | "confirmed";
   /** Flat RGBA8 palette indexed by dense label (length = (maxLabel + 1) * 4). */
   lut: Uint8Array;
   maxLabel: number;
@@ -93,4 +96,5 @@ export interface ViewerBitmapOverlaySpec {
   image: string | HTMLCanvasElement | HTMLImageElement | ImageBitmap | ImageData;
   bounds: [number, number, number, number]; // [x, y, width, height] in image px
   opacity: number;
+  probability?: { threshold: number; color: [number, number, number] };
 }

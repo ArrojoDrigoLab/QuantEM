@@ -2,69 +2,172 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuantEM</title>
     <style>
-      :root { color-scheme: dark; }
-      html, body {
-        margin: 0; height: 100%;
-        background: #10141a; color: #cdd6e0;
-        font-family: "Segoe UI", system-ui, sans-serif;
-        display: grid; place-items: center;
+      :root {
+        color-scheme: light;
+        font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+        background: #f6f8fb;
+        color: #172033;
       }
-      .box { text-align: center; width: min(620px, calc(100vw - 48px)); }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+        background: radial-gradient(circle at 50% -20%, #e9f0ff 0, transparent 48%), #f6f8fb;
+      }
+      .card {
+        width: min(620px, 100%);
+        padding: 36px;
+        background: rgba(255, 255, 255, 0.94);
+        border: 1px solid #e1e6ee;
+        border-radius: 18px;
+        box-shadow: 0 20px 60px rgba(29, 44, 75, 0.1);
+      }
+      .brand { display: flex; align-items: center; gap: 14px; }
+      .mark {
+        width: 44px; height: 44px; display: grid; place-items: center;
+        border-radius: 12px; background: #315bc5; color: white;
+        font-size: 20px; font-weight: 750;
+        box-shadow: 0 8px 20px rgba(49, 91, 197, 0.24);
+      }
+      h1 { margin: 0; font-size: 21px; line-height: 1.2; letter-spacing: -0.01em; }
+      .eyebrow { margin: 3px 0 0; color: #667085; font-size: 13px; }
+      .status-row { margin-top: 30px; display: flex; align-items: flex-start; gap: 13px; }
       .spinner {
-        width: 44px; height: 44px; margin: 0 auto 18px;
-        border: 3px solid #2a3442; border-top-color: #5aa9e6;
+        flex: 0 0 auto; width: 22px; height: 22px; margin-top: 1px;
+        border: 2px solid #dbe3f2; border-top-color: #315bc5;
         border-radius: 50%; animation: spin 0.9s linear infinite;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
-      h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; letter-spacing: 0.4px; }
-      p  { font-size: 13px; margin: 0; color: #8394a8; }
-      .progress { display: none; margin-top: 22px; text-align: left; }
+      #status { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.5; }
+      #substatus { margin: 3px 0 0; color: #667085; font-size: 13px; line-height: 1.5; }
+      .progress { display: none; margin-top: 24px; }
       .progress.visible { display: block; }
-      .progress-header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
-      #stage { color: #cdd6e0; font-size: 13px; font-weight: 600; }
-      #percent { color: #91a4b8; font-size: 12px; white-space: nowrap; }
-      .track { height: 8px; overflow: hidden; background: #26313e; border-radius: 999px; }
-      .bar { height: 100%; width: 0; background: #5aa9e6; border-radius: inherit; transition: width 220ms ease; }
-      .track.indeterminate .bar { width: 32%; animation: travel 1.5s ease-in-out infinite; }
-      @keyframes travel { from { transform: translateX(-105%); } to { transform: translateX(320%); } }
-      #detail { margin-top: 9px; color: #9aacbf; }
-      #meta { margin-top: 5px; font-variant-numeric: tabular-nums; }
-      #warning { display: none; color: #e3b36a; margin-top: 12px; }
-      #err { color: #e07a7a; white-space: pre-wrap; max-width: 560px; display: none; margin-top: 14px; }
+      .progress-header {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: 18px; margin-bottom: 9px;
+      }
+      #stage { min-width: 0; color: #344054; font-size: 13px; font-weight: 650; }
+      #measure {
+        flex: 0 0 auto; color: #667085; font-size: 12px;
+        font-variant-numeric: tabular-nums; text-align: right;
+      }
+      .track { height: 8px; overflow: hidden; background: #e7ebf2; border-radius: 999px; }
+      .bar {
+        height: 100%; width: 0; background: #315bc5;
+        border-radius: inherit; transition: width 220ms ease;
+      }
+      .track.indeterminate .bar { width: 34%; animation: travel 1.45s ease-in-out infinite; }
+      @keyframes travel { from { transform: translateX(-110%); } to { transform: translateX(310%); } }
+      #detail { margin: 10px 0 0; color: #475467; font-size: 13px; line-height: 1.5; }
+      #meta { margin: 4px 0 0; color: #7a8699; font-size: 12px; line-height: 1.5; }
+      #critical {
+        display: none; margin-top: 15px; padding: 10px 12px;
+        border-radius: 9px; background: #fff7e8; color: #7a4b0b;
+        font-size: 12px; line-height: 1.45;
+      }
+      #critical.visible { display: block; }
+      #warning { display: none; margin: 12px 0 0; color: #9a5b08; font-size: 12px; }
+      details { display: none; margin-top: 14px; color: #667085; font-size: 12px; }
+      details.visible { display: block; }
+      summary { cursor: pointer; user-select: none; }
+      #technical { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .error {
+        display: none; margin-top: 20px; padding-top: 20px;
+        border-top: 1px solid #e6e9ef;
+      }
+      .error.visible { display: block; }
+      #err {
+        margin: 0; color: #8b1e2d; font-size: 13px; line-height: 1.55;
+        white-space: pre-wrap; overflow-wrap: anywhere;
+      }
+      .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 18px; }
+      button {
+        min-height: 38px; padding: 8px 14px; border: 1px solid #cfd6e2;
+        border-radius: 8px; background: white; color: #344054;
+        font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+      }
+      button:hover { background: #f8fafc; border-color: #aeb8c8; }
+      button.primary { background: #315bc5; border-color: #315bc5; color: white; }
+      button.primary:hover { background: #274ba7; }
+      button.quiet { border-color: transparent; }
+      @media (max-width: 540px) {
+        body { padding: 18px; }
+        .card { padding: 26px 22px; }
+        .progress-header { align-items: flex-start; flex-direction: column; gap: 4px; }
+        #measure { text-align: left; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner { animation-duration: 2.4s; }
+        .track.indeterminate .bar { animation: none; width: 100%; opacity: 0.45; }
+        .bar { transition: none; }
+      }
     </style>
   </head>
   <body>
-    <div class="box">
-      <div class="spinner" id="spinner"></div>
-      <h1>QuantEM</h1>
-      <p id="status">Starting the local server&hellip; first launch can take a minute.</p>
-      <div class="progress" id="migration-progress">
-        <div class="progress-header">
-          <span id="stage"></span>
-          <span id="percent"></span>
+    <main class="card">
+      <div class="brand">
+        <div class="mark" aria-hidden="true">Q</div>
+        <div><h1>QuantEM</h1><p class="eyebrow">Electron microscopy analysis</p></div>
+      </div>
+
+      <div class="status-row" aria-live="polite" aria-atomic="false">
+        <div class="spinner" id="spinner" aria-hidden="true"></div>
+        <div>
+          <p id="status">Starting QuantEM</p>
+          <p id="substatus">Preparing the local application&hellip;</p>
         </div>
-        <div class="track indeterminate" id="track" role="progressbar" aria-label="Database upgrade progress">
+      </div>
+
+      <section class="progress" id="startup-progress" aria-label="Startup progress">
+        <div class="progress-header"><span id="stage"></span><span id="measure"></span></div>
+        <div class="track indeterminate" id="track" role="progressbar" aria-label="Startup progress">
           <div class="bar" id="bar"></div>
         </div>
         <p id="detail"></p>
         <p id="meta"></p>
+        <div id="critical">Keep QuantEM open while this database operation finishes. Closing now may require recovery on the next launch.</div>
         <p id="warning"></p>
-      </div>
-      <p id="err"></p>
-    </div>
+        <details id="technical-details"><summary>Technical details</summary><p id="technical"></p></details>
+      </section>
+
+      <section class="error" id="error-panel" role="alert">
+        <p id="err"></p>
+        <div class="actions">
+          <button class="primary" id="retry" type="button">Retry</button>
+          <button id="open-logs" type="button">Open logs</button>
+          <button id="copy-diagnostics" type="button">Copy diagnostics</button>
+          <button class="quiet" id="quit" type="button">Quit</button>
+        </div>
+      </section>
+    </main>
+
     <script>
-      /* The Rust shell drives this page:
-         - window.__quantemStatus(text)  updates the status line
-         - window.__quantemMigrationProgress(event) updates measured migration progress
-         - window.__quantemDatabaseRecoveryProgress(event) updates crash recovery liveness
-         - window.__quantemMigrationWarning(text) shows a non-fatal liveness warning
-         - window.__quantemFailed(text)  shows a fatal error
-         - on success it replaces location with the server URL. */
-      window.__quantemStatus = function (t) {
-        document.getElementById("status").textContent = t;
-      };
+      var lastEvent = null;
+      var lastFailure = "";
+      function element(id) { return document.getElementById(id); }
+      function invoke(command) {
+        if (window.__TAURI__ && window.__TAURI__.core) return window.__TAURI__.core.invoke(command);
+        return Promise.reject(new Error("Desktop command API unavailable"));
+      }
+      function copyText(value) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(value);
+        }
+        return new Promise(function (resolve, reject) {
+          var input = document.createElement("textarea");
+          input.value = value; input.style.position = "fixed"; input.style.opacity = "0";
+          document.body.appendChild(input); input.select();
+          var copied = document.execCommand("copy");
+          input.remove();
+          copied ? resolve() : reject(new Error("Clipboard unavailable"));
+        });
+      }
       function duration(seconds) {
         seconds = Math.max(0, Math.round(Number(seconds) || 0));
         if (seconds < 60) return seconds + "s";
@@ -72,105 +175,106 @@
         if (minutes < 60) return minutes + "m " + (seconds % 60) + "s";
         return Math.floor(minutes / 60) + "h " + (minutes % 60) + "m";
       }
-      function count(value) {
-        return Number(value).toLocaleString();
+      function count(value) { return Number(value).toLocaleString(); }
+      function humanBytes(value) {
+        var bytes = Number(value), units = ["B", "KB", "MB", "GB", "TB"], index = 0;
+        if (!Number.isFinite(bytes)) return "";
+        while (bytes >= 1000 && index < units.length - 1) { bytes /= 1000; index += 1; }
+        return (index === 0 ? Math.round(bytes) : bytes.toFixed(bytes >= 10 ? 1 : 2)) + " " + units[index];
       }
-      window.__quantemMigrationProgress = function (event) {
-        document.getElementById("status").textContent =
-          "Upgrading the existing database to PostgreSQL…";
-        var panel = document.getElementById("migration-progress");
-        panel.classList.add("visible");
-        document.getElementById("stage").textContent =
-          "Stage " + event.stage + " of " + event.stage_count + ": " + event.message;
-        document.getElementById("detail").textContent = event.detail || "";
-
-        var track = document.getElementById("track");
-        var bar = document.getElementById("bar");
-        var percent = document.getElementById("percent");
-        track.setAttribute("aria-label", "Database upgrade progress");
-        if (event.percent == null) {
-          track.classList.add("indeterminate");
-          track.removeAttribute("aria-valuenow");
-          bar.style.width = "";
-          percent.textContent = "Working…";
-        } else {
-          track.classList.remove("indeterminate");
-          track.setAttribute("aria-valuenow", String(event.percent));
-          bar.style.width = event.percent + "%";
-          percent.textContent = event.percent.toFixed(1) + "%";
-          if (event.completed != null && event.total != null && event.unit) {
-            percent.textContent += " · " + count(event.completed) + " / " + count(event.total) + " " + event.unit;
+      function measuredText(event) {
+        var percent = Number(event.percent), parts = [];
+        if (event.percent != null && Number.isFinite(percent)) parts.push(percent.toFixed(1) + "%");
+        if (event.completed != null) {
+          var completed = event.unit === "bytes" ? humanBytes(event.completed) : count(event.completed);
+          if (event.total != null) {
+            var total = event.unit === "bytes" ? humanBytes(event.total) : count(event.total);
+            parts.push(completed + " / " + total + (event.unit === "bytes" ? "" : " " + (event.unit || "")));
+          } else if (Number(event.completed) > 0) {
+            parts.push(completed + (event.unit === "bytes" ? " written" : " " + (event.unit || "")));
           }
         }
-
-        var meta = "Elapsed " + duration(event.elapsed_seconds);
-        if (event.eta_seconds != null && event.eta_seconds > 0) {
-          meta += " · about " + duration(event.eta_seconds) + " remaining in this stage";
-        } else if (event.percent != null && event.percent > 0 && event.percent < 100) {
-          meta += " · estimating remaining time";
+        return parts.join(" · ") || "Working…";
+      }
+      function showFailure(message, event) {
+        lastFailure = message || "The server stopped before startup completed.";
+        element("spinner").style.display = "none";
+        element("status").textContent = "QuantEM could not start";
+        element("substatus").textContent = event && event.failed_phase
+          ? "Startup stopped during “" + event.failed_phase + "”."
+          : "The local application did not become ready.";
+        element("critical").classList.remove("visible");
+        element("error-panel").classList.add("visible");
+        element("err").textContent = lastFailure;
+      }
+      window.__quantemStartupProgress = function (event) {
+        lastEvent = event;
+        if (event.phase === "failed" || event.category === "failure") {
+          showFailure(event.detail, event); return;
         }
-        if (event.last_progress_seconds >= 30) {
-          meta += " · last measurable progress " + duration(event.last_progress_seconds) + " ago";
+        element("startup-progress").classList.add("visible");
+        element("stage").textContent = event.message || "Starting QuantEM";
+        element("detail").textContent = event.detail || "";
+        element("measure").textContent = measuredText(event);
+
+        var isUpgrade = event.category === "database-upgrade";
+        var isRecovery = event.category === "database-recovery";
+        if (event.phase === "upgrade-complete") {
+          element("status").textContent = "Update complete — opening QuantEM";
+          element("substatus").textContent = "Finishing application startup…";
+        } else if (isRecovery) {
+          element("status").textContent = "Recovering the database";
+          element("substatus").textContent = "QuantEM is repairing an interrupted shutdown safely.";
+        } else if (isUpgrade) {
+          element("status").textContent = "Updating QuantEM’s database";
+          element("substatus").textContent = "Your library and a recovery snapshot are being preserved.";
+        } else if (event.phase === "ready") {
+          element("status").textContent = "Opening QuantEM";
+          element("substatus").textContent = "The local application is ready.";
         } else {
-          meta += " · active now";
+          element("status").textContent = "Starting QuantEM";
+          element("substatus").textContent = "Preparing the local application…";
         }
-        document.getElementById("meta").textContent = meta;
-        document.getElementById("warning").style.display = "none";
-      };
-      window.__quantemDatabaseRecoveryProgress = function (event) {
-        document.getElementById("status").textContent =
-          "Recovering the database after an interrupted shutdown… Do not close QuantEM.";
-        var panel = document.getElementById("migration-progress");
-        panel.classList.add("visible");
-        document.getElementById("stage").textContent = event.message;
-        document.getElementById("detail").textContent = event.detail || "";
 
-        var track = document.getElementById("track");
-        var bar = document.getElementById("bar");
-        var percent = document.getElementById("percent");
-        track.setAttribute("aria-label", "Database recovery progress");
-        if (event.phase === "complete") {
+        var track = element("track"), bar = element("bar"), percent = Number(event.percent);
+        if (event.percent != null && Number.isFinite(percent)) {
           track.classList.remove("indeterminate");
-          track.setAttribute("aria-valuenow", "100");
-          bar.style.width = "100%";
-          percent.textContent = "Complete";
+          track.setAttribute("aria-valuemin", "0"); track.setAttribute("aria-valuemax", "100");
+          track.setAttribute("aria-valuenow", String(percent));
+          bar.style.width = Math.max(0, Math.min(100, percent)) + "%";
         } else {
-          track.classList.add("indeterminate");
-          track.removeAttribute("aria-valuenow");
-          bar.style.width = "";
-          percent.textContent = "Working…";
+          track.classList.add("indeterminate"); track.removeAttribute("aria-valuenow"); bar.style.width = "";
         }
 
         var meta = "Elapsed " + duration(event.elapsed_seconds);
-        if (event.current_lsn) {
-          meta += " · recovery position " + event.current_lsn;
-        }
-        if (event.last_progress_seconds >= 300) {
-          meta += " · last measurable progress " + duration(event.last_progress_seconds) + " ago";
-        } else {
-          meta += " · active now";
-        }
-        document.getElementById("meta").textContent = meta;
+        if (event.eta_seconds != null && event.eta_seconds > 0) meta += " · about " + duration(event.eta_seconds) + " remaining";
+        else if (Number(event.last_progress_seconds) >= 30) meta += " · last measurable progress " + duration(event.last_progress_seconds) + " ago";
+        else meta += " · active now";
+        element("meta").textContent = meta;
+        element("critical").classList.toggle("visible", Boolean(event.critical && !event.can_close));
 
-        var warning = document.getElementById("warning");
-        var showWarning = event.phase === "stalled" || event.last_progress_seconds >= 300;
-        warning.style.display = showWarning ? "block" : "none";
-        warning.textContent = showWarning
-          ? "No measurable recovery progress has been reported recently. QuantEM is still waiting and has not modified or abandoned the database."
-          : "";
+        var warning = element("warning");
+        var stalled = event.phase === "stalled" || Number(event.last_progress_seconds) >= 300;
+        warning.style.display = stalled ? "block" : "none";
+        warning.textContent = stalled ? "No recent measurable progress was reported. QuantEM is still waiting; expand Technical details if this continues." : "";
+
+        var technical = [];
+        if (event.technical_detail) technical.push(String(event.technical_detail));
+        if (event.current_lsn) technical.push("PostgreSQL recovery position: " + event.current_lsn);
+        element("technical").textContent = technical.join("\n");
+        element("technical-details").classList.toggle("visible", technical.length > 0);
       };
-      window.__quantemMigrationWarning = function (text) {
-        var warning = document.getElementById("warning");
-        warning.style.display = text ? "block" : "none";
-        warning.textContent = text || "";
-      };
-      window.__quantemFailed = function (t) {
-        document.getElementById("spinner").style.display = "none";
-        document.getElementById("status").textContent = "QuantEM could not start.";
-        var e = document.getElementById("err");
-        e.style.display = "block";
-        e.textContent = t;
-      };
+      window.__quantemStatus = function (text) { element("substatus").textContent = text; };
+      window.__quantemFailed = function (text) { showFailure(text, null); };
+      element("open-logs").addEventListener("click", function () { invoke("open_startup_logs"); });
+      element("retry").addEventListener("click", function () { invoke("retry_startup"); });
+      element("quit").addEventListener("click", function () { invoke("quit_app"); });
+      element("copy-diagnostics").addEventListener("click", function () {
+        var diagnostics = ["QuantEM startup failure", lastFailure, "Startup event: " + JSON.stringify(lastEvent || {}, null, 2), "Platform: " + navigator.userAgent].join("\n\n");
+        copyText(diagnostics).then(function () {
+          element("copy-diagnostics").textContent = "Copied";
+        }).catch(function () { element("copy-diagnostics").textContent = "Copy failed"; });
+      });
     </script>
   </body>
 </html>

@@ -195,7 +195,9 @@ def _region_shape(payload, segmentation, get_asset_openable, ImageROI):
     """
     roi_id = str(payload.get("roi_id") or "").strip()
     if roi_id:
-        roi = ImageROI.objects.filter(id=roi_id).first()
+        roi = ImageROI.objects.filter(
+            asset_id=segmentation.asset_id, segmentations=segmentation, id=roi_id
+        ).first()
         if roi is not None:
             return (int(roi.height), int(roi.width))
     openable = get_asset_openable(segmentation.asset, require=False)

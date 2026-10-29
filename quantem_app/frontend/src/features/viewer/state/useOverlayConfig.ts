@@ -14,12 +14,13 @@ import {
   overlayBuildFailed,
   overlayIsUpdating,
 } from "@/hooks/overlayManifestStatus";
-import { getSegmentationOverlayLutJson } from "@/shared/api/segmentations/overlays";
+import { getSegmentationOverlayLutJson, getSegmentationOverlayNgffUrl } from "@/shared/api/segmentations/overlays";
 import {
   segmentationHasResults,
   VIEWER_VISIBLE_OVERLAY_STATES,
 } from "@/shared/constants/segmentation";
 import { buildTintedLut } from "@/viewer/overlays/labelLut";
+import { retryOverlayRequest } from "@/viewer/overlays/retryOverlayRequest";
 import type { ImageSegmentation } from "@/shared/types/images";
 import type { ViewerIdMapOverlaySpec } from "@/viewer/types";
 import type {
@@ -37,6 +38,19 @@ export const DEFAULT_COLORS = [
   "#14b8a6",
   "#6366f1",
 ];
+
+const tintedPalettes = new WeakMap<OverlayLutJson, Map<string, ReturnType<typeof buildTintedLut>>>();
+function tintedPalette(json: OverlayLutJson, color: string) {
+  let colors = tintedPalettes.get(json);
+  if (!colors) { colors = new Map(); tintedPalettes.set(json, colors); }
+  let palette = colors.get(color);
+  if (!palette) {
+    palette = buildTintedLut(json.objects, color, VIEWER_VISIBLE_OVERLAY_STATES, json);
+    if (colors.size >= 8) colors.delete(colors.keys().next().value!);
+    colors.set(color, palette);
+  }
+  return palette;
+}
 
 export function getFallbackColor(index: number) {
   return DEFAULT_COLORS[index % DEFAULT_COLORS.length];
@@ -62,7 +76,7 @@ export function useOverlayConfig({
   // Per-segmentation label -> object LUT JSON, used to build a client tinted LUT
   // that shows confirmed objects in the user's chosen overlay colour.
   const [overlayLutJsonById, setOverlayLutJsonById] = useState<
-    Record<string, OverlayLutJson>
+    Record<string, OverlayLutJson & { loadError?: string }>
   >({});
 
   useEffect(() => {
@@ -140,41 +154,59 @@ export function useOverlayConfig({
       enabledOverlayList
         .map((overlay) => {
           const manifest = overlayManifests[overlay.segmentation.id];
-          return `${overlay.segmentation.id}:${manifest?.lut_revision ?? "?"}`;
+          return `${overlay.segmentation.id}:${manifest?.bundle_version ?? "?"}:${manifest?.applied_revision ?? "?"}:${manifest?.lut_revision ?? "?"}`;
         })
         .join("|"),
     [enabledOverlayList, overlayManifests]
   );
 
   useEffect(() => {
-    const targets = enabledOverlayList.filter(
-      (overlay) => overlayManifests[overlay.segmentation.id]?.ngff_url
-    );
-    if (!imageReady || targets.length === 0) {
+    if (!imageReady || enabledOverlayList.length === 0) {
       setOverlayLutJsonById({});
       return undefined;
     }
+    const targets = enabledOverlayList.filter((overlay) => {
+      const manifest = overlayManifests[overlay.segmentation.id];
+      const cached = overlayLutJsonById[overlay.segmentation.id];
+      return manifest?.ngff_url && (!cached || cached.loadError ||
+        cached.bundle_version !== manifest.bundle_version || cached.lut_revision < manifest.lut_revision);
+    });
+    if (!targets.length) return undefined;
     let cancelled = false;
-    void Promise.all(
+    const controller = new AbortController();
+    void Promise.allSettled(
       targets.map(async (overlay) => {
         const manifest = overlayManifests[overlay.segmentation.id];
-        const json = await getSegmentationOverlayLutJson(
+        const json = await retryOverlayRequest(() => getSegmentationOverlayLutJson(
           overlay.segmentation.id,
-          manifest?.source_model ?? null
-        );
+          manifest?.source_model ?? null,
+          `${manifest.bundle_version}-${manifest.applied_revision}`
+        ), controller.signal);
         return [overlay.segmentation.id, json] as const;
       })
     )
       .then((entries) => {
         if (cancelled) return;
-        setOverlayLutJsonById(Object.fromEntries(entries));
-      })
-      .catch((error) => {
-        console.error("Failed to load segmentation overlay LUT JSON", error);
-        if (!cancelled) setOverlayLutJsonById({});
+        setOverlayLutJsonById((prev) => {
+          const next = { ...prev };
+          for (const [index, entry] of entries.entries()) {
+            if (entry.status === "fulfilled") next[entry.value[0]] = entry.value[1];
+            else {
+              const id = targets[index].segmentation.id;
+              const manifest = overlayManifests[id];
+              next[id] = { objects: [], max_label: 0,
+                ...(prev[id]?.bundle_version === manifest.bundle_version ? prev[id] : {}),
+                bundle_version: manifest.bundle_version, lut_revision: -1,
+                loadError: String(entry.reason),
+              };
+            }
+          }
+          return next;
+        });
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabledOverlayLutKey, imageReady]);
@@ -183,28 +215,26 @@ export function useOverlayConfig({
     return enabledOverlayList.flatMap((overlay) => {
       const manifest = overlayManifests[overlay.segmentation.id];
       const json = overlayLutJsonById[overlay.segmentation.id];
-      if (!manifest?.ngff_url || !json) return [];
+      if (!manifest?.ngff_url || !json || json.bundle_version !== manifest.bundle_version) return [];
       // Everything except `excluded`: an object the model guessed is drawn
       // like one the user kept, because until somebody looks at it that is
       // exactly what it is. The old {confirmed, refined, labeled} filter gave
       // every candidate alpha 0, so a run that found 511 objects rendered as
       // an empty overlay.
-      const { rgba, maxLabel } = buildTintedLut(
-        json.objects,
-        overlay.color,
-        VIEWER_VISIBLE_OVERLAY_STATES
-      );
+      const { rgba, maxLabel } = tintedPalette(json, overlay.color);
       return [
         {
           id: overlay.segmentation.id,
           // Bust the raster cache on any pixel change: full rebuilds bump
-          // bundle_version, in-place partial geometry edits bump applied_revision
+          // bundle_version; partial geometry edits publish a new version too
           // (state-only recolours bump neither, so they keep the cached raster).
-          ngffUrl: `${manifest.ngff_url}?rev=${manifest.bundle_version}-${manifest.applied_revision}`,
+          ngffUrl: getSegmentationOverlayNgffUrl(overlay.segmentation.id,
+            `${manifest.bundle_version}-${manifest.applied_revision}`, manifest.source_model),
           revision: manifest.applied_revision,
           lut: rgba,
           maxLabel,
           lutRevision: manifest.lut_revision,
+          loadError: json.loadError,
           fillOpacity: overlay.opacity,
           borderOpacity: 0.95,
           showBorders: true,

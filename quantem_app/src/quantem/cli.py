@@ -46,22 +46,52 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from quantem.core.startup_progress import StartupProgress
 
 APP_NAME = "QuantEM"
-MIGRATION_PROGRESS_PREFIX = "QUANTEM_MIGRATION_PROGRESS "
 
 #: Names the user data directory. ``_prepare_env`` publishes the resolved value
 #: here before Django is configured; :mod:`quantem.core.config` reads it back.
 DATA_DIR_ENV_VAR = "QUANTEM_DATA_DIR"
 
 
-def _emit_migration_progress(event: dict[str, object]) -> None:
-    """Stream one machine-readable startup event to the desktop shell."""
+class _DjangoMigrationProgressStream:
+    """Translate Django's migration output into counted startup progress."""
 
-    print(
-        MIGRATION_PROGRESS_PREFIX + json.dumps(event, separators=(",", ":"), sort_keys=True),
-        flush=True,
-    )
+    def __init__(self, startup: StartupProgress, total: int) -> None:
+        self.startup = startup
+        self.total = total
+        self.completed = 0
+        self.current = ""
+
+    def write(self, value: str) -> int:
+        text = str(value)
+        marker = "Applying "
+        if marker in text and "..." in text:
+            self.current = text.split(marker, 1)[1].split("...", 1)[0].strip()
+            self.startup.update(
+                completed=self.completed,
+                total=self.total,
+                detail=f"Applying {self.current}",
+            )
+        if self.current and "OK" in text:
+            self.completed = min(self.total, self.completed + 1)
+            self.startup.update(
+                completed=self.completed,
+                total=self.total,
+                detail=f"Applied {self.current}",
+            )
+            self.current = ""
+        return len(text)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return False
 
 
 def default_data_dir() -> Path:
@@ -352,13 +382,35 @@ def _keep_temp_files_with_the_data(tmp_dir: Path) -> None:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    """Run the local server and report every pre-HTTP startup phase."""
+
+    # Publish the chosen data directory before importing any quantem.core
+    # submodule. Importing one executes core.__init__, which freezes the paths
+    # from core.config for this process.
+    _prepare_env(_resolve_data_dir(args))
+    # Import only after this module has defined ``default_data_dir``. Importing
+    # a quantem.core submodule at module load time executes core.__init__, whose
+    # configuration imports that function from here.
+    from quantem.core.startup_progress import StartupProgress
+
+    startup = StartupProgress()
+    startup.stage("runtime", "Loading the QuantEM runtime")
+    try:
+        return _cmd_serve(args, startup)
+    except BaseException as exc:
+        startup.fail(exc)
+        startup.close()
+        raise
+
+
+def _cmd_serve(args: argparse.Namespace, startup: StartupProgress) -> int:
     """Run the local server in the foreground."""
     import logging
 
     import django
     from waitress import serve as waitress_serve
 
-    _prepare_env(_resolve_data_dir(args))
+    startup.stage("storage", "QuantEM storage is ready")
     # The server keeps a rotating log file under the data directory (the
     # packaged build used to write no log at all, so a crashed session left
     # nothing to attach to a bug report). setdefault: QUANTEM_LOG_TO_FILE=0
@@ -381,7 +433,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # comparison or test run.
     from quantem.core.postgres import start_managed_postgres
 
-    database_server = start_managed_postgres()
+    startup.stage("database", "Starting the private database")
+    database_server = start_managed_postgres(
+        progress_callback=lambda event: startup.forward(
+            event,
+            category="database-recovery",
+            critical=True,
+        )
+    )
 
     # Announced before Django wakes up, and flushed. This used to print after
     # the migrations and without a flush, which had two failure modes: on a
@@ -427,11 +486,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # changing the schema.  It is explicitly started again below once the
     # migration (and its recovery snapshot) have completed.
     os.environ["QUANTEM_DISABLE_JOB_AUTOSTART"] = "1"
+    startup.stage("django", "Loading application services")
     django.setup()
     from django.core.management import call_command
     from django.core.wsgi import get_wsgi_application
 
-    from quantem.core.migration_safety import snapshot_before_pending_migrations
+    from quantem.core.migration_safety import (
+        create_pre_migration_snapshot,
+        pending_migration_labels,
+        schedule_pre_migration_snapshot_cleanup,
+    )
 
     # The first record in every session's log file: what is running, where,
     # over which data. Written after django.setup() because that is what
@@ -450,20 +514,70 @@ def cmd_serve(args: argparse.Namespace) -> int:
     machine.log_profile()
 
     snapshot_dir = None
+    upgrade_performed = False
     try:
-        pending_migrations, snapshot_dir = snapshot_before_pending_migrations()
-        if snapshot_dir is not None:
-            logging.getLogger("quantem.serve").info(
-                "Created pre-migration database snapshot at %s for %s.",
-                snapshot_dir,
-                ", ".join(pending_migrations),
+        startup.stage("migration-plan", "Checking the database schema")
+        pending_migrations = pending_migration_labels()
+        if pending_migrations:
+            startup.stage(
+                "database-backup",
+                "Creating a database recovery snapshot",
+                detail="The update will continue after the snapshot is verified",
+                category="database-upgrade",
+                critical=True,
             )
-        call_command("migrate", interactive=False, verbosity=0)
+            snapshot_dir = create_pre_migration_snapshot(
+                pending_migrations,
+                progress_callback=lambda event: startup.forward(
+                    event,
+                    category="database-upgrade",
+                    critical=True,
+                ),
+            )
+            if snapshot_dir is not None:
+                logging.getLogger("quantem.serve").info(
+                    "Created pre-migration database snapshot at %s for %s.",
+                    snapshot_dir,
+                    ", ".join(pending_migrations),
+                )
+            startup.stage(
+                "schema-migration",
+                "Updating the database schema",
+                detail=f"Applying {len(pending_migrations)} database change(s)",
+                category="database-upgrade",
+                critical=True,
+                completed=0,
+                total=len(pending_migrations),
+                unit="changes",
+            )
+            call_command(
+                "migrate",
+                interactive=False,
+                verbosity=1,
+                stdout=_DjangoMigrationProgressStream(startup, len(pending_migrations)),
+            )
+            startup.update(
+                completed=len(pending_migrations),
+                total=len(pending_migrations),
+                detail="Database schema update complete",
+            )
+            upgrade_performed = True
+        else:
+            logging.getLogger("quantem.serve").info(
+                "Database schema is current; skipped migration command."
+            )
         if database_server is not None:
             from quantem.core.config import DB_PATH
             from quantem.core.sqlite_migration import migrate_legacy_sqlite_on_startup
 
             if DB_PATH.is_file():
+                startup.stage(
+                    "sqlite-upgrade",
+                    "Upgrading the existing database",
+                    detail="Your data and a recovery copy are being preserved",
+                    category="database-upgrade",
+                    critical=True,
+                )
                 print(
                     "database migration: upgrading existing SQLite data to PostgreSQL; "
                     "the application will open when validation finishes",
@@ -473,8 +587,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     "Detected legacy SQLite database at %s; starting automatic cutover.",
                     DB_PATH,
                 )
-            cutover = migrate_legacy_sqlite_on_startup(progress_callback=_emit_migration_progress)
+            cutover = migrate_legacy_sqlite_on_startup(
+                progress_callback=lambda event: startup.forward(
+                    event,
+                    category="database-upgrade",
+                    critical=True,
+                )
+            )
             if cutover is not None:
+                upgrade_performed = True
                 logging.getLogger("quantem.serve").info(
                     "Automatic SQLite-to-PostgreSQL cutover completed: %s",
                     cutover,
@@ -493,6 +614,19 @@ def cmd_serve(args: argparse.Namespace) -> int:
         raise
     finally:
         os.environ.pop("QUANTEM_DISABLE_JOB_AUTOSTART", None)
+
+    if upgrade_performed:
+        # Keep this state visible while the final services start; immediately
+        # replacing it with a generic phase would turn useful confirmation
+        # into a distracting one-frame flash.
+        startup.stage(
+            "upgrade-complete",
+            "Update complete — opening QuantEM",
+            detail="Starting background services",
+            category="startup",
+        )
+    else:
+        startup.stage("services", "Starting background services")
 
     # A process can die after the updater fences new jobs but before its
     # installer restarts it.  This is the new process, so that lock is stale.
@@ -514,12 +648,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     process_pending_model_installs()
 
+    # Retention is housekeeping, not a readiness dependency. Delay it so a
+    # normal launch never waits for directory enumeration or deletion and the
+    # first interactive moments do not compete for disk I/O.
+    schedule_pre_migration_snapshot_cleanup()
+
     options = _waitress_options()
     _install_readable_oversize_error(int(options["max_request_body_size"]))
     application = get_wsgi_application()
     shutdown_token = os.environ.get("QUANTEM_SHUTDOWN_TOKEN", "")
     if shutdown_token:
         application = _ShutdownApplication(application, shutdown_token)
+    startup.ready()
     try:
         waitress_serve(application, host="127.0.0.1", port=port, **options)
     except KeyboardInterrupt:

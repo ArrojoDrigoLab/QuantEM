@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from quantem.assets.models import ImageROI
-from quantem.assets.roi_state import get_active_roi_for_asset
+from quantem.assets.roi_state import get_active_roi_for_segmentation
 from quantem.jobs.constants import (
     JOB_TYPE_RUN_SEGMENTATION_FULL,
     JOB_TYPE_RUN_SEGMENTATION_ROI,
@@ -234,14 +234,16 @@ class OrganelleRerunRoiView(APIView):
             return invalid_adapter
         explicit_roi_id = request.data.get("roi_id") if request.data else None
         if explicit_roi_id:
-            roi = ImageROI.objects.filter(asset=segmentation.asset, id=explicit_roi_id).first()
+            roi = ImageROI.objects.filter(
+                asset=segmentation.asset, segmentations=segmentation, id=explicit_roi_id
+            ).first()
             if roi is None:
                 return Response(
                     {"detail": "ROI not found for the segmentation asset."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
         else:
-            roi = get_active_roi_for_asset(segmentation.asset)
+            roi = get_active_roi_for_segmentation(segmentation)
             if roi is None:
                 return Response(
                     {"detail": "No active ROI found for this segmentation."},

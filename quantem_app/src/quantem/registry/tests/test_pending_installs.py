@@ -169,13 +169,14 @@ class ServeEntryPointTests(TestCase):
             patch.dict(os.environ, env),
             patch("waitress.serve") as serve,
             patch("django.core.management.call_command") as migrate,
+            patch("quantem.core.migration_safety.pending_migration_labels", return_value=[]),
             patch("quantem.registry.cache.installed", return_value=False),
         ):
             rc = cmd_serve(argparse.Namespace(port=0, data_dir=str(STORAGE_DIR)))
 
         self.assertEqual(rc, 0)
         self.assertTrue(serve.called)
-        self.assertTrue(migrate.called)
+        migrate.assert_not_called()  # An up-to-date schema skips the migration command.
         self.assertFalse(path.exists(), "cmd_serve must consume the request file")
         job = Job.objects.get(type=JOB_TYPE_INSTALL_MODEL_PACK)
         self.assertEqual(job.payload_json["pack_id"], "omniem:mito")

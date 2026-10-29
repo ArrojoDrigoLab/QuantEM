@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
+from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -26,6 +27,8 @@ from quantem.segmentation.overlay_ngff import (
     queue_full_overlay_rebuild,
     register_overlay_mutation,
 )
+from quantem.segmentation.overlay_ngff.paths import OverlayStoreError
+from quantem.segmentation.overlay_ngff.snapshots import read_snapshot
 from quantem.segmentation.serializers import SegmentationOverlayRebuildSerializer
 from quantem.segmentation.source_models import normalize_source_model
 
@@ -40,6 +43,24 @@ def _sparse_chunk_bytes(array_key: str, chunk_shape: tuple[int, int]) -> bytes:
 def _set_revisioned_cache_headers(response, request) -> None:
     if request.GET.get("rev"):
         response["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
+        response["Cache-Control"] = "no-cache"
+
+
+def _requested_store(request, state):
+    revision = request.GET.get("rev")
+    if revision:
+        try:
+            root, _ = read_snapshot(
+                str(state.segmentation_id),
+                state.candidate_source_model,
+                revision,
+                include_labels=False,
+            )
+            return root
+        except OverlayStoreError as exc:
+            raise Http404(str(exc)) from exc
+    return get_overlay_active_bundle_path(state)
 
 
 class SegmentationOverlayManifestView(APIView):
@@ -63,6 +84,7 @@ class SegmentationOverlayLutView(APIView):
     map used for picking and client-side toggles.
     """
 
+    @transaction.atomic
     def get(self, request, seg_id):
         segmentation = get_object_or_404(
             ImageSegmentation.objects.select_related("asset", "segmentation_type"),
@@ -70,18 +92,34 @@ class SegmentationOverlayLutView(APIView):
         )
         source_model = normalize_source_model(request.query_params.get("source_model"))
         state = get_or_create_overlay_state(segmentation, source_model)
+        state = type(state).objects.select_for_update().get(pk=state.pk)
+        assignments = None
+        if revision := request.query_params.get("rev"):
+            try:
+                _, snapshot = read_snapshot(str(segmentation.id), source_model, revision)
+            except OverlayStoreError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+            assignments = snapshot["labels"]
+            state.bundle_version = snapshot["bundle_version"]
         if request.query_params.get("format") == "json":
-            return Response(build_label_lut_json(state), status=status.HTTP_200_OK)
+            response = Response(
+                build_label_lut_json(state, assignments=assignments), status=status.HTTP_200_OK
+            )
+            response["Cache-Control"] = "no-store"
+            return response
         hidden_states = frozenset(
             token.strip()
             for token in (request.query_params.get("hide") or "").split(",")
             if token.strip()
         )
-        payload, max_label = build_label_lut_binary(state, hidden_states=hidden_states)
+        payload, max_label = build_label_lut_binary(
+            state, hidden_states=hidden_states, assignments=assignments
+        )
         response = HttpResponse(payload, content_type="application/octet-stream")
         response["X-Overlay-Lut-Revision"] = str(state.lut_revision)
         response["X-Overlay-Bundle-Version"] = str(state.bundle_version)
         response["X-Overlay-Max-Label"] = str(max_label)
+        response["Cache-Control"] = "no-store"
         return response
 
 
@@ -121,7 +159,7 @@ def segmentation_overlay_ngff_root(request, seg_id):
     segmentation = get_object_or_404(ImageSegmentation.objects.select_related("asset"), id=seg_id)
     source_model = normalize_source_model(request.GET.get("source_model"))
     state = get_or_create_overlay_state(segmentation, source_model)
-    store_root = get_overlay_active_bundle_path(state)
+    store_root = _requested_store(request, state)
     ensure_cached_storage_path(storage_relpath_for_path(store_root), path_type="dir")
     attrs_path = store_root / ".zattrs"
     if not attrs_path.exists():
@@ -142,8 +180,10 @@ def segmentation_overlay_ngff_file(request, seg_id, ngff_path):
     segmentation = get_object_or_404(ImageSegmentation.objects.select_related("asset"), id=seg_id)
     source_model = normalize_source_model(request.GET.get("source_model"))
     state = get_or_create_overlay_state(segmentation, source_model)
-    store_root = get_overlay_active_bundle_path(state)
+    store_root = _requested_store(request, state)
     ensure_cached_storage_path(storage_relpath_for_path(store_root), path_type="dir")
+    if not (store_root / ".zgroup").is_file():
+        raise Http404("Overlay NGFF store not found")
     relative_path = str(ngff_path).lstrip("/")
     if not relative_path:
         raise Http404("Invalid overlay NGFF path")

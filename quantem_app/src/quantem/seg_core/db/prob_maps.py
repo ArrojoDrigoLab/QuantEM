@@ -35,6 +35,7 @@ from quantem.segmentation.models import ImageSegmentation, ProbabilityMap
 from quantem.segmentation.prob_maps.io import resolve_probability_map_path
 from quantem.segmentation.prob_maps.preview import (
     probability_preview_path,
+    result_preview_cache_path,
     save_probability_preview,
 )
 
@@ -234,6 +235,7 @@ def _unlink_unshared_probability_map_file(prob_map: ProbabilityMap) -> None:
         else:
             source_path.unlink(missing_ok=True)
         probability_preview_path(source_path).unlink(missing_ok=True)
+        shutil.rmtree(result_preview_cache_path(source_path), ignore_errors=True)
     except (OSError, StorageError):
         logger.warning(
             "Could not remove probability-map file %s after reclaiming its record.",
@@ -269,6 +271,7 @@ def _remove_superseded_storage_format(
     else:
         counterpart.unlink(missing_ok=True)
     probability_preview_path(counterpart).unlink(missing_ok=True)
+    shutil.rmtree(result_preview_cache_path(counterpart), ignore_errors=True)
 
 
 def _remove_directory_if_unreferenced(path: Path) -> None:

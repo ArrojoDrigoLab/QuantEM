@@ -1,16 +1,20 @@
 """Evaluate without training, changing predictions, or changing annotations."""
 
-import numpy as np
-
-from quantem.finetune.calibrate import masked_dice, masked_iou
-from quantem.finetune.evaluation import crop_fingerprint, evaluation_inputs
-from quantem.inference import engine, resample
 from quantem.jobs.constants import JOB_TYPE_EVALUATE_MODEL
 from quantem.jobs.registry import job_handler
 
 
 @job_handler(JOB_TYPE_EVALUATE_MODEL)
 def handle_evaluate_model(payload, reporter, cancel):
+    # NumPy, model loading, and evaluation helpers pull the inference stack
+    # into memory. Registration needs only this lightweight wrapper at Django
+    # startup; workers pay those imports when this job actually runs.
+    import numpy as np
+
+    from quantem.finetune.calibrate import masked_dice, masked_iou
+    from quantem.finetune.evaluation import crop_fingerprint, evaluation_inputs
+    from quantem.inference import engine, resample
+
     cancel.check_cancelled()
     scope, base, adapter, crops, exposure = evaluation_inputs(payload, load_em=True)
     selected = {row["id"]: row for row in payload["rois"]}

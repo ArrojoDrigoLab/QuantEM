@@ -11,6 +11,20 @@ export type VivMultiscaleLayerProps = ConstructorParameters<typeof MultiscaleIma
 };
 
 export const WHITE_RGB: [number, number, number] = [255, 255, 255];
+type VivSelections = Array<Record<string, number> | number[]>;
+const selectionCache = new WeakMap<object, Map<string, VivSelections>>();
+
+function cachedSelections(source: object, key: string, build: () => VivSelections): VivSelections {
+  let cache = selectionCache.get(source);
+  if (!cache) { cache = new Map(); selectionCache.set(source, cache); }
+  const existing = cache.get(key);
+  if (existing) return existing;
+  const selections = build();
+  // Bound per-volume plane history. A source can expose many thousands of z planes.
+  if (cache.size >= 32) cache.delete(cache.keys().next().value!);
+  cache.set(key, selections);
+  return selections;
+}
 
 export function buildVivSelection(
   source: VivLoaderSource,
@@ -60,6 +74,14 @@ export function inferChannelCount(source: VivLoaderSource): number {
 }
 
 export function buildVivSelections(
+  source: VivLoaderSource,
+  options: { includeAllChannels?: boolean; zIndex?: number } = {}
+) {
+  return cachedSelections(source, `base:${options.includeAllChannels ?? false}:${options.zIndex ?? 0}`,
+    () => createVivSelections(source, options));
+}
+
+function createVivSelections(
   source: VivLoaderSource,
   options: { includeAllChannels?: boolean; zIndex?: number } = {}
 ) {
@@ -166,6 +188,11 @@ export function buildVivSelectionsForChannelIndices(
   source: VivLoaderSource,
   channelIndices: number[]
 ) {
+  return cachedSelections(source, `channels:${normalizeChannelIndices(channelIndices).join(",")}`,
+    () => createVivSelectionsForChannelIndices(source, channelIndices));
+}
+
+function createVivSelectionsForChannelIndices(source: VivLoaderSource, channelIndices: number[]) {
   const labels = Array.isArray(source?.labels)
     ? (source.labels as unknown as string[])
     : [];

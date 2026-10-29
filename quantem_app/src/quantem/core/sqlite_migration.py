@@ -1020,9 +1020,6 @@ def _finish_automatic_cutover(source: Path, snapshot_root: Path) -> list[str]:
         }
     )
     _atomic_json(manifest_path, manifest)
-    from quantem.core.migration_safety import prune_pre_migration_snapshots
-
-    prune_pre_migration_snapshots()
     return archived
 
 

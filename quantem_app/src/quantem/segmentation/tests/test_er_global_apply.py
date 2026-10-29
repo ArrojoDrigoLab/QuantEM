@@ -55,11 +55,11 @@ class ErGlobalApplyTests(TestCase):
         save_probability_map(self.segmentation, "DINO", probability, "er", "er_generated")
         with (
             patch(
-                "quantem.jobs.handlers.rethreshold.get_segmenter_or_none",
+                "quantem.seg_core.registry.get_segmenter_or_none",
                 return_value=segmenter,
             ),
             patch(
-                "quantem.jobs.handlers.rethreshold.replay_stored_probability_map",
+                "quantem.seg_core.db.inference.replay_stored_probability_map",
                 return_value=(result, np.zeros((64, 64), dtype=np.uint8)),
             ),
         ):

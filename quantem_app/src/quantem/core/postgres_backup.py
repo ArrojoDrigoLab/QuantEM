@@ -7,11 +7,10 @@ import json
 import os
 import re
 import subprocess
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-
-import psycopg
-from psycopg import sql
 
 from quantem.core.config import STORAGE_DIR
 from quantem.core.postgres import (
@@ -21,6 +20,7 @@ from quantem.core.postgres import (
 )
 
 DATABASE_NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,62}\Z")
+BackupProgressCallback = Callable[[dict[str, object]], None]
 
 
 class BackupError(RuntimeError):
@@ -57,7 +57,12 @@ def _tool_environment(*, database: str | None = None) -> dict[str, str]:
     return environment
 
 
-def _run(command: list[object], *, database: str | None = None, timeout: int = 600) -> None:
+def _run(
+    command: list[object],
+    *,
+    database: str | None = None,
+    timeout: int | None = None,
+) -> None:
     completed = subprocess.run(
         [str(part) for part in command],
         stdin=subprocess.DEVNULL,
@@ -75,12 +80,121 @@ def _run(command: list[object], *, database: str | None = None, timeout: int = 6
         raise BackupError(f"PostgreSQL backup tool failed ({completed.returncode}): {detail}")
 
 
-def _sha256(path: Path) -> str:
+def _report(
+    callback: BackupProgressCallback | None,
+    event: dict[str, object],
+) -> None:
+    if callback is None:
+        return
+    try:
+        callback(event)
+    except Exception:
+        # A loading screen must never be able to invalidate a database backup.
+        return
+
+
+def _sha256(
+    path: Path,
+    *,
+    progress_callback: BackupProgressCallback | None = None,
+) -> str:
     digest = hashlib.sha256()
+    completed = 0
+    last_reported = 0
+    total = path.stat().st_size
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
+            completed += len(block)
+            if completed == total or completed - last_reported >= 64 * 1024 * 1024:
+                last_reported = completed
+                _report(
+                    progress_callback,
+                    {
+                        "phase": "database-backup-verify",
+                        "message": "Verifying the database recovery snapshot",
+                        "detail": "Checking the completed backup before the update continues",
+                        "completed": completed,
+                        "total": total,
+                        "unit": "bytes",
+                        "heartbeat": False,
+                    },
+                )
     return digest.hexdigest()
+
+
+def _dump_database(
+    temporary: Path,
+    *,
+    progress_callback: BackupProgressCallback | None,
+    compression: str = "zstd:1",
+) -> None:
+    """Run pg_dump without a wall-clock deadline and report observable I/O."""
+
+    stderr_path = temporary.with_name(f".{temporary.name}.stderr")
+    command = [
+        postgres_tool("pg_dump"),
+        "--format=custom",
+        # PostgreSQL's zstd level 1 is materially faster than the old gzip
+        # level 6 default while retaining custom-format selective restore.
+        f"--compress={compression}",
+        "--no-owner",
+        "--no-privileges",
+        "--file",
+        temporary,
+    ]
+    started_at = time.monotonic()
+    last_size = -1
+    try:
+        with stderr_path.open("wb") as stderr:
+            process = subprocess.Popen(
+                [str(part) for part in command],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr,
+                env=postgres_runtime_environment(_tool_environment()),
+                creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+            )
+            while process.poll() is None:
+                size = temporary.stat().st_size if temporary.exists() else 0
+                changed = size != last_size
+                last_size = size
+                _report(
+                    progress_callback,
+                    {
+                        "phase": "database-backup",
+                        "message": "Creating a database recovery snapshot",
+                        "detail": "Safely copying the database before applying the update",
+                        "completed": size,
+                        "total": None,
+                        "unit": "bytes",
+                        "heartbeat": not changed,
+                        "elapsed_seconds": round(time.monotonic() - started_at),
+                    },
+                )
+                time.sleep(1.0)
+            return_code = process.wait()
+        if return_code:
+            detail = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
+            raise BackupError(
+                f"PostgreSQL backup tool failed ({return_code}): {detail or 'no diagnostic output'}"
+            )
+        final_size = temporary.stat().st_size if temporary.exists() else 0
+        _report(
+            progress_callback,
+            {
+                "phase": "database-backup",
+                "message": "Database recovery snapshot created",
+                "detail": "Preparing to verify the backup",
+                "completed": final_size,
+                "total": final_size,
+                "unit": "bytes",
+                "heartbeat": False,
+                "elapsed_seconds": round(time.monotonic() - started_at),
+            },
+        )
+    finally:
+        stderr_path.unlink(missing_ok=True)
 
 
 def create_postgres_backup(
@@ -88,6 +202,7 @@ def create_postgres_backup(
     *,
     reason: str = "manual",
     pending_migrations: list[str] | None = None,
+    progress_callback: BackupProgressCallback | None = None,
 ) -> tuple[Path, Path]:
     """Write a custom-format dump and a checksum manifest atomically."""
 
@@ -100,17 +215,37 @@ def create_postgres_backup(
         raise BackupError(f"Refusing to overwrite an existing backup: {destination}")
     temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
     try:
-        _run(
-            [
-                postgres_tool("pg_dump"),
-                "--format=custom",
-                "--compress=6",
-                "--no-owner",
-                "--no-privileges",
-                "--file",
+        try:
+            _dump_database(temporary, progress_callback=progress_callback)
+        except BackupError as exc:
+            # Official PostgreSQL 17 desktop runtimes include zstd. Keep a
+            # fast gzip fallback for custom runtimes compiled without it so a
+            # safety snapshot cannot become an upgrade blocker.
+            detail = str(exc).lower()
+            unsupported_zstd = "zstd" in detail and any(
+                marker in detail
+                for marker in ("not supported", "unsupported", "unrecognized", "unknown")
+            )
+            if not unsupported_zstd:
+                raise
+            temporary.unlink(missing_ok=True)
+            _report(
+                progress_callback,
+                {
+                    "phase": "database-backup",
+                    "message": "Creating a database recovery snapshot",
+                    "detail": "Using compatible backup compression",
+                    "completed": 0,
+                    "total": None,
+                    "unit": "bytes",
+                    "heartbeat": False,
+                },
+            )
+            _dump_database(
                 temporary,
-            ]
-        )
+                progress_callback=progress_callback,
+                compression="gzip:1",
+            )
         if not temporary.is_file() or temporary.stat().st_size == 0:
             raise BackupError("pg_dump completed without producing a backup archive")
         os.replace(temporary, destination)
@@ -122,7 +257,10 @@ def create_postgres_backup(
     payload = {
         "archive": destination.name,
         "archive_bytes": destination.stat().st_size,
-        "archive_sha256": _sha256(destination),
+        "archive_sha256": _sha256(
+            destination,
+            progress_callback=progress_callback,
+        ),
         "created_at": datetime.now(UTC).isoformat(),
         "database": os.environ["QUANTEM_POSTGRES_DATABASE"],
         "format": "postgresql-custom",
@@ -159,6 +297,9 @@ def _validate_archive(archive: Path) -> dict[str, object] | None:
 
 def restore_postgres_backup(archive: Path, *, target_database: str) -> dict[str, object]:
     """Restore into a newly-created database without replacing active data."""
+
+    import psycopg
+    from psycopg import sql
 
     archive = Path(archive).expanduser().resolve(strict=True)
     manifest = _validate_archive(archive)

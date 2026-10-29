@@ -25,6 +25,7 @@ from .mutations import (
     queue_full_overlay_rebuild,
     queue_overlay_rebuild,
     rebuild_overlay_full,
+    register_label_state_mutation,
     register_overlay_mutation,
     register_overlay_mutation_all_bundles,
     register_state_mutation,
@@ -74,6 +75,7 @@ __all__ = [
     "register_overlay_mutation",
     "register_overlay_mutation_all_bundles",
     "register_state_mutation",
+    "register_label_state_mutation",
     "render",
     "run_overlay_rebuild_job",
 ]

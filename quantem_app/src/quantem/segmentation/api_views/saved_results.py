@@ -1,11 +1,12 @@
 """Compare retained predictions and choose the version used for measurement."""
 
-from io import BytesIO
-from uuid import UUID
+import hashlib
+import os
+from uuid import UUID, uuid4
 
 import numpy as np
 from django.db import transaction
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.urls import path
 from PIL import Image
@@ -21,7 +22,10 @@ from quantem.jobs.models import Job
 from quantem.segmentation.api_views.shared import active_segmentation_job
 from quantem.segmentation.models import ImageSegmentation, SavedSegmentationResult
 from quantem.segmentation.prob_maps.io import resolve_probability_map_path
-from quantem.segmentation.prob_maps.preview import ensure_probability_preview
+from quantem.segmentation.prob_maps.preview import (
+    ensure_probability_preview,
+    result_preview_cache_path,
+)
 
 
 def serialize_result(result):
@@ -105,19 +109,42 @@ class SavedResultPreviewView(APIView):
         if result.probability_map is None:
             return Response({"detail": "This prediction is unavailable."}, status=404)
         try:
-            preview = ensure_probability_preview(
-                resolve_probability_map_path(result.probability_map)
-            )
-            values = decode_canonical_plane(preview).array
-            rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
-            from quantem.inference.resample import binarize_quantized
+            source_path = resolve_probability_map_path(result.probability_map)
+            preview = ensure_probability_preview(source_path)
+            stat = preview.stat()
+            key = hashlib.sha256(
+                f"preview-v1:{preview}:{stat.st_mtime_ns}:{stat.st_size}:{result.threshold}".encode()
+            ).hexdigest()[:24]
+            etag = f'"{key}"'
+            if request.headers.get("If-None-Match") == etag:
+                response = HttpResponse(status=304)
+            else:
+                cache_dir = result_preview_cache_path(source_path)
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                cached = cache_dir / f"{result.id}.{key}.png"
+                if not cached.exists():
+                    values = decode_canonical_plane(preview).array
+                    rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
+                    from quantem.inference.resample import binarize_quantized
 
-            # Each comparison pane controls opacity, so foreground pixels must
-            # be opaque here to avoid multiplying two transparency settings.
-            rgba[binarize_quantized(values, result.threshold)] = [6, 182, 212, 255]
-            buffer = BytesIO()
-            Image.fromarray(rgba).save(buffer, format="PNG")
-            return HttpResponse(buffer.getvalue(), content_type="image/png")
+                    rgba[binarize_quantized(values, result.threshold)] = [6, 182, 212, 255]
+                    temporary = cached.with_suffix(f".{uuid4().hex}.tmp")
+                    try:
+                        Image.fromarray(rgba).save(temporary, format="PNG")
+                        try:
+                            os.replace(temporary, cached)
+                        except OSError:
+                            # Another request may have published and opened the
+                            # same immutable PNG while this one was encoding.
+                            if not cached.exists():
+                                raise
+                    finally:
+                        temporary.unlink(missing_ok=True)
+                response = FileResponse(cached.open("rb"), content_type="image/png")
+            response["ETag"] = etag
+            response["Cache-Control"] = "private, no-cache"
+            response["X-Overlay-Preview-Kind"] = "thresholded-probability"
+            return response
         except (OSError, ValueError):
             return Response({"detail": "The stored prediction could not be read."}, status=404)
 

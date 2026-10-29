@@ -6,6 +6,7 @@ from shapely.geometry.base import BaseGeometry
 
 from quantem.segmentation.geometry import extract_polygons, normalize_polygonal_geometry
 from quantem.segmentation.models import CompletedROI, ImageSegmentation
+from quantem.segmentation.overlay_ngff import register_state_mutation
 from quantem.segmentation.services.spatial_lookup import (
     bbox_intersects_filter,
 )
@@ -148,6 +149,7 @@ def save_completed_roi(
             break
 
     if retained_record is None:
+        register_state_mutation(segmentation)
         return (
             CompletedROI.objects.create(
                 segmentation=segmentation,
@@ -163,6 +165,7 @@ def save_completed_roi(
     if absorbed_ids:
         CompletedROI.objects.filter(id__in=absorbed_ids).delete()
 
+    register_state_mutation(segmentation)
     return retained_record, False
 
 
@@ -229,4 +232,6 @@ def subtract_completed_roi(
             )
             created += 1
 
+    if updated or deleted or created:
+        register_state_mutation(segmentation)
     return {"updated": updated, "deleted": deleted, "created": created}

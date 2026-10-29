@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from quantem.assets.models import ImageROI
-from quantem.assets.roi_state import activate_roi
+from quantem.assets.roi_state import activate_roi, get_active_roi_for_segmentation
 from quantem.assets.utils import create_roi_image_from_image
 from quantem.segmentation.models import ImageSegmentation, RoiSegmentationStatus
 from quantem.segmentation.type_service import (
@@ -42,14 +42,14 @@ class SegmentationRoiViewTests(TestCase):
             source="MANUAL",
         )
         roi_new.segmentations.add(self.segmentation)
-        activate_roi(roi_new)
+        activate_roi(roi_new, self.segmentation)
 
         response = self.client.get(f"/api/segmentations/{self.segmentation.id}/roi/")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data[0]["id"], str(roi_old.id))
         self.assertEqual(response.data[0]["is_active"], False)
-        self.assertEqual(response.data[0]["is_complete"], True)
+        self.assertEqual(response.data[0]["is_complete"], False)
         self.assertEqual(response.data[1]["id"], str(roi_new.id))
         self.assertEqual(response.data[1]["is_active"], True)
 
@@ -78,7 +78,7 @@ class SegmentationRoiViewTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         existing.refresh_from_db()
-        self.assertEqual(existing.is_active, False)
+        self.assertNotEqual(get_active_roi_for_segmentation(self.segmentation).pk, existing.pk)
         self.assertEqual(response.data["is_active"], True)
         self.assertEqual(response.data["is_complete"], False)
         self.assertEqual(response.data["source"], "MANUAL")
@@ -112,8 +112,12 @@ class SegmentationRoiViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         roi_first.refresh_from_db()
         roi_second.refresh_from_db()
-        self.assertEqual(roi_first.is_active, True)
-        self.assertEqual(roi_second.is_active, False)
+        self.assertEqual(get_active_roi_for_segmentation(self.segmentation).pk, roi_first.pk)
+        self.assertFalse(
+            RoiSegmentationStatus.objects.filter(
+                image_roi=roi_second, segmentation=self.segmentation, is_active=True
+            ).exists()
+        )
         self.assertEqual(response.data["id"], str(roi_first.id))
         self.assertEqual(response.data["is_active"], True)
         self.assertEqual(self.image.asset.rois.count(), 2)
@@ -160,7 +164,7 @@ class SegmentationRoiViewTests(TestCase):
         )
         roi_new.segmentations.add(self.segmentation)
         # roi_new is the most recently created; activate roi_old then delete it.
-        activate_roi(roi_old)
+        activate_roi(roi_old, self.segmentation)
 
         response = self.client.delete(
             f"/api/segmentations/{self.segmentation.id}/roi/{roi_old.id}/"
@@ -169,7 +173,7 @@ class SegmentationRoiViewTests(TestCase):
         self.assertEqual(response.status_code, 204)
         self.assertFalse(ImageROI.objects.filter(id=roi_old.id).exists())
         roi_new.refresh_from_db()
-        self.assertTrue(roi_new.is_active)
+        self.assertEqual(get_active_roi_for_segmentation(self.segmentation).pk, roi_new.pk)
 
     def test_roi_delete_missing_returns_404(self):
         response = self.client.delete(

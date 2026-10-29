@@ -6,8 +6,7 @@ from pathlib import Path
 import pytest
 
 from quantem.core.postgres import (
-    DATABASE_RECOVERY_PROGRESS_PREFIX,
-    POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS,
+    POSTGRES_RECOVERY_STALL_WARNING_SECONDS,
     POSTGRES_RUNTIME_OPTIONS,
     EmbeddedPostgres,
     PostgresEndpoint,
@@ -16,6 +15,7 @@ from quantem.core.postgres import (
     _postgres_server_arguments,
     _RecoveryLogMonitor,
 )
+from quantem.core.startup_progress import STARTUP_PROGRESS_PREFIX
 
 
 def _endpoint() -> PostgresEndpoint:
@@ -53,7 +53,7 @@ def test_readiness_allows_recovery_to_exceed_normal_startup_timeout(monkeypatch,
 
     EmbeddedPostgres()._wait_ready(_endpoint(), recovery_expected=True)
 
-    assert DATABASE_RECOVERY_PROGRESS_PREFIX in capsys.readouterr().out
+    assert STARTUP_PROGRESS_PREFIX in capsys.readouterr().err
 
 
 def test_readiness_keeps_short_timeout_when_server_never_answers(monkeypatch, capsys):
@@ -69,28 +69,37 @@ def test_readiness_keeps_short_timeout_when_server_never_answers(monkeypatch, ca
     with pytest.raises(PostgresError, match="within 60 seconds: no response"):
         EmbeddedPostgres()._wait_ready(_endpoint())
 
-    assert DATABASE_RECOVERY_PROGRESS_PREFIX not in capsys.readouterr().out
+    assert STARTUP_PROGRESS_PREFIX not in capsys.readouterr().err
 
 
-def test_recovery_fails_only_after_measurable_progress_stalls(monkeypatch):
-    stalled_at = float(POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS + 1)
-    clock = iter([0.0, 0.0, stalled_at])
-    monkeypatch.setattr(
-        "quantem.core.postgres._run",
-        lambda *args, **kwargs: subprocess.CompletedProcess([], 1, "rejecting connections", ""),
+def test_recovery_warns_but_keeps_waiting_after_measurable_progress_stalls(monkeypatch):
+    stalled_at = float(POSTGRES_RECOVERY_STALL_WARNING_SECONDS + 1)
+    clock = iter([0.0, 0.0, stalled_at, stalled_at + 1])
+    attempts = iter(
+        [
+            subprocess.CompletedProcess([], 1, "rejecting connections", ""),
+            subprocess.CompletedProcess([], 1, "rejecting connections", ""),
+            subprocess.CompletedProcess([], 0, "accepting connections", ""),
+        ]
     )
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr("quantem.core.postgres._run", lambda *args, **kwargs: next(attempts))
     monkeypatch.setattr("quantem.core.postgres._tool", lambda name: name)
     monkeypatch.setattr("quantem.core.postgres._RecoveryLogMonitor.poll", lambda self: False)
     monkeypatch.setattr("quantem.core.postgres.time.monotonic", lambda: next(clock))
     monkeypatch.setattr("quantem.core.postgres.time.sleep", lambda _: None)
 
-    with pytest.raises(PostgresError, match="no measurable recovery progress"):
-        EmbeddedPostgres()._wait_ready(_endpoint(), recovery_expected=True)
+    EmbeddedPostgres()._wait_ready(
+        _endpoint(), recovery_expected=True, progress_callback=events.append
+    )
+
+    assert any(event["phase"] == "stalled" for event in events)
+    assert events[-1]["phase"] == "complete"
 
 
 def test_recovery_progress_resets_the_stall_window(monkeypatch):
-    almost_stalled = float(POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS - 1)
-    past_original_window = float(POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS + 1)
+    almost_stalled = float(POSTGRES_RECOVERY_STALL_WARNING_SECONDS - 1)
+    past_original_window = float(POSTGRES_RECOVERY_STALL_WARNING_SECONDS + 1)
     clock = iter([0.0, 0.0, almost_stalled, past_original_window])
     attempts = iter(
         [

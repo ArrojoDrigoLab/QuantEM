@@ -1,3 +1,4 @@
+import type { OverlayRevisionTarget } from "@/shared/types/segmentation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   generateLeftPanelOverlays,
@@ -16,6 +17,7 @@ interface UseOptimisticOverlayStateArgs {
   leftPanelLayerStyles: LeftPanelLayerStyles;
   hiddenSegmentIds: ReadonlySet<string>;
   settledOverlayRevision: number | null;
+  settledOverlayLutRevision?: number | null;
 }
 
 export function useOptimisticOverlayState({
@@ -25,13 +27,14 @@ export function useOptimisticOverlayState({
   leftPanelLayerStyles,
   hiddenSegmentIds,
   settledOverlayRevision,
+  settledOverlayLutRevision,
 }: UseOptimisticOverlayStateArgs) {
   const [labelOverrides, setLabelOverrides] = useState<Record<string, LabelState>>({});
   const [optimisticSegments, setOptimisticSegments] = useState<
     Record<string, SegmentObject>
   >({});
   const [optimisticOverlayRevisionTargets, setOptimisticOverlayRevisionTargets] =
-    useState<Record<string, number>>({});
+    useState<Record<string, OverlayRevisionTarget>>({});
 
   useEffect(() => {
     setLabelOverrides({});
@@ -95,7 +98,7 @@ export function useOptimisticOverlayState({
   }, []);
 
   const stageOptimisticSegments = useCallback(
-    (items: SegmentObject[], targetRevision?: number | null) => {
+    (items: SegmentObject[], targetRevision?: OverlayRevisionTarget | null) => {
       if (items.length === 0) return;
       setOptimisticSegments((prev) => {
         const next = { ...prev };
@@ -104,7 +107,7 @@ export function useOptimisticOverlayState({
         }
         return next;
       });
-      if (typeof targetRevision === "number" && Number.isFinite(targetRevision)) {
+      if (targetRevision != null) {
         setOptimisticOverlayRevisionTargets((prev) => {
           const next = { ...prev };
           for (const segment of items) {
@@ -118,11 +121,10 @@ export function useOptimisticOverlayState({
   );
 
   const stageOptimisticRevisionTargets = useCallback(
-    (segmentIds: string[], targetRevision?: number | null) => {
+    (segmentIds: string[], targetRevision?: OverlayRevisionTarget | null) => {
       if (
         segmentIds.length === 0 ||
-        typeof targetRevision !== "number" ||
-        !Number.isFinite(targetRevision)
+        targetRevision == null
       ) {
         return;
       }
@@ -138,8 +140,12 @@ export function useOptimisticOverlayState({
   );
 
   const getOptimisticTargetRevision = useCallback(
-    (overlay: SegmentationOverlayMutationState | null | undefined): number | null => {
+    (overlay: SegmentationOverlayMutationState | null | undefined): OverlayRevisionTarget | null => {
       if (!overlay) return null;
+      if (typeof overlay.confirmed_display_desired_revision === "number") {
+        return { revision: overlay.confirmed_display_desired_revision,
+          lutRevision: overlay.confirmed_display_lut_revision ?? 0 };
+      }
       return overlay.sync_applied ? overlay.applied_revision : overlay.desired_revision;
     },
     []
@@ -230,11 +236,12 @@ export function useOptimisticOverlayState({
   useEffect(() => {
     if (typeof settledOverlayRevision !== "number") return;
     const settledIds = Object.entries(optimisticOverlayRevisionTargets)
-      .filter(([, revision]) => settledOverlayRevision >= revision)
+      .filter(([, target]) => typeof target === "number" ? settledOverlayRevision >= target :
+        settledOverlayRevision >= target.revision && (settledOverlayLutRevision ?? -1) >= target.lutRevision)
       .map(([segmentId]) => segmentId);
     if (settledIds.length === 0) return;
     clearOptimisticSegments(settledIds);
-  }, [clearOptimisticSegments, optimisticOverlayRevisionTargets, settledOverlayRevision]);
+  }, [clearOptimisticSegments, optimisticOverlayRevisionTargets, settledOverlayRevision, settledOverlayLutRevision]);
 
   return {
     applyLabelOverrides,

@@ -94,6 +94,10 @@ class ConfirmDefersTheRasterTests(TestCase):
             for idx in range(4)
         ]
         self.segment = self.segments[0]
+        # Priority changes in overlaps still require a repaint. Uncontested
+        # answers are covered separately as palette-only changes.
+        for idx in range(4):
+            _make_segment(self.segmentation, _square(15 + 40 * idx, 15 + 40 * idx))
         rebuild_overlay_full(self.segmentation, desired_revision=0)
 
     def _settled_state(self) -> SegmentationOverlayState:

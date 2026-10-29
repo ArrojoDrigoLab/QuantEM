@@ -44,7 +44,7 @@
 
 use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -53,18 +53,17 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use tauri::{Manager, RunEvent, WebviewWindow, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
-/// How long an ordinary, silent startup may take before we give up. Database
-/// migration and measured PostgreSQL recovery liveness each override this
-/// deadline: both may legitimately take hours on a large library.
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// The sidecar emits a heartbeat during every startup phase. This deadline is
+/// only for a process that never speaks the protocol at all; once liveness is
+/// established, no database operation has a wall-clock deadline in the shell.
+const INITIAL_STARTUP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// Allow the sidecar's 15-minute clean PostgreSQL checkpoint to finish. The
 /// Windows job object remains the final fallback after this deadline.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(16 * 60);
-const MIGRATION_PROGRESS_PREFIX: &str = "QUANTEM_MIGRATION_PROGRESS ";
-const DATABASE_RECOVERY_PROGRESS_PREFIX: &str = "QUANTEM_DATABASE_RECOVERY_PROGRESS ";
-const MIGRATION_STALL_WARNING: Duration = Duration::from_secs(5 * 60);
+const STARTUP_PROGRESS_PREFIX: &str = "QUANTEM_STARTUP_PROGRESS ";
+const STARTUP_STALL_WARNING: Duration = Duration::from_secs(5 * 60);
 
 // ---------------------------------------------------------------------------
 // Windows job object: kill the whole sidecar tree when the shell dies.
@@ -120,6 +119,89 @@ mod job {
                 CloseHandle(self.0);
             }
         }
+    }
+}
+
+/// Hold an exclusive, per-data-directory lock for the desktop lifetime. The
+/// PostgreSQL process has its own lock too, but acquiring this before the
+/// webview starts prevents two shells from racing through startup and gives a
+/// second launch a precise explanation instead of a server-exited error.
+struct InstanceGuard {
+    #[cfg(windows)]
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    #[cfg(unix)]
+    _file: std::fs::File,
+}
+
+#[cfg(windows)]
+unsafe impl Send for InstanceGuard {}
+#[cfg(windows)]
+unsafe impl Sync for InstanceGuard {}
+
+#[cfg(windows)]
+impl Drop for InstanceGuard {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.handle);
+        }
+    }
+}
+
+fn acquire_instance_lock(data_dir: &Path) -> Result<InstanceGuard, String> {
+    let path = data_dir.join(".quantem-desktop.lock");
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+        use windows_sys::Win32::Storage::FileSystem::{
+            CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+            OPEN_ALWAYS,
+        };
+
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+                0,
+                std::ptr::null(),
+                OPEN_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL,
+                std::ptr::null_mut(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE || handle.is_null() {
+            return Err(
+                "QuantEM is already running with this data directory. Use the existing window."
+                    .to_owned(),
+            );
+        }
+        return Ok(InstanceGuard { handle });
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsRawFd;
+
+        extern "C" {
+            fn flock(file_descriptor: i32, operation: i32) -> i32;
+        }
+        const LOCK_EXCLUSIVE: i32 = 2;
+        const LOCK_NONBLOCKING: i32 = 4;
+
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| format!("cannot open the QuantEM instance lock: {error}"))?;
+        if unsafe { flock(file.as_raw_fd(), LOCK_EXCLUSIVE | LOCK_NONBLOCKING) } != 0 {
+            return Err(
+                "QuantEM is already running with this data directory. Use the existing window."
+                    .to_owned(),
+            );
+        }
+        Ok(InstanceGuard { _file: file })
     }
 }
 
@@ -286,9 +368,25 @@ fn free_port() -> std::io::Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
-fn port_open(port: u16) -> bool {
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok()
+fn server_ready(client: &reqwest::blocking::Client, port: u16, token: &str) -> bool {
+    client
+        .get(format!(
+            "http://127.0.0.1:{port}/api/system/handshake/"
+        ))
+        .header("X-QuantEM-Startup-Token", token)
+        .send()
+        .ok()
+        .filter(|response| response.status().is_success())
+        .and_then(|response| response.text().ok())
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+        .and_then(|payload| {
+            payload
+                .get("message")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned)
+        })
+        .as_deref()
+        == Some("handshake-ok")
 }
 
 /// Append a line to the shell log (best effort; the sidecar's own output is
@@ -325,36 +423,35 @@ fn set_status(app: &tauri::AppHandle, text: &str) {
     );
 }
 
-fn migration_progress_script(line: &str) -> Option<String> {
-    let payload = line.strip_prefix(MIGRATION_PROGRESS_PREFIX)?;
+struct StartupEvent {
+    script: String,
+    critical: bool,
+    failed: bool,
+}
+
+fn startup_progress_event(line: &str) -> Option<StartupEvent> {
+    let payload = line.strip_prefix(STARTUP_PROGRESS_PREFIX)?;
     let parsed: serde_json::Value = serde_json::from_str(payload).ok()?;
     if !parsed.is_object() {
         return None;
     }
-    Some(format!(
-        "window.__quantemMigrationProgress && window.__quantemMigrationProgress({payload})"
-    ))
-}
-
-fn database_recovery_progress_script(line: &str) -> Option<String> {
-    let payload = line.strip_prefix(DATABASE_RECOVERY_PROGRESS_PREFIX)?;
-    let parsed: serde_json::Value = serde_json::from_str(payload).ok()?;
-    if !parsed.is_object() {
-        return None;
-    }
-    Some(format!(
-        "window.__quantemDatabaseRecoveryProgress && window.__quantemDatabaseRecoveryProgress({payload})"
-    ))
-}
-
-fn set_migration_warning(app: &tauri::AppHandle, text: &str) {
-    eval_on_main(
-        app,
-        format!(
-            "window.__quantemMigrationWarning && window.__quantemMigrationWarning({})",
-            serde_json_escape(text)
+    let critical = parsed
+        .get("critical")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        && !parsed
+            .get("can_close")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+    let failed = parsed.get("phase").and_then(serde_json::Value::as_str) == Some("failed")
+        || parsed.get("category").and_then(serde_json::Value::as_str) == Some("failure");
+    Some(StartupEvent {
+        script: format!(
+            "window.__quantemStartupProgress && window.__quantemStartupProgress({payload})"
         ),
-    );
+        critical,
+        failed,
+    })
 }
 
 fn fail(app: &tauri::AppHandle, text: &str) {
@@ -366,6 +463,56 @@ fn fail(app: &tauri::AppHandle, text: &str) {
             serde_json_escape(text)
         ),
     );
+}
+
+#[tauri::command]
+fn open_startup_logs() -> Result<(), String> {
+    let directory = LOG_DIR
+        .get()
+        .ok_or_else(|| "the QuantEM log directory is not available yet".to_owned())?;
+    let log = directory.join("quantem-desktop.log");
+
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = Command::new("explorer.exe");
+        if log.is_file() {
+            command.arg(format!("/select,{}", log.display()));
+        } else {
+            command.arg(directory);
+        }
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        if log.is_file() {
+            command.arg("-R").arg(&log);
+        } else {
+            command.arg(directory);
+        }
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(directory);
+        command
+    };
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("could not open the QuantEM logs: {error}"))
+}
+
+#[tauri::command]
+fn retry_startup(app: tauri::AppHandle) {
+    app.request_restart();
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 /// Minimal JS string literal escaping (we control every input; this guards
@@ -672,6 +819,13 @@ fn main() {
     if let Ok(dir) = &storage {
         log_line(&format!("[shell] data dir: {}", dir.display()));
     }
+    let (instance_guard, instance_error) = match &storage {
+        Ok(dir) => match acquire_instance_lock(dir) {
+            Ok(guard) => (Some(guard), None),
+            Err(error) => (None, Some(error)),
+        },
+        Err(_) => (None, None),
+    };
 
     let sidecar: Arc<Mutex<Sidecar>> = Arc::new(Mutex::new(Sidecar {
         child: None,
@@ -682,6 +836,17 @@ fn main() {
     }));
     let sidecar_for_setup = sidecar.clone();
     let sidecar_for_exit = sidecar.clone();
+    let startup_last_event = Arc::new(Mutex::new(Instant::now()));
+    let startup_event_seen = Arc::new(AtomicBool::new(false));
+    let startup_critical = Arc::new(AtomicBool::new(false));
+    let startup_failure_reported = Arc::new(AtomicBool::new(false));
+    let allow_critical_close = Arc::new(AtomicBool::new(false));
+    let critical_for_window = startup_critical.clone();
+    let allow_close_for_window = allow_critical_close.clone();
+    let last_event_for_setup = startup_last_event.clone();
+    let event_seen_for_setup = startup_event_seen.clone();
+    let critical_for_setup = startup_critical.clone();
+    let failure_for_setup = startup_failure_reported.clone();
 
     tauri::Builder::default()
         // The updater is deliberately configured only in the release overlay:
@@ -691,7 +856,43 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![save_text_file, save_url_file])
+        .invoke_handler(tauri::generate_handler![
+            save_text_file,
+            save_url_file,
+            open_startup_logs,
+            retry_startup,
+            quit_app
+        ])
+        .on_window_event(move |window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if critical_for_window.load(Ordering::Relaxed)
+                    && !allow_close_for_window.load(Ordering::Relaxed)
+                {
+                    api.prevent_close();
+                    let close_window = window.clone();
+                    let allow_close = allow_close_for_window.clone();
+                    window
+                        .dialog()
+                        .message(
+                            "QuantEM is currently updating or recovering its database. Closing now may require recovery on the next launch. Quit anyway?",
+                        )
+                        .title("Database work in progress")
+                        .buttons(MessageDialogButtons::OkCancelCustom(
+                            "Quit anyway".to_owned(),
+                            "Keep QuantEM open".to_owned(),
+                        ))
+                        .show(move |quit| {
+                            if quit {
+                                allow_close.store(true, Ordering::Relaxed);
+                                let _ = close_window.close();
+                            }
+                        });
+                }
+            }
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -724,6 +925,18 @@ fn main() {
                 });
                 return Ok(());
             }
+            if let Some(msg) = &instance_error {
+                let h = handle.clone();
+                let msg = msg.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(300));
+                    fail(&h, &msg);
+                });
+                return Ok(());
+            }
+            if let Some(guard) = instance_guard {
+                app.manage(guard);
+            }
 
             // Dev loop: point the window at an already-running checkout server
             // (`quantem serve` / `npm run dev`) and spawn nothing.
@@ -752,24 +965,6 @@ fn main() {
                 return Ok(());
             };
 
-            let legacy_sqlite = storage
-                .as_ref()
-                .expect("storage checked above")
-                .join("quantem.sqlite3")
-                .is_file();
-            // A migration has no absolute deadline: large libraries may need
-            // hours, and replacing a useful progress display with a fatal page
-            // does not make the transactional cutover finish sooner.  The
-            // sidecar emits measured progress and liveness events instead.
-            let migration_last_event = Arc::new(Mutex::new(Instant::now()));
-            let database_recovery_active = Arc::new(AtomicBool::new(false));
-            if legacy_sqlite {
-                set_status(
-                    &handle,
-                    "Upgrading the existing database to PostgreSQL… Your images and the SQLite recovery backup are being preserved.",
-                );
-            }
-
             let port = free_port().unwrap_or(8722);
             let shutdown_token = tempfile::Builder::new()
                 .prefix(".quantem-shutdown-")
@@ -791,6 +986,7 @@ fn main() {
                 .arg("--port")
                 .arg(port.to_string())
                 .env("QUANTEM_SHUTDOWN_TOKEN", &shutdown_token)
+                .env("QUANTEM_STARTUP_TOKEN", &shutdown_token)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
@@ -836,25 +1032,24 @@ fn main() {
             ] {
                 if let Some(stream) = stream {
                     let progress_handle = handle.clone();
-                    let last_migration_event = migration_last_event.clone();
-                    let recovery_active = database_recovery_active.clone();
+                    let last_startup_event = last_event_for_setup.clone();
+                    let event_seen = event_seen_for_setup.clone();
+                    let critical = critical_for_setup.clone();
+                    let failure_reported = failure_for_setup.clone();
                     std::thread::spawn(move || {
                         let reader = BufReader::new(stream);
                         for line in reader.lines().map_while(Result::ok) {
                             log_line(&format!("[server {name}] {line}"));
-                            if name == "stdout" {
-                                if let Some(script) = migration_progress_script(&line) {
-                                    if let Ok(mut last) = last_migration_event.lock() {
-                                        *last = Instant::now();
-                                    }
-                                    recovery_active.store(false, Ordering::Relaxed);
-                                    eval_on_main(&progress_handle, script);
-                                } else if let Some(script) =
-                                    database_recovery_progress_script(&line)
-                                {
-                                    recovery_active.store(true, Ordering::Relaxed);
-                                    eval_on_main(&progress_handle, script);
+                            if let Some(event) = startup_progress_event(&line) {
+                                if let Ok(mut last) = last_startup_event.lock() {
+                                    *last = Instant::now();
                                 }
+                                event_seen.store(true, Ordering::Relaxed);
+                                critical.store(event.critical, Ordering::Relaxed);
+                                if event.failed {
+                                    failure_reported.store(true, Ordering::Relaxed);
+                                }
+                                eval_on_main(&progress_handle, event.script);
                             }
                         }
                     });
@@ -865,25 +1060,39 @@ fn main() {
                 let mut guard = sidecar_for_setup.lock().unwrap();
                 guard.child = Some(child);
                 guard.port = Some(port);
-                guard.shutdown_token = Some(shutdown_token);
+                guard.shutdown_token = Some(shutdown_token.clone());
                 #[cfg(windows)]
                 {
                     guard._job = job;
                 }
             }
 
-            // Wait for the port on a worker thread, then swap the page over.
+            // Wait for the authenticated application handshake, then swap the
+            // page over. A raw open port is not enough: another local process
+            // can win the free-port race between selection and sidecar bind.
             let h = handle.clone();
             let sc = sidecar_for_setup.clone();
-            let last_migration_event = migration_last_event.clone();
-            let recovery_active = database_recovery_active.clone();
+            let last_startup_event = last_event_for_setup.clone();
+            let event_seen = event_seen_for_setup.clone();
+            let critical = critical_for_setup.clone();
+            let failure_reported = failure_for_setup.clone();
+            let startup_token = shutdown_token.clone();
             std::thread::spawn(move || {
                 let started = Instant::now();
                 let url = format!("http://127.0.0.1:{port}/");
-                let mut migration_warning_visible = false;
+                // reqwest's features are unified with the updater's Rustls
+                // client even though this request is loopback HTTP.
+                let _ = rustls::crypto::ring::default_provider().install_default();
+                let client = reqwest::blocking::Client::builder()
+                    .connect_timeout(Duration::from_secs(1))
+                    .timeout(Duration::from_secs(2))
+                    .build()
+                    .expect("loopback startup client");
+                let mut stall_warning_visible = false;
                 loop {
-                    if port_open(port) {
+                    if server_ready(&client, port, &startup_token) {
                         log_line(&format!("[shell] server is up at {url}"));
+                        critical.store(false, Ordering::Relaxed);
                         eval_on_main(&h, format!("window.location.replace({})", serde_json_escape(&url)));
                         return;
                     }
@@ -893,51 +1102,47 @@ fn main() {
                         let mut guard = sc.lock().unwrap();
                         if let Some(child) = guard.child.as_mut() {
                             if let Ok(Some(status)) = child.try_wait() {
-                                fail(
-                                    &h,
-                                    &format!(
-                                        "the QuantEM server exited during startup (status {status}).\n\
-                                         If a database migration failed, its pre-migration recovery snapshot was retained under backups\\pre-migration.\n\
-                                         See logs\\quantem-desktop.log in the QuantEM data directory."
-                                    ),
-                                );
+                                critical.store(false, Ordering::Relaxed);
+                                if !failure_reported.load(Ordering::Relaxed) {
+                                    fail(
+                                        &h,
+                                        &format!(
+                                            "the QuantEM server exited during startup (status {status}).\n\
+                                             If a database migration failed, its pre-migration recovery snapshot was retained under backups\\pre-migration.\n\
+                                             See logs\\quantem-desktop.log in the QuantEM data directory."
+                                        ),
+                                    );
+                                }
                                 return;
                             }
                         }
                     }
-                    if !legacy_sqlite
-                        && !recovery_active.load(Ordering::Relaxed)
-                        && started.elapsed() > STARTUP_TIMEOUT
+                    if !event_seen.load(Ordering::Relaxed)
+                        && started.elapsed() > INITIAL_STARTUP_TIMEOUT
                     {
+                        critical.store(false, Ordering::Relaxed);
                         fail(
                             &h,
-                            "the QuantEM server did not start within five minutes.\n\
+                            "the QuantEM server produced no startup response within five minutes.\n\
                              See logs\\quantem-desktop.log in the QuantEM data directory.",
                         );
                         return;
                     }
-                    if legacy_sqlite && !recovery_active.load(Ordering::Relaxed) {
-                        let event_age = last_migration_event
-                            .lock()
-                            .map(|last| last.elapsed())
-                            .unwrap_or_default();
-                        if event_age > MIGRATION_STALL_WARNING && !migration_warning_visible {
-                            set_migration_warning(
-                                &h,
-                                "QuantEM has not received a migration liveness update for five minutes. It is still waiting and has not abandoned the upgrade or its recovery backup.",
-                            );
-                            migration_warning_visible = true;
-                        } else if event_age <= MIGRATION_STALL_WARNING && migration_warning_visible {
-                            set_migration_warning(&h, "");
-                            migration_warning_visible = false;
-                        }
-                    } else if !recovery_active.load(Ordering::Relaxed)
-                        && started.elapsed() > Duration::from_secs(20)
+                    let event_age = last_startup_event
+                        .lock()
+                        .map(|last| last.elapsed())
+                        .unwrap_or_default();
+                    if event_seen.load(Ordering::Relaxed)
+                        && event_age > STARTUP_STALL_WARNING
+                        && !stall_warning_visible
                     {
                         set_status(
                             &h,
-                            "Still starting… database preparation or recovery can take several minutes. Do not close QuantEM.",
+                            "QuantEM has not received a startup update for five minutes. It is still waiting; details are available in the startup log.",
                         );
+                        stall_warning_visible = true;
+                    } else if event_age <= STARTUP_STALL_WARNING && stall_warning_visible {
+                        stall_warning_visible = false;
                     }
                     std::thread::sleep(Duration::from_millis(300));
                 }
@@ -1059,37 +1264,31 @@ mod tests {
     }
 
     #[test]
-    fn migration_progress_accepts_only_prefixed_json_objects() {
+    fn startup_progress_accepts_only_prefixed_json_objects() {
         let line = concat!(
-            "QUANTEM_MIGRATION_PROGRESS ",
-            r#"{"phase":"copy","stage":6,"stage_count":10,"percent":42.5}"#
+            "QUANTEM_STARTUP_PROGRESS ",
+            r#"{"phase":"copy","category":"database-upgrade","critical":true,"can_close":false,"percent":42.5}"#
         );
-        let script = migration_progress_script(line).expect("valid progress event");
-        assert!(script.contains("window.__quantemMigrationProgress"));
-        assert!(script.contains(r#""phase":"copy""#));
+        let event = startup_progress_event(line).expect("valid progress event");
+        assert!(event.script.contains("window.__quantemStartupProgress"));
+        assert!(event.script.contains(r#""phase":"copy""#));
+        assert!(event.critical);
+        assert!(!event.failed);
 
-        assert!(migration_progress_script("ordinary server output").is_none());
-        assert!(migration_progress_script("QUANTEM_MIGRATION_PROGRESS []").is_none());
-        assert!(migration_progress_script("QUANTEM_MIGRATION_PROGRESS not-json").is_none());
+        assert!(startup_progress_event("ordinary server output").is_none());
+        assert!(startup_progress_event("QUANTEM_STARTUP_PROGRESS []").is_none());
+        assert!(startup_progress_event("QUANTEM_STARTUP_PROGRESS not-json").is_none());
     }
 
     #[test]
-    fn database_recovery_progress_accepts_only_prefixed_json_objects() {
-        let line = concat!(
-            "QUANTEM_DATABASE_RECOVERY_PROGRESS ",
-            r#"{"phase":"redo","current_lsn":"3/4A481230"}"#
-        );
-        let script = database_recovery_progress_script(line).expect("valid recovery event");
-        assert!(script.contains("window.__quantemDatabaseRecoveryProgress"));
-        assert!(script.contains(r#""phase":"redo""#));
+    fn startup_failure_event_releases_critical_close_guard() {
+        let event = startup_progress_event(concat!(
+            "QUANTEM_STARTUP_PROGRESS ",
+            r#"{"phase":"failed","category":"failure","critical":false,"can_close":true}"#
+        ))
+        .expect("failure event");
 
-        assert!(database_recovery_progress_script("ordinary server output").is_none());
-        assert!(
-            database_recovery_progress_script("QUANTEM_DATABASE_RECOVERY_PROGRESS []").is_none()
-        );
-        assert!(database_recovery_progress_script(
-            "QUANTEM_DATABASE_RECOVERY_PROGRESS not-json"
-        )
-        .is_none());
+        assert!(event.failed);
+        assert!(!event.critical);
     }
 }

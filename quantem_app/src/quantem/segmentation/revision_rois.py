@@ -7,6 +7,7 @@ from django.db.models import Q
 from django.utils.dateparse import parse_datetime
 
 from quantem.assets.models import ImageROI
+from quantem.assets.roi_state import activate_roi, get_active_roi_for_segmentation
 from quantem.segmentation.models import ImageSegmentation, RoiSegmentationStatus
 
 ARCHIVE_MEMBER = "roi-reviews.json"
@@ -23,11 +24,13 @@ def save_roi_reviews(archive: ZipFile, segmentation: ImageSegmentation) -> None:
         Q(segmentations=segmentation) | Q(id__in=statuses), asset_id=segmentation.asset_id
     ).distinct()
     rows = []
+    active = get_active_roi_for_segmentation(segmentation)
     for roi in rois:
         state = statuses.get(str(roi.id))
         rows.append(
             {
                 "id": str(roi.id),
+                "is_active": active is not None and active.pk == roi.pk,
                 **{field: getattr(roi, field) for field in ROI_FIELDS},
                 "is_complete": bool(state and state.is_complete),
                 "completed_at": state.completed_at.isoformat()
@@ -46,8 +49,11 @@ def restore_roi_reviews(archive: ZipFile, segmentation: ImageSegmentation) -> No
         return
     rows = json.loads(archive.read(ARCHIVE_MEMBER))
     restored_rois = []
+    active_roi = None
     for row in rows:
-        roi = ImageROI.objects.filter(id=row["id"], asset_id=segmentation.asset_id).first()
+        roi = ImageROI.objects.filter(
+            id=row["id"], asset_id=segmentation.asset_id, segmentations=segmentation
+        ).first()
         if roi is None or any(getattr(roi, key) != row[key] for key in BOUNDS):
             # ImageROI geometry is shared. Keep its newer geometry for other
             # segmentations and restore a separate window for this segmentation.
@@ -62,6 +68,8 @@ def restore_roi_reviews(archive: ZipFile, segmentation: ImageSegmentation) -> No
                 **{key: row[key] for key in ROI_FIELDS},
             )
         restored_rois.append(roi)
+        if row.get("is_active"):
+            active_roi = roi
         RoiSegmentationStatus.objects.update_or_create(
             image_roi=roi,
             segmentation=segmentation,
@@ -73,3 +81,6 @@ def restore_roi_reviews(archive: ZipFile, segmentation: ImageSegmentation) -> No
             },
         )
     segmentation.rois.set(restored_rois)
+    ImageSegmentation.objects.filter(pk=segmentation.pk).update(rois_initialized=True)
+    if restored_rois:
+        activate_roi(active_roi or restored_rois[-1], segmentation)

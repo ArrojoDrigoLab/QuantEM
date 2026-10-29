@@ -48,6 +48,7 @@ vi.mock("@/shared/api/assets", async () => {
   return {
     ...actual,
     getAsset: vi.fn(),
+    getSegmentationTypes: vi.fn().mockResolvedValue([]),
     getAssetNgffUrl: vi.fn(),
     getAssetSegmentations: vi.fn(),
     createAssetSegmentation: vi.fn(),
@@ -1022,7 +1023,7 @@ describe("ViewerScreen", () => {
       expect(lastCall.overlays?.idMapOverlays).toHaveLength(1);
       expect(lastCall.overlays?.idMapOverlays?.[0]).toMatchObject({
         id: "seg-1",
-        ngffUrl: "/segmentation-overlays/seg-1.zarr?rev=1-4",
+        ngffUrl: "http://127.0.0.1:8000/segmentation-overlays/seg-1.zarr?rev=1-4",
         fillOpacity: 0.25,
         borderOpacity: 0.95,
         showBorders: true,

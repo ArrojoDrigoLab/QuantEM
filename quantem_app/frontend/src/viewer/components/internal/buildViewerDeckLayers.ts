@@ -7,6 +7,8 @@ import type {
   ViewerNgffOverlayLayerSpec,
 } from "@/viewer/types";
 import { IdMapLabelLayer } from "@/viewer/components/internal/IdMapLabelLayer";
+import { ProbabilityBitmapLayer } from "./ProbabilityBitmapLayer";
+import { NEAREST_SAMPLER } from "./PaletteBitmapLayer";
 import {
   buildOverlaySelectionToken,
   buildVivSelections,
@@ -41,6 +43,7 @@ export function buildViewerDeckLayers(config: {
   idMapDataById?: Record<string, { labelsData: VivLoaderData | null; borderData: VivLoaderData | null }>;
   bitmapOverlays?: ViewerBitmapOverlaySpec[];
   zIndex?: number;
+  onIdMapTileError?: (url: string, error: Error) => void;
 }) {
   const {
     loaderData,
@@ -79,6 +82,15 @@ export function buildViewerDeckLayers(config: {
   // [left, bottom, right, top] in the viewer's y-down image coordinate space.
   for (const spec of bitmapOverlays) {
     const [bx, by, bw, bh] = spec.bounds;
+    if (spec.probability) {
+      layers.push(new ProbabilityBitmapLayer({
+        id: `viewer-bitmap-${spec.id}`, image: spec.image,
+        bounds: [bx, by + bh, bx + bw, by], opacity: spec.opacity,
+        pickable: false, threshold: spec.probability.threshold, color: spec.probability.color,
+        textureParameters: NEAREST_SAMPLER,
+      }));
+      continue;
+    }
     layers.push(
       new BitmapLayer({
         id: `viewer-bitmap-${spec.id}`,
@@ -115,6 +127,7 @@ export function buildViewerDeckLayers(config: {
         borderOpacity: idMapOverlay.borderOpacity,
         showBorders: idMapOverlay.showBorders,
         pickMap: idMapOverlay.pickMap,
+        onTileError: (error: Error) => config.onIdMapTileError?.(idMapOverlay.ngffUrl, error),
         pickable: Boolean(idMapOverlay.pickMap),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)

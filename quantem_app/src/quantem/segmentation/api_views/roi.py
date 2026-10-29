@@ -11,8 +11,11 @@ from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from quantem.assets.models import ImageROI
-from quantem.assets.roi_state import activate_roi, get_active_roi_for_asset
+from quantem.assets.roi_state import (
+    activate_roi,
+    get_active_roi_for_segmentation,
+    rois_for_segmentation,
+)
 from quantem.assets.utils import create_roi_image_from_image
 from quantem.core.config import ROIS_DIR
 from quantem.seg_core.db.prob_maps import delete_probability_maps_for_roi
@@ -160,9 +163,8 @@ class SegmentationRoiListCreateView(APIView):
             )
         )
         if not rois:
-            roi_image = get_or_create_roi_image(target_image)
-            roi_image.segmentations.add(segmentation)
-            rois = [roi_image]
+            roi_image = get_or_create_roi_image(target_image, segmentation)
+            rois = [roi_image] if roi_image else []
 
         serializer = SegmentationRoiSerializer(
             rois,
@@ -244,8 +246,8 @@ class SegmentationRoiListCreateView(APIView):
             height=roi_h,
             source=source,
             is_active=True,
+            segmentation=segmentation,
         )
-        roi_image.segmentations.add(segmentation)
         if "prepopulate" in request.data:
             from quantem.segmentation.roi_initialization import initialize_roi
 
@@ -262,25 +264,23 @@ class SegmentationRoiCompleteView(APIView):
 
     def post(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
-        # Same proofreading state as the per-organelle "mark ROI done" below,
-        # recorded on the flat flag instead of the per-(ROI, segmentation) row,
-        # so it follows the same lock. Leaving it open meant the coarser of the
-        # two done-flags was writable on a finished segmentation while the
-        # finer one was not.
+        # This compatibility endpoint uses the same per-organelle state as the
+        # explicit ROI completion endpoint.
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked
         get_segmentation_target_image(segmentation)
-        roi_image = get_active_roi_for_asset(segmentation.asset)
+        roi_image = get_active_roi_for_segmentation(segmentation)
         if not roi_image:
             return Response(
                 {"error": "No active ROI found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
         with transaction.atomic():
-            roi_image.is_complete = True
-            roi_image.save(update_fields=["is_complete", "updated_at"])
-            roi_image.segmentations.add(segmentation)
+            ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
+            roi_image = get_object_or_404(
+                _roi_queryset_for_segmentation(segmentation), pk=roi_image.pk
+            )
             status_row, _ = RoiSegmentationStatus.objects.get_or_create(
                 image_roi=roi_image, segmentation=segmentation
             )
@@ -344,8 +344,10 @@ class SegmentationRoiSegmentationCompleteView(APIView):
         candidate_cleanup = None
         overlay = None
         with transaction.atomic():
-            # Keep the ROI <-> segmentation association in sync with the status row.
-            roi_image.segmentations.add(segmentation)
+            ImageSegmentation.objects.select_for_update().get(pk=segmentation.pk)
+            roi_image = get_object_or_404(
+                _roi_queryset_for_segmentation(segmentation), pk=roi_image.pk
+            )
             status_row, _ = RoiSegmentationStatus.objects.get_or_create(
                 image_roi=roi_image,
                 segmentation=segmentation,
@@ -389,69 +391,60 @@ class SegmentationRoiSegmentationCompleteView(APIView):
 
 
 class SegmentationRoiDetailView(APIView):
-    """Delete a specific ROI for a segmentation's asset.
+    """Remove only this segmentation's ROI membership and completion record.
 
-    ROIs are asset-scoped (shared across the asset's segmentations/organelles),
-    so deleting one removes it for every segmentation on the asset. The cascade
-    drops the per-(ROI, segmentation) completion rows (``RoiSegmentationStatus``)
-    and the ROI<->segmentation associations; segment objects labeled inside the
-    ROI window are left untouched. If the deleted ROI was the active one, the
-    most recently created remaining ROI for the asset is activated to preserve
-    the "one active ROI" invariant.
-
-    Because of that cascade this is a *destructive* route for the segmentation
-    it is addressed through -- it removes the record of which ROI windows were
-    exhaustively labeled for it, the exact rows the per-organelle "mark ROI
-    done" above refuses to touch once the segmentation is locked. So it refuses
-    too.
+    Migrated crops can still be referenced by other organelles. Keep those
+    crops and their review records intact. Annotation objects are never removed.
     """
 
+    @transaction.atomic
     def delete(self, request, seg_id, roi_id):
-        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        segmentation = get_object_or_404(ImageSegmentation.objects.select_for_update(), id=seg_id)
         locked = completion_lock_response(segmentation)
         if locked is not None:
             return locked
         roi_image = get_object_or_404(
-            _roi_queryset_for_segmentation(segmentation),
+            _roi_queryset_for_segmentation(segmentation).select_for_update(),
             id=roi_id,
         )
-        asset = roi_image.asset
-        was_active = roi_image.is_active
-
-        # Best-effort removal of the on-disk ROI PNG crop (named by ROI id).
-        try:
-            (ROIS_DIR / f"{roi_image.id}.png").unlink(missing_ok=True)
-        except OSError:
-            logging.getLogger(__name__).warning(
-                "Failed to delete ROI crop file for %s", roi_image.id, exc_info=True
-            )
-
         from quantem.analysis.superseded import mark_superseded
 
-        for related in roi_image.segmentations.all():
-            mark_superseded(related)
-        roi_image.delete()
+        active = get_active_roi_for_segmentation(segmentation)
+        was_active = active is not None and active.pk == roi_image.pk
+        mark_superseded(segmentation)
+        RoiSegmentationStatus.objects.filter(
+            image_roi=roi_image, segmentation=segmentation
+        ).delete()
+        roi_image.segmentations.remove(segmentation)
+        ImageSegmentation.objects.filter(pk=segmentation.pk).update(rois_initialized=True)
+        if not roi_image.segmentations.exists() and not roi_image.segmentation_statuses.exists():
+            crop_path = ROIS_DIR / f"{roi_image.id}.png"
+            roi_image.delete()
 
-        if was_active and asset is not None:
-            next_roi = ImageROI.objects.filter(asset=asset).order_by("-created_at").first()
+            def remove_crop():
+                try:
+                    crop_path.unlink(missing_ok=True)
+                except OSError:
+                    logging.getLogger(__name__).warning("Failed to delete ROI crop %s", crop_path)
+
+            transaction.on_commit(remove_crop)
+
+        if was_active:
+            next_roi = (
+                _roi_queryset_for_segmentation(segmentation).order_by("-created_at", "-id").first()
+            )
             if next_roi is not None:
-                activate_roi(next_roi)
+                activate_roi(next_roi, segmentation)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class SegmentationRoiActivateView(APIView):
-    """Activate an existing ROI for the segmentation image.
+    """Select an ROI in this organelle's workspace, including when browsing completed work."""
 
-    Deliberately *not* behind the completion lock, unlike the other writes in
-    this module: activation is how the viewer is pointed at a ROI ("show me
-    this one"), and a locked segmentation stays browsable. The flag it sets is
-    asset-scoped, so freezing it here would not freeze it anyway -- any
-    unlocked organelle on the same image moves the same one.
-    """
-
+    @transaction.atomic
     def post(self, request, seg_id):
-        segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
+        segmentation = get_object_or_404(ImageSegmentation.objects.select_for_update(), id=seg_id)
         get_segmentation_target_image(segmentation)
         serializer = SegmentationRoiActivateSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
@@ -460,8 +453,7 @@ class SegmentationRoiActivateView(APIView):
             _roi_queryset_for_segmentation(segmentation),
             id=serializer.validated_data["roi_id"],
         )
-        roi_image.segmentations.add(segmentation)
-        activate_roi(roi_image)
+        activate_roi(roi_image, segmentation)
         response_serializer = SegmentationRoiSerializer(
             roi_image,
             context={"segmentation": segmentation},
@@ -475,7 +467,7 @@ class SegmentationRoiSegmentsView(APIView):
     def get(self, request, seg_id):
         segmentation = get_object_or_404(ImageSegmentation, id=seg_id)
         get_segmentation_target_image(segmentation)
-        roi_image = get_active_roi_for_asset(segmentation.asset)
+        roi_image = get_active_roi_for_segmentation(segmentation)
         if not roi_image:
             return Response([], status=status.HTTP_200_OK)
 
@@ -498,4 +490,4 @@ class SegmentationRoiSegmentsView(APIView):
 
 
 def _roi_queryset_for_segmentation(segmentation: ImageSegmentation):
-    return ImageROI.objects.filter(asset=segmentation.asset)
+    return rois_for_segmentation(segmentation)

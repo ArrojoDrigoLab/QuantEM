@@ -3,12 +3,15 @@
 from rest_framework import serializers
 
 from quantem.assets.models import ImageROI
+from quantem.assets.roi_state import get_active_roi_for_segmentation
 from quantem.segmentation.models import CompletedROI, RoiSegmentationStatus
 
 
 class SegmentationRoiSerializer(serializers.ModelSerializer):
     segmentation = serializers.SerializerMethodField()
     completed_for_segmentation = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField()
+    is_complete = serializers.SerializerMethodField()
 
     class Meta:
         model = ImageROI
@@ -32,6 +35,20 @@ class SegmentationRoiSerializer(serializers.ModelSerializer):
         segmentation = self.context.get("segmentation")
         return str(segmentation.id) if segmentation else None
 
+    def get_is_active(self, obj):
+        segmentation = self.context.get("segmentation")
+        if segmentation is None:
+            return obj.is_active
+        if "active_roi_id" not in self.context:
+            active = get_active_roi_for_segmentation(segmentation)
+            self.context["active_roi_id"] = active.pk if active else None
+        return obj.pk == self.context["active_roi_id"]
+
+    def get_is_complete(self, obj):
+        if self.context.get("segmentation") is None:
+            return obj.is_complete
+        return self.get_completed_for_segmentation(obj)
+
     def get_completed_for_segmentation(self, obj):
         """Per-organelle completion of this ROI for the context segmentation.
 
@@ -43,14 +60,14 @@ class SegmentationRoiSerializer(serializers.ModelSerializer):
         if segmentation is None:
             return None
         completion_map = self.context.get("roi_completion_map")
-        if completion_map is not None:
-            return bool(completion_map.get(obj.id, False))
-        is_complete = (
-            RoiSegmentationStatus.objects.filter(image_roi=obj, segmentation=segmentation)
-            .values_list("is_complete", flat=True)
-            .first()
-        )
-        return bool(is_complete)
+        if completion_map is None:
+            completion_map = dict(
+                RoiSegmentationStatus.objects.filter(segmentation=segmentation).values_list(
+                    "image_roi_id", "is_complete"
+                )
+            )
+            self.context["roi_completion_map"] = completion_map
+        return bool(completion_map.get(obj.id, False))
 
 
 class CompletedRoiSerializer(serializers.ModelSerializer):
