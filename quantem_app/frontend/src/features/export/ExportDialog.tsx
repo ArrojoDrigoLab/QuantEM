@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useModalLifecycle } from "@/shared/hooks/useModalLifecycle";
+import { useId, useRef, useState } from "react";
 import {
   getAssetRasterExportUrl,
   getAssetSegmentations,
@@ -30,7 +31,8 @@ export function ExportDialog({
 }) {
   const titleId = useId();
   const firstInputRef = useRef<HTMLInputElement | null>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  useModalLifecycle(panelRef, onClose, { initialFocusRef: firstInputRef });
   const [selection, setSelection] = useState<AssetRasterExportSelection>({
     source: "original",
   });
@@ -40,23 +42,6 @@ export function ExportDialog({
     () => getAssetSegmentations(asset.id),
     [asset.id]
   );
-
-  useEffect(() => {
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    firstInputRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("keydown", closeOnEscape);
-      restoreFocusRef.current?.focus();
-    };
-  }, [onClose]);
 
   const hasAreaObjects = Boolean(
     segmentations?.some(isAreaSegmentation)
@@ -109,7 +94,7 @@ export function ExportDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
       onClick={onClose}
     >
-      <section
+      <section ref={panelRef}
         className="w-full max-w-lg rounded-2xl bg-white p-6 text-slate-900 shadow-2xl"
         role="dialog"
         aria-modal="true"

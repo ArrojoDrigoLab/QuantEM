@@ -782,6 +782,9 @@ describe("FineTuneDialog", () => {
     await user.type(screen.getByLabelText("Name"), "Fasted liver mitochondria");
     await user.click(screen.getByRole("button", { name: "Fine-tune" }));
 
+    expect(await screen.findByRole("button", { name: "View saved model" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Train" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("button", { name: "View saved model" }));
     const success = await screen.findByTestId("finetune-success");
     expect(success).toHaveTextContent("is trained and saved");
     // The offer is on screen and nothing has been queued.
@@ -833,6 +836,7 @@ describe("FineTuneDialog", () => {
     await user.type(screen.getByLabelText("Name"), "Fasted liver mitochondria");
     await user.click(screen.getByRole("button", { name: "Fine-tune" }));
 
+    await user.click(await screen.findByRole("button", { name: "View saved model" }));
     const datasets = within(await screen.findByTestId("finetune-apply-datasets"));
     await user.click(datasets.getByRole("checkbox", { name: /Liver 24h/ }));
     await user.click(
@@ -907,7 +911,7 @@ describe("FineTuneDialog", () => {
     expect(screen.getByTestId("finetune-apply-mode")).toHaveClass("pb-4");
   });
 
-  it("moves a completed run to Apply and keeps per-ROI CV results there", async () => {
+  it("opens a completed run explicitly and keeps per-ROI CV results there", async () => {
     const user = userEvent.setup();
     stubApi({
       progress: { status: "SUCCESS", step: 900, total_steps: 900, percent: 100 },
@@ -968,6 +972,7 @@ describe("FineTuneDialog", () => {
     await user.type(screen.getByLabelText("Name"), "Test CV");
     await user.click(screen.getByRole("button", { name: "Fine-tune" }));
 
+    await user.click(await screen.findByRole("button", { name: "View saved model" }));
     await waitFor(() =>
       expect(screen.getByRole("tab", { name: "Apply" })).toHaveAttribute(
         "aria-selected",
@@ -1006,7 +1011,7 @@ describe("FineTuneDialog", () => {
     const failed = await screen.findByTestId("finetune-failed");
     expect(failed).toHaveTextContent("ran out of memory");
 
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -1136,4 +1141,21 @@ it("offers ungrouped non-training images as saved-model application targets", as
   await userEvent.click(screen.getByRole("button", { name: "Run on 2 images" }));
   await waitFor(() => expect(applied).toHaveBeenCalledWith(["img-1", "img-target"]));
   expect(previewed).not.toHaveBeenCalled();
+});
+
+it("retains training inputs and scope after closing and reopening in the same session", async () => {
+  stubApi();
+  const user = userEvent.setup();
+  const first = openDialog();
+  await selectTheDataset(user);
+  await user.type(screen.getByLabelText("Name"), "Session draft");
+  first.unmount();
+  openDialog();
+  expect(await screen.findByLabelText("Name")).toHaveValue("Session draft");
+  expect(await screen.findByRole("checkbox", { name: "Liver 24h" })).toBeChecked();
+  expect(screen.getByRole("tab", { name: "Train" })).toHaveAttribute("aria-selected", "true");
+  screen.getByRole("tab", { name: "Train" }).focus();
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByRole("tab", { name: "Apply" })).toHaveFocus();
+  expect(screen.getByRole("tab", { name: "Apply" })).toHaveAttribute("aria-selected", "true");
 });

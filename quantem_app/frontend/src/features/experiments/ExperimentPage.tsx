@@ -1,3 +1,4 @@
+import { useModalLifecycle } from "@/shared/hooks/useModalLifecycle";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -281,7 +282,7 @@ function ImageEditDialog({
   const [pixelError, setPixelError] = useState<string | null>(null);
   const titleId = useId();
   const nameInputRef = useRef<HTMLInputElement | null>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
   const savingRef = useRef(saving);
 
   useEffect(() => {
@@ -303,23 +304,7 @@ function ImageEditDialog({
     setPixelError(null);
   }, [experiment.datasets, image]);
 
-  useEffect(() => {
-    if (!image) return undefined;
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    nameInputRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        requestClose();
-      }
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("keydown", closeOnEscape);
-      restoreFocusRef.current?.focus();
-    };
-  }, [image, requestClose]);
+  useModalLifecycle(panelRef, requestClose, { open: Boolean(image), initialFocusRef: nameInputRef });
 
   if (!image) return null;
   return (
@@ -327,7 +312,7 @@ function ImageEditDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"
       onClick={requestClose}
     >
-      <section
+      <section ref={panelRef}
         className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
         role="dialog"
         aria-modal="true"

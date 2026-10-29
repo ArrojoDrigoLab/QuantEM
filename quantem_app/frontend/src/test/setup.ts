@@ -47,6 +47,7 @@ afterEach(() => {
   cleanup();
   server.resetHandlers();
   window.localStorage?.clear();
+  window.sessionStorage?.clear();
 });
 
 afterAll(() => {

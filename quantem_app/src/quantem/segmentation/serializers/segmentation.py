@@ -220,6 +220,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
     config = serializers.SerializerMethodField()
     is_complete = serializers.SerializerMethodField()
     coverage = serializers.SerializerMethodField()
+    protection = serializers.SerializerMethodField()
     run_notice = serializers.SerializerMethodField()
     objects_pixel_size = serializers.SerializerMethodField()
     has_saved_area = serializers.SerializerMethodField()
@@ -248,6 +249,7 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
             "config",
             "is_complete",
             "coverage",
+            "protection",
             "run_notice",
             "objects_pixel_size",
             "has_saved_area",
@@ -398,6 +400,44 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         from quantem.segmentation.coverage import coverage_state
 
         return coverage_state(obj)
+
+    def get_protection(self, obj):
+        from quantem.segmentation.models import CompletedROI, RoiSegmentationStatus
+
+        if isinstance(self.parent, serializers.ListSerializer):
+            # This list is refreshed during model work. Aggregate once for the
+            # whole response rather than adding two queries per segmentation.
+            if not hasattr(self, "_protection_counts"):
+                ids = [row.pk for row in self.parent.instance]
+                self._protection_counts = (
+                    dict(
+                        CompletedROI.objects.filter(segmentation_id__in=ids)
+                        .values("segmentation_id")
+                        .annotate(total=Count("pk"))
+                        .values_list("segmentation_id", "total")
+                    ),
+                    dict(
+                        RoiSegmentationStatus.objects.filter(
+                            segmentation_id__in=ids, is_complete=True
+                        )
+                        .values("segmentation_id")
+                        .annotate(total=Count("pk"))
+                        .values_list("segmentation_id", "total")
+                    ),
+                )
+            areas, rois = self._protection_counts
+            return {
+                "whole_image": obj.manual_full_image,
+                "completed_areas": areas.get(obj.pk, 0),
+                "done_rois": rois.get(obj.pk, 0),
+            }
+        return {
+            "whole_image": obj.manual_full_image,
+            "completed_areas": CompletedROI.objects.filter(segmentation=obj).count(),
+            "done_rois": RoiSegmentationStatus.objects.filter(
+                segmentation=obj, is_complete=True
+            ).count(),
+        }
 
     def get_objects_pixel_size(self, obj):
         """What the image's pixel size was **when these objects were made**.

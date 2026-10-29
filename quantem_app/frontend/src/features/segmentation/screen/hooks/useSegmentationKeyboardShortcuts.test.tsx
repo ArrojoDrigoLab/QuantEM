@@ -68,6 +68,19 @@ describe("useSegmentationKeyboardShortcuts", () => {
     setupSegmentationScreenTest();
   });
 
+  it("does not confirm objects for modified keys or a press interrupted by losing focus", () => {
+    const pointVerbs = { hoverPoint: { x: 10, y: 20 }, hasHoverTarget: true, keep: vi.fn(), remove: vi.fn(), unmark: vi.fn() };
+    renderHook(() => useSegmentationKeyboardShortcuts(makeArgs({ pointVerbs })));
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { isComposing: true }]) {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", ...modifier }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", ...modifier }));
+    }
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: " " }));
+    expect(pointVerbs.keep).not.toHaveBeenCalled();
+  });
+
   it("keeps Navigate available but never invokes edits while locked", () => {
     const pointVerbs = {
       hoverPoint: { x: 10, y: 20 }, hasHoverTarget: true,
@@ -322,4 +335,37 @@ describe("useSegmentationKeyboardShortcuts", () => {
       expect(event.defaultPrevented).toBe(false);
     });
   });
+});
+
+it("leaves form controls and modal dialogs in control of their keyboard", () => {
+  const verbs = { hoverPoint: { x: 1, y: 2 }, hasHoverTarget: true, keep: vi.fn(), remove: vi.fn(), unmark: vi.fn() };
+  const args = makeArgs({ pointVerbs: verbs });
+  renderHook(() => useSegmentationKeyboardShortcuts(args));
+  for (const tag of ["button", "select", "a"]) {
+    const element = document.createElement(tag);
+    document.body.appendChild(element);
+    const down = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true });
+    element.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(false);
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    element.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true }));
+    element.remove();
+  }
+  const dialog = document.createElement("div"); dialog.setAttribute("aria-modal", "true"); document.body.appendChild(dialog);
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+  dialog.remove();
+  expect(args.cycleHoverIndex).not.toHaveBeenCalled();
+  expect(args.toggleLeftNavigateMode).not.toHaveBeenCalled();
+  expect(verbs.keep).not.toHaveBeenCalled();
+  expect(verbs.remove).not.toHaveBeenCalled();
+});
+
+it("suspends editor shortcuts while comparing results", () => {
+  const args = makeArgs({ disabled: true });
+  renderHook(() => useSegmentationKeyboardShortcuts(args));
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+  expect(args.toggleLeftNavigateMode).not.toHaveBeenCalled();
+  expect(args.cycleHoverIndex).not.toHaveBeenCalled();
 });

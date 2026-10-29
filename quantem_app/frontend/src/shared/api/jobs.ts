@@ -1,4 +1,4 @@
-import { apiRequest } from "@/shared/api/core/http";
+import { apiRequest, ApiRequestError } from "@/shared/api/core/http";
 import type {
   ClearDoneJobsResponse,
   Job,
@@ -39,6 +39,26 @@ export function deleteJob(jobId: string): Promise<void> {
   return apiRequest<void>(`/api/jobs/${jobId}/`, {
     method: "DELETE",
   });
+}
+
+/** Queued jobs are removed; running jobs stop at a worker checkpoint. */
+export async function stopJob(jobId: string, status: string): Promise<"removed" | "requested" | "settled"> {
+  const stop = async (current: string) => {
+    if (current === "RUNNING") { await cancelJob(jobId); return "requested" as const; }
+    if (current === "PENDING" || current === "RETRY") { await deleteJob(jobId); return "removed" as const; }
+    return "settled" as const;
+  };
+  try { return await stop(status); }
+  catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return "removed";
+    if (!(error instanceof ApiRequestError) || error.status !== 409) throw error;
+    // The worker may have claimed the job since the last progress response.
+    try { return await stop((await getJob(jobId)).status); }
+    catch (latestError) {
+      if (latestError instanceof ApiRequestError && latestError.status === 404) return "removed";
+      throw latestError;
+    }
+  }
 }
 
 export function clearDoneJobs(): Promise<ClearDoneJobsResponse> {

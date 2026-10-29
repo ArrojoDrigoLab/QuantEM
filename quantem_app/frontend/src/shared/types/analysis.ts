@@ -228,6 +228,7 @@ export interface SegmentationSettingsSnapshot {
 }
 
 export interface AnalysisRun {
+  job_id?: string | null;
   segmentation_settings?: SegmentationSettingsSnapshot[];
   global_area?: GlobalAreaReport | null;
   structured_analysis?: StructuredAnalysis | null;

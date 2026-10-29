@@ -444,6 +444,8 @@ export interface ImageSegmentation {
     finalized_at: string;
   } | null;
   is_complete?: boolean;
+  coverage?: { ready: boolean; kind: "model" | "manual" | "legacy" | "processing" | "partial"; result_id: string | null };
+  protection?: { whole_image: boolean; completed_areas: number; done_rois: number };
   /**
    * Present only when the stage would mislead on its own — a run finished here
    * and left no objects at all, or a re-run over a proofread segmentation

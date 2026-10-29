@@ -18,6 +18,7 @@ export function FineTuneOrganelleButton({
   currentSegmentation,
   eligibilityRevision = "",
   initialBaseModel = null,
+  initialAdapterId,
   onAppliedImageCompleted,
 }: {
   image: AssetDetail;
@@ -25,6 +26,7 @@ export function FineTuneOrganelleButton({
   eligibilityRevision?: string;
   /** Released pack currently selected in the labeling header. */
   initialBaseModel?: string | null;
+  initialAdapterId?: string | null;
   onAppliedImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -83,6 +85,8 @@ export function FineTuneOrganelleButton({
         onClose={() => setOpen(false)}
         segmentationType={currentSegmentation?.segmentation_type ?? null}
         initialAssetIds={[image.id]}
+        initialExperimentId={image.experiment_id ?? undefined}
+        initialParentAdapterId={initialAdapterId ?? undefined}
         initialBaseModel={initialBaseModel}
         segmentationId={currentSegmentation?.id ?? null}
         onAppliedImageCompleted={onAppliedImageCompleted}

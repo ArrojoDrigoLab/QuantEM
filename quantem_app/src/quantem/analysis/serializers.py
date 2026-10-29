@@ -134,6 +134,7 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
     UI has to be able to tell them apart.
     """
 
+    job_id = serializers.SerializerMethodField()
     id = serializers.CharField(read_only=True)
     segmentation_id = serializers.CharField(read_only=True)
     segmentation_deleted = serializers.SerializerMethodField()
@@ -156,6 +157,7 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
         model = AnalysisRun
         fields = [
             "id",
+            "job_id",
             "segmentation_id",
             "segmentation_deleted",
             "status",
@@ -186,6 +188,20 @@ class AnalysisRunSerializer(serializers.ModelSerializer):
 
     def _section(self, obj: AnalysisRun, key: str) -> Any:
         return (obj.results or {}).get(key)
+
+    def get_job_id(self, obj: AnalysisRun) -> str | None:
+        from quantem.jobs.constants import JOB_TYPE_RUN_ANALYSIS
+        from quantem.jobs.models import Job
+
+        job_id = (
+            Job.objects.filter(
+                type=JOB_TYPE_RUN_ANALYSIS, payload_json__analysis_run_id=str(obj.id)
+            )
+            .order_by("-created_at")
+            .values_list("id", flat=True)
+            .first()
+        )
+        return str(job_id) if job_id else None
 
     def get_global_area(self, obj):
         return self._section(obj, "global_area")

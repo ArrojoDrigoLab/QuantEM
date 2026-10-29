@@ -281,6 +281,7 @@ export function SegmentationHeader({
           currentSegmentation={currentSegmentation}
           fineTuneEligibilityRevision={fineTuneEligibilityRevision}
           activeBaseModel={selectedPackId}
+          activeAdapterId={selectedModel?.adapterId}
           onFineTuneImageCompleted={onFineTuneImageCompleted}
         />
         {resultControl}

@@ -1,9 +1,11 @@
+import { useSelectionStore } from "@/shared/stores/useSelectionStore";
+import { packIdForSourceModel } from "@/features/models/runnable";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { getAsset, getAssetSegmentations, getExperiment } from "@/shared/api/assets";
 import { getNavigationImages, recordVisit, type WorkspaceImage } from "@/shared/api/workspace";
 import type { Experiment } from "@/shared/types/common";
-import type { AssetDetail, SegmentationType } from "@/shared/types/images";
+import type { AssetDetail, ImageSegmentation } from "@/shared/types/images";
 import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
 import { JobQueueSidebar } from "@/features/library/components/JobQueueSidebar";
 import { TaskQueueButton } from "@/features/library/components/TaskQueueButton";
@@ -18,7 +20,8 @@ export function WorkspaceBar() {
   const [asset, setAsset] = useState<AssetDetail | null>(null);
   const [experiment, setExperiment] = useState<Experiment | null>(null);
   const [images, setImages] = useState<Pick<WorkspaceImage, "id" | "name">[]>([]);
-  const [type, setType] = useState<SegmentationType | null>(null);
+  const [segmentation, setSegmentation] = useState<ImageSegmentation | null>(null);
+  const selectedSegmentationId = useSelectionStore((state) => state.selectedSegmentationId);
   const [fineTune, setFineTune] = useState(false);
   const [tasks, setTasks] = useState(false);
   const [history, setHistory] = useState(false);
@@ -34,7 +37,7 @@ export function WorkspaceBar() {
   }, [location.pathname]);
   useEffect(() => {
     let current = true;
-    setAsset(null); setExperiment(null); setImages([]); setType(null);
+    setAsset(null); setExperiment(null); setImages([]); setSegmentation(null);
     void (async () => {
       const nextAsset = assetId ? await getAsset(assetId) : null;
       const experimentId = routeExperiment || nextAsset?.experiment_id;
@@ -46,19 +49,23 @@ export function WorkspaceBar() {
       ]);
       if (!current) return;
       setExperiment(nextExperiment); setImages(workspace.images);
-      if (assetId && location.pathname.includes("/labeling/")) {
+      if (assetId && location.pathname.includes("/labeling")) {
         const segmentations = await getAssetSegmentations(assetId);
-        const requested = new URLSearchParams(location.search).get("seg");
+        const requested = new URLSearchParams(location.search).get("seg") || selectedSegmentationId;
         const internal = decodeURIComponent(location.pathname.split("/")[4] ?? "");
         const segmentation = segmentations.find(s => s.id === requested)
           ?? segmentations.find(s => s.segmentation_type.internal_name === internal);
-        if (current) setType(segmentation?.segmentation_type ?? null);
+        if (current) setSegmentation(segmentation ?? null);
       }
       if (current) await recordVisit(experimentId, location.pathname + location.search);
     })().catch(() => { /* Individual pages retain their error and retry controls. */ });
     return () => { current = false; };
-  }, [assetId, routeExperiment, location.pathname, location.search]);
+  }, [assetId, routeExperiment, location.pathname, location.search, selectedSegmentationId]);
   if (location.pathname === "/") return null;
+  const modelParams = new URLSearchParams(location.search);
+  const requestedSource = modelParams.get("source_model");
+  const baseModel = packIdForSourceModel(requestedSource || segmentation?.final_result_provenance?.model_identifier);
+  const adapterId = modelParams.get("adapter_id") || (!requestedSource ? segmentation?.final_result_provenance?.adapter_identifier : null);
   const order = experiment
     ? readWorkspaceMemory<string[]>(experiment.id + ".imageOrder", []) : [];
   const ordered = order.length
@@ -91,7 +98,8 @@ export function WorkspaceBar() {
     </div>
     <FineTuneDialog open={fineTune} onClose={() => setFineTune(false)}
       initialExperimentId={experiment?.id} initialAssetIds={assetId ? [assetId] : undefined}
-      segmentationType={type} />
+      segmentationType={segmentation?.segmentation_type} segmentationId={segmentation?.id}
+      initialBaseModel={baseModel} initialParentAdapterId={adapterId?.replace(/^adapted:/, "")} />
     <JobQueueSidebar isOpen={tasks} onClose={() => setTasks(false)} />
     {history && assetId && <CorrectionHistory assetId={assetId} onClose={() => setHistory(false)} />}
   </div>;

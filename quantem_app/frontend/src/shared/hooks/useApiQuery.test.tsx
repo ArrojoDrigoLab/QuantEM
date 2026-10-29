@@ -13,6 +13,30 @@ function deferred<T>() {
 }
 
 describe("useApiQuery", () => {
+  it("settles initial loading when reconnect supersedes the first request", async () => {
+    const first = deferred<string>();
+    const fetcher = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue("reconnected");
+    const { result } = renderHook(() => useApiQuery(fetcher));
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    expect(result.current.data).toBe("reconnected");
+    expect(result.current.loading).toBe(false);
+    expect(result.current.refetching).toBe(false);
+    await act(async () => { first.resolve("obsolete"); });
+    expect(result.current.data).toBe("reconnected");
+  });
+
+  it("clears refetching when a new context supersedes a background request", async () => {
+    const old = deferred<string>();
+    const fetcher = vi.fn().mockResolvedValueOnce("first").mockReturnValueOnce(old.promise).mockResolvedValue("second");
+    const { result, rerender } = renderHook(({ id }) => useApiQuery(fetcher, [id]), { initialProps: { id: "a" } });
+    await waitFor(() => expect(result.current.data).toBe("first"));
+    act(() => { void result.current.refetch(); });
+    rerender({ id: "b" });
+    await waitFor(() => expect(result.current.data).toBe("second"));
+    expect(result.current.refetching).toBe(false);
+    await act(async () => { old.resolve("obsolete"); });
+  });
+
   it("loads data successfully", async () => {
     const fetcher = vi.fn().mockResolvedValue("ok");
 

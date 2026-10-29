@@ -101,6 +101,13 @@ export function useIncludeLevelControls({
   onConfirmCommitted,
   onConfirmFailed,
 }: IncludeLevelOptions) {
+  const contextKey = JSON.stringify([segmentationId, sourceModel, adapterId, roiId]);
+  const currentContext = useRef(contextKey);
+  useEffect(() => {
+    currentContext.current = contextKey;
+    return () => { currentContext.current = ""; };
+  }, [contextKey]);
+  const isCurrent = useCallback(() => currentContext.current === contextKey, [contextKey]);
   const [state, setState] = useState<IncludeLevelState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<number | null>(null);
@@ -117,31 +124,41 @@ export function useIncludeLevelControls({
   const clearPreview = useThresholdPreviewStore((preview) => preview.clear);
   const loadRequest = useRef(0);
 
-  const load = useCallback(async () => {
-    if (!enabled || !segmentationId) return null;
-    const request = ++loadRequest.current;
-    try {
-      const next = await getIncludeLevel(
-        segmentationId,
-        sourceModel,
-        roiId,
-        adapterId
-      );
-      if (request !== loadRequest.current) return null;
-      setState(next);
-      setLoadError(null);
-      return next;
-    } catch (error) {
-      if (request !== loadRequest.current) return null;
-      setLoadError(extractApiErrorMessage(error, "The threshold could not be read."));
-      return null;
+  const loadInFlight = useRef<{ key: string; promise: Promise<IncludeLevelState | null> } | null>(null);
+  const load = useCallback(function loadState(fresh = false): Promise<IncludeLevelState | null> {
+    if (!enabled || !segmentationId) return Promise.resolve(null);
+    if (loadInFlight.current?.key === contextKey) {
+      const pending = loadInFlight.current.promise;
+      return fresh ? pending.then(() => isCurrent() ? loadState() : null) : pending;
     }
-  }, [adapterId, enabled, roiId, segmentationId, sourceModel]);
+    const request = ++loadRequest.current;
+    const promise = Promise.resolve().then(async () => {
+      if (request !== loadRequest.current) return null;
+      try {
+        const next = await getIncludeLevel(segmentationId, sourceModel, roiId, adapterId);
+        if (request !== loadRequest.current) return null;
+        setState(next);
+        setLoadError(null);
+        return next;
+      } catch (error) {
+        if (request !== loadRequest.current) return null;
+        setLoadError(extractApiErrorMessage(error, "The threshold could not be read."));
+        return null;
+      }
+    }).finally(() => {
+      if (loadInFlight.current?.promise === promise) loadInFlight.current = null;
+    });
+    loadInFlight.current = { key: contextKey, promise };
+    return promise;
+  }, [contextKey, isCurrent, adapterId, enabled, roiId, segmentationId, sourceModel]);
 
   useEffect(() => {
     setState(null);
     setLoadError(null);
     setModelAction(null);
+    setStartingModel(false);
+    setSubmitting(false);
+    setConfirming(false);
     setDraft(null);
     setApplyJobId(null);
     setSubmitError(null);
@@ -151,6 +168,7 @@ export function useIncludeLevelControls({
     void load();
     return () => {
       loadRequest.current += 1;
+      loadInFlight.current = null;
       clearPreview();
     };
   }, [clearPreview, load]);
@@ -158,7 +176,7 @@ export function useIncludeLevelControls({
   // A run publishes THRESHOLD_READY before its queue row finishes. Re-read on
   // stage changes so the slider unlocks at that point, not at job settlement.
   useEffect(() => {
-    if (statusStage) void load();
+    if (statusStage) void load(true);
   }, [load, statusStage]);
 
   const position = useMemo(() => {
@@ -223,10 +241,15 @@ export function useIncludeLevelControls({
     state?.can_move,
   ]);
 
-  const { job: applyJob } = useJobProgress(applyJobId);
+  const { job: applyJob, error: applyError, retrying: retryingApply } = useJobProgress(applyJobId);
+  useEffect(() => {
+    if (!applyError || retryingApply) return;
+    setApplyJobId(null);
+    setSubmitError(`The preview task is unavailable. ${applyError.message}`);
+  }, [applyError, retryingApply]);
   const applyJobStatus = applyJob?.status;
   useEffect(() => {
-    if (!applyJobStatus || applyJobStatus === "PENDING" || applyJobStatus === "RUNNING") return;
+    if (!applyJobStatus || ["PENDING", "RETRY", "RUNNING"].includes(applyJobStatus)) return;
     setApplyJobId(null);
     if (applyJobStatus === "FAILED" || applyJobStatus === "CANCELLED") {
       setSubmitError(applyJob?.message?.trim() || DIAL_FAILED_FALLBACK);
@@ -238,11 +261,12 @@ export function useIncludeLevelControls({
         "Preview geometry is ready. Measuring intensity and object details in the background."
       );
     }
-    void load().then((next) => {
+    void load(true).then((next) => {
+      if (!isCurrent()) return;
       if (next) setDraft(null);
       if (applyJobStatus === "SUCCESS") onReextracted?.();
     });
-  }, [applyJob?.message, applyJob?.result_json, applyJobStatus, load, onReextracted]);
+  }, [applyJob?.message, applyJob?.result_json, applyJobStatus, isCurrent, load, onReextracted]);
 
   const startRun = useCallback(
     async (packId: string) => {
@@ -250,17 +274,22 @@ export function useIncludeLevelControls({
       const queued = roiId
         ? await rerunSegmentationRoi(segmentationId, roiId, packId, adapterId)
         : await runFullSegmentation(segmentationId, packId, adapterId);
-      setModelAction({ kind: "run", jobId: queued.job_id, packId });
+      if (isCurrent()) setModelAction({ kind: "run", jobId: queued.job_id, packId });
       onRunQueued?.();
     },
-    [adapterId, onRunQueued, onSourceModelChange, roiId, segmentationId]
+    [isCurrent, adapterId, onRunQueued, onSourceModelChange, roiId, segmentationId]
   );
 
-  const { job: modelJob } = useJobProgress(modelAction?.jobId ?? null);
+  const { job: modelJob, error: modelError, retrying: retryingModel } = useJobProgress(modelAction?.jobId ?? null);
+  useEffect(() => {
+    if (!modelError || retryingModel) return;
+    setModelAction(null);
+    setSubmitError(`The model task is unavailable. ${modelError.message}`);
+  }, [modelError, retryingModel]);
   const modelJobStatus = modelJob?.status;
   useEffect(() => {
     if (!modelAction || !modelJobStatus) return;
-    if (modelJobStatus === "PENDING" || modelJobStatus === "RUNNING") return;
+    if (["PENDING", "RETRY", "RUNNING"].includes(modelJobStatus)) return;
     const action = modelAction;
     setModelAction(null);
     if (modelJobStatus === "FAILED" || modelJobStatus === "CANCELLED") {
@@ -270,6 +299,7 @@ export function useIncludeLevelControls({
     if (action.kind === "install") {
       void getModelCatalogue()
         .then((catalogue) => {
+          if (!isCurrent()) return;
           const installed = catalogue.packs.find((pack) => pack.id === action.packId);
           if (installed?.runnable === false) {
             throw new Error(installed.reason || "The downloaded model cannot run here.");
@@ -277,20 +307,28 @@ export function useIncludeLevelControls({
           return startRun(action.packId);
         })
         .catch((error) => {
-          setSubmitError(extractApiErrorMessage(error, "The model could not be prepared."));
+          if (isCurrent()) setSubmitError(extractApiErrorMessage(error, "The model could not be prepared."));
         });
       return;
     }
-    void load();
+    void load(true);
     onRunFinished?.();
-  }, [load, modelAction, modelJob?.message, modelJobStatus, onRunFinished, startRun]);
+  }, [isCurrent, load, modelAction, modelJob?.message, modelJobStatus, onRunFinished, startRun]);
 
   // The saved result may become available while the worker is still closing
   // out the job. Poll only during the run and stop as soon as the action ends.
   useEffect(() => {
     if (modelAction?.kind !== "run") return undefined;
-    const timer = window.setInterval(() => void load(), 750);
-    return () => window.clearInterval(timer);
+    let disposed = false;
+    let delay = 750;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      const next = await load();
+      delay = next ? 750 : Math.min(delay * 2, 30000);
+      if (!disposed) timer = setTimeout(() => void poll(), delay);
+    };
+    timer = setTimeout(() => void poll(), delay);
+    return () => { disposed = true; clearTimeout(timer); };
   }, [load, modelAction?.kind]);
 
   const runModel = useCallback(async () => {
@@ -299,6 +337,7 @@ export function useIncludeLevelControls({
     setSubmitError(null);
     try {
       const catalogue = await getModelCatalogue();
+      if (!isCurrent()) return;
       const organelle = organelleFrom(segmentationInternalName, sourceModel);
       if (!organelle) throw new Error("No model is available for this segmentation type.");
       const pack = choosePack(catalogue, organelle, sourceModel);
@@ -310,6 +349,7 @@ export function useIncludeLevelControls({
         await startRun(pack.id);
       } else {
         const install = await installModelPack(pack.id);
+        if (!isCurrent()) return;
         if (install.job_id) {
           setModelAction({ kind: "install", jobId: install.job_id, packId: pack.id });
         } else {
@@ -317,11 +357,11 @@ export function useIncludeLevelControls({
         }
       }
     } catch (error) {
-      setSubmitError(extractApiErrorMessage(error, "The model could not be started."));
+      if (isCurrent()) setSubmitError(extractApiErrorMessage(error, "The model could not be started."));
     } finally {
-      setStartingModel(false);
+      if (isCurrent()) setStartingModel(false);
     }
-  }, [busy, enabled, modelAction, segmentationInternalName, sourceModel, startRun, startingModel]);
+  }, [isCurrent, busy, enabled, modelAction, segmentationInternalName, sourceModel, startRun, startingModel]);
 
   const working = submitting || confirming || applyJobId !== null;
 
@@ -338,13 +378,13 @@ export function useIncludeLevelControls({
         roiId,
         adapterId
       );
-      setApplyJobId(queued.job_id);
+      if (isCurrent()) setApplyJobId(queued.job_id);
     } catch (error) {
-      setSubmitError(extractApiErrorMessage(error, DIAL_FAILED_FALLBACK));
+      if (isCurrent()) setSubmitError(extractApiErrorMessage(error, DIAL_FAILED_FALLBACK));
     } finally {
-      setSubmitting(false);
+      if (isCurrent()) setSubmitting(false);
     }
-  }, [adapterId, position, roiId, segmentationId, sourceModel, working]);
+  }, [isCurrent, adapterId, position, roiId, segmentationId, sourceModel, working]);
 
   const confirm = useCallback(async () => {
     if (working || !sourceModel || roiId) return;
@@ -353,6 +393,7 @@ export function useIncludeLevelControls({
     setSubmitError(null);
     try {
       const result = await confirmModelOutput(segmentationId, sourceModel);
+      if (!isCurrent()) return;
       onConfirmCommitted?.(result.overlay);
       const confirmed = result.confirmed_count;
       const skipped = result.skipped_manual_roi_count;
@@ -367,18 +408,21 @@ export function useIncludeLevelControls({
             ? `No candidates outside manually annotated ROIs needed confirmation. ${skipped} remained unchanged.`
             : "No model candidates needed confirmation."
       );
-      const next = await load();
+      const next = await load(true);
+      if (!isCurrent()) return;
       if (next) setDraft(null);
       onReextracted?.();
     } catch (error) {
+      if (!isCurrent()) return;
       onConfirmFailed?.();
       setSubmitError(
         extractApiErrorMessage(error, "The model output could not be confirmed.")
       );
     } finally {
-      setConfirming(false);
+      if (isCurrent()) setConfirming(false);
     }
   }, [
+    isCurrent,
     load,
     onConfirmCommitted,
     onConfirmFailed,
@@ -402,7 +446,9 @@ export function useIncludeLevelControls({
     working: working || busy, confirming, submitting, applyJobId,
     modelWorking: startingModel || modelAction !== null || busy,
     downloading: modelAction?.kind === "install",
-    submitError, previewError, confirmationMessage, canConfirmWholeImage, roiId,
+    submitError: submitError ?? applyError?.message ?? modelError?.message ?? null,
+    previewError, confirmationMessage, canConfirmWholeImage, roiId,
+    retryLoad: () => load(true),
     runModel, preview, confirm,
     changeThreshold(value: number) {
       setDraft(value);

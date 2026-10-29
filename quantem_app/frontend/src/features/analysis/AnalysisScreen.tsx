@@ -7,7 +7,7 @@
  * from the proofreading screen.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { getAsset, getAssetSegmentations } from "@/shared/api/assets";
 import { segmentationDisplayName } from "@/shared/segmentationNames";
@@ -16,7 +16,9 @@ import {
   getAnalysisRuns,
   startAnalysisRun,
 } from "@/shared/api/analysis";
-import { cancelJob, deleteJob } from "@/shared/api/jobs";
+import { stopJob } from "@/shared/api/jobs";
+import { useWorkspaceState } from "@/shared/hooks/useWorkspaceState";
+import { usePollingResource } from "@/shared/hooks/usePollingResource";
 import { useApiQuery } from "@/shared/hooks/useApiQuery";
 import { useJobProgress } from "@/shared/hooks/useJobProgress";
 import { Badge, Button, PageState, Panel } from "@/shared/ui/design";
@@ -26,6 +28,7 @@ import type { AnalysisRun } from "@/shared/types/analysis";
 import {
   buildAnalysisPayload,
   defaultFormState,
+  reconcileAnalysisForm,
   type AnalysisFormState,
 } from "@/features/analysis/analysisOptions";
 import { AnalysisConfigForm } from "@/features/analysis/components/AnalysisConfigForm";
@@ -38,7 +41,7 @@ import {
 
 export function AnalysisScreen() {
   const { assetId } = useParams<{ assetId: string }>();
-  // Image navigation must reset selections, queries and job/result state together.
+  // Isolate requests across images; restore workflow choices from this session.
   return <ImageAnalysisScreen key={assetId} />;
 }
 
@@ -47,11 +50,12 @@ function ImageAnalysisScreen() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSegmentationId = searchParams.get("seg");
 
-  const [segmentationId, setSegmentationId] = useState<string>("");
-  const [form, setForm] = useState<AnalysisFormState | null>(null);
+  const [segmentationId, setSegmentationId] = useWorkspaceState<string>(`analysis.${assetId}.segmentation`, "");
+  const [form, setForm] = useWorkspaceState<AnalysisFormState | null>(`analysis.${assetId}.${segmentationId}.form`, null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [queuedJob, setQueuedJob] = useState<{ runId: string; jobId: string } | null>(null);
+  const [removedJobIds, setRemovedJobIds] = useState<Set<string>>(() => new Set());
+  const [activeRunId, setActiveRunId] = useWorkspaceState<string | null>(`analysis.${assetId}.${segmentationId}.run`, null);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -59,11 +63,11 @@ function ImageAnalysisScreen() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [measuringGlobal, setMeasuringGlobal] = useState(false);
 
-  const { data: asset } = useApiQuery(
+  const { data: asset, error: assetError, refetch: refetchAsset } = useApiQuery(
     () => (assetId ? getAsset(assetId) : Promise.resolve(null)),
     [assetId]
   );
-  const { data: segmentations, loading: segmentationsLoading } = useApiQuery(
+  const { data: segmentations, loading: segmentationsLoading, error: segmentationsError, refetch: refetchSegmentations } = useApiQuery(
     () => (assetId ? getAssetSegmentations(assetId) : Promise.resolve([])),
     [assetId]
   );
@@ -90,45 +94,53 @@ function ImageAnalysisScreen() {
       segmentations.find((seg) => seg.id === segmentationId)?.id ??
       choices.find((seg) => seg.is_complete)?.id ?? choices[0].id;
     if (next === segmentationId) return;
-    if (segmentationId) {
-      // The screen was already showing another segmentation: the run panel
-      // and job poller belong to it, so they reset exactly as the picker's
-      // own handler resets them.
-      setActiveRunId(null);
-      setJobId(null);
-    }
     setSegmentationId(next);
-  }, [segmentations, requestedSegmentationId, segmentationId]);
+  }, [segmentations, requestedSegmentationId, segmentationId, setSegmentationId]);
 
   useEffect(() => {
     if (!segmentations || !segmentationId) return;
-    setForm(defaultFormState(segmentations, segmentationId));
+    setForm((current) => current ? reconcileAnalysisForm(current, segmentations, segmentationId) : defaultFormState(segmentations, segmentationId));
     setFormError(null);
-  }, [segmentations, segmentationId]);
+  }, [segmentations, segmentationId, setForm]);
 
   const {
-    data: runs,
+    data: runHistory,
     loading: runsLoading,
     error: runsError,
     refetch: refetchRuns,
   } = useApiQuery(
-    () => (segmentationId ? getAnalysisRuns(segmentationId) : Promise.resolve([])),
+    async () => ({ segmentationId, runs: segmentationId ? await getAnalysisRuns(segmentationId) : [] }),
     [segmentationId]
   );
 
+  const runs = runHistory?.segmentationId === segmentationId ? runHistory.runs : [];
+
   const {
     data: run,
-    refetch: refetchRun,
-  } = useApiQuery<AnalysisRun | null>(
-    () => (activeRunId ? getAnalysisRun(activeRunId) : Promise.resolve(null)),
-    [activeRunId]
-  );
+    error: runError,
+    retrying: retryingRun,
+    refresh: refetchRun,
+  } = usePollingResource<AnalysisRun>(activeRunId, getAnalysisRun,
+    (value) => value.status === "SUCCESS" || value.status === "FAILED", 2000);
 
-  const { job, refresh: refreshJob } = useJobProgress(jobId);
+  const candidateJobId = run && "job_id" in run ? run.job_id ?? null
+    : queuedJob?.runId === activeRunId ? queuedJob.jobId : null;
+  const jobId = candidateJobId && !removedJobIds.has(candidateJobId) ? candidateJobId : null;
+  const selectedRunRef = useRef(activeRunId);
+  useEffect(() => {
+    selectedRunRef.current = activeRunId;
+    setCancelling(false);
+    setCancelError(null);
+  }, [activeRunId]);
+  useEffect(() => () => { selectedRunRef.current = null; }, []);
+  const contextRef = useRef(segmentationId);
+  useEffect(() => { contextRef.current = segmentationId; }, [segmentationId]);
+  useEffect(() => () => { contextRef.current = ""; }, []);
+
+  const { job, error: jobError, retrying: retryingJob, refresh: refreshJob } = useJobProgress(jobId);
   const jobStatus = job?.status;
 
-  // The run row is only filled in when the job finishes, so the detail fetch
-  // waits for the job rather than polling the run on its own timer.
+  // Job completion refreshes both the detail and history immediately.
   useEffect(() => {
     if (!jobStatus) return;
     if (jobStatus === "SUCCESS" || jobStatus === "FAILED" || jobStatus === "CANCELLED") {
@@ -163,29 +175,29 @@ function ImageAnalysisScreen() {
     setGlobalError(null);
     try {
       const response = await startAnalysisRun(segmentationId, { analysis_mask_ids: globalMaskIds });
+      if (contextRef.current !== segmentationId) return;
       setActiveRunId(response.analysis_run_id);
-      setJobId(response.job_id);
+      setQueuedJob({ runId: response.analysis_run_id, jobId: response.job_id });
       setCancelError(null);
       void refetchRuns();
     } catch (error) {
+      if (contextRef.current !== segmentationId) return;
       setGlobalError(
         extractApiErrorMessage(error, "The foreground-area report could not be measured.")
       );
     } finally {
       setMeasuringGlobal(false);
     }
-  }, [globalMaskIds, segmentationId, refetchRuns]);
+  }, [globalMaskIds, segmentationId, refetchRuns, setActiveRunId]);
 
   const handleSelectSegmentation = useCallback(
     (nextId: string) => {
       setSegmentationId(nextId);
-      setActiveRunId(null);
-      setJobId(null);
       const next = new URLSearchParams(searchParams);
       next.set("seg", nextId);
       setSearchParams(next, { replace: true });
     },
-    [searchParams, setSearchParams]
+    [searchParams, setSearchParams, setSegmentationId]
   );
 
   const handleStart = useCallback(async () => {
@@ -204,54 +216,41 @@ function ImageAnalysisScreen() {
     setStarting(true);
     try {
       const response = await startAnalysisRun(segmentationId, payload);
+      if (contextRef.current !== segmentationId) return;
       setActiveRunId(response.analysis_run_id);
-      setJobId(response.job_id);
+      setQueuedJob({ runId: response.analysis_run_id, jobId: response.job_id });
       setCancelError(null);
       void refetchRuns();
     } catch (err) {
+      if (contextRef.current !== segmentationId) return;
       setFormError(
         extractApiErrorMessage(err, "The analysis could not be started.")
       );
     } finally {
       setStarting(false);
     }
-  }, [form, segmentationId, refetchRuns]);
+  }, [form, segmentationId, refetchRuns, setActiveRunId]);
 
-  /**
-   * Stop the run this screen started, from this screen.
-   *
-   * The only Cancel in the application was in the Library's queue sidebar,
-   * which is unreachable from here -- so somebody who had just started a
-   * twenty-minute analysis by mistake had to navigate away to stop it, and the
-   * screen they were on offered no hint that it could be stopped at all.
-   *
-   * Two endpoints, because a queued job and a running one leave by different
-   * doors: `POST /cancel/` refuses anything that is not RUNNING with a 409, and
-   * `DELETE /api/jobs/<id>/` is the *only* exit a queued job has. Both
-   * reconcile the `AnalysisRun` behind them, so either way the run concludes
-   * rather than sitting at PENDING for ever.
-   */
   const handleCancel = useCallback(async () => {
     if (!jobId) return;
     setCancelling(true);
     setCancelError(null);
     try {
-      if (jobStatus === "RUNNING") {
-        await cancelJob(jobId);
-      } else {
-        await deleteJob(jobId);
-      }
-      await refreshJob();
+      const outcome = await stopJob(jobId, jobStatus ?? "PENDING");
+      if (selectedRunRef.current !== activeRunId) return;
+      if (outcome === "removed") setRemovedJobIds((ids) => new Set([...ids, jobId]));
+      else await refreshJob();
       void refetchRun();
       void refetchRuns();
     } catch (err) {
+      if (selectedRunRef.current !== activeRunId) return;
       setCancelError(
         extractApiErrorMessage(err, "The run could not be cancelled.")
       );
     } finally {
-      setCancelling(false);
+      if (selectedRunRef.current === activeRunId) setCancelling(false);
     }
-  }, [jobId, jobStatus, refreshJob, refetchRun, refetchRuns]);
+  }, [activeRunId, jobId, jobStatus, refreshJob, refetchRun, refetchRuns]);
 
   if (!assetId) {
     return <Navigate to="/" replace />;
@@ -262,6 +261,7 @@ function ImageAnalysisScreen() {
   // job gets queued on the same configuration.
   const isRunning =
     jobId !== null &&
+    run?.status !== "SUCCESS" && run?.status !== "FAILED" &&
     (jobStatus === undefined || ["PENDING", "RUNNING", "RETRY"].includes(jobStatus));
 
   /**
@@ -284,7 +284,7 @@ function ImageAnalysisScreen() {
     runState.active &&
     job !== null &&
     !job.cancel_requested &&
-    (job.status === "PENDING" || job.status === "RUNNING");
+    ["PENDING", "RETRY", "RUNNING"].includes(job.status);
 
   return (
     <div className="min-h-screen px-5 py-5 text-slate-900 lg:px-8">
@@ -311,9 +311,17 @@ function ImageAnalysisScreen() {
           </div>
         </header>
 
+        {(assetError || segmentationsError) && <div role="alert">
+          <p>Image details could not be loaded. {(assetError || segmentationsError)?.message}</p>
+          <Button onClick={() => { void refetchAsset(); void refetchSegmentations(); }}>Retry image details</Button>
+        </div>}
+        {(runError || jobError) && <div role="status">
+          <p>Progress could not be refreshed. {(retryingRun || retryingJob) ? "Retrying automatically." : "The saved run or task may no longer be available."} {(runError || jobError)?.message}</p>
+          <Button onClick={() => { void refetchRun(); void refreshJob(); }}>Retry progress</Button>
+        </div>}
         {segmentationsLoading ? <PageState title="Loading segmentations…" /> : null}
 
-        {!segmentationsLoading && (segmentations?.length ?? 0) === 0 ? (
+        {!segmentationsLoading && !segmentationsError && (segmentations?.length ?? 0) === 0 ? (
           <PageState
             title="Nothing to analyse"
             detail="This image has no segmentations yet. Apply a model or finish whole-image manual annotation first."
@@ -331,6 +339,7 @@ function ImageAnalysisScreen() {
               </label>
               <select
                 id="analysis-segmentation"
+                disabled={starting || measuringGlobal}
                 className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 value={segmentationId}
                 onChange={(event) => handleSelectSegmentation(event.target.value)}
@@ -376,7 +385,7 @@ function ImageAnalysisScreen() {
                 <Button
                   className="mt-4"
                   onClick={() => void handleGlobalMeasure()}
-                  disabled={measuringGlobal}
+                  disabled={measuringGlobal || isRunning}
                 >
                   {measuringGlobal ? "Measuring…" : "Measure foreground area"}
                 </Button>
@@ -402,8 +411,7 @@ function ImageAnalysisScreen() {
               selectedRunId={activeRunId}
               onSelect={(runId) => {
                 setActiveRunId(runId);
-                setJobId(null);
-                setCancelError(null);
+                            setCancelError(null);
               }}
               loading={runsLoading}
               error={runsError}
@@ -470,7 +478,7 @@ function ImageAnalysisScreen() {
 
                 {showProgress ? (
                   <>
-                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label="Analysis progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(job?.progress ?? 0)}>
                       <div
                         className="h-full rounded-full bg-cyan-600 transition-[width]"
                         style={{
@@ -548,7 +556,7 @@ function ImageAnalysisScreen() {
             {runState.status === null ? (
               <Panel className="p-6 text-center">
                 <p className="m-0 text-sm text-slate-600">
-                  No run selected.
+                  {activeRunId ? runError ? "The selected run could not be loaded." : "Loading selected run…" : "No run selected."}
                 </p>
                 <div className="mt-3">
                   <Button

@@ -113,12 +113,14 @@ export function HeaderRouteLinks({
   currentSegmentation,
   fineTuneEligibilityRevision,
   activeBaseModel,
+  activeAdapterId,
   onFineTuneImageCompleted,
 }: {
   image: AssetDetail;
   currentSegmentation: ImageSegmentation | null;
   fineTuneEligibilityRevision?: string;
   activeBaseModel?: string | null;
+  activeAdapterId?: string | null;
   onFineTuneImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
 }) {
   return (
@@ -136,6 +138,7 @@ export function HeaderRouteLinks({
         currentSegmentation={currentSegmentation}
         eligibilityRevision={fineTuneEligibilityRevision}
         initialBaseModel={activeBaseModel}
+        initialAdapterId={activeAdapterId}
         onAppliedImageCompleted={onFineTuneImageCompleted}
       />
     </>

@@ -61,22 +61,28 @@ export function useApiQuery<T>(
     } finally {
       if (requestId === requestIdRef.current) {
         setSettledRequestVersion((current) => current + 1);
-        if (isRefetch) {
-          setRefetching(false);
-        } else {
-          setLoading(false);
-        }
+        // A reconnect can supersede the initial request (and a new context can
+        // supersede a refetch). Only the latest request owns either indicator.
+        setRefetching(false);
+        setLoading(false);
       }
     }
   }, []);
 
   useEffect(() => {
     void run(false);
+    return () => { requestIdRef.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run, ...deps]);
 
   const refetch = useCallback(() => {
     return run(true);
+  }, [run]);
+
+  useEffect(() => {
+    const reconnect = () => { void run(true); };
+    window.addEventListener("online", reconnect);
+    return () => window.removeEventListener("online", reconnect);
   }, [run]);
 
   return { data, loading, refetching, error, settledRequestVersion, refetch };

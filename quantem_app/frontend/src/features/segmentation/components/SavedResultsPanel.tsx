@@ -200,24 +200,23 @@ export function SavedResultsPanel({
                 >
                   {row.is_canonical ? "✓ " : ""}
                   {row.name}
-                  {row.is_canonical ? " · Confirmed" : ""} ·{" "}
+                  {row.is_canonical ? " · Used for measurement" : ""} ·{" "}
                   {new Date(row.created_at).toLocaleString()}
                 </option>
               ))}
             </select>
           </label>
+          {result?.is_canonical && <span className="text-sm font-semibold">Used for measurement</span>}
           {result && !result.is_canonical ? (
             <Button
               className="shrink-0"
               disabled={busy || Boolean(queued) || !result.available}
               onClick={() => {
                 setConfirm(result);
-                setDeletions(
-                  results.filter((row) => row.id !== result.id).map((row) => row.id)
-                );
+                setDeletions([]);
               }}
             >
-              Confirm this model
+              Use for measurement
             </Button>
           ) : null}
         </div>
@@ -272,9 +271,9 @@ export function SavedResultsPanel({
       <div className="saved-results-toolbar">
         <div>
           <h3>Compare runs</h3>
-          <p>The confirmed run is shown first. Choose a different retained run on either side.</p>
+          <p>The result used for measurement is shown first. Choose a different retained run on either side.</p>
           <p>{detailed
-            ? "Detailed results show postprocessed objects at native resolution, including your current completed annotations. The confirmed run includes current corrections."
+            ? "Detailed results show postprocessed objects at native resolution, including your current completed annotations. The result used for measurement includes current corrections."
             : "Quick previews are reduced-resolution thresholded predictions. Choose Detailed result to inspect filtered objects and completed annotations."}</p>
         </div>
         <label>
@@ -311,16 +310,16 @@ export function SavedResultsPanel({
         </p>
       ) : null}
       <div className="saved-results-panes">
-        {pane(left, setLeft, right, "Confirmed model", "saved-left")}
-        {pane(right, setRight, left, "Comparison model", "saved-right")}
+        {pane(left, setLeft, right, "Left result", "saved-left")}
+        {pane(right, setRight, left, "Right result", "saved-right")}
       </div>
       <ConfirmDialog
         isOpen={Boolean(confirm)}
-        title="Confirm this model"
-        message="Use this model's outputs as the default for analysis? Your manually annotated areas will still override model outputs in ROIs marked as 'Done'."
+        title="Use for measurement"
+        message="Use this saved result for measurement? Completed manual areas and ROIs marked Done are protected. Confirmed objects outside protected areas may be replaced."
         details={
           <fieldset disabled={busy}>
-            <legend>Delete old model outputs</legend>
+            <legend>Optional: delete other saved results</legend>
             {results
               .filter((row) => row.id !== confirm?.id)
               .map((row) => (
@@ -340,12 +339,12 @@ export function SavedResultsPanel({
                 </label>
               ))}
             <p>
-              Clear a checkbox to keep that version for comparison. Checked outputs are
+              Keep all versions for comparison, or select outputs to delete. Selected outputs are
               deleted only after the selected model's outputs are successfully applied.
             </p>
           </fieldset>
         }
-        confirmText={busy ? "Queuing…" : "Confirm"}
+        confirmText={busy ? "Queuing…" : "Use for measurement"}
         confirmDisabled={busy}
         cancelText="Cancel"
         onCancel={() => {

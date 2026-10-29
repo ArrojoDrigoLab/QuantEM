@@ -96,8 +96,8 @@ it("loads retained runs while closed without rendering the old accordion", async
 it("opens with the confirmed run left, newest alternative right, and one shared opacity", async () => {
   renderPanel();
   const comparison = await screen.findByLabelText("Compare model runs");
-  const left = within(screen.getByRole("group", { name: "Confirmed model view" }));
-  const right = within(screen.getByRole("group", { name: "Comparison model view" }));
+  const left = within(screen.getByRole("group", { name: "Left result view" }));
+  const right = within(screen.getByRole("group", { name: "Right result view" }));
   await waitFor(() => {
     expect(left.getByRole("combobox")).toHaveValue("new");
     expect(right.getByRole("combobox")).toHaveValue("old");
@@ -122,19 +122,19 @@ it("opens with the confirmed run left, newest alternative right, and one shared 
 it("queues a noncanonical choice only after the confirmation dialog", async () => {
   const user = userEvent.setup();
   renderPanel();
-  const right = within(await screen.findByRole("group", { name: "Comparison model view" }));
+  const right = within(await screen.findByRole("group", { name: "Right result view" }));
   await waitFor(() => expect(right.getByRole("combobox")).toHaveValue("old"));
-  await user.click(right.getByRole("button", { name: "Confirm this model" }));
+  await user.click(right.getByRole("button", { name: "Use for measurement" }));
   const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByRole("checkbox", { name: "New model · 0.5" })).toBeChecked();
+  expect(within(dialog).getByRole("checkbox", { name: "New model · 0.5" })).not.toBeChecked();
   expect(
     vi.mocked(apiRequest).mock.calls.filter(([, options]) => options?.method === "POST")
   ).toHaveLength(0);
-  await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
+  await user.click(within(dialog).getByRole("button", { name: "Use for measurement" }));
   await waitFor(() =>
     expect(apiRequest).toHaveBeenCalledWith("/api/segmentations/seg/results/", {
       method: "POST",
-      body: JSON.stringify({ result_id: "old", delete_result_ids: ["new"] }),
+      body: JSON.stringify({ result_id: "old", delete_result_ids: [] }),
     })
   );
 });

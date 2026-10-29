@@ -1,3 +1,5 @@
+import { useWorkspaceSet } from "@/shared/hooks/useWorkspaceState";
+import { usePollingResource } from "@/shared/hooks/usePollingResource";
 /** The completed fine-tune, its optional application targets, and live status. */
 
 import { TrainingHistory } from "./TrainingHistory";
@@ -243,18 +245,24 @@ export function FineTuneSuccess({
   onClose: () => void;
   onAppliedImageCompleted?: (event: FineTuneAppliedImageEvent) => void;
 }) {
-  const [picked, setPicked] = useState<Set<string>>(
-    () => new Set(initialAssetIds ?? scopedImages.map((image) => image.asset_id))
+  const [picked, setPicked] = useWorkspaceSet(`application.${adapterId}.images`,
+    () => initialAssetIds ?? scopedImages.map((image) => image.asset_id)
   );
-  const [pickedDatasets, setPickedDatasets] = useState<Set<string>>(
-    () => new Set()
+  const [pickedDatasets, setPickedDatasets] = useWorkspaceSet(`application.${adapterId}.datasets`,
+    () => []
   );
-  const [applyProgress, setApplyProgress] = useState<FineTuneApplyProgress | null>(
-    null
-  );
-  const [progressError, setProgressError] = useState<string | null>(null);
+  const { data: applyProgress, error: progressError } = usePollingResource<FineTuneApplyProgress>(
+    `${adapterId}:${applyResult?.batch_id ?? "latest"}`,
+    () => getFineTuneApplyProgress(adapterId, applyResult?.batch_id),
+    (value) => value.complete >= value.total);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const notifiedJobsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const validImages = new Set(scopedImages.map((image) => image.asset_id));
+    const validDatasets = new Set(availableDatasets.map((dataset) => dataset.id));
+    if ([...picked].some((id) => !validImages.has(id))) setPicked((current) => new Set([...current].filter((id) => validImages.has(id))));
+    if ([...pickedDatasets].some((id) => !validDatasets.has(id))) setPickedDatasets((current) => new Set([...current].filter((id) => validDatasets.has(id))));
+  }, [scopedImages, availableDatasets, picked, pickedDatasets, setPicked, setPickedDatasets]);
   const cv = cvResultsOf(run);
   const cvRows = cvRowsOf(run, cv, scopedImages);
 
@@ -275,33 +283,6 @@ export function FineTuneSuccess({
       return next;
     });
   };
-
-  useEffect(() => {
-    if (!adapterId) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const poll = async () => {
-      try {
-        const next = await getFineTuneApplyProgress(
-          adapterId,
-          applyResult?.batch_id
-        );
-        if (cancelled) return;
-        setApplyProgress(next);
-        setProgressError(null);
-        if (next.complete < next.total) timer = setTimeout(poll, 1000);
-      } catch {
-        if (cancelled) return;
-        setProgressError("Could not refresh per-image progress.");
-        timer = setTimeout(poll, 2000);
-      }
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [adapterId, applyResult?.batch_id]);
 
   useEffect(() => {
     if (!applyResult || !applyProgress || !onAppliedImageCompleted) return;
@@ -346,7 +327,7 @@ export function FineTuneSuccess({
         )}
         {progressError ? (
           <p className="m-0 text-xs text-red-700" role="alert">
-            {progressError}
+            {progressError.message}
           </p>
         ) : null}
         <div className="flex justify-end">

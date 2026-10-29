@@ -68,6 +68,19 @@ export function emptySelection(): ScopeSelection {
   return { datasetIds: new Set(), assetIds: new Set() };
 }
 
+/** Drop deleted or moved targets when restoring a saved workflow selection. */
+export function reconcileScopeSelection(groups: ScopeGroupNode[], selection: ScopeSelection): ScopeSelection {
+  const datasets = new Set(groups.flatMap((group) => group.datasets.map((dataset) => dataset.id)));
+  const assets = new Set(groups.flatMap((group) => [
+    ...group.images.map((image) => image.id),
+    ...group.datasets.flatMap((dataset) => dataset.images.map((image) => image.id)),
+  ]));
+  return {
+    datasetIds: new Set([...selection.datasetIds].filter((id) => datasets.has(id))),
+    assetIds: new Set([...selection.assetIds].filter((id) => assets.has(id))),
+  };
+}
+
 function imageNode(image: FineTuneScopeImage): ScopeImageNode {
   return {
     id: image.id,

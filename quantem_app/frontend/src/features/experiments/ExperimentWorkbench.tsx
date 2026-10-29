@@ -127,6 +127,10 @@ export function ExperimentWorkbench({ experiment, children, refreshKey, onAddIma
       <p className="text-sm text-slate-600">Organize → Evaluate → Apply broadly → Measure. Annotate examples and fine-tune only when the default results need improvement.</p>
       <div className="flex flex-wrap items-center gap-2">
         <strong>{selectedIds.length} selected</strong>
+        {selectedIds.some((id) => !filtered.some((image) => image.id === id)) && <>
+          <span role="status">{selectedIds.filter((id) => !filtered.some((image) => image.id === id)).length} selected outside current filters</span>
+          <Button onClick={() => change({ selected: selectedIds.filter((id) => filtered.some((image) => image.id === id)) })}>Clear hidden selections</Button>
+        </>}
         <Button disabled={!filtered.length} onClick={() => change({ selected: [...new Set([...selectedIds, ...filtered.map((image) => image.id)])] })}>Select all filtered images ({filtered.length})</Button>
         <Button disabled={!selectedIds.length} onClick={() => change({ selected: [] })}>Clear selection</Button>
         <Button disabled={!selectedIds.length} onClick={() => setApplying(!applying)}>Apply models…</Button>
@@ -149,7 +153,7 @@ export function ExperimentWorkbench({ experiment, children, refreshKey, onAddIma
         <label>Image order <select className="block rounded border px-2 py-1" value={controls.sort} onChange={(e) => change({ sort: e.target.value })}>
           <option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="sample">Sample ID</option></select></label>
         <label>Readiness <select className="block rounded border px-2 py-1" value={controls.readiness} onChange={(e) => change({ readiness: e.target.value })}>
-          <option value="">All images</option><option value="uncalibrated">Missing resolution</option><option value="reviewed">Whole image segmented</option><option value="unreviewed">Needs full-image coverage</option></select></label>
+          <option value="">All images</option><option value="uncalibrated">Missing resolution</option><option value="reviewed">At least one structure has full-image coverage</option><option value="unreviewed">No structure has full-image coverage</option></select></label>
         </>}
         <label>View <select className="block rounded border px-2 py-1" value={controls.layout} onChange={(e) => change({ layout: e.target.value })}>
           <option value="table">Workflow table</option><option value="cards">Dataset cards</option></select></label>

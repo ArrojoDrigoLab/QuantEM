@@ -138,6 +138,22 @@ export function defaultFormState(
   };
 }
 
+/** Keep user choices, but revalidate availability against current server data. */
+export function reconcileAnalysisForm(current: AnalysisFormState, segmentations: ImageSegmentation[], primaryId: string): AnalysisFormState {
+  const defaults = defaultFormState(segmentations, primaryId);
+  const compartments = defaults.compartments.map((entry) => {
+    const saved = current.compartments.find((candidate) => candidate.segmentationId === entry.segmentationId);
+    return saved ? { ...saved, ready: entry.ready, enabled: saved.enabled && entry.ready !== false }
+      : { ...entry, enabled: false };
+  });
+  const exists = (id: string) => segmentations.some((segmentation) => segmentation.id === id);
+  const tissueSegmentationId = exists(current.tissueSegmentationId) ? current.tissueSegmentationId : "";
+  const cellSegmentationId = exists(current.cellSegmentationId) ? current.cellSegmentationId : "";
+  if (JSON.stringify(compartments) === JSON.stringify(current.compartments)
+    && tissueSegmentationId === current.tissueSegmentationId && cellSegmentationId === current.cellSegmentationId) return current;
+  return { ...current, compartments, tissueSegmentationId, cellSegmentationId };
+}
+
 /**
  * Why the replicate count is out of range, or null when it is fine.
  *

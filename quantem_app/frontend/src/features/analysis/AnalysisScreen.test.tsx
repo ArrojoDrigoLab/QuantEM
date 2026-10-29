@@ -13,7 +13,7 @@
  *    from Analysis.
  */
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
@@ -60,6 +60,7 @@ function segmentation() {
 function run(status: AnalysisRunStatus, error = "") {
   return {
     id: RUN_ID,
+    job_id: JOB_ID,
     segmentation_id: SEG_ID,
     status,
     group: "",
@@ -177,6 +178,30 @@ async function startRun(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("AnalysisScreen", () => {
+  it("does not attach a late cancellation to another selected run", async () => {
+    install({ runStatus: "PENDING", jobStatus: "PENDING" });
+    let finishCancel!: () => void;
+    const cancellation = new Promise<void>((resolve) => { finishCancel = resolve; });
+    const second = { ...run("PENDING"), id: "run-2", job_id: "job-2" };
+    server.use(
+      http.get(`${API}/api/segmentations/${SEG_ID}/analysis/`, () => HttpResponse.json([
+        { ...summary("PENDING"), group: "first" }, { ...summary("PENDING"), id: "run-2", group: "second" },
+      ])),
+      http.get(`${API}/api/analysis/run-2/`, () => HttpResponse.json(second)),
+      http.get(`${API}/api/jobs/job-2/`, () => HttpResponse.json({ ...job("RUNNING"), id: "job-2", message: "Second run progress" })),
+      http.delete(`${API}/api/jobs/${JOB_ID}/`, async () => { await cancellation; return new HttpResponse(null, { status: 204 }); }),
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(await screen.findByRole("button", { name: /group: first/ }));
+    await user.click(await screen.findByRole("button", { name: "Cancel run" }));
+    await user.click(screen.getByRole("button", { name: /group: second/ }));
+    await screen.findByText("Second run progress");
+    await act(async () => { finishCancel(); await cancellation; });
+    expect(screen.getByText("Second run progress")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel run" })).toBeEnabled();
+  });
+
   it("does not offer pixel-size editing on the Analysis page", async () => {
     install({ runStatus: "SUCCESS", jobStatus: "SUCCESS" });
     renderScreen();
@@ -343,26 +368,15 @@ describe("AnalysisScreen", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("offers no Cancel for a run this screen did not start", async () => {
-    // Picked out of the history, so there is no job id in hand and nothing
-    // this screen could cancel. A button that cannot act is worse than none.
-    install({ runStatus: "PENDING", jobStatus: "RUNNING" });
+  it("reconnects to a historical run and lets the user cancel it", async () => {
+    const cancelled: string[] = [];
+    install({ runStatus: "PENDING", jobStatus: "RUNNING", cancelled });
     const user = userEvent.setup();
     renderScreen();
-
-    const history = screen
-      .getByRole("heading", { name: "Run history" })
-      .closest("div")!.parentElement!;
+    const history = screen.getByRole("heading", { name: "Run history" }).closest("div")!.parentElement!;
     await user.click(await within(history).findByText(/2026/));
-
-    // The row and the panel both read PENDING: with no job in hand there is
-    // nothing more current to report, and nothing to stop.
-    await waitFor(() => {
-      expect(screen.getAllByText("PENDING").length).toBeGreaterThan(0);
-    });
-    expect(
-      screen.queryByRole("button", { name: "Cancel run" })
-    ).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Cancel run" }));
+    await waitFor(() => expect(cancelled).toEqual([JOB_ID]));
   });
 });
 

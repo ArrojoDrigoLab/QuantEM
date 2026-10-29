@@ -64,4 +64,20 @@ describe("shared/api/jobs", () => {
       })
     );
   });
+
+  it("reconciles a queued job claimed by a worker before cancellation", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 409 }))
+      .mockResolvedValueOnce(jsonResponse({ status: "RUNNING" }))
+      .mockResolvedValueOnce(jsonResponse({ status: "cancel_requested" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(jobsApi.stopJob("claimed", "PENDING")).resolves.toBe("requested");
+    expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
+    expect(fetchMock.mock.calls[2][0]).toContain("/claimed/cancel/");
+  });
+
+  it("treats an already removed task as a completed cancellation", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 404 })));
+    await expect(jobsApi.stopJob("removed", "PENDING")).resolves.toBe("removed");
+  });
 });

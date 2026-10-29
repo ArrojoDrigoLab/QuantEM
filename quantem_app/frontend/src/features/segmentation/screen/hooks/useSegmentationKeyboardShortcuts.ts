@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { useDrawing } from "@/hooks/useDrawing";
 import type { LeftMode } from "@/features/segmentation/hooks/useSegmentationWorkflowMode";
 import type { Point } from "@/utils/geometry";
@@ -40,6 +40,8 @@ interface PointVerbs {
 
 interface UseSegmentationKeyboardShortcutsArgs {
   readOnly?: boolean;
+  disabled?: boolean;
+  editorRef?: RefObject<HTMLElement | null>;
   leftNavigateMode: boolean;
   toggleLeftNavigateMode: () => void;
   cycleHoverIndex: (direction: "next" | "prev") => void;
@@ -92,6 +94,8 @@ interface UseSegmentationKeyboardShortcutsArgs {
 
 export function useSegmentationKeyboardShortcuts({
   readOnly = false,
+  disabled = false,
+  editorRef,
   leftNavigateMode,
   toggleLeftNavigateMode,
   cycleHoverIndex,
@@ -103,7 +107,14 @@ export function useSegmentationKeyboardShortcuts({
   tissue,
   review,
 }: UseSegmentationKeyboardShortcutsArgs) {
+  const spaceStartedInEditor = useRef(false);
   useEffect(() => {
+    const accepts = (event: KeyboardEvent) => {
+      if (disabled || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || document.querySelector('[aria-modal="true"]')) return false;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest('input, textarea, select, button, a, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="tab"], [role="slider"]')) return false;
+      return !editorRef || Boolean(target && editorRef.current?.contains(target));
+    };
     /**
      * Space came up. Keep the object under the pointer -- unless that press was
      * a pan.
@@ -116,19 +127,14 @@ export function useSegmentationKeyboardShortcuts({
      */
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key !== " " && event.code !== "Space") return;
+      const startedHere = spaceStartedInEditor.current;
+      spaceStartedInEditor.current = false;
       const panned = panKeyState.consumeSpacePan();
+      if (!startedHere || !accepts(event)) return;
       if (readOnly || panned || leftNavigateMode || !pointVerbs) return;
       if (review.leftMode !== "hover" || review.isGroupActionMode) return;
       if (completedRoi.isActive || erPolygon.isActive || tissue.enabled) return;
       if (removeArea.mode === "area") return;
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
       const point = pointVerbs.hoverPoint;
       if (!point || !pointVerbs.hasHoverTarget) return;
       event.preventDefault();
@@ -144,12 +150,8 @@ export function useSegmentationKeyboardShortcuts({
         }
       };
 
-      const target = event.target as HTMLElement | null;
-      const isEditable =
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable;
-      if (isEditable) return;
+      if (!accepts(event)) { spaceStartedInEditor.current = false; return; }
+      if (!event.repeat && (event.key === " " || event.code === "Space")) spaceStartedInEditor.current = true;
 
       const isNavigateToggleKey =
         !event.repeat &&
@@ -186,15 +188,6 @@ export function useSegmentationKeyboardShortcuts({
           pointVerbs.previous();
           return;
         }
-      }
-
-      const isArrowKey =
-        event.key === "ArrowUp" ||
-        event.key === "ArrowRight" ||
-        event.key === "ArrowDown" ||
-        event.key === "ArrowLeft";
-      if (isArrowKey) {
-        consumeKeyEvent();
       }
 
       const isSpace = event.key === " " || event.code === "Space";
@@ -305,8 +298,10 @@ export function useSegmentationKeyboardShortcuts({
           }
         }
         if (event.key === "ArrowUp" || event.key === "ArrowRight") {
+          consumeKeyEvent();
           cycleHoverIndex("next");
         } else if (event.key === "ArrowDown" || event.key === "ArrowLeft") {
+          consumeKeyEvent();
           cycleHoverIndex("prev");
         }
       } else if (review.leftMode === "draw" && review.correctionTool !== "erase") {
@@ -319,13 +314,18 @@ export function useSegmentationKeyboardShortcuts({
       }
     };
 
+    const resetPress = () => { spaceStartedInEditor.current = false; };
+    window.addEventListener("blur", resetPress);
     window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("keyup", handleKeyUp, true);
     return () => {
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", resetPress);
     };
   }, [
+    disabled,
+    editorRef,
     readOnly,
     cycleHoverIndex,
     drawing,

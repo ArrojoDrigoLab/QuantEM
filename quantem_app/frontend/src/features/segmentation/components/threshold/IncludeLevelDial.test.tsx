@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -56,6 +56,29 @@ afterEach(() => {
 });
 
 describe("IncludeLevelDial", () => {
+  it("waits for a slow threshold read before refreshing after a stage change", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let calls = 0;
+    let active = 0;
+    let maxActive = 0;
+    server.use(http.get(DIAL_URL, async () => {
+      calls += 1; active += 1; maxActive = Math.max(maxActive, active);
+      const first = calls === 1;
+      if (first) await pending;
+      active -= 1;
+      return HttpResponse.json(state({ include_level: first ? 0.2 : 0.7 }));
+    }));
+    const view = renderDial({ sourceModel: "quantem:mito" });
+    await waitFor(() => expect(calls).toBe(1));
+    view.rerender(<DialHarness sourceModel="quantem:mito" statusStage="THRESHOLD_READY" />);
+    expect(calls).toBe(1);
+    await act(async () => { release(); });
+    await waitFor(() => expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.70"));
+    expect(calls).toBe(2);
+    expect(maxActive).toBe(1);
+  });
+
   it("uses Threshold as the compact title and keeps the explanation on hover", async () => {
     serveState(state());
 
@@ -464,4 +487,23 @@ describe("IncludeLevelDial", () => {
     expect(screen.getByRole("slider")).toBeDisabled();
     expect(screen.getByTestId("include-level-value")).toHaveTextContent("0.35");
   });
+});
+
+it("keeps a re-extraction pending through RETRY and refreshes only after success", async () => {
+  let status = "RETRY";
+  let observed = false;
+  const refreshed = vi.fn();
+  serveState(state({ include_level: 0.5 }));
+  server.use(
+    http.post(DIAL_URL, () => HttpResponse.json({ job_id: "retry-job", include_level: 0.2 })),
+    http.get(`${BASE}/api/jobs/retry-job/`, () => { observed = true; return HttpResponse.json({ id: "retry-job", status }); }),
+  );
+  renderDial({ onReextracted: refreshed });
+  fireEvent.change(await screen.findByRole("slider"), { target: { value: "0.2" } });
+  await userEvent.click(screen.getByTestId("include-level-apply"));
+  await waitFor(() => expect(observed).toBe(true));
+  expect(screen.getByRole("slider")).toBeDisabled();
+  expect(refreshed).not.toHaveBeenCalled();
+  status = "SUCCESS";
+  await waitFor(() => expect(refreshed).toHaveBeenCalledOnce(), { timeout: 2500 });
 });

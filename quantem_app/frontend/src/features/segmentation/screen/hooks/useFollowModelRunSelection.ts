@@ -5,7 +5,6 @@ interface FollowedRun {
   segmentationId: string | null;
   jobId: string | null;
   observedActive: boolean;
-  completionHandled: boolean;
 }
 
 interface UseFollowModelRunSelectionArgs {
@@ -15,13 +14,7 @@ interface UseFollowModelRunSelectionArgs {
   onAdaptedModelSelected: (adapterId: string, sourceModel: string) => void;
 }
 
-/**
- * Keep the model picker attached to the inference result being produced.
- *
- * Selection happens when a queued/running job is first observed. The same job
- * selects itself once more on success, so an intervening stale/default Manual
- * selection cannot hide the overlay at the moment it becomes available.
- */
+/** Follow a newly queued run once. Completion must not replace a later choice. */
 export function useFollowModelRunSelection({
   segmentationId,
   run,
@@ -32,7 +25,6 @@ export function useFollowModelRunSelection({
     segmentationId: null,
     jobId: null,
     observedActive: false,
-    completionHandled: false,
   });
 
   useEffect(() => {
@@ -41,7 +33,6 @@ export function useFollowModelRunSelection({
         segmentationId,
         jobId: null,
         observedActive: false,
-        completionHandled: false,
       };
     }
     if (!segmentationId || !run) return;
@@ -51,20 +42,13 @@ export function useFollowModelRunSelection({
         segmentationId,
         jobId: run.jobId,
         observedActive: false,
-        completionHandled: false,
       };
     }
 
     const active = run.status === "PENDING" || run.status === "RETRY" || run.status === "RUNNING";
     const firstActiveObservation = active && !followedRef.current.observedActive;
-    const completedAfterObservation =
-      run.status === "SUCCESS" &&
-      followedRef.current.observedActive &&
-      !followedRef.current.completionHandled;
-    if (!firstActiveObservation && !completedAfterObservation) return;
-
-    if (firstActiveObservation) followedRef.current.observedActive = true;
-    if (completedAfterObservation) followedRef.current.completionHandled = true;
+    if (!firstActiveObservation) return;
+    followedRef.current.observedActive = true;
 
     if (run.adapterId) {
       onAdaptedModelSelected(run.adapterId, run.sourceModel);

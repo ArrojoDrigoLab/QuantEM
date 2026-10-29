@@ -1,3 +1,5 @@
+import { useWorkspaceState } from "@/shared/hooks/useWorkspaceState";
+import { readWorkspaceMemory } from "@/features/experiments/workspaceMemory";
 import { ModelEvaluation } from "./ModelEvaluation";
 /**
  * Train on selected annotations, then optionally apply a saved model.
@@ -67,6 +69,7 @@ import {
   filterScopeTree,
   isSelectionEmpty,
   selectionTotals,
+  reconcileScopeSelection,
   setImageSelected,
   toSelectionPayload,
   type ScopeSelection,
@@ -183,14 +186,35 @@ export interface FineTuneDialogProps {
   onAppliedImageQueued?: (event: FineTuneAppliedImageEvent) => void;
 }
 
+function dialogContext(props: FineTuneDialogProps) {
+  return JSON.stringify([props.initialExperimentId, props.segmentationType?.id,
+    props.initialAssetIds, props.initialMode ?? "train", props.initialParentAdapterId || null,
+    props.initialSavedAdapterId || null, props.initialBaseModel || null]);
+}
+
+function useScopeWorkspaceState(key: string, initial: () => ScopeSelection) {
+  const [saved, setSaved] = useWorkspaceState(key, () => {
+    const value = initial();
+    return { datasetIds: [...value.datasetIds], assetIds: [...value.assetIds] };
+  });
+  const selection = useMemo(() => ({ datasetIds: new Set(saved.datasetIds), assetIds: new Set(saved.assetIds) }), [saved]);
+  const setSelection = useCallback((update: ScopeSelection | ((previous: ScopeSelection) => ScopeSelection)) => {
+    setSaved((previous) => {
+      const value = typeof update === "function" ? update({ datasetIds: new Set(previous.datasetIds), assetIds: new Set(previous.assetIds) }) : update;
+      return { datasetIds: [...value.datasetIds], assetIds: [...value.assetIds] };
+    });
+  }, [setSaved]);
+  return [selection, setSelection] as const;
+}
+
 export function FineTuneDialog(props: FineTuneDialogProps) {
-  // Unmounted while closed, so every reopen starts from a clean form rather
-  // than from the last run's success panel.
   if (!props.open) return null;
-  return <FineTuneDialogBody {...props} />;
+  const context = dialogContext(props);
+  return <FineTuneDialogBody key={context} {...props} memoryKey={`finetune.${context}`} />;
 }
 
 function FineTuneDialogBody({
+  memoryKey,
   onClose,
   initialMode = "train",
   segmentationType = null,
@@ -202,7 +226,7 @@ function FineTuneDialogBody({
   segmentationId = null,
   onAppliedImageCompleted,
   onAppliedImageQueued,
-}: FineTuneDialogProps) {
+}: FineTuneDialogProps & { memoryKey: string }) {
   const titleId = useId();
   const nameId = useId();
   const overwriteId = useId();
@@ -215,57 +239,57 @@ function FineTuneDialogBody({
   useModalLifecycle(panelRef, onClose, { closeOnEscape: false });
   const initialAssetIdsKey = (initialAssetIds ?? []).join("\u001f");
 
-  const [types, setTypes] = useState<SegmentationType[] | null>(null);
-  const [chosenTypeId, setChosenTypeId] = useState<string>(
+  const [types, setTypes] = useState<SegmentationType[] | null>(segmentationType ? [segmentationType] : null);
+  const [chosenTypeId, setChosenTypeId] = useWorkspaceState<string>(`${memoryKey}.chosenTypeId`,
     segmentationType?.id ?? ""
   );
   const [catalogue, setCatalogue] = useState<ModelCatalogue | null>(null);
   const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [allAdapters, setAllAdapters] = useState<FineTuneAdapterSummary[]>([]);
-  const [dialogMode, setDialogMode] = useState<"train" | "apply" | "evaluate">(initialSavedAdapterId ? "apply" : initialMode);
+  const [dialogMode, setDialogMode] = useWorkspaceState<"train" | "apply" | "evaluate">(`${memoryKey}.dialogMode`, initialSavedAdapterId ? "apply" : initialMode);
   const [scopeGroups, setScopeGroups] = useState(() => buildScopeTree(null));
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
 
   const [query, setQuery] = useState("");
-  const [selection, setSelection] = useState<ScopeSelection>(() => {
+  const [selection, setSelection] = useScopeWorkspaceState(`${memoryKey}.selection`, () => {
     let next = emptySelection();
     for (const assetId of initialAssetIds ?? []) {
       next = setImageSelected(next, assetId, true);
     }
     return next;
   });
-  const [autoApply, setAutoApply] = useState(false);
+  const [autoApply, setAutoApply] = useWorkspaceState(`${memoryKey}.autoApply`, false);
   const [autoApplyQuery, setAutoApplyQuery] = useState("");
-  const [autoApplySelection, setAutoApplySelection] = useState<ScopeSelection>(
+  const [autoApplySelection, setAutoApplySelection] = useScopeWorkspaceState(`${memoryKey}.autoApplySelection`,
     () => emptySelection()
   );
 
-  const [name, setName] = useState("");
-  const [parentAdapterId, setParentAdapterId] = useState(initialParentAdapterId ?? "");
-  const [includePrevious, setIncludePrevious] = useState(true);
-  const [savedAdapterId, setSavedAdapterId] = useState(initialSavedAdapterId ?? "");
-  const [baseModel, setBaseModel] = useState(initialBaseModel ?? "");
-  const [modeChoice, setModeChoice] = useState<FineTuneModeChoice>("use_all");
-  const [schedule, setSchedule] = useState<"quick" | "extended">("quick");
-  const [steps, setSteps] = useState("");
-  const [lr, setLr] = useState("0.0001");
-  const [seed, setSeed] = useState("0");
-  const [validation, setValidation] = useState(false);
-  const [evalInterval, setEvalInterval] = useState("100");
-  const [patience, setPatience] = useState("5");
+  const [name, setName] = useWorkspaceState(`${memoryKey}.name`, "");
+  const [parentAdapterId, setParentAdapterId] = useWorkspaceState(`${memoryKey}.parentAdapterId`, initialParentAdapterId ?? "");
+  const [includePrevious, setIncludePrevious] = useWorkspaceState(`${memoryKey}.includePrevious`, true);
+  const [savedAdapterId, setSavedAdapterId] = useWorkspaceState(`${memoryKey}.savedAdapterId`, initialSavedAdapterId ?? "");
+  const [baseModel, setBaseModel] = useWorkspaceState(`${memoryKey}.baseModel`, initialBaseModel ?? "");
+  const [modeChoice, setModeChoice] = useWorkspaceState<FineTuneModeChoice>(`${memoryKey}.modeChoice`, "use_all");
+  const [schedule, setSchedule] = useWorkspaceState<"quick" | "extended">(`${memoryKey}.schedule`, "quick");
+  const [steps, setSteps] = useWorkspaceState(`${memoryKey}.steps`, "");
+  const [lr, setLr] = useWorkspaceState(`${memoryKey}.lr`, "0.0001");
+  const [seed, setSeed] = useWorkspaceState(`${memoryKey}.seed`, "0");
+  const [validation, setValidation] = useWorkspaceState(`${memoryKey}.validation`, false);
+  const [evalInterval, setEvalInterval] = useWorkspaceState(`${memoryKey}.evalInterval`, "100");
+  const [patience, setPatience] = useWorkspaceState(`${memoryKey}.patience`, "5");
   const trainingInputs = useMemo(() => parseTrainingInputs({
     schedule, steps, lr, seed, validation, evalInterval, patience,
   }), [schedule, steps, lr, seed, validation, evalInterval, patience]);
   // A ref, rather than state, so a preview already in flight cannot overwrite
   // a radio choice made before its response arrives.
-  const modeTouchedRef = useRef(false);
+  const modeTouchedRef = useRef(readWorkspaceMemory(`${memoryKey}.modeChoice`, null) !== null);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [trainingRunId, setTrainingRunId] = useState<string | null>(null);
-  const { progress, settled } = useFineTuneProgress(trainingRunId);
+  const [trainingRunId, setTrainingRunId] = useWorkspaceState<string | null>(`${memoryKey}.trainingRunId`, null);
+  const { progress, settled, error: progressError, refresh: refreshProgress } = useFineTuneProgress(trainingRunId);
 
   // --- lifecycle ---------------------------------------------------------
 
@@ -321,15 +345,19 @@ function FineTuneDialogBody({
       .then((response) => {
         if (cancelled) return;
         const groups = buildScopeTree(response);
-        setScopeGroups(initialExperimentId ? groups.filter((group) => group.key === initialExperimentId) : groups);
-        if (requestedAssetIds.length === 0 && initialExperimentId) {
+        const scoped = initialExperimentId ? groups.filter((group) => group.key === initialExperimentId) : groups;
+        setScopeGroups(scoped);
+        if (requestedAssetIds.length === 0 && initialExperimentId && readWorkspaceMemory(`${memoryKey}.selection`, null) === null) {
           const group = groups.find((entry) => entry.key === initialExperimentId);
           let next = emptySelection();
           for (const image of [...(group?.images ?? []), ...(group?.datasets.flatMap((dataset) => dataset.images) ?? [])]) {
             next = setImageSelected(next, image.id, true);
           }
           setSelection(next);
+        } else {
+          setSelection((current) => reconcileScopeSelection(scoped, current));
         }
+        setAutoApplySelection((current) => reconcileScopeSelection(scoped, current));
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -344,7 +372,7 @@ function FineTuneDialogBody({
     return () => {
       cancelled = true;
     };
-  }, [chosenTypeId, initialExperimentId, initialAssetIdsKey, loadAttempt]);
+  }, [chosenTypeId, initialExperimentId, initialAssetIdsKey, loadAttempt, memoryKey, setSelection, setAutoApplySelection]);
 
   useEffect(() => {
     let cancelled = false;
@@ -420,14 +448,14 @@ function FineTuneDialogBody({
     if (selected) return;
     const firstFinished = adapters.find((adapter) => adapter.status === "SUCCESS");
     if (firstFinished) setSavedAdapterId(firstFinished.id);
-  }, [adapters, dialogMode, savedAdapterId]);
+  }, [adapters, dialogMode, savedAdapterId, setSavedAdapterId]);
 
   useEffect(() => {
     const parent = adapters.find((adapter) => adapter.id === parentAdapterId);
     if (!parent) return;
     setBaseModel(parent.base_model);
     setName((current) => current || `${parent.name} · next version`);
-  }, [adapters, parentAdapterId]);
+  }, [adapters, parentAdapterId, setBaseModel, setName]);
 
   const selectionEmpty = isSelectionEmpty(selection);
   const { livePreview, previewPending, previewError } = useTrainingPreview({
@@ -436,7 +464,7 @@ function FineTuneDialogBody({
   });
   useEffect(() => {
     if (livePreview && !modeTouchedRef.current) setModeChoice(modeChoiceFromDefault(livePreview.default_mode));
-  }, [livePreview]);
+  }, [livePreview, setModeChoice]);
 
   const modelChoices = useMemo(
     () =>
@@ -464,6 +492,7 @@ function FineTuneDialogBody({
   }, [resolvedType, modelChoices]);
 
   useEffect(() => {
+    if (!catalogue) return;
     if (compatibleModelChoices.some((choice) => choice.id === baseModel)) return;
     const labelingChoice = compatibleModelChoices.find(
       (choice) =>
@@ -483,7 +512,7 @@ function FineTuneDialogBody({
         compatibleModelChoices[0]?.id ??
         ""
     );
-  }, [baseModel, resolvedType, compatibleModelChoices, initialBaseModel]);
+  }, [baseModel, resolvedType, compatibleModelChoices, initialBaseModel, catalogue, setBaseModel]);
 
   useEffect(() => {
     if (!trainingRunId || !settled) return;
@@ -492,13 +521,12 @@ function FineTuneDialogBody({
     void getFineTuneRun(trainingRunId)
       .then((detail) => {
         if (cancelled) return;
-        setName((current) => detail.name || current);
         setAllAdapters((current) => {
           const completed: FineTuneAdapterSummary = {
             id: trainingRunId,
             name: detail.name || "Saved fine-tune",
             base_model: detail.base_model,
-            segmentation_type: chosenTypeId,
+            segmentation_type: (types ?? []).find((type) => type.internal_name === `quantem_internal_${detail.base_model.split(":")[1]}`)?.id,
             status: "SUCCESS",
             created_at: detail.created_at,
             experiment: detail.experiment ?? null,
@@ -514,16 +542,11 @@ function FineTuneDialogBody({
       })
       .catch(() => {
         // The Apply panel loads details independently and offers a retry.
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setSavedAdapterId(trainingRunId);
-        setDialogMode("apply");
       });
     return () => {
       cancelled = true;
     };
-  }, [trainingRunId, settled, progress?.status, chosenTypeId]);
+  }, [trainingRunId, settled, progress?.status, types]);
 
   useEffect(() => {
     if (!trainingRunId || !settled || progress?.status !== "FAILED") return;
@@ -563,10 +586,10 @@ function FineTuneDialogBody({
   const imageCount = livePreview ? livePreview.asset_count : localTotals.imageCount;
 
   useEffect(() => {
-    if (modeChoiceIsAvailable(modeChoice, annotationCount)) return;
+    if (!livePreview || modeChoiceIsAvailable(modeChoice, annotationCount)) return;
     modeTouchedRef.current = false;
     setModeChoice("use_all");
-  }, [annotationCount, modeChoice]);
+  }, [annotationCount, modeChoice, livePreview, setModeChoice]);
 
   const blockers = livePreview && !livePreview.eligible ? livePreview.blockers : [];
   const nameTaken =
@@ -577,6 +600,7 @@ function FineTuneDialogBody({
     Boolean(chosenTypeId) &&
     Boolean(name.trim()) &&
     Boolean(baseModel) &&
+    !scopeLoading && !scopeError &&
     !selectionEmpty &&
     Boolean(livePreview?.eligible) &&
     modeChoiceIsAvailable(modeChoice, annotationCount) &&
@@ -680,7 +704,7 @@ function FineTuneDialogBody({
     includePrevious,
     baseModel,
     segmentationId, trainingInputs, livePreview,
-    autoApply, autoApplySelection,
+    autoApply, autoApplySelection, setTrainingRunId,
   ]);
 
   // --- render ------------------------------------------------------------
@@ -730,12 +754,22 @@ function FineTuneDialogBody({
             className="flex gap-1 border-b border-slate-200 bg-slate-50 px-5 py-2"
             role="tablist"
             aria-label="Fine-tune action"
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              const tabs = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+              const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
+              if (index < 0) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+                : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+              tabs[next].focus(); tabs[next].click();
+            }}
           >
-            <button type="button" role="tab" aria-selected={dialogMode === "evaluate"} className="rounded-md px-4 py-1.5 text-sm font-semibold" onClick={() => setDialogMode("evaluate")}>Evaluate</button>
+            <button type="button" role="tab" aria-selected={dialogMode === "evaluate"} tabIndex={dialogMode === "evaluate" ? 0 : -1} id={`${titleId}-evaluate`} aria-controls={`${titleId}-panel`} className={`rounded-md px-4 py-1.5 text-sm font-semibold ${dialogMode === "evaluate" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-900"}`} onClick={() => setDialogMode("evaluate")}>Evaluate</button>
             <button
               type="button"
               role="tab"
-              aria-selected={dialogMode === "train"}
+              aria-selected={dialogMode === "train"} tabIndex={dialogMode === "train" ? 0 : -1} id={`${titleId}-train`} aria-controls={`${titleId}-panel`}
               className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
                 dialogMode === "train"
                   ? "bg-white text-slate-950 shadow-sm"
@@ -748,7 +782,7 @@ function FineTuneDialogBody({
             <button
               type="button"
               role="tab"
-              aria-selected={dialogMode === "apply"}
+              aria-selected={dialogMode === "apply"} tabIndex={dialogMode === "apply" ? 0 : -1} id={`${titleId}-apply`} aria-controls={`${titleId}-panel`}
               className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
                 dialogMode === "apply"
                   ? "bg-white text-slate-950 shadow-sm"
@@ -760,7 +794,7 @@ function FineTuneDialogBody({
             </button>
           </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4" role="tabpanel" id={`${titleId}-panel`} aria-labelledby={`${titleId}-${dialogMode}`}>
           {Object.keys(loadErrors).length > 0 && <div role="alert" className="mb-4 rounded border border-red-300 p-3 text-red-800">
             {Object.entries(loadErrors).map(([key, message]) => <p key={key}>{message}</p>)}
             <Button onClick={() => { setLoadErrors({}); setLoadAttempt((attempt) => attempt + 1); }}>Retry loading</Button>
@@ -785,6 +819,7 @@ function FineTuneDialogBody({
                     key={adapter.id}
                     adapter={adapter}
                     progress={progress}
+                    error={progressError}
                     current
                   />
                 ) : (
@@ -793,7 +828,15 @@ function FineTuneDialogBody({
               )}
             </section>
           ) : null}
-          {dialogMode === "evaluate" && <ModelEvaluation types={types ?? []} initialTypeId={chosenTypeId}
+          {trainingRunId && progress?.status === "SUCCESS" && <div role="status" className="mb-4 rounded border border-emerald-300 p-3">
+            <p>Fine-tuning finished. Your saved model is ready to review and apply.</p>
+            <Button onClick={() => {
+              const completed = allAdapters.find((adapter) => adapter.id === trainingRunId);
+              if (completed?.segmentation_type && !segmentationType) setChosenTypeId(completed.segmentation_type);
+              setSavedAdapterId(trainingRunId); setDialogMode("apply");
+            }}>View saved model</Button>
+          </div>}
+          {dialogMode === "evaluate" && <ModelEvaluation types={segmentationType ? [segmentationType] : types ?? []} initialTypeId={chosenTypeId} initialBaseModel={baseModel} initialAdapterId={parentAdapterId || initialSavedAdapterId}
             initialAssetIds={initialAssetIds} initialExperimentId={initialExperimentId} adapters={adapters} />}
           {dialogMode === "train" ? (
             <div className="flex flex-col gap-5">
@@ -1170,6 +1213,10 @@ function FineTuneDialogBody({
             </div>
           ) : null}
 
+          {progressError && <div role="status" className="my-3">
+            <p>Training progress is unavailable. {progressError.message}</p>
+            <Button onClick={() => void refreshProgress()}>Retry training progress</Button>
+          </div>}
           {trainingRunId && settled && progress?.status === "FAILED" ? (
               <div className="mb-4 flex flex-col gap-1 rounded border border-red-200 bg-red-50 p-3" data-testid="finetune-failed">
                 <p className="m-0 text-sm text-red-700" role="alert">
@@ -1231,7 +1278,8 @@ function FineTuneDialogBody({
 
         {dialogMode === "train" ? (
           <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
-            <Button onClick={onClose}>Cancel</Button>
+            <span className="text-sm text-slate-600">{activeAdapters.length > 0 ? "Training continues after closing." : "Settings are kept for this session."}</span>
+            <Button onClick={onClose}>Close</Button>
             <Button variant="primary" disabled={!canSubmit} onClick={() => void submit()}>
               {starting ? "Starting…" : "Fine-tune"}
             </Button>

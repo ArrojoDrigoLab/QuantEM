@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawing } from "@/hooks/useDrawing";
 import { useUncertainSegments } from "@/features/segmentation/hooks/useUncertainSegments";
 import { SegmentationHeader } from "@/features/segmentation/components/SegmentationHeader";
+import { WorkflowSummary } from "@/features/segmentation/components/WorkflowSummary";
 import { SegmentationRightPanel } from "@/features/segmentation/components/SegmentationRightPanel";
 import { SegmentationLeftPanel } from "@/features/segmentation/components/SegmentationLeftPanel";
 import { CompletedRoiBackgroundNotice } from "@/features/segmentation/components/CompletedRoiBackgroundNotice";
@@ -60,6 +61,7 @@ export function SegmentationScreen() {
     readOnly: route.isLocked,
   });
   const drawing = useDrawing();
+  const editorRef = useRef<HTMLElement | null>(null);
   const [savedResults, setSavedResults] = useState<SavedResult[]>([]);
   const [compareRunsOpen, setCompareRunsOpen] = useState(false);
   const handleSavedResultsChange = useCallback((next: SavedResult[]) => {
@@ -151,7 +153,7 @@ export function SegmentationScreen() {
 
   useEffect(() => {
     setConfirmingObjectsOverlay(null);
-  }, [route.activeSourceModel, route.currentSegmentationId]);
+  }, [route.activeSourceModel, route.activeAdapterId, route.currentSegmentationId]);
 
   useEffect(() => {
     setSavedResults([]);
@@ -270,6 +272,7 @@ export function SegmentationScreen() {
     selectedAssetId,
   } = route;
   const { handleApplyFullImage, refetchJobs } = processing;
+  useEffect(() => { setConfirmingObjectsOverlay(null); }, [processing.previewRoiId]);
   useFollowModelRunSelection({
     segmentationId: currentSegmentationId,
     run: processing.currentModelRun,
@@ -554,6 +557,8 @@ export function SegmentationScreen() {
   );
 
   useSegmentationKeyboardShortcuts({
+    disabled: compareRunsOpen,
+    editorRef,
     readOnly: route.isLocked,
     leftNavigateMode: ui.leftNavigateMode,
     toggleLeftNavigateMode: ui.toggleLeftNavigateMode,
@@ -799,7 +804,24 @@ export function SegmentationScreen() {
         onClose={() => setCompareRunsOpen(false)}
         onResultsChange={handleSavedResultsChange}
         onQueued={route.refetchSegmentations} />}
+      {route.currentSegmentation && <WorkflowSummary image={route.image} segmentation={route.currentSegmentation}
+        nextModel={route.modelOptions.find((option) => option.value === route.activeModelValue)?.label ?? "Manual segmentation"} />}
+      {processing.currentModelRun?.status === "SUCCESS" && <div className="px-4 py-1 text-sm" role="status">
+        Model run finished. <button type="button" className="text-cyan-800 underline" onClick={() => {
+          const run = processing.currentModelRun!;
+          if (run.adapterId) route.handleAdapterSelection(run.adapterId, run.sourceModel);
+          else route.handleSourceModelChange(run.sourceModel);
+          setCompareRunsOpen(false);
+        }}>View completed result</button>
+      </div>}
       {!compareRunsOpen ? <main
+        ref={editorRef} tabIndex={0} aria-label="Segmentation editor"
+        onPointerDownCapture={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest(".viewer-container") && !target.closest("input, button, select, a, textarea")) {
+            event.currentTarget.focus({ preventScroll: true });
+          }
+        }}
         className={`segmentation-main ${
           ui.showConfirmedPanel && !route.isLocked ? "show-confirmed" : "hide-confirmed"
         }`}

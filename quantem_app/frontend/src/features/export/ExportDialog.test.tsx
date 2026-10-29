@@ -124,3 +124,20 @@ describe("ExportDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+it("traps Tab in export and restores focus to the opener", async () => {
+  vi.mocked(getAssetSegmentations).mockResolvedValue([]);
+  const opener = document.createElement("button"); document.body.appendChild(opener); opener.focus();
+  const user = userEvent.setup();
+  const view = render(<ExportDialog asset={{ id: "asset", displayName: "Image" }} onClose={vi.fn()} />);
+  const first = screen.getByRole("radio", { name: /8-bit PNG/i });
+  const last = screen.getByRole("button", { name: "Export" });
+  expect(first).toHaveFocus();
+  await user.tab({ shift: true });
+  expect(last).toHaveFocus();
+  await user.tab();
+  expect(first).toHaveFocus();
+  view.unmount();
+  expect(opener).toHaveFocus();
+  opener.remove();
+});

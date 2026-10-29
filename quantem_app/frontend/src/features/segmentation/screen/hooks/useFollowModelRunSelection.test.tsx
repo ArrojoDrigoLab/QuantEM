@@ -17,7 +17,7 @@ function run(
 }
 
 describe("useFollowModelRunSelection", () => {
-  it("selects a queued model and selects it again when that run succeeds", () => {
+  it("selects a queued model once without replacing later choices on success", () => {
     const onBaseModelSelected = vi.fn();
     const onAdaptedModelSelected = vi.fn();
     const { rerender } = renderHook(
@@ -38,11 +38,11 @@ describe("useFollowModelRunSelection", () => {
     expect(onBaseModelSelected).toHaveBeenCalledTimes(1);
 
     act(() => rerender({ currentRun: run("SUCCESS") }));
-    expect(onBaseModelSelected).toHaveBeenCalledTimes(2);
+    expect(onBaseModelSelected).toHaveBeenCalledTimes(1);
     expect(onBaseModelSelected).toHaveBeenLastCalledWith("quantem:mito");
 
     act(() => rerender({ currentRun: run("SUCCESS") }));
-    expect(onBaseModelSelected).toHaveBeenCalledTimes(2);
+    expect(onBaseModelSelected).toHaveBeenCalledTimes(1);
   });
 
   it("restores the exact fine-tuned model rather than only its base", () => {

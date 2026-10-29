@@ -33,7 +33,10 @@ export function IncludeLevelDial({ controls }: IncludeLevelDialProps) {
         <span className="include-level-help" role="img" tabIndex={0}
           aria-label={tooltip} title={tooltip}>ⓘ</span>
       </div>
-      {loadError ? <p className="include-level-problem" role="alert">{loadError}</p> : null}
+      {loadError ? <div role="alert">
+        <p className="include-level-problem">{loadError}</p>
+        <button type="button" onClick={() => void controls.retryLoad()}>Retry threshold</button>
+      </div> : null}
       {state && !loadError && <>
         <input
           id="include-level-input" className="include-level-slider" type="range"

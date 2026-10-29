@@ -51,7 +51,7 @@ export function AssetRoute() {
   const { assetId, view } = useParams();
   const navigate = useNavigate();
   const { setSelectedAssetId, clearSelection } = useSelectionStore();
-  const { data: asset } = useApiQuery(
+  const { data: asset, error, refetch } = useApiQuery(
     () => {
       if (!assetId) {
         return Promise.reject(new Error("Missing asset id"));
@@ -82,7 +82,7 @@ export function AssetRoute() {
     return <Navigate to="/" replace />;
   }
 
-  if (!asset) {
+  if (!asset || asset.id !== assetId) {
     return (
       <div className="loading-with-back">
         {/* Nothing has rendered a header yet, so this one is on its own and has
@@ -90,7 +90,10 @@ export function AssetRoute() {
         <button className="back-button" onClick={handleBack} type="button">
           ← Back to Home
         </button>
-        <div className="loading">Loading...</div>
+        {error ? <div role="alert">
+          <p>The image could not be loaded. {error.message}</p>
+          <button type="button" onClick={() => void refetch()}>Retry loading image</button>
+        </div> : <div className="loading">Loading...</div>}
       </div>
     );
   }

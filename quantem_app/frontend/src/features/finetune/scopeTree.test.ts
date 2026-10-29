@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildScopeTree,
   emptySelection,
+  reconcileScopeSelection,
   filterScopeTree,
   isGroupFullySelected,
   isImageSelected,
@@ -23,6 +24,16 @@ import {
   toSelectionPayload,
 } from "@/features/finetune/scopeTree";
 import type { FineTuneScopeResponse } from "@/shared/types/finetune";
+
+it("drops removed targets from a resumed selection without selecting new images", () => {
+  const groups = buildScopeTree(SCOPE).filter((group) => group.key === "exp-fasted");
+  const reconciled = reconcileScopeSelection(groups, {
+    datasetIds: new Set(["ds-liver", "removed-dataset"]),
+    assetIds: new Set(["img-loose", "removed-image"]),
+  });
+  expect([...reconciled.datasetIds]).toEqual(["ds-liver"]);
+  expect([...reconciled.assetIds]).toEqual(["img-loose"]);
+});
 
 function image(id: string, name: string, confirmed: number, done: number) {
   return {

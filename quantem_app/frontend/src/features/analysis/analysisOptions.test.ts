@@ -3,6 +3,7 @@ import {
   buildAnalysisPayload,
   compartmentNameFor,
   defaultFormState,
+  reconcileAnalysisForm,
   parseBandEdges,
   type AnalysisFormState,
 } from "@/features/analysis/analysisOptions";
@@ -190,4 +191,14 @@ describe("buildAnalysisPayload", () => {
     }));
     expect(buildAnalysisPayload(state).error).toMatch(/at least one compartment/);
   });
+});
+
+it("refreshes saved analysis readiness without replacing names or settings", () => {
+  const form = baseState({ seed: 42, group: "My group" });
+  form.compartments[0].name = "Custom mitochondria";
+  const updated = reconcileAnalysisForm(form, [{ ...MITO, is_complete: false }, NUCLEUS, TISSUE, CELLS], MITO.id);
+  expect(updated.seed).toBe(42);
+  expect(updated.group).toBe("My group");
+  expect(updated.compartments[0]).toMatchObject({ name: "Custom mitochondria", ready: false, enabled: false });
+  expect(reconcileAnalysisForm(updated, [{ ...MITO, is_complete: false }, NUCLEUS, TISSUE, CELLS], MITO.id)).toBe(updated);
 });
