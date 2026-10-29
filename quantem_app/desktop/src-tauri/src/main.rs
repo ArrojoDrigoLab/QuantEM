@@ -47,6 +47,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -54,16 +55,15 @@ use serde::Deserialize;
 use tauri::{Manager, RunEvent, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
-/// How long startup may take before we give up. Besides the frozen torch
-/// import and initial migration, PostgreSQL may need to replay a large WAL
-/// after an interrupted upgrade. The Python side allows 15 minutes for that
-/// recovery, so the shell must outlive it.
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+/// How long an ordinary, silent startup may take before we give up. Database
+/// migration and measured PostgreSQL recovery liveness each override this
+/// deadline: both may legitimately take hours on a large library.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// Allow the sidecar's 15-minute clean PostgreSQL checkpoint to finish. The
 /// Windows job object remains the final fallback after this deadline.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(16 * 60);
 const MIGRATION_PROGRESS_PREFIX: &str = "QUANTEM_MIGRATION_PROGRESS ";
-const DATABASE_RECOVERY_PREFIX: &str = "database recovery:";
+const DATABASE_RECOVERY_PROGRESS_PREFIX: &str = "QUANTEM_DATABASE_RECOVERY_PROGRESS ";
 const MIGRATION_STALL_WARNING: Duration = Duration::from_secs(5 * 60);
 
 // ---------------------------------------------------------------------------
@@ -333,6 +333,17 @@ fn migration_progress_script(line: &str) -> Option<String> {
     }
     Some(format!(
         "window.__quantemMigrationProgress && window.__quantemMigrationProgress({payload})"
+    ))
+}
+
+fn database_recovery_progress_script(line: &str) -> Option<String> {
+    let payload = line.strip_prefix(DATABASE_RECOVERY_PROGRESS_PREFIX)?;
+    let parsed: serde_json::Value = serde_json::from_str(payload).ok()?;
+    if !parsed.is_object() {
+        return None;
+    }
+    Some(format!(
+        "window.__quantemDatabaseRecoveryProgress && window.__quantemDatabaseRecoveryProgress({payload})"
     ))
 }
 
@@ -751,6 +762,7 @@ fn main() {
             // does not make the transactional cutover finish sooner.  The
             // sidecar emits measured progress and liveness events instead.
             let migration_last_event = Arc::new(Mutex::new(Instant::now()));
+            let database_recovery_active = Arc::new(AtomicBool::new(false));
             if legacy_sqlite {
                 set_status(
                     &handle,
@@ -825,6 +837,7 @@ fn main() {
                 if let Some(stream) = stream {
                     let progress_handle = handle.clone();
                     let last_migration_event = migration_last_event.clone();
+                    let recovery_active = database_recovery_active.clone();
                     std::thread::spawn(move || {
                         let reader = BufReader::new(stream);
                         for line in reader.lines().map_while(Result::ok) {
@@ -834,12 +847,13 @@ fn main() {
                                     if let Ok(mut last) = last_migration_event.lock() {
                                         *last = Instant::now();
                                     }
+                                    recovery_active.store(false, Ordering::Relaxed);
                                     eval_on_main(&progress_handle, script);
-                                } else if line.starts_with(DATABASE_RECOVERY_PREFIX) {
-                                    set_status(
-                                        &progress_handle,
-                                        "Recovering the database after an interrupted shutdown… this can take several minutes. Do not close QuantEM.",
-                                    );
+                                } else if let Some(script) =
+                                    database_recovery_progress_script(&line)
+                                {
+                                    recovery_active.store(true, Ordering::Relaxed);
+                                    eval_on_main(&progress_handle, script);
                                 }
                             }
                         }
@@ -862,6 +876,7 @@ fn main() {
             let h = handle.clone();
             let sc = sidecar_for_setup.clone();
             let last_migration_event = migration_last_event.clone();
+            let recovery_active = database_recovery_active.clone();
             std::thread::spawn(move || {
                 let started = Instant::now();
                 let url = format!("http://127.0.0.1:{port}/");
@@ -890,7 +905,10 @@ fn main() {
                             }
                         }
                     }
-                    if !legacy_sqlite && started.elapsed() > STARTUP_TIMEOUT {
+                    if !legacy_sqlite
+                        && !recovery_active.load(Ordering::Relaxed)
+                        && started.elapsed() > STARTUP_TIMEOUT
+                    {
                         fail(
                             &h,
                             "the QuantEM server did not start within five minutes.\n\
@@ -898,7 +916,7 @@ fn main() {
                         );
                         return;
                     }
-                    if legacy_sqlite {
+                    if legacy_sqlite && !recovery_active.load(Ordering::Relaxed) {
                         let event_age = last_migration_event
                             .lock()
                             .map(|last| last.elapsed())
@@ -913,7 +931,9 @@ fn main() {
                             set_migration_warning(&h, "");
                             migration_warning_visible = false;
                         }
-                    } else if started.elapsed() > Duration::from_secs(20) {
+                    } else if !recovery_active.load(Ordering::Relaxed)
+                        && started.elapsed() > Duration::from_secs(20)
+                    {
                         set_status(
                             &h,
                             "Still starting… database preparation or recovery can take several minutes. Do not close QuantEM.",
@@ -1051,5 +1071,25 @@ mod tests {
         assert!(migration_progress_script("ordinary server output").is_none());
         assert!(migration_progress_script("QUANTEM_MIGRATION_PROGRESS []").is_none());
         assert!(migration_progress_script("QUANTEM_MIGRATION_PROGRESS not-json").is_none());
+    }
+
+    #[test]
+    fn database_recovery_progress_accepts_only_prefixed_json_objects() {
+        let line = concat!(
+            "QUANTEM_DATABASE_RECOVERY_PROGRESS ",
+            r#"{"phase":"redo","current_lsn":"3/4A481230"}"#
+        );
+        let script = database_recovery_progress_script(line).expect("valid recovery event");
+        assert!(script.contains("window.__quantemDatabaseRecoveryProgress"));
+        assert!(script.contains(r#""phase":"redo""#));
+
+        assert!(database_recovery_progress_script("ordinary server output").is_none());
+        assert!(
+            database_recovery_progress_script("QUANTEM_DATABASE_RECOVERY_PROGRESS []").is_none()
+        );
+        assert!(database_recovery_progress_script(
+            "QUANTEM_DATABASE_RECOVERY_PROGRESS not-json"
+        )
+        .is_none());
     }
 }

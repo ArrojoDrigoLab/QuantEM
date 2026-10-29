@@ -13,6 +13,7 @@ import atexit
 import contextlib
 import json
 import os
+import re
 import secrets
 import socket
 import stat
@@ -38,11 +39,13 @@ DEFAULT_USER = "quantem"
 
 # A normal private-cluster start is effectively immediate. Crash recovery is
 # different: replaying the WAL produced by a multi-gigabyte SQLite cutover can
-# take several minutes on slower disks. Keep a short deadline for a server that
-# never answers at all, but do not kill a healthy postmaster that explicitly
-# reports that it is still recovering.
+# take minutes or hours on slower disks. Keep a short deadline for a server that
+# never answers at all, but judge known recovery by measurable WAL/phase
+# progress rather than total wall-clock time.
 POSTGRES_STARTUP_TIMEOUT_SECONDS = 60
-POSTGRES_RECOVERY_TIMEOUT_SECONDS = 15 * 60
+POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS = 30 * 60
+POSTGRES_RECOVERY_HEARTBEAT_SECONDS = 15
+DATABASE_RECOVERY_PROGRESS_PREFIX = "QUANTEM_DATABASE_RECOVERY_PROGRESS "
 
 # pg_ctl performs a clean checkpoint during a fast shutdown. That checkpoint
 # can be as large as the preceding database import, so the desktop shell and
@@ -57,9 +60,111 @@ POSTGRES_RUNTIME_OPTIONS = (
     "checkpoint_completion_target=0.9",
 )
 
+_REDO_PROGRESS_RE = re.compile(
+    r"redo in progress, elapsed time: [\d.]+ s, current LSN: ([0-9A-F]+/[0-9A-F]+)",
+    re.IGNORECASE,
+)
+_REDO_DONE_RE = re.compile(r"redo done at ([0-9A-F]+/[0-9A-F]+)", re.IGNORECASE)
+
 
 class PostgresError(RuntimeError):
     """The private database server could not be started or managed safely."""
+
+
+class _RecoveryLogMonitor:
+    """Read only new PostgreSQL log lines and retain recovery liveness."""
+
+    def __init__(self, offset: int) -> None:
+        self.offset = offset
+        self.pending = b""
+        self.phase = "starting"
+        self.current_lsn: str | None = None
+        self.detail = "PostgreSQL is preparing crash recovery."
+
+    def poll(self) -> bool:
+        try:
+            size = POSTGRES_LOG_PATH.stat().st_size
+            if size < self.offset:
+                self.offset = 0
+                self.pending = b""
+            with POSTGRES_LOG_PATH.open("rb") as handle:
+                handle.seek(self.offset)
+                chunk = handle.read()
+                self.offset = handle.tell()
+        except OSError:
+            return False
+        if not chunk:
+            return False
+
+        content = self.pending + chunk
+        lines = content.splitlines(keepends=True)
+        if lines and not lines[-1].endswith((b"\n", b"\r")):
+            self.pending = lines.pop()
+        else:
+            self.pending = b""
+
+        changed = False
+        for raw_line in lines:
+            line = raw_line.decode("utf-8", errors="replace")
+            redo = _REDO_PROGRESS_RE.search(line)
+            if redo is not None:
+                lsn = redo.group(1).upper()
+                if self.phase != "redo" or self.current_lsn != lsn:
+                    self.phase = "redo"
+                    self.current_lsn = lsn
+                    self.detail = f"Recovery position {lsn}"
+                    changed = True
+                continue
+
+            redo_done = _REDO_DONE_RE.search(line)
+            if redo_done is not None:
+                lsn = redo_done.group(1).upper()
+                if self.phase != "checkpoint" or self.current_lsn != lsn:
+                    self.phase = "checkpoint"
+                    self.current_lsn = lsn
+                    self.detail = "WAL replay is complete; finalizing the recovery checkpoint."
+                    changed = True
+                continue
+
+            if "checkpoint starting: end-of-recovery" in line.lower():
+                if self.phase != "checkpoint":
+                    self.phase = "checkpoint"
+                    self.detail = "WAL replay is complete; finalizing the recovery checkpoint."
+                    changed = True
+                continue
+
+            if self.phase == "checkpoint" and "checkpoint complete:" in line.lower():
+                self.phase = "finalizing"
+                self.detail = "The recovery checkpoint is complete; opening the database."
+                changed = True
+
+        return changed
+
+    def event(
+        self,
+        *,
+        started_at: float,
+        last_progress_at: float,
+        now: float,
+        heartbeat: bool,
+    ) -> dict[str, object]:
+        return {
+            "phase": self.phase,
+            "message": "Recovering the database after an interrupted shutdown",
+            "detail": self.detail,
+            "current_lsn": self.current_lsn,
+            "elapsed_seconds": round(max(0.0, now - started_at)),
+            "last_progress_seconds": round(max(0.0, now - last_progress_at)),
+            "heartbeat": heartbeat,
+        }
+
+
+def _emit_recovery_progress(event: dict[str, object]) -> None:
+    print(
+        DATABASE_RECOVERY_PROGRESS_PREFIX
+        + json.dumps(event, separators=(",", ":"), sort_keys=True),
+        flush=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -443,6 +548,9 @@ class EmbeddedPostgres:
             )
             endpoint.publish()
             POSTGRES_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            recovery_log_offset = (
+                POSTGRES_LOG_PATH.stat().st_size if POSTGRES_LOG_PATH.exists() else 0
+            )
             if os.name == "nt":
                 # EDB's pg_ctl tries to manufacture a restricted Windows token
                 # when its parent already runs under a job/sandbox token. That
@@ -480,6 +588,7 @@ class EmbeddedPostgres:
                 endpoint,
                 database="postgres",
                 recovery_expected=recovery_expected,
+                recovery_log_offset=recovery_log_offset,
             )
             if endpoint.database == credentials["database"]:
                 self._ensure_application_database(endpoint)
@@ -554,22 +663,43 @@ class EmbeddedPostgres:
         *,
         database: str | None = None,
         recovery_expected: bool = False,
+        recovery_log_offset: int = 0,
     ) -> None:
         started_at = time.monotonic()
-        timeout_seconds = (
-            POSTGRES_RECOVERY_TIMEOUT_SECONDS
-            if recovery_expected
-            else POSTGRES_STARTUP_TIMEOUT_SECONDS
-        )
-        deadline = started_at + timeout_seconds
+        deadline = started_at + POSTGRES_STARTUP_TIMEOUT_SECONDS
         detail = "no readiness response"
+        monitor = _RecoveryLogMonitor(recovery_log_offset)
+        last_progress_at = started_at
+        last_emit_at = started_at
         if recovery_expected:
-            print(
-                "database recovery: replaying changes after an interrupted shutdown; "
-                "this can take several minutes, so do not close QuantEM",
-                flush=True,
+            _emit_recovery_progress(
+                monitor.event(
+                    started_at=started_at,
+                    last_progress_at=last_progress_at,
+                    now=started_at,
+                    heartbeat=False,
+                )
             )
-        while time.monotonic() < deadline:
+        while True:
+            now = time.monotonic()
+            if not recovery_expected and now >= deadline:
+                raise PostgresError(
+                    "The private PostgreSQL server did not become ready within "
+                    f"{POSTGRES_STARTUP_TIMEOUT_SECONDS} seconds: {detail}"
+                )
+            progress_changed = recovery_expected and monitor.poll()
+            if progress_changed:
+                last_progress_at = now
+                _emit_recovery_progress(
+                    monitor.event(
+                        started_at=started_at,
+                        last_progress_at=last_progress_at,
+                        now=now,
+                        heartbeat=False,
+                    )
+                )
+                last_emit_at = now
+
             result = _run(
                 [
                     _tool("pg_isready"),
@@ -588,16 +718,56 @@ class EmbeddedPostgres:
                 check=False,
             )
             if result.returncode == 0:
+                if recovery_expected:
+                    monitor.phase = "complete"
+                    monitor.detail = "Database recovery completed successfully."
+                    _emit_recovery_progress(
+                        monitor.event(
+                            started_at=started_at,
+                            last_progress_at=now,
+                            now=now,
+                            heartbeat=False,
+                        )
+                    )
                 return
             detail = (result.stderr or result.stdout).strip() or detail
             if self._process is not None and self._process.poll() is not None:
                 detail = f"postgres exited with code {self._process.returncode}; {detail}"
                 break
-            time.sleep(0.25)
-        raise PostgresError(
-            "The private PostgreSQL server did not become ready within "
-            f"{timeout_seconds} seconds: {detail}"
-        )
+            if recovery_expected:
+                stalled_for = now - last_progress_at
+                if stalled_for >= POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS:
+                    monitor.phase = "stalled"
+                    monitor.detail = (
+                        "PostgreSQL is still running but its recovery position has not "
+                        "advanced for 30 minutes."
+                    )
+                    _emit_recovery_progress(
+                        monitor.event(
+                            started_at=started_at,
+                            last_progress_at=last_progress_at,
+                            now=now,
+                            heartbeat=False,
+                        )
+                    )
+                    raise PostgresError(
+                        "The private PostgreSQL server made no measurable recovery "
+                        f"progress for {POSTGRES_RECOVERY_STALL_TIMEOUT_SECONDS} seconds: " + detail
+                    )
+                if now - last_emit_at >= POSTGRES_RECOVERY_HEARTBEAT_SECONDS:
+                    _emit_recovery_progress(
+                        monitor.event(
+                            started_at=started_at,
+                            last_progress_at=last_progress_at,
+                            now=now,
+                            heartbeat=True,
+                        )
+                    )
+                    last_emit_at = now
+                time.sleep(1.0)
+            else:
+                time.sleep(0.25)
+        raise PostgresError("The private PostgreSQL server exited during startup: " + detail)
 
     def stop(self) -> None:
         if self._started:

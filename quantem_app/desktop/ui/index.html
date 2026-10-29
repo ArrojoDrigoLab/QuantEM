@@ -58,6 +58,7 @@
       /* The Rust shell drives this page:
          - window.__quantemStatus(text)  updates the status line
          - window.__quantemMigrationProgress(event) updates measured migration progress
+         - window.__quantemDatabaseRecoveryProgress(event) updates crash recovery liveness
          - window.__quantemMigrationWarning(text) shows a non-fatal liveness warning
          - window.__quantemFailed(text)  shows a fatal error
          - on success it replaces location with the server URL. */
@@ -86,6 +87,7 @@
         var track = document.getElementById("track");
         var bar = document.getElementById("bar");
         var percent = document.getElementById("percent");
+        track.setAttribute("aria-label", "Database upgrade progress");
         if (event.percent == null) {
           track.classList.add("indeterminate");
           track.removeAttribute("aria-valuenow");
@@ -113,6 +115,49 @@
           meta += " · active now";
         }
         document.getElementById("meta").textContent = meta;
+        document.getElementById("warning").style.display = "none";
+      };
+      window.__quantemDatabaseRecoveryProgress = function (event) {
+        document.getElementById("status").textContent =
+          "Recovering the database after an interrupted shutdown… Do not close QuantEM.";
+        var panel = document.getElementById("migration-progress");
+        panel.classList.add("visible");
+        document.getElementById("stage").textContent = event.message;
+        document.getElementById("detail").textContent = event.detail || "";
+
+        var track = document.getElementById("track");
+        var bar = document.getElementById("bar");
+        var percent = document.getElementById("percent");
+        track.setAttribute("aria-label", "Database recovery progress");
+        if (event.phase === "complete") {
+          track.classList.remove("indeterminate");
+          track.setAttribute("aria-valuenow", "100");
+          bar.style.width = "100%";
+          percent.textContent = "Complete";
+        } else {
+          track.classList.add("indeterminate");
+          track.removeAttribute("aria-valuenow");
+          bar.style.width = "";
+          percent.textContent = "Working…";
+        }
+
+        var meta = "Elapsed " + duration(event.elapsed_seconds);
+        if (event.current_lsn) {
+          meta += " · recovery position " + event.current_lsn;
+        }
+        if (event.last_progress_seconds >= 300) {
+          meta += " · last measurable progress " + duration(event.last_progress_seconds) + " ago";
+        } else {
+          meta += " · active now";
+        }
+        document.getElementById("meta").textContent = meta;
+
+        var warning = document.getElementById("warning");
+        var showWarning = event.phase === "stalled" || event.last_progress_seconds >= 300;
+        warning.style.display = showWarning ? "block" : "none";
+        warning.textContent = showWarning
+          ? "No measurable recovery progress has been reported recently. QuantEM is still waiting and has not modified or abandoned the database."
+          : "";
       };
       window.__quantemMigrationWarning = function (text) {
         var warning = document.getElementById("warning");
