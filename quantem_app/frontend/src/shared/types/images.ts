@@ -435,6 +435,7 @@ export interface ImageSegmentation {
    */
   include_level?: number | null;
   final_result_provenance?: {
+    result_id?: string;
     model_identifier: string;
     quantem_version: string;
     final_level: number | null;
@@ -516,6 +517,8 @@ export interface UploadImageOptions {
   experimentId?: string;
   experimentName?: string;
   datasetId?: string;
+  /** Existing datasets in one fixed experiment; every uploaded image joins all of them. */
+  datasetIds?: string[];
   datasetName?: string;
 }
 

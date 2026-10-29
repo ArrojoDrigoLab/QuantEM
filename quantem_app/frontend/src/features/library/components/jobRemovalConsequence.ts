@@ -34,11 +34,11 @@ const CONSEQUENCE_BY_JOB_TYPE: Record<string, string> = {
   // when it finishes", about a run nothing will ever pick up.
   run_analysis:
     "The analysis run is marked Failed rather than left sitting at Pending forever. No results were written, and earlier runs are untouched — Run analysis again when you are ready.",
-  // `_reconcile_adapter`. The Adapt wizard reads the adapter row to decide what
+  // `_reconcile_adapter`. The fine-tuning dialog reads the adapter row to decide what
   // is in flight, so a stranded PENDING one makes the wizard permanently
   // unusable for that segmentation.
   train_organelle_adapter:
-    "The adapter this run would have produced is marked Failed, so the Adapt wizard stops waiting on it and lets you start again. No weights were written and no applied adapter changes.",
+    "The adapter this run would have produced is marked Failed, so the fine-tuning dialog stops waiting on it and lets you start again. No weights were written and no applied adapter changes.",
   // `_reconcile_asset_preprocessing`.
   upload_image_pipeline:
     "The image's preprocessing is marked Failed. The file stays in the library, but it cannot be viewed or segmented until the processing runs again.",

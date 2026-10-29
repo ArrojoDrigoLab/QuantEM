@@ -44,7 +44,6 @@ function renderNotices(segmentation: ImageSegmentation | null) {
   return render(
     <HeaderNotices
       currentSegmentation={segmentation}
-      isComplete={false}
     />
   );
 }

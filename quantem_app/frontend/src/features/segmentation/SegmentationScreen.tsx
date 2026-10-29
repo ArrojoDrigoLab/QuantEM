@@ -1,4 +1,7 @@
-import { SavedResultsPanel } from "./components/SavedResultsPanel";
+import {
+  SavedResultsPanel,
+  type SavedResult,
+} from "./components/SavedResultsPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDrawing } from "@/hooks/useDrawing";
 import { useUncertainSegments } from "@/features/segmentation/hooks/useUncertainSegments";
@@ -57,6 +60,18 @@ export function SegmentationScreen() {
     readOnly: route.isLocked,
   });
   const drawing = useDrawing();
+  const [savedResults, setSavedResults] = useState<SavedResult[]>([]);
+  const [compareRunsOpen, setCompareRunsOpen] = useState(false);
+  const handleSavedResultsChange = useCallback((next: SavedResult[]) => {
+    setSavedResults(next);
+    const canonical = next.find(
+      (result) => result.is_canonical && result.available
+    );
+    const hasAlternative = next.some(
+      (result) => result.available && result.id !== canonical?.id
+    );
+    if (!canonical || !hasAlternative) setCompareRunsOpen(false);
+  }, []);
 
   // Whether the model the run button would use can be loaded here. Without
   // this the button cheerfully queued a run that died on a missing encoder,
@@ -137,6 +152,11 @@ export function SegmentationScreen() {
   useEffect(() => {
     setConfirmingObjectsOverlay(null);
   }, [route.activeSourceModel, route.currentSegmentationId]);
+
+  useEffect(() => {
+    setSavedResults([]);
+    setCompareRunsOpen(false);
+  }, [route.currentSegmentationId]);
 
   useEffect(() => {
     const targetRevision = confirmingObjectsOverlay?.targetRevision;
@@ -709,6 +729,50 @@ export function SegmentationScreen() {
     return null;
   }
 
+  const finalModelIdentifier = String(
+    route.currentSegmentation?.final_result_provenance?.model_identifier ?? ""
+  ).trim();
+  const hasCanonicalResult = Boolean(
+    route.currentSegmentation?.final_result_provenance?.result_id ||
+      (finalModelIdentifier && finalModelIdentifier !== "manual")
+  ) || savedResults.some((result) => result.is_canonical);
+  const hasAnyModelResult = hasCanonicalResult || savedResults.length > 0;
+  const canonicalComparisonResult = savedResults.find(
+    (result) => result.is_canonical && result.available
+  );
+  const canCompareRuns = Boolean(
+    canonicalComparisonResult &&
+      savedResults.some(
+        (result) =>
+          result.available && result.id !== canonicalComparisonResult.id
+      )
+  );
+  const showCanonicalOnly = hasCanonicalResult && !processing.activeRoi;
+  const leftPanelProps = showCanonicalOnly
+    ? {
+        ...viewModels.leftPanelProps,
+        layerControls: {
+          ...viewModels.leftPanelProps.layerControls,
+          candidates: undefined,
+        },
+        viewer: {
+          ...viewModels.leftPanelProps.viewer,
+          idMapOverlays: (viewModels.leftPanelProps.viewer.idMapOverlays ?? []).filter(
+            (layer) => layer.id === "label-left-confirmed-idmap"
+          ),
+        },
+        segments: {
+          ...viewModels.leftPanelProps.segments,
+          items: viewModels.leftPanelProps.segments.items.filter(
+            (segment) => segment.label_state === "CONFIRMED"
+          ),
+        },
+      }
+    : viewModels.leftPanelProps;
+  const hasDoneRoi = Boolean(
+    processing.segmentationRois?.some((roi) => roi.completed_for_segmentation)
+  );
+
   return (
     <div className="segmentation-screen">
       {processing.shouldShowProcessingStatus && (
@@ -717,12 +781,25 @@ export function SegmentationScreen() {
       <SegmentationHeader {...viewModels.headerProps}
         modelRunControl={thresholdEnabled && thresholdControls.blocked
           ? <RunModelButton controls={thresholdControls} /> : undefined}
+        resultControl={canCompareRuns ? (
+          <button
+            type="button"
+            className="segmentation-complete-button segmentation-compare-button"
+            onClick={() => setCompareRunsOpen((current) => !current)}
+          >
+            {compareRunsOpen ? "Back to labeling" : "Compare runs"}
+          </button>
+        ) : undefined}
+        showManualCompletion={!hasAnyModelResult && hasDoneRoi}
       />
       {route.currentSegmentation && <SavedResultsPanel key={route.currentSegmentation.id}
-        segmentationId={route.currentSegmentation.id} assetId={route.image.id}
+        segmentationId={route.currentSegmentation.id} image={route.image}
         revision={route.currentSegmentation.updated_at ?? route.currentSegmentation.status_stage}
+        open={compareRunsOpen}
+        onClose={() => setCompareRunsOpen(false)}
+        onResultsChange={handleSavedResultsChange}
         onQueued={route.refetchSegmentations} />}
-      <main
+      {!compareRunsOpen ? <main
         className={`segmentation-main ${
           ui.showConfirmedPanel && !route.isLocked ? "show-confirmed" : "hide-confirmed"
         }`}
@@ -768,7 +845,7 @@ export function SegmentationScreen() {
           {...viewModels.sidebarProps}
           includeLevel={thresholdEnabled ? { controls: thresholdControls } : undefined}
         />
-        <SegmentationLeftPanel {...viewModels.leftPanelProps} />
+        <SegmentationLeftPanel {...leftPanelProps} />
         {ui.showConfirmedPanel && !route.isLocked && (
           <SegmentationRightPanel
             {...viewModels.rightPanelProps}
@@ -790,7 +867,7 @@ export function SegmentationScreen() {
             </button>
           </div>
         )}
-      </main>
+      </main> : null}
     </div>
   );
 }

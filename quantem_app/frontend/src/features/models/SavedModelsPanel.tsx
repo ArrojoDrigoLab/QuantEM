@@ -67,7 +67,7 @@ export function SavedModelsPanel({ experimentId, refreshKey = "" }: { experiment
         <Button disabled={busy || !rename.name.trim()} type="submit">Save name</Button><Button onClick={() => setRename(null)}>Cancel</Button>
       </form>}
     </article>)}</div>
-    <ConfirmDialog isOpen={Boolean(deleting)} title="Delete model?"
+    <ConfirmDialog isOpen={Boolean(deleting)} title="Delete model?" confirmTone="danger"
       message={`Delete the model “${deleting?.name}”? This will permanently delete this model. Existing segmentations and analyses will remain available, but this model will no longer be available for new segmentations.`}
       confirmText="Delete model" cancelText="Cancel" onCancel={() => setDeleting(null)} onConfirm={() => {
         const model = deleting; setDeleting(null); if (!model) return; setBusy(true);

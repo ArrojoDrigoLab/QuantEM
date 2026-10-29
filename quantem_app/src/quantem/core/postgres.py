@@ -262,6 +262,15 @@ def _initialize_cluster(credentials: dict[str, str]) -> None:
             "listen_addresses = '127.0.0.1'\n"
             "max_connections = 32\n"
             "shared_buffers = '32MB'\n"
+            # The SQLite cutover can write several gigabytes in one
+            # transaction. PostgreSQL's 1 GB default forced repeated,
+            # multi-minute checkpoints during that copy. Keep durability on,
+            # but give the private cluster enough WAL headroom to checkpoint
+            # smoothly instead of thrashing the user's disk.
+            "max_wal_size = '4GB'\n"
+            "min_wal_size = '256MB'\n"
+            "checkpoint_timeout = '15min'\n"
+            "checkpoint_completion_target = 0.9\n"
             "password_encryption = 'scram-sha-256'\n"
             "fsync = on\n"
             "full_page_writes = on\n"

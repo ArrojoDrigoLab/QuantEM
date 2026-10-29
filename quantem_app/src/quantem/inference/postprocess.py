@@ -2,7 +2,7 @@
 
 The published post-processing chain:
 
-    threshold -> binary_closing(disk(r)) -> binary_fill_holes -> label -> drop
+    threshold -> closing(disk(r)) -> binary_fill_holes -> label -> drop
     regions below min_area
 
 The closing consolidates a compact organelle that internal probability texture
@@ -24,7 +24,7 @@ from __future__ import annotations
 import numpy as np
 from scipy import ndimage as ndi
 from skimage.measure import label as sk_label
-from skimage.morphology import binary_closing, disk
+from skimage.morphology import closing, disk
 
 from quantem.registry.manifest import DEFAULT_THRESHOLD
 
@@ -68,7 +68,7 @@ def close_and_fill(mask: np.ndarray, close_radius: int) -> np.ndarray:
     """
     if close_radius <= 0 or not mask.any():
         return mask
-    closed = binary_closing(mask, disk(int(close_radius)))
+    closed = closing(mask, disk(int(close_radius)))
     return ndi.binary_fill_holes(closed)
 
 

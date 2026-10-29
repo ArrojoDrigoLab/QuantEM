@@ -4,6 +4,8 @@ import type { RunLeg } from "@/shared/types/runs";
 export interface SystemStatus {
   /** The installed QuantEM package version reported by the backend. */
   app_version?: string;
+  /** Absolute data root resolved by the desktop shell/backend at launch. */
+  storage_directory?: string;
   cuda_available: boolean;
   /**
    * Extensions this build can import, e.g. `[".tif", ".tiff", ".png"]`.

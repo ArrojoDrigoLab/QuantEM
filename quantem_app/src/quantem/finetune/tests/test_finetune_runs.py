@@ -27,6 +27,7 @@ from quantem.finetune.tests.fixtures import (
     square,
 )
 from quantem.jobs.constants import (
+    JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
     JOB_TYPE_RUN_SEGMENTATION_FULL,
     JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
 )
@@ -127,6 +128,45 @@ class NamedRunTests(TestCase):
         assert job.payload_json["fixed_steps"] is None
         assert job.progress_units_total == sum(job.payload_json["planned_steps"])
         assert job.progress_unit_label == "step"
+
+    def test_opt_in_application_targets_are_queued_after_training_succeeds(self):
+        from quantem.jobs.handlers import handle_train_organelle_adapter
+
+        response = self._start(
+            auto_apply=True,
+            auto_apply_asset_ids=self.asset_ids,
+            auto_apply_dataset_ids=[],
+        )
+        job = Job.objects.get(id=response.json()["job_id"])
+        assert job.payload_json["auto_apply"] is True
+        assert sorted(job.payload_json["auto_apply_asset_ids"]) == sorted(self.asset_ids)
+
+        def finish_training(**_kwargs):
+            Adapter.objects.filter(pk=response.json()["adapter_id"]).update(status="SUCCESS")
+            return {"status": "SUCCESS"}
+
+        reporter = FakeReporter()
+        with mock.patch(
+            "quantem.finetune.adapter_job.train_organelle_adapter_job",
+            side_effect=finish_training,
+        ):
+            result = handle_train_organelle_adapter(job.payload_json, reporter, FakeCancel())
+
+        assert len(result["auto_apply"]["queued"]) == 2
+        application_jobs = Job.objects.filter(type=JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE)
+        assert application_jobs.count() == 2
+        assert all(
+            queued.payload_json["legs"][0]["adapter_id"] == response.json()["adapter_id"]
+            for queued in application_jobs
+        )
+        assert any("queued on 2 images" in (message or "") for _, message in reporter.updates)
+
+    def test_auto_apply_requires_a_json_boolean(self):
+        response = self._start(auto_apply="false")
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "auto_apply must be true or false."
+        assert Job.objects.count() == 0
 
     def test_an_explicit_step_override_remains_fixed(self):
         response = self._start(steps=420)
@@ -464,6 +504,7 @@ class NamedRunTests(TestCase):
         assert response.status_code == 200
         names = [row["name"] for row in response.json()]
         assert names == ["Mito one"]
+        assert response.json()[0]["segmentation_type"] == str(_mito().id)
         assert response.json()[0]["asset_count"] == 2
         assert sorted(response.json()[0]["asset_ids"]) == sorted(self.asset_ids)
 

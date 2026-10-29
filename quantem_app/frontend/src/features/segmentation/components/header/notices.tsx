@@ -147,10 +147,8 @@ export function LockedNotice() {
  */
 export function HeaderNotices({
   currentSegmentation,
-  isComplete,
 }: {
   currentSegmentation: ImageSegmentation | null;
-  isComplete: boolean;
 }) {
   // Read defensively rather than off a declared field: an `error_code` reaches
   // this screen on several differently-shaped payloads, and a code this build
@@ -175,7 +173,6 @@ export function HeaderNotices({
         // about the newest attempt -- see `LatestAttemptNotice`.
         <LatestAttemptNotice message={currentSegmentation.status_error.trim()} />
       ) : null}
-      {isComplete && <span className="text-sm text-emerald-800">Whole-image coverage · editing remains available</span>}
     </>
   );
 }

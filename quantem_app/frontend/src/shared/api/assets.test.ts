@@ -287,4 +287,18 @@ describe("shared/api/assets", () => {
     expect(body.get("experiment_name")).toBe("Fasted cohort");
     expect(body.get("dataset_name")).toBe("Liver 24h");
   });
+
+  it("sends every selected existing dataset with the import", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "asset-1" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await uploadAsset(new File(["x"], "scan.tif"), {
+      experimentId: "experiment-1",
+      datasetIds: ["dataset-a", "dataset-b"],
+    });
+
+    const body = fetchMock.mock.calls[0][1].body as FormData;
+    expect(body.get("experiment_id")).toBe("experiment-1");
+    expect(body.getAll("dataset_ids")).toEqual(["dataset-a", "dataset-b"]);
+  });
 });

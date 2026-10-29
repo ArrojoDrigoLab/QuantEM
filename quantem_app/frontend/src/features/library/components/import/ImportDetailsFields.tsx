@@ -6,6 +6,7 @@ import type { GroupingChoice } from "@/features/library/components/grouping/grou
 import type { ChosenFile } from "@/features/library/components/import/importValidation";
 import type { ImportScaleState } from "@/features/library/components/import/useImportScale";
 import type { Experiment } from "@/shared/types/common";
+import type { ReactNode } from "react";
 
 export function ImportDetailsFields({
   files,
@@ -24,6 +25,7 @@ export function ImportDetailsFields({
   datasetChoice,
   onExperimentChoiceChange,
   onDatasetChoiceChange,
+  groupingFields,
 }: {
   files: ChosenFile[];
   scale: ImportScaleState;
@@ -41,6 +43,8 @@ export function ImportDetailsFields({
   datasetChoice: GroupingChoice;
   onExperimentChoiceChange: (next: GroupingChoice) => void;
   onDatasetChoiceChange: (next: GroupingChoice) => void;
+  /** A fixed-experiment importer supplies its own multi-dataset controls. */
+  groupingFields?: ReactNode;
 }) {
   const { singleFile, scaleCensus } = scale;
   const unresolvedMetadataCount =
@@ -130,13 +134,16 @@ export function ImportDetailsFields({
       </div>
 
       <div className="mt-3 flex flex-col gap-1">
-        <GroupingFields
-          experiments={experiments}
-          experiment={experimentChoice}
-          dataset={datasetChoice}
-          onExperimentChange={onExperimentChoiceChange}
-          onDatasetChange={onDatasetChoiceChange}
-        />
+        {groupingFields ?? (
+          <GroupingFields
+            experiments={experiments}
+            experiment={experimentChoice}
+            dataset={datasetChoice}
+            onExperimentChange={onExperimentChoiceChange}
+            onDatasetChange={onDatasetChoiceChange}
+            defaultNewDatasetOnExperimentChange
+          />
+        )}
       </div>
 
       <div className="mt-3 flex flex-col gap-1">

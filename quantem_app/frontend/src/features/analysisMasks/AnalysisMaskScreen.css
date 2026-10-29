@@ -66,6 +66,37 @@
   background: #1d4ed8;
 }
 
+.analysis-mask-autosave {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #a7f3d0;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.analysis-mask-autosave > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.14);
+}
+
+.analysis-mask-autosave.is-saving > span {
+  border: 2px solid rgba(125, 211, 252, 0.35);
+  border-top-color: #7dd3fc;
+  background: transparent;
+  box-shadow: none;
+  animation: analysis-mask-spin 0.8s linear infinite;
+}
+
+@keyframes analysis-mask-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .analysis-mask-header-spacer {
   min-width: 0;
 }
@@ -213,6 +244,13 @@
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }
 
+.analysis-mask-object-row.metadata-editing {
+  border-color: #93c5fd;
+  border-left-color: #2563eb !important;
+  background: #f8fbff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
 .analysis-mask-object-name {
   min-width: 0;
   color: #172033;
@@ -235,6 +273,92 @@
   border: 1px solid #94a3b8;
   border-radius: 4px;
   padding: 0.3rem 0.4rem;
+}
+
+.analysis-mask-tag-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.analysis-mask-tag-pills span {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.2;
+  padding: 0.22rem 0.48rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-mask-tag-editor {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.analysis-mask-tag-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 28px;
+  gap: 0.35rem;
+}
+
+.analysis-mask-tag-row input {
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  padding: 0.32rem 0.4rem;
+}
+
+.analysis-mask-tag-row input:focus,
+.analysis-mask-object-name input:focus {
+  border-color: #2563eb;
+  outline: 2px solid rgba(37, 99, 235, 0.18);
+  outline-offset: 0;
+}
+
+.analysis-mask-tag-remove,
+.analysis-mask-tag-add {
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+}
+
+.analysis-mask-tag-remove {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.analysis-mask-tag-add {
+  justify-self: start;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.analysis-mask-tag-remove:hover,
+.analysis-mask-tag-add:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.analysis-mask-metadata-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .analysis-mask-object-actions {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
 import numpy as np
 from django.test import TestCase
@@ -11,11 +12,13 @@ from quantem.analysis.loaders import analysis_mask_regions, segmentation_mask
 from quantem.segmentation.global_masks import load_global_mask
 from quantem.segmentation.models import (
     AnalysisMaskObject,
+    AnalysisMaskObjectAnnotation,
     GlobalMask,
     ImageSegmentation,
 )
 from quantem.segmentation.type_service import (
     get_or_create_analysis_mask_type,
+    get_or_create_cells_type,
     get_or_create_tissue_type,
 )
 from quantem.testing import create_small_test_image
@@ -148,6 +151,155 @@ class AnalysisMaskObjectApiTests(TestCase):
         response = self.client.get(f"/api/segmentations/{tissue.id}/analysis-mask-objects/")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["objects"], [])
+
+    def test_named_sample_area_object_names_the_segmentation_in_asset_lists(self):
+        tissue = ImageSegmentation.objects.create(
+            asset=self.segmentation.asset,
+            segmentation_type=get_or_create_tissue_type(),
+        )
+        AnalysisMaskObject.objects.create(
+            segmentation=tissue,
+            name="Pericentral region",
+            color="#38bdf8",
+            sort_order=1,
+        )
+
+        response = self.client.get(f"/api/assets/{self.segmentation.asset_id}/segmentations/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = next(row for row in response.data if row["id"] == str(tissue.id))
+        self.assertEqual(payload["display_name"], "Pericentral region")
+
+
+class CellObjectApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        image = create_small_test_image("Cells", width=64, height=64)
+        self.segmentation = ImageSegmentation.objects.create(
+            asset=image.asset,
+            segmentation_type=get_or_create_cells_type(),
+            display_name="Cells",
+            status_stage="CANDIDATES_READY",
+        )
+        self.url = f"/api/segmentations/{self.segmentation.id}/analysis-mask-objects/"
+
+    def test_new_cells_skip_legacy_raster_materialization(self):
+        with patch(
+            "quantem.segmentation.api_views.analysis_masks.materialize_legacy_area_instances"
+        ) as materialize:
+            listed = self.client.get(self.url)
+            created = self.client.post(
+                self.url,
+                {"operation": "include", "shapes": [_shape(4, 4, 24, 24)]},
+                format="json",
+            )
+
+        self.assertEqual(listed.status_code, 200, listed.data)
+        self.assertEqual(listed.data["objects"], [])
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["object"]["name"], "Cell 1")
+        self.assertFalse(GlobalMask.objects.filter(segmentation=self.segmentation).exists())
+        materialize.assert_not_called()
+
+    def test_geometry_metadata_and_deletion_supersede_existing_analysis(self):
+        superseded = "quantem.segmentation.api_views.analysis_masks.mark_superseded"
+        with patch(superseded) as mark:
+            created = self.client.post(
+                self.url,
+                {"operation": "include", "shapes": [_shape(4, 4, 24, 24)]},
+                format="json",
+            )
+            self.assertEqual(created.status_code, 201, created.data)
+            mark.assert_called_once_with(self.segmentation)
+
+        detail = f"{self.url}{created.data['object']['id']}/"
+        with patch(superseded) as mark:
+            renamed = self.client.patch(detail, {"name": "Portal cell"}, format="json")
+            self.assertEqual(renamed.status_code, 200, renamed.data)
+            mark.assert_called_once_with(self.segmentation)
+
+        with patch(superseded) as mark:
+            deleted = self.client.delete(detail)
+            self.assertEqual(deleted.status_code, 200, deleted.data)
+            mark.assert_called_once_with(self.segmentation)
+
+    def test_cell_tags_are_suggested_app_wide_and_canonicalized_case_insensitively(self):
+        other_image = create_small_test_image("Other cells", width=32, height=32)
+        other_segmentation = ImageSegmentation.objects.create(
+            asset=other_image.asset,
+            segmentation_type=get_or_create_cells_type(),
+            display_name="Cells",
+        )
+        other_cell = AnalysisMaskObject.objects.create(
+            segmentation=other_segmentation,
+            name="Cell 1",
+            color="#38bdf8",
+            sort_order=1,
+        )
+        AnalysisMaskObjectAnnotation.objects.create(
+            object=other_cell,
+            tags=[
+                {"name": "Phenotype", "value": "Beta"},
+                {"name": "Treatment", "value": "Control"},
+            ],
+        )
+        created = self.client.post(
+            self.url,
+            {"operation": "include", "shapes": [_shape(4, 4, 24, 24)]},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+
+        listed = self.client.get(self.url)
+
+        self.assertEqual(listed.status_code, 200, listed.data)
+        self.assertEqual(
+            listed.data["tag_suggestions"],
+            [
+                {"name": "Phenotype", "values": ["Beta"]},
+                {"name": "Treatment", "values": ["Control"]},
+            ],
+        )
+
+        detail = f"{self.url}{created.data['object']['id']}/"
+        updated = self.client.patch(
+            detail,
+            {
+                "name": "Pericentral cell",
+                "tags": [
+                    {"name": "phenotype", "value": "beta"},
+                    {"name": "State", "value": "Activated"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(updated.data["name"], "Pericentral cell")
+        self.assertEqual(
+            updated.data["tags"],
+            [
+                {"name": "Phenotype", "value": "Beta"},
+                {"name": "State", "value": "Activated"},
+            ],
+        )
+        annotation = AnalysisMaskObjectAnnotation.objects.get(
+            object_id=created.data["object"]["id"]
+        )
+        self.assertEqual(annotation.tags, updated.data["tags"])
+
+        duplicate = self.client.patch(
+            detail,
+            {
+                "tags": [
+                    {"name": "State", "value": "Activated"},
+                    {"name": "state", "value": "Quiescent"},
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, 400, duplicate.data)
+        self.assertIn("same tag name twice", duplicate.data["error"])
 
 
 class AnalysisMaskObjectRasterTests(TestCase):

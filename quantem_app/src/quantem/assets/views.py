@@ -11,7 +11,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -24,7 +24,7 @@ from quantem.core.app_settings import (
     load_app_settings,
     update_app_settings,
 )
-from quantem.core.config import DATA_DIR
+from quantem.core.config import DATA_DIR, STORAGE_DIR
 from quantem.core.local_storage import resolve_stored_path
 
 from .asset_mutations import (
@@ -152,7 +152,8 @@ class AssetUploadView(APIView):
     The fields it reads are exactly ``file``, ``display_name``,
     ``pixel_size_nm``, ``notes``, the four ``segment_*`` flags, and the four
     optional grouping fields (``experiment_id``/``experiment_name`` and
-    ``dataset_id``/``dataset_name``, each an id to use or a name to create).
+    ``dataset_id``/``dataset_ids``/``dataset_name``, each an id to use or a
+    name to create).
     That list is
     written down because the client was posting a ``tag_names`` field this view
     never looked at, behind an import-form box labelled "Tags": there is no tag
@@ -193,6 +194,7 @@ class AssetUploadView(APIView):
                 experiment_name=request.data.get("experiment_name"),
                 dataset_id=request.data.get("dataset_id"),
                 dataset_name=request.data.get("dataset_name"),
+                dataset_ids=request.data.getlist("dataset_ids"),
             )
             payload = create_uploaded_asset(
                 uploaded_file=request.FILES["file"],
@@ -287,6 +289,22 @@ class AssetUploadPipelineBatchStartView(APIView):
         return Response({"job_ids": job_ids}, status=status.HTTP_202_ACCEPTED)
 
 
+def _deferred_upload_recovery_queryset():
+    """Lock deferred imports without PostgreSQL's forbidden DISTINCT/FOR UPDATE pair."""
+
+    deferred_full_rendition = Rendition.objects.filter(
+        asset_id=OuterRef("pk"),
+        type=Rendition.TYPE_FULL,
+        metadata__processing_deferred=True,
+    )
+    return (
+        active_asset_queryset()
+        .select_for_update()
+        .filter(preprocess_stage="ENCODING")
+        .filter(Exists(deferred_full_rendition))
+    )
+
+
 class AssetUploadPipelineRecoveryView(APIView):
     """Resume deferred imports left behind by an interrupted browser session."""
 
@@ -294,16 +312,7 @@ class AssetUploadPipelineRecoveryView(APIView):
         del request
         job_ids: list[str] = []
         with transaction.atomic():
-            assets = list(
-                active_asset_queryset()
-                .select_for_update()
-                .filter(
-                    preprocess_stage="ENCODING",
-                    renditions__type=Rendition.TYPE_FULL,
-                    renditions__metadata__processing_deferred=True,
-                )
-                .distinct()
-            )
+            assets = list(_deferred_upload_recovery_queryset())
             for asset in assets:
                 job_ids.append(str(enqueue_upload_pipeline(asset).id))
         return Response({"job_ids": job_ids}, status=status.HTTP_202_ACCEPTED)
@@ -403,9 +412,10 @@ class SystemStatusView(APIView):
     """
     API view for system status information.
 
-    Returns the installed app version, CUDA availability, the image formats
-    this build can import, and the largest upload it will accept. Settings and
-    upload validation therefore stay aligned with the backend automatically.
+    Returns the installed app version, storage directory, CUDA availability,
+    the image formats this build can import, and the largest upload it will
+    accept. Settings and upload validation therefore stay aligned with the
+    backend automatically.
     """
 
     def get(self, request):
@@ -423,6 +433,7 @@ class SystemStatusView(APIView):
         return Response(
             {
                 "app_version": __version__,
+                "storage_directory": str(STORAGE_DIR),
                 "cuda_available": cuda_available,
                 "supported_upload_formats": list(UPLOAD_SUFFIXES),
                 # The size half of the same contract. ``quantem serve`` hands

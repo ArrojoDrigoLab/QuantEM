@@ -1,6 +1,6 @@
 # QuantEM desktop shell
 
-The Windows desktop channel for QuantEM. One double-clickable artifact that
+The Windows and macOS desktop channel for QuantEM. One double-clickable artifact that
 opens the QuantEM window with nothing pre-installed — model weights are pulled
 from Hugging Face at runtime (or installed from a release bundle with
 `quantem models install`); they are **not** part of this distribution.
@@ -82,6 +82,12 @@ migration to a disposable copy, migrates and validates it in PostgreSQL, and
 archives the retired SQLite files as the configured database-upgrade backup.
 Fresh installs skip the bridge. No user command or separately administered
 database service is required.
+
+The sidecar streams structured stage, count, ETA, and liveness events to the
+loading window while this cutover runs. Migration startup has no absolute time
+limit: the shell continues watching the live sidecar, warns without aborting if
+events stop for five minutes, and automatically opens the application whenever
+the validated database becomes ready.
 
 ### Install-time model selection
 

@@ -41,6 +41,7 @@ export function SegmentationDeleteDialog({
         />
       }
       detailsTone="warning"
+      confirmTone="danger"
       confirmText={
         deleting
           ? "Deleting…"

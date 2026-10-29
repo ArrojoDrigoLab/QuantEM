@@ -7,7 +7,7 @@ import shutil
 
 from django.apps import apps
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
@@ -25,6 +25,7 @@ from quantem.segmentation.completion import (
     restore_last_archive,
 )
 from quantem.segmentation.models import (
+    AnalysisMaskObject,
     ImageSegmentation,
     ProbabilityMap,
     SegmentationConfig,
@@ -87,7 +88,19 @@ class AssetSegmentationListCreateView(APIView):
         # ``asset`` is joined for ``objects_pixel_size``, which compares the
         # image's pixel size now with the one its objects were produced under.
         # Without it that is one extra query per row of a list a screen polls.
-        segmentations = segmentations.select_related("segmentation_type", "config", "asset")
+        segmentations = segmentations.select_related(
+            "segmentation_type", "config", "asset"
+        ).prefetch_related(
+            Prefetch(
+                "analysis_mask_objects",
+                queryset=AnalysisMaskObject.objects.filter(
+                    segmentation__segmentation_type__representation=(
+                        SegmentationType.REPRESENTATION_SEMANTIC
+                    )
+                ).only("id", "segmentation_id", "name"),
+                to_attr="semantic_display_objects",
+            )
+        )
         # A run whose worker died leaves its stage behind, and this is the read
         # the labeling screen makes: without the repair the screen shows a
         # "Running... 40%" pill for a run with no process behind it until the

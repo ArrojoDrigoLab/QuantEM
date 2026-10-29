@@ -134,4 +134,38 @@ describe("useApiQuery", () => {
       consoleErrorSpy.mockRestore();
     }
   });
+
+  it("keeps a refetch error visible until a later request succeeds", async () => {
+    const retry = deferred<string>();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce("initial")
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockReturnValueOnce(retry.promise);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useApiQuery(fetcher, []));
+      await waitFor(() => expect(result.current.data).toBe("initial"));
+
+      await act(async () => {
+        await result.current.refetch();
+      });
+      expect(result.current.error?.message).toBe("connection lost");
+
+      act(() => {
+        void result.current.refetch();
+      });
+      expect(result.current.refetching).toBe(true);
+      expect(result.current.error?.message).toBe("connection lost");
+
+      await act(async () => {
+        retry.resolve("reconnected");
+      });
+      await waitFor(() => expect(result.current.refetching).toBe(false));
+      expect(result.current.data).toBe("reconnected");
+      expect(result.current.error).toBeNull();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
 });

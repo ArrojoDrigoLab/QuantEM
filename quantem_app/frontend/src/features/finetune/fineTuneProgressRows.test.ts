@@ -98,7 +98,7 @@ describe("the fine-tune job in the shared queue surfaces", () => {
   const job = {
     id: "job-1",
     type: "train_organelle_adapter",
-    task_label: "Adapt model to your data",
+    task_label: "Fine-tuning · Fasted liver mitochondria",
     status: "RUNNING",
     progress: 0.4,
     cancel_requested: false,

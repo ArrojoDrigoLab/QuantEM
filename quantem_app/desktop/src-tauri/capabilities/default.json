@@ -6,5 +6,11 @@
   "remote": {
     "urls": ["http://127.0.0.1:*"]
   },
-  "permissions": ["core:default", "updater:default", "process:default"]
+  "permissions": [
+    "core:default",
+    "updater:default",
+    "process:default",
+    "allow-save-text-file",
+    "allow-save-url-file"
+  ]
 }

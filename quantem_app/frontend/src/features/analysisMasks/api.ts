@@ -7,6 +7,7 @@ import type {
   AnalysisMaskObjectSaveResponse,
   AnalysisMaskOperation,
   AnalysisMaskShape,
+  CellTag,
 } from "./types";
 
 export function listAnalysisMaskObjects(
@@ -57,6 +58,20 @@ export function renameAnalysisMaskObject(
     {
       method: "PATCH",
       body: JSON.stringify({ name }),
+    }
+  );
+}
+
+export function updateAnalysisMaskObjectMetadata(
+  segmentationId: string,
+  objectId: string,
+  payload: { name: string; tags: CellTag[] }
+): Promise<AnalysisMaskObject> {
+  return apiRequest<AnalysisMaskObject>(
+    `/api/segmentations/${segmentationId}/analysis-mask-objects/${objectId}/`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     }
   );
 }

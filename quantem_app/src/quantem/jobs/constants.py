@@ -138,7 +138,7 @@ JOB_TYPE_LABELS = {
     JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL: "Redo objects at a new include level",
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY: "Update segmentation display",
     JOB_TYPE_REFRESH_SEGMENT_FEATURES: "Measure object details",
-    JOB_TYPE_TRAIN_ORGANELLE_ADAPTER: "Adapt model to your data",
+    JOB_TYPE_TRAIN_ORGANELLE_ADAPTER: "Fine-tuning",
     JOB_TYPE_RUN_ANALYSIS: "Run analysis",
     JOB_TYPE_INSTALL_MODEL_PACK: "Download model pack",
 }

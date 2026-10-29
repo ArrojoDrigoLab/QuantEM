@@ -188,7 +188,7 @@ built.
 
 ### Desktop installer (Windows)
 
-Download the installer from the [latest release](../../releases/latest) and run it. Windows may
+Download the installer from the [latest release](https://github.com/ArrojoDrigoLab/QuantEM/releases/latest) and run it. Windows may
 warn that it does not recognise the publisher: click **More info**, then **Run anyway**. If you
 would rather check the download first, run `certutil -hashfile <file> SHA256` and compare the
 result with `SHA256SUMS.txt` on the same release page.
@@ -227,6 +227,13 @@ snapshot, advances a disposable copy through every skipped Django migration, ini
 private PostgreSQL schema, copies and validates every model field, and only then opens the app.
 Queued, retrying, or running jobs are retained as records but marked failed; jobs copied from the
 old application instance are never resumed.
+
+The startup window reports the current cutover stage, measured record or byte counts, elapsed time,
+and a stage ETA once enough work has completed to estimate one. Opaque database checks retain an
+indeterminate bar but continue to report liveness and the time since the last measurable advance.
+There is no fixed migration deadline: QuantEM keeps monitoring a live sidecar until it finishes or
+exits, and shows a non-fatal warning if liveness events stop for five minutes. Large libraries can
+therefore take longer than two hours without the loading page abandoning a healthy transaction.
 
 The live SQLite files are moved into that verified snapshot after PostgreSQL commits successfully.
 The snapshot is the first **Database upgrade backup** and follows the configured count and age

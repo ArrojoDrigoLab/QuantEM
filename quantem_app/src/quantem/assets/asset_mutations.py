@@ -51,12 +51,13 @@ PIXEL_SIZE_FIELDS = ("pixel_size_nm", "pixel_size_nm_z")
 
 
 class ImportGrouping(NamedTuple):
-    """The four cleaned fields an import may carry."""
+    """The cleaned experiment and dataset fields an import may carry."""
 
     experiment_id: str
     experiment_name: str
     dataset_id: str
     dataset_name: str
+    dataset_ids: tuple[str, ...] = ()
 
     @property
     def is_empty(self) -> bool:
@@ -69,6 +70,7 @@ def normalise_import_grouping(
     experiment_name=None,
     dataset_id=None,
     dataset_name=None,
+    dataset_ids=None,
 ) -> ImportGrouping:
     """Clean the grouping fields an import form posted, and refuse the one
     combination that cannot mean anything.
@@ -77,13 +79,21 @@ def normalise_import_grouping(
     naming an experiment describes nothing. Every other combination is legal,
     including all four blank.
     """
+    if isinstance(dataset_ids, str):
+        dataset_ids = [dataset_ids]
+    cleaned_dataset_ids = tuple(
+        dict.fromkeys(
+            str(dataset_id).strip() for dataset_id in (dataset_ids or []) if str(dataset_id).strip()
+        )
+    )
     grouping = ImportGrouping(
         experiment_id=str(experiment_id or "").strip(),
         experiment_name=str(experiment_name or "").strip(),
         dataset_id=str(dataset_id or "").strip(),
         dataset_name=str(dataset_name or "").strip(),
+        dataset_ids=cleaned_dataset_ids,
     )
-    named_dataset = grouping.dataset_id or grouping.dataset_name
+    named_dataset = grouping.dataset_id or grouping.dataset_name or grouping.dataset_ids
     named_experiment = grouping.experiment_id or grouping.experiment_name
     if named_dataset and not named_experiment:
         raise ValueError(
@@ -116,16 +126,26 @@ def _resolve_import_grouping(
             experiment_id=grouping.experiment_id or None,
             experiment_name=grouping.experiment_name or None,
         )
+        datasets = []
+        for dataset_id in grouping.dataset_ids:
+            dataset = resolve_dataset(
+                experiment=experiment,
+                dataset_id=dataset_id,
+            )
+            if dataset is not None and dataset not in datasets:
+                datasets.append(dataset)
         dataset = resolve_dataset(
             experiment=experiment,
             dataset_id=grouping.dataset_id or None,
             dataset_name=grouping.dataset_name or None,
         )
+        if dataset is not None and dataset not in datasets:
+            datasets.append(dataset)
         if experiment is None:
             experiment = create_image_experiment(display_name)
-        if dataset is None:
-            dataset = create_default_dataset(experiment)
-        return experiment, dataset
+        if not datasets:
+            datasets = [create_default_dataset(experiment)]
+        return experiment, datasets
     except DjangoValidationError as exc:
         # The import view turns a ValueError into a 400 carrying the sentence;
         # a Django ValidationError would fall through to the 500 branch and be
@@ -611,7 +631,7 @@ def _record_uploaded_asset(
     notes_text = "" if notes is None else str(notes).strip()
 
     with transaction.atomic():
-        experiment, dataset = _resolve_import_grouping(
+        experiment, datasets = _resolve_import_grouping(
             grouping,
             display_name=display_name,
         )
@@ -661,7 +681,7 @@ def _record_uploaded_asset(
                 "source_metadata": _json_safe_metadata(metadata),
             },
         )
-        asset.datasets.add(dataset)
+        asset.datasets.add(*datasets)
 
     if not defer_processing:
         try:

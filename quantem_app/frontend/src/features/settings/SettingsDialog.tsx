@@ -9,6 +9,60 @@ import {
   updateSystemSettings,
 } from "@/shared/api/systemSettings";
 
+type BackupField = "count" | "days";
+type BackupSaveState = "idle" | "saving" | "saved" | "error";
+
+const BACKUP_AUTOSAVE_DELAY_MS = 400;
+const BACKUP_SAVING_INDICATOR_MS = 1000;
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function withBackupSaveState(
+  current: Record<BackupField, BackupSaveState>,
+  fields: BackupField[],
+  state: BackupSaveState
+): Record<BackupField, BackupSaveState> {
+  const next = { ...current };
+  for (const field of fields) next[field] = state;
+  return next;
+}
+
+function BackupSaveIndicator({
+  state,
+  label,
+}: {
+  state: BackupSaveState;
+  label: string;
+}) {
+  if (state === "idle") return <span className="block h-5 w-5" aria-hidden="true" />;
+  if (state === "saving") {
+    return (
+      <span className="flex h-5 w-5 items-center justify-center text-cyan-700" role="status" aria-label={`Saving ${label}`}>
+        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+          <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="3" />
+        </svg>
+      </span>
+    );
+  }
+  if (state === "saved") {
+    return (
+      <span className="flex h-5 w-5 items-center justify-center text-emerald-600" role="status" aria-label={`${label} saved`}>
+        <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-5 w-5 items-center justify-center font-bold text-red-600" role="status" aria-label={`${label} could not be saved`}>
+      !
+    </span>
+  );
+}
+
 interface SettingsDialogProps {
   isOpen: boolean;
   status: SystemStatus | null;
@@ -31,9 +85,21 @@ export function SettingsDialog({
   const [backupCount, setBackupCount] = useState("1");
   const [backupDays, setBackupDays] = useState("30");
   const [backupSettingsLoading, setBackupSettingsLoading] = useState(false);
-  const [backupSettingsSaving, setBackupSettingsSaving] = useState(false);
   const [backupSettingsError, setBackupSettingsError] = useState<string | null>(null);
   const [backupSettingsSaved, setBackupSettingsSaved] = useState<string | null>(null);
+  const [savedBackupSettings, setSavedBackupSettings] = useState<{
+    count: number;
+    days: number;
+  } | null>(null);
+  const [backupSaveState, setBackupSaveState] = useState<
+    Record<BackupField, BackupSaveState>
+  >({ count: "idle", days: "idle" });
+  const backupSaveGeneration = useRef(0);
+  const backupSaveChain = useRef<Promise<void>>(Promise.resolve());
+  const lastScheduledBackupSettings = useRef<{
+    count: number;
+    days: number;
+  } | null>(null);
   const updateBusy = ["downloading", "downloaded", "waiting", "blocked", "applying"].includes(
     desktopUpdate.phase
   );
@@ -44,11 +110,22 @@ export function SettingsDialog({
     setBackupSettingsLoading(true);
     setBackupSettingsError(null);
     setBackupSettingsSaved(null);
+    setSavedBackupSettings(null);
+    lastScheduledBackupSettings.current = null;
+    setBackupSaveState({ count: "idle", days: "idle" });
     void getSystemSettings()
       .then((loaded) => {
         if (!active) return;
         setBackupCount(String(loaded.pre_migration_backup_retention_count));
         setBackupDays(String(loaded.pre_migration_backup_retention_days));
+        setSavedBackupSettings({
+          count: loaded.pre_migration_backup_retention_count,
+          days: loaded.pre_migration_backup_retention_days,
+        });
+        lastScheduledBackupSettings.current = {
+          count: loaded.pre_migration_backup_retention_count,
+          days: loaded.pre_migration_backup_retention_days,
+        };
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -66,40 +143,156 @@ export function SettingsDialog({
 
   const parsedBackupCount = Number(backupCount);
   const parsedBackupDays = Number(backupDays);
-  const backupSettingsValid =
+  const backupCountValid =
     Number.isInteger(parsedBackupCount) &&
     parsedBackupCount >= 1 &&
-    parsedBackupCount <= 100 &&
+    parsedBackupCount <= 100;
+  const backupDaysValid =
     Number.isInteger(parsedBackupDays) &&
     parsedBackupDays >= 1 &&
     parsedBackupDays <= 3650;
+  const backupSettingsValid = backupCountValid && backupDaysValid;
 
-  const saveBackupSettings = async () => {
-    if (!backupSettingsValid) return;
-    setBackupSettingsSaving(true);
+  useEffect(() => {
+    if (!isOpen || backupSettingsLoading || !savedBackupSettings) {
+      return undefined;
+    }
+    if (!backupSettingsValid) {
+      ++backupSaveGeneration.current;
+      setBackupSettingsSaved(null);
+      setBackupSaveState((current) => ({
+        count: backupCountValid
+          ? current.count === "saving"
+            ? "idle"
+            : current.count
+          : "error",
+        days: backupDaysValid
+          ? current.days === "saving"
+            ? "idle"
+            : current.days
+          : "error",
+      }));
+      return undefined;
+    }
+    const changedFields: BackupField[] = [];
+    if (parsedBackupCount !== savedBackupSettings.count) changedFields.push("count");
+    if (parsedBackupDays !== savedBackupSettings.days) changedFields.push("days");
+    const values = { count: parsedBackupCount, days: parsedBackupDays };
+    const lastScheduled = lastScheduledBackupSettings.current ?? savedBackupSettings;
+    const fieldsToWrite: BackupField[] = [];
+    if (values.count !== lastScheduled.count) fieldsToWrite.push("count");
+    if (values.days !== lastScheduled.days) fieldsToWrite.push("days");
+    if (fieldsToWrite.length === 0) {
+      if (changedFields.length > 0) {
+        // These values are already scheduled or in flight. Do not invalidate
+        // that request merely because another render ran this effect.
+        return undefined;
+      }
+      // A user can revert an invalid or not-yet-saved edit to the persisted
+      // value. Clear the transient indicator explicitly or the field can
+      // remain stuck on an error/spinner indefinitely.
+      setBackupSettingsError(null);
+      setBackupSaveState((current) => ({
+        count:
+          current.count === "error" || current.count === "saving"
+            ? "idle"
+            : current.count,
+        days:
+          current.days === "error" || current.days === "saving"
+            ? "idle"
+            : current.days,
+      }));
+      return undefined;
+    }
+
+    const generation = ++backupSaveGeneration.current;
+    lastScheduledBackupSettings.current = values;
+    const savingStartedAt = Date.now();
     setBackupSettingsError(null);
     setBackupSettingsSaved(null);
-    try {
-      const updated = await updateSystemSettings({
-        pre_migration_backup_retention_count: parsedBackupCount,
-        pre_migration_backup_retention_days: parsedBackupDays,
-      });
-      setBackupCount(String(updated.pre_migration_backup_retention_count));
-      setBackupDays(String(updated.pre_migration_backup_retention_days));
-      const removed = updated.removed_pre_migration_backups ?? 0;
-      setBackupSettingsSaved(
-        removed
-          ? `Saved. ${removed} older backup${removed === 1 ? " was" : "s were"} removed.`
-          : "Saved."
-      );
-    } catch (error) {
-      setBackupSettingsError(
-        error instanceof Error ? error.message : "Backup settings could not be saved."
-      );
-    } finally {
-      setBackupSettingsSaving(false);
-    }
-  };
+    setBackupSaveState((current) => {
+      const next = { ...current };
+      for (const field of ["count", "days"] as const) {
+        if (
+          !changedFields.includes(field) &&
+          (next[field] === "error" || next[field] === "saving")
+        ) {
+          next[field] = "idle";
+        }
+      }
+      return withBackupSaveState(next, fieldsToWrite, "saving");
+    });
+
+    let requestStarted = false;
+    const timer = window.setTimeout(() => {
+      requestStarted = true;
+      backupSaveChain.current = backupSaveChain.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            const updated = await updateSystemSettings({
+              pre_migration_backup_retention_count: values.count,
+              pre_migration_backup_retention_days: values.days,
+            });
+            const remaining =
+              BACKUP_SAVING_INDICATOR_MS - (Date.now() - savingStartedAt);
+            if (remaining > 0) await wait(remaining);
+            const saved = {
+              count: updated.pre_migration_backup_retention_count,
+              days: updated.pre_migration_backup_retention_days,
+            };
+            // Record every completed write even when a newer edit is queued.
+            // The later request remains authoritative for the inputs, but its
+            // comparison baseline must reflect what the server now contains.
+            setSavedBackupSettings(saved);
+            if (generation !== backupSaveGeneration.current) return;
+            lastScheduledBackupSettings.current = saved;
+            setBackupCount(String(saved.count));
+            setBackupDays(String(saved.days));
+            setBackupSaveState((current) =>
+              withBackupSaveState(current, fieldsToWrite, "saved")
+            );
+            const removed = updated.removed_pre_migration_backups ?? 0;
+            setBackupSettingsSaved(
+              removed
+                ? `${removed} older backup${removed === 1 ? " was" : "s were"} removed.`
+                : null
+            );
+          } catch (error) {
+            if (generation !== backupSaveGeneration.current) return;
+            lastScheduledBackupSettings.current = savedBackupSettings;
+            setBackupSettingsError(
+              error instanceof Error
+                ? error.message
+                : "Backup settings could not be saved."
+            );
+            setBackupSaveState((current) =>
+              withBackupSaveState(current, fieldsToWrite, "error")
+            );
+          }
+        });
+    }, BACKUP_AUTOSAVE_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+      if (
+        !requestStarted &&
+        lastScheduledBackupSettings.current?.count === values.count &&
+        lastScheduledBackupSettings.current?.days === values.days
+      ) {
+        lastScheduledBackupSettings.current = savedBackupSettings;
+      }
+    };
+  }, [
+    backupSettingsLoading,
+    backupSettingsValid,
+    backupCountValid,
+    backupDaysValid,
+    isOpen,
+    parsedBackupCount,
+    parsedBackupDays,
+    savedBackupSettings,
+  ]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -228,6 +421,26 @@ export function SettingsDialog({
                   : "Loading…"}
             </dd>
           </div>
+          <div className="flex items-start justify-between gap-4 py-3">
+            <dt className="shrink-0 text-sm font-medium text-slate-600">
+              Storage directory
+            </dt>
+            <dd className="min-w-0 text-right text-sm text-slate-950">
+              {status ? (
+                status.storage_directory ? (
+                  <code className="break-all" title={status.storage_directory}>
+                    {status.storage_directory}
+                  </code>
+                ) : (
+                  "Unavailable"
+                )
+              ) : statusError ? (
+                "Unavailable"
+              ) : (
+                "Loading…"
+              )}
+            </dd>
+          </div>
         </dl>
 
         {statusError ? (
@@ -244,6 +457,15 @@ export function SettingsDialog({
         ) : null}
 
         <div className="mt-6 border-t border-slate-200 pt-5">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="m-0 text-lg font-semibold text-slate-950">Models</h2>
+            </div>
+          </div>
+          <ModelManagementSection compact />
+        </div>
+
+        <div className="mt-6 border-t border-slate-200 pt-5">
           <h2 className="m-0 text-lg font-semibold text-slate-950">
             Database upgrade backups
           </h2>
@@ -256,29 +478,41 @@ export function SettingsDialog({
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="grid gap-1.5 text-sm font-medium text-slate-800">
               Maximum backups
-              <input
-                className="h-10 rounded-lg border border-slate-300 px-3 text-slate-950 disabled:bg-slate-100"
-                type="number"
-                min={1}
-                max={100}
-                step={1}
-                value={backupCount}
-                disabled={backupSettingsLoading || backupSettingsSaving}
-                onChange={(event) => setBackupCount(event.target.value)}
-              />
+              <span className="grid grid-cols-[minmax(0,1fr)_1.25rem] items-center gap-2">
+                <input
+                  className="h-10 min-w-0 rounded-lg border border-slate-300 px-3 text-slate-950 disabled:bg-slate-100"
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={backupCount}
+                  disabled={backupSettingsLoading}
+                  onChange={(event) => setBackupCount(event.target.value)}
+                />
+                <BackupSaveIndicator
+                  state={backupSaveState.count}
+                  label="maximum backups"
+                />
+              </span>
             </label>
             <label className="grid gap-1.5 text-sm font-medium text-slate-800">
               Delete after (days)
-              <input
-                className="h-10 rounded-lg border border-slate-300 px-3 text-slate-950 disabled:bg-slate-100"
-                type="number"
-                min={1}
-                max={3650}
-                step={1}
-                value={backupDays}
-                disabled={backupSettingsLoading || backupSettingsSaving}
-                onChange={(event) => setBackupDays(event.target.value)}
-              />
+              <span className="grid grid-cols-[minmax(0,1fr)_1.25rem] items-center gap-2">
+                <input
+                  className="h-10 min-w-0 rounded-lg border border-slate-300 px-3 text-slate-950 disabled:bg-slate-100"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  step={1}
+                  value={backupDays}
+                  disabled={backupSettingsLoading}
+                  onChange={(event) => setBackupDays(event.target.value)}
+                />
+                <BackupSaveIndicator
+                  state={backupSaveState.days}
+                  label="backup retention days"
+                />
+              </span>
             </label>
           </div>
           <p className="mt-2 text-xs text-slate-500">
@@ -296,27 +530,6 @@ export function SettingsDialog({
           {backupSettingsSaved ? (
             <p className="mt-2 text-sm text-emerald-700">{backupSettingsSaved}</p>
           ) : null}
-          <div className="mt-3">
-            <Button
-              type="button"
-              size="sm"
-              disabled={
-                backupSettingsLoading || backupSettingsSaving || !backupSettingsValid
-              }
-              onClick={() => void saveBackupSettings()}
-            >
-              {backupSettingsSaving ? "Saving…" : "Save backup settings"}
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-6 border-t border-slate-200 pt-5">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="m-0 text-lg font-semibold text-slate-950">Models</h2>
-            </div>
-          </div>
-          <ModelManagementSection compact />
         </div>
 
         <div className="mt-5 flex justify-end">

@@ -9,7 +9,15 @@ const SELECTOR = 'button:not([disabled]), a[href], input:not([disabled]), select
 export function useModalLifecycle(
   panelRef: RefObject<HTMLElement | null>,
   onClose: () => void,
-  { open = true, initialFocusRef }: { open?: boolean; initialFocusRef?: RefObject<HTMLElement | null> } = {},
+  {
+    open = true,
+    initialFocusRef,
+    closeOnEscape = true,
+  }: {
+    open?: boolean;
+    initialFocusRef?: RefObject<HTMLElement | null>;
+    closeOnEscape?: boolean;
+  } = {},
 ) {
   const closeRef = useRef(onClose);
   useEffect(() => { closeRef.current = onClose; }, [onClose]);
@@ -34,7 +42,10 @@ export function useModalLifecycle(
     const handleKey = (event: KeyboardEvent) => {
       if (modals.at(-1) !== modal || event.defaultPrevented) return;
       if (event.key === "Escape") {
-        event.preventDefault(); event.stopPropagation(); closeRef.current(); return;
+        if (closeOnEscape) {
+          event.preventDefault(); event.stopPropagation(); closeRef.current();
+        }
+        return;
       }
       if (event.key !== "Tab") return;
       const elements = focusable();
@@ -56,5 +67,5 @@ export function useModalLifecycle(
       if (!modals.length) document.body.style.overflow = previousOverflow;
       if (wasTop && previousFocus?.isConnected) previousFocus.focus();
     };
-  }, [open, panelRef, initialFocusRef]);
+  }, [open, panelRef, initialFocusRef, closeOnEscape]);
 }

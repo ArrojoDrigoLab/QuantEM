@@ -11,7 +11,7 @@
         font-family: "Segoe UI", system-ui, sans-serif;
         display: grid; place-items: center;
       }
-      .box { text-align: center; }
+      .box { text-align: center; width: min(620px, calc(100vw - 48px)); }
       .spinner {
         width: 44px; height: 44px; margin: 0 auto 18px;
         border: 3px solid #2a3442; border-top-color: #5aa9e6;
@@ -20,6 +20,18 @@
       @keyframes spin { to { transform: rotate(360deg); } }
       h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; letter-spacing: 0.4px; }
       p  { font-size: 13px; margin: 0; color: #8394a8; }
+      .progress { display: none; margin-top: 22px; text-align: left; }
+      .progress.visible { display: block; }
+      .progress-header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+      #stage { color: #cdd6e0; font-size: 13px; font-weight: 600; }
+      #percent { color: #91a4b8; font-size: 12px; white-space: nowrap; }
+      .track { height: 8px; overflow: hidden; background: #26313e; border-radius: 999px; }
+      .bar { height: 100%; width: 0; background: #5aa9e6; border-radius: inherit; transition: width 220ms ease; }
+      .track.indeterminate .bar { width: 32%; animation: travel 1.5s ease-in-out infinite; }
+      @keyframes travel { from { transform: translateX(-105%); } to { transform: translateX(320%); } }
+      #detail { margin-top: 9px; color: #9aacbf; }
+      #meta { margin-top: 5px; font-variant-numeric: tabular-nums; }
+      #warning { display: none; color: #e3b36a; margin-top: 12px; }
       #err { color: #e07a7a; white-space: pre-wrap; max-width: 560px; display: none; margin-top: 14px; }
     </style>
   </head>
@@ -28,15 +40,84 @@
       <div class="spinner" id="spinner"></div>
       <h1>QuantEM</h1>
       <p id="status">Starting the local server&hellip; first launch can take a minute.</p>
+      <div class="progress" id="migration-progress">
+        <div class="progress-header">
+          <span id="stage"></span>
+          <span id="percent"></span>
+        </div>
+        <div class="track indeterminate" id="track" role="progressbar" aria-label="Database upgrade progress">
+          <div class="bar" id="bar"></div>
+        </div>
+        <p id="detail"></p>
+        <p id="meta"></p>
+        <p id="warning"></p>
+      </div>
       <p id="err"></p>
     </div>
     <script>
       /* The Rust shell drives this page:
          - window.__quantemStatus(text)  updates the status line
+         - window.__quantemMigrationProgress(event) updates measured migration progress
+         - window.__quantemMigrationWarning(text) shows a non-fatal liveness warning
          - window.__quantemFailed(text)  shows a fatal error
          - on success it replaces location with the server URL. */
       window.__quantemStatus = function (t) {
         document.getElementById("status").textContent = t;
+      };
+      function duration(seconds) {
+        seconds = Math.max(0, Math.round(Number(seconds) || 0));
+        if (seconds < 60) return seconds + "s";
+        var minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return minutes + "m " + (seconds % 60) + "s";
+        return Math.floor(minutes / 60) + "h " + (minutes % 60) + "m";
+      }
+      function count(value) {
+        return Number(value).toLocaleString();
+      }
+      window.__quantemMigrationProgress = function (event) {
+        document.getElementById("status").textContent =
+          "Upgrading the existing database to PostgreSQL…";
+        var panel = document.getElementById("migration-progress");
+        panel.classList.add("visible");
+        document.getElementById("stage").textContent =
+          "Stage " + event.stage + " of " + event.stage_count + ": " + event.message;
+        document.getElementById("detail").textContent = event.detail || "";
+
+        var track = document.getElementById("track");
+        var bar = document.getElementById("bar");
+        var percent = document.getElementById("percent");
+        if (event.percent == null) {
+          track.classList.add("indeterminate");
+          track.removeAttribute("aria-valuenow");
+          bar.style.width = "";
+          percent.textContent = "Working…";
+        } else {
+          track.classList.remove("indeterminate");
+          track.setAttribute("aria-valuenow", String(event.percent));
+          bar.style.width = event.percent + "%";
+          percent.textContent = event.percent.toFixed(1) + "%";
+          if (event.completed != null && event.total != null && event.unit) {
+            percent.textContent += " · " + count(event.completed) + " / " + count(event.total) + " " + event.unit;
+          }
+        }
+
+        var meta = "Elapsed " + duration(event.elapsed_seconds);
+        if (event.eta_seconds != null && event.eta_seconds > 0) {
+          meta += " · about " + duration(event.eta_seconds) + " remaining in this stage";
+        } else if (event.percent != null && event.percent > 0 && event.percent < 100) {
+          meta += " · estimating remaining time";
+        }
+        if (event.last_progress_seconds >= 30) {
+          meta += " · last measurable progress " + duration(event.last_progress_seconds) + " ago";
+        } else {
+          meta += " · active now";
+        }
+        document.getElementById("meta").textContent = meta;
+      };
+      window.__quantemMigrationWarning = function (text) {
+        var warning = document.getElementById("warning");
+        warning.style.display = text ? "block" : "none";
+        warning.textContent = text || "";
       };
       window.__quantemFailed = function (t) {
         document.getElementById("spinner").style.display = "none";

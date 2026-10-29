@@ -32,7 +32,7 @@ from uuid import uuid4
 
 import numpy as np
 from scipy import ndimage as ndi
-from skimage.morphology import binary_closing, disk
+from skimage.morphology import closing, disk
 
 from quantem.inference.resample import PROB_LEVELS, threshold_level
 
@@ -186,7 +186,7 @@ def _write_closed_mask(
         read1 = min(height, y1 + halo)
         block = _threshold_block(source, slice(read0, read1), level)
         if footprint is not None and block.any():
-            block = binary_closing(block, footprint)
+            block = closing(block, footprint)
         core0 = y0 - read0
         mask[y0:y1] = block[core0 : core0 + (y1 - y0)]
     mask.flush()

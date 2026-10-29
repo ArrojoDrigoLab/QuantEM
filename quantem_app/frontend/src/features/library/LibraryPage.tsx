@@ -935,6 +935,7 @@ export function LibraryPage() {
               : ""
           }
           confirmText="Delete"
+          confirmTone="danger"
           cancelText="Cancel"
           onConfirm={() => {
             if (deleteConfirmImage) void deleteImageMutation(deleteConfirmImage.id);
@@ -960,6 +961,7 @@ export function LibraryPage() {
             ) : null
           }
           confirmText="Delete experiment"
+          confirmTone="danger"
           cancelText="Cancel"
           onConfirm={() => {
             const doomed = deleteConfirmExperiment;

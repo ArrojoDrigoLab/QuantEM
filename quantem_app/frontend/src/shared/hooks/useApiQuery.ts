@@ -37,14 +37,18 @@ export function useApiQuery<T>(
       setRefetching(true);
     } else {
       setLoading(true);
+      setError(null);
     }
-    setError(null);
     try {
       const result = await fnRef.current();
       if (requestId !== requestIdRef.current) {
         return;
       }
       setData(result);
+      // Keep a refetch failure visible until a request actually succeeds.
+      // Clearing it when a poll merely starts makes connection warnings flash
+      // between healthy-looking states on every interval.
+      setError(null);
     } catch (err) {
       if (requestId !== requestIdRef.current) {
         return;

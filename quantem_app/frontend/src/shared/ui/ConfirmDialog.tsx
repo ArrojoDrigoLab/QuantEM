@@ -1,5 +1,5 @@
 /**
- * Confirmation dialog component for destructive actions.
+ * Shared confirmation dialog for primary decisions and destructive actions.
  */
 
 import { useId, useRef, type ReactNode } from "react";
@@ -21,6 +21,8 @@ export interface ConfirmDialogProps {
   confirmText?: string;
   cancelText?: string;
   confirmDisabled?: boolean;
+  /** Use danger only when confirming an irreversible removal or destructive reset. */
+  confirmTone?: "primary" | "danger";
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -34,6 +36,7 @@ export function ConfirmDialog({
   confirmText = "Confirm",
   cancelText = "Cancel",
   confirmDisabled = false,
+  confirmTone = "primary",
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -61,27 +64,33 @@ export function ConfirmDialog({
         }
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id={titleId} className="confirm-dialog-title">
-          {title}
-        </h3>
-        {message ? (
-          <p id={messageId} className="confirm-dialog-message">
-            {message}
-          </p>
-        ) : null}
-        {details ? (
-          <div
-            id={detailsId}
-            className={
-              detailsTone === "warning"
-                ? "confirm-dialog-details is-warning"
-                : "confirm-dialog-details"
-            }
-          >
-            {details}
+        <header className="confirm-dialog-header">
+          <h3 id={titleId} className="confirm-dialog-title">
+            {title}
+          </h3>
+        </header>
+        {message || details ? (
+          <div className="confirm-dialog-body">
+            {message ? (
+              <p id={messageId} className="confirm-dialog-message">
+                {message}
+              </p>
+            ) : null}
+            {details ? (
+              <div
+                id={detailsId}
+                className={
+                  detailsTone === "warning"
+                    ? "confirm-dialog-details is-warning"
+                    : "confirm-dialog-details"
+                }
+              >
+                {details}
+              </div>
+            ) : null}
           </div>
         ) : null}
-        <div className="confirm-dialog-actions">
+        <footer className="confirm-dialog-actions">
           <button
             ref={cancelButtonRef}
             className="confirm-dialog-button confirm-dialog-button-cancel"
@@ -90,13 +99,13 @@ export function ConfirmDialog({
             {cancelText}
           </button>
           <button
-            className="confirm-dialog-button confirm-dialog-button-confirm"
+            className={`confirm-dialog-button confirm-dialog-button-confirm ${confirmTone}`}
             onClick={onConfirm}
             disabled={confirmDisabled}
           >
             {confirmText}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   );

@@ -34,6 +34,7 @@ export function GroupingFields({
   keepLabels = false,
   currentExperimentId = "",
   experimentHelp,
+  defaultNewDatasetOnExperimentChange = false,
 }: {
   experiments: Experiment[];
   experiment: GroupingChoice;
@@ -59,6 +60,8 @@ export function GroupingFields({
    */
   currentExperimentId?: string;
   experimentHelp?: string;
+  /** Imports begin with one shared Dataset 1, including after choosing an experiment. */
+  defaultNewDatasetOnExperimentChange?: boolean;
 }) {
   const scopeExperimentId =
     experiment.kind === "keep" ? currentExperimentId : chosenId(experiment);
@@ -76,9 +79,20 @@ export function GroupingFields({
       onExperimentChange(next);
       // A dataset chosen under the previous experiment cannot survive the
       // change: it belongs to that experiment and to no other.
-      onDatasetChange(keepLabels ? { kind: "keep" } : { kind: "none" });
+      onDatasetChange(
+        keepLabels
+          ? { kind: "keep" }
+          : defaultNewDatasetOnExperimentChange && next.kind !== "none"
+            ? { kind: "new", name: "Dataset 1" }
+            : { kind: "none" }
+      );
     },
-    [keepLabels, onDatasetChange, onExperimentChange]
+    [
+      defaultNewDatasetOnExperimentChange,
+      keepLabels,
+      onDatasetChange,
+      onExperimentChange,
+    ]
   );
 
   // Separate per-image experiments leave no single scope in which a shared

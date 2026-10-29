@@ -32,7 +32,6 @@ export function AboutThisResult({
   objectsPixelSize,
   currentSegmentation,
   isBusy,
-  isComplete,
   onOpenClearRerun,
 }: {
   isOrganelle: boolean;
@@ -41,22 +40,12 @@ export function AboutThisResult({
   objectsPixelSize: ObjectsPixelSizeWarning | null;
   currentSegmentation: ImageSegmentation | null;
   isBusy: boolean;
-  isComplete: boolean;
   /**
    * Opens the delete-and-re-run confirmation. Undefined when the screen has no
    * clear handler at all, which is what decides whether the trigger exists.
    */
   onOpenClearRerun?: () => void;
 }) {
-  const finalNote = currentSegmentation?.final_result_provenance;
-  const finalLevel =
-    finalNote?.final_level === null || finalNote?.final_level === undefined
-      ? finalNote?.final_level_kind ?? "unknown"
-      : `${finalNote.final_level_kind.replaceAll("_", " ")} ${finalNote.final_level.toFixed(3)}`;
-  const finalAdapter = finalNote?.adapter_identifier ?? "unknown";
-  const finalDetail = finalNote
-    ? `Final result: ${finalNote.model_identifier}; QuantEM ${finalNote.quantem_version ?? "version not recorded"}; ${finalLevel}; adapter ${finalAdapter}. Finalized ${finalNote.finalized_at ?? "date not recorded"}.`
-    : "";
   return (
     <>
       {isOrganelle && (modelRunControl ?? (
@@ -68,18 +57,6 @@ export function AboutThisResult({
           {displayedObjects.summary}
         </span>
       ))}
-      {isComplete && finalNote && (
-        <span
-          className="source-model-provenance"
-          data-testid="final-result-provenance"
-          title={finalDetail}
-        >
-          Final: {finalNote.model_identifier} · {finalLevel}
-          {finalAdapter !== "unknown" && finalAdapter !== "manual"
-            ? ` · adapter ${finalAdapter}`
-            : ""}
-        </span>
-      )}
       {objectsPixelSize && (
         // Beside the badge it qualifies, because the two read as one claim:
         // the badge says what the image records, this says the objects were

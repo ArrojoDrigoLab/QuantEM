@@ -10,7 +10,7 @@ interactive proofreading, guided fine-tuning, and downstream quantitative analys
 
 Browse the intracellular EM data directory [here](https://arrojodrigolab.github.io/QuantEM/dataset_directory/). 
 
-To run QuantEM, either use the [`napari plugin`](napari-quantem/) or [`standalone app`](quantem_app/) for Windows and Mac. 
+Download the [Desktop app](https://github.com/ArrojoDrigoLab/QuantEM/releases) (Mac/Windows) or use the [`napari plugin`](napari-quantem/).
 
 This repository is the code and data resource accompanying the QuantEM manuscript, available at
 https://www.biorxiv.org/content/10.64898/2026.08.06.743293v1
@@ -23,7 +23,7 @@ https://www.biorxiv.org/content/10.64898/2026.08.06.743293v1
 |---|---|
 | [`training_and_analysis/`](training_and_analysis/) | All code behind the manuscript: dataset assembly, tiling, foundation-model pretraining, decoder training, benchmarking, and the immuno-EM analysis. |
 | [`dataset_directory/`](dataset_directory/) | A browsable, filterable directory of the assembled EM image corpus, with a thumbnail for every image and volume. Served as a static site. |
-| [`quantem_app/`](quantem_app/) | The QuantEM application: segmentation, manual annotation and interactive proofreading, guided fine-tuning, and built-in quantitative analyses, running offline on one machine. Installable as a Python package or as a Windows desktop installer. Under active construction. |
+| [`quantem_app/`](quantem_app/) | The QuantEM application: segmentation, manual annotation and interactive proofreading, guided fine-tuning, and built-in quantitative analyses, running offline on one machine. Installable as a Python package or as a Windows or macOS desktop app. Under active construction. |
 | [`quantem-core/`](quantem-core/) | The inference and lightweight-adaptation engine for the eight released models — the shared core the napari plugin builds on. |
 | [`napari-quantem/`](napari-quantem/) | The QuantEM and OmniEM segmentation models packaged as a [napari](https://napari.org) plugin, with widgets for segmenting, fine-tuning, proofreading, measuring and batch runs. |
 | [`pages/`](pages/) | The landing page for the project's GitHub Pages site, which also hosts the dataset directory. |

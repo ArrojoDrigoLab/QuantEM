@@ -173,7 +173,7 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
   >({});
   const [visibleCounts, setVisibleCounts] = useState(createInitialVisibleCounts);
 
-  const { data, loading, refetching, error, refetch } = useApiQuery(
+  const { data, loading, error, refetch } = useApiQuery(
     () => (isOpen ? getJobQueueStatus() : Promise.resolve(stableEmpty)),
     [isOpen]
   );
@@ -320,10 +320,10 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
   const headerSubtitle = loading
     ? "Loading queue status..."
     : error
-      ? "Could not fetch queue"
-      : refetching
-        ? "Refreshing..."
-        : "Live queue status";
+      ? data
+        ? "Connection problem · showing last known status"
+        : "Could not fetch queue"
+      : "Live queue status";
 
   const handleCancelJob = async (job: JobQueueItem) => {
     if (job.cancel_requested || isPendingAction(job.id)) return;
@@ -394,7 +394,7 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
         </div>
       )}
 
-      {!loading && !error && (
+      {data && (
         <div className="job-queue-sections">
           <section className="job-queue-section">
             <h3>Running now</h3>
@@ -729,6 +729,7 @@ export function JobQueueSidebar({ isOpen, onClose }: JobQueueSidebarProps) {
           ) : null
         }
         confirmText="Remove"
+        confirmTone="danger"
         cancelText="Keep"
         onConfirm={() => {
           if (deleteTarget) {

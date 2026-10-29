@@ -9,7 +9,10 @@ import math
 import os
 import shutil
 import sqlite3
+import threading
+import time as time_module
 from collections import defaultdict, deque
+from collections.abc import Callable
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from pathlib import Path
@@ -30,12 +33,232 @@ class SQLiteMigrationError(RuntimeError):
     """Source data is incompatible or the destination is not safe to populate."""
 
 
-def _sha256(path: Path) -> str:
+MigrationProgressCallback = Callable[[dict[str, object]], None]
+
+
+class _MigrationProgress:
+    """Thread-safe, throttled progress and liveness reporting for a cutover.
+
+    The desktop shell cannot open its HTTP UI until the database is validated,
+    so stdout is the only live channel available during this operation.  A
+    heartbeat repeats the current phase during opaque SQLite/PostgreSQL calls;
+    ``last_progress_seconds`` distinguishes that liveness signal from a real
+    increase in measured work.
+    """
+
+    STAGE_COUNT = 10
+
+    def __init__(
+        self,
+        callback: MigrationProgressCallback | None,
+        *,
+        emit_interval: float = 1.0,
+        heartbeat_interval: float = 15.0,
+        clock: Callable[[], float] = time_module.monotonic,
+    ) -> None:
+        self._callback = callback
+        self._emit_interval = emit_interval
+        self._heartbeat_interval = heartbeat_interval
+        self._clock = clock
+        now = clock()
+        self._started_at = now
+        self._stage_started_at = now
+        self._last_progress_at = now
+        self._last_emit_at = 0.0
+        self._revision = 0
+        self._payload: dict[str, object] = {
+            "phase": "starting",
+            "stage": 0,
+            "stage_count": self.STAGE_COUNT,
+            "message": "Preparing the database upgrade",
+            "detail": "",
+            "completed": None,
+            "total": None,
+            "unit": "",
+        }
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._heartbeat: threading.Thread | None = None
+        if callback is not None and heartbeat_interval > 0:
+            self._heartbeat = threading.Thread(
+                target=self._heartbeat_loop,
+                name="quantem-migration-progress",
+                daemon=True,
+            )
+            self._heartbeat.start()
+
+    def __enter__(self) -> _MigrationProgress:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if exc is not None:
+            self.stage(
+                "failed",
+                self.STAGE_COUNT,
+                "The database upgrade stopped before completion",
+                detail=str(exc),
+            )
+        self.close()
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._heartbeat is not None:
+            self._heartbeat.join(timeout=min(self._heartbeat_interval, 1.0))
+            self._heartbeat = None
+
+    def stage(
+        self,
+        phase: str,
+        stage: int,
+        message: str,
+        *,
+        detail: str = "",
+        completed: int | None = None,
+        total: int | None = None,
+        unit: str = "",
+    ) -> None:
+        now = self._clock()
+        with self._lock:
+            self._stage_started_at = now
+            self._last_progress_at = now
+            self._revision += 1
+            self._payload.update(
+                {
+                    "phase": phase,
+                    "stage": stage,
+                    "message": message,
+                    "detail": detail,
+                    "completed": completed,
+                    "total": total,
+                    "unit": unit,
+                }
+            )
+        self._emit(force=True)
+
+    def update(
+        self,
+        *,
+        completed: int | None = None,
+        total: int | None = None,
+        detail: str | None = None,
+        unit: str | None = None,
+        force: bool = False,
+    ) -> None:
+        now = self._clock()
+        with self._lock:
+            prior_completed = self._payload.get("completed")
+            if completed is not None:
+                self._payload["completed"] = completed
+            if total is not None:
+                self._payload["total"] = total
+            if detail is not None:
+                self._payload["detail"] = detail
+            if unit is not None:
+                self._payload["unit"] = unit
+            if completed is not None and completed != prior_completed:
+                self._last_progress_at = now
+                self._revision += 1
+        self._emit(force=force)
+
+    def _snapshot(self, *, heartbeat: bool) -> dict[str, object]:
+        now = self._clock()
+        with self._lock:
+            payload = dict(self._payload)
+            completed = payload.get("completed")
+            total = payload.get("total")
+            stage_elapsed = max(0.0, now - self._stage_started_at)
+            percent: float | None = None
+            eta_seconds: int | None = None
+            if isinstance(completed, int) and isinstance(total, int) and total > 0:
+                percent = round(min(100.0, max(0.0, completed * 100.0 / total)), 1)
+                if completed >= total:
+                    eta_seconds = 0
+                elif completed > 0 and stage_elapsed >= 5.0:
+                    eta_seconds = max(1, round((total - completed) * stage_elapsed / completed))
+            payload.update(
+                {
+                    "percent": percent,
+                    "eta_seconds": eta_seconds,
+                    "elapsed_seconds": round(max(0.0, now - self._started_at)),
+                    "stage_elapsed_seconds": round(stage_elapsed),
+                    "last_progress_seconds": round(max(0.0, now - self._last_progress_at)),
+                    "heartbeat": heartbeat,
+                    "revision": self._revision,
+                }
+            )
+            return payload
+
+    def _emit(self, *, force: bool = False, heartbeat: bool = False) -> None:
+        if self._callback is None:
+            return
+        now = self._clock()
+        with self._lock:
+            if not force and now - self._last_emit_at < self._emit_interval:
+                return
+            self._last_emit_at = now
+        try:
+            self._callback(self._snapshot(heartbeat=heartbeat))
+        except Exception:
+            # UI/log progress must never be able to fail the data migration.
+            return
+
+    def _heartbeat_loop(self) -> None:
+        while not self._stop.wait(self._heartbeat_interval):
+            self._emit(force=True, heartbeat=True)
+
+
+def _sha256(
+    path: Path,
+    *,
+    progress: _MigrationProgress | None = None,
+    detail: str = "",
+) -> str:
     digest = hashlib.sha256()
+    total = path.stat().st_size
+    completed = 0
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
+            completed += len(block)
+            if progress is not None:
+                progress.update(
+                    completed=completed,
+                    total=total,
+                    detail=detail,
+                    unit="bytes",
+                    force=completed >= total,
+                )
     return digest.hexdigest()
+
+
+def _copy_file(
+    source: Path,
+    destination: Path,
+    *,
+    progress: _MigrationProgress | None = None,
+    detail: str = "",
+) -> None:
+    """Copy one regular file while exposing byte progress, then preserve metadata."""
+
+    total = source.stat().st_size
+    completed = 0
+    try:
+        with source.open("rb") as reader, destination.open("xb") as writer:
+            for block in iter(lambda: reader.read(16 * 1024 * 1024), b""):
+                writer.write(block)
+                completed += len(block)
+                if progress is not None:
+                    progress.update(
+                        completed=completed,
+                        total=total,
+                        detail=detail,
+                        unit="bytes",
+                        force=completed >= total,
+                    )
+        shutil.copystat(source, destination)
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
 
 
 def _atomic_json(path: Path, payload: dict[str, object]) -> None:
@@ -54,7 +277,12 @@ def _remove_sqlite_sidecars(path: Path) -> None:
         path.with_name(f"{path.name}{suffix}").unlink(missing_ok=True)
 
 
-def create_consistent_sqlite_backup(source: Path, destination_root: Path | None = None) -> Path:
+def create_consistent_sqlite_backup(
+    source: Path,
+    destination_root: Path | None = None,
+    *,
+    progress: _MigrationProgress | None = None,
+) -> Path:
     """Create and verify a read-consistent SQLite backup; never alter ``source``."""
 
     source = Path(source).expanduser().resolve(strict=True)
@@ -70,10 +298,34 @@ def create_consistent_sqlite_backup(source: Path, destination_root: Path | None 
     temporary = root / ".quantem.sqlite3.tmp"
     source_connection: sqlite3.Connection | None = None
     target_connection: sqlite3.Connection | None = None
+    if progress is not None:
+        progress.stage(
+            "snapshot",
+            1,
+            "Creating a recovery snapshot",
+            detail="Copying the live SQLite database without changing it",
+            unit="pages",
+        )
     try:
         source_connection = sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)
         target_connection = sqlite3.connect(temporary)
-        source_connection.backup(target_connection)
+
+        def backup_progress(status: int, remaining: int, total: int) -> None:
+            del status
+            if progress is not None:
+                progress.update(
+                    completed=total - remaining,
+                    total=total,
+                    detail="Copying the live SQLite database without changing it",
+                    unit="pages",
+                    force=remaining == 0,
+                )
+
+        source_connection.backup(
+            target_connection,
+            pages=2048,
+            progress=backup_progress,
+        )
     except (OSError, sqlite3.Error) as exc:
         if target_connection is not None:
             target_connection.close()
@@ -93,6 +345,13 @@ def create_consistent_sqlite_backup(source: Path, destination_root: Path | None 
             source_connection.close()
         _remove_sqlite_sidecars(temporary)
     verifier: sqlite3.Connection | None = None
+    if progress is not None:
+        progress.stage(
+            "snapshot-verify",
+            2,
+            "Verifying the recovery snapshot",
+            detail="Checking SQLite integrity",
+        )
     try:
         verifier = sqlite3.connect(f"file:{temporary.as_posix()}?mode=ro", uri=True)
         integrity = verifier.execute("PRAGMA integrity_check").fetchone()
@@ -116,9 +375,24 @@ def create_consistent_sqlite_backup(source: Path, destination_root: Path | None 
             root.rmdir()
         raise SQLiteMigrationError(f"SQLite integrity check failed: {integrity!r}")
     os.replace(temporary, destination)
+    if progress is not None:
+        progress.stage(
+            "snapshot-verify",
+            2,
+            "Verifying the recovery snapshot",
+            detail="Computing the recovery snapshot checksum",
+            completed=0,
+            total=destination.stat().st_size,
+            unit="bytes",
+        )
+    backup_sha256 = _sha256(
+        destination,
+        progress=progress,
+        detail="Computing the recovery snapshot checksum",
+    )
     manifest = {
         "backup": destination.name,
-        "backup_sha256": _sha256(destination),
+        "backup_sha256": backup_sha256,
         "created_at": datetime.now(UTC).isoformat(),
         "source": str(source),
         "source_retained": True,
@@ -195,7 +469,14 @@ def _canonical(value: Any) -> Any:
     return value
 
 
-def _model_fingerprint(model: type, *, alias: str) -> tuple[int, str]:
+def _model_fingerprint(
+    model: type,
+    *,
+    alias: str,
+    progress: _MigrationProgress | None = None,
+    progress_offset: int = 0,
+    progress_total: int | None = None,
+) -> tuple[int, str]:
     digest = hashlib.sha256()
     fields = list(model._meta.concrete_fields)
     queryset = model._base_manager.using(alias).order_by(model._meta.pk.attname)
@@ -206,6 +487,21 @@ def _model_fingerprint(model: type, *, alias: str) -> tuple[int, str]:
             json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8") + b"\n"
         )
         count += 1
+        if progress is not None and (count % 500 == 0):
+            progress.update(
+                completed=progress_offset + count,
+                total=progress_total,
+                detail=f"Reading {model._meta.label_lower}",
+                unit="records",
+            )
+    if progress is not None:
+        progress.update(
+            completed=progress_offset + count,
+            total=progress_total,
+            detail=f"Read {model._meta.label_lower}",
+            unit="records",
+            force=True,
+        )
     return count, digest.hexdigest()
 
 
@@ -245,7 +541,11 @@ def _assert_source_schema_current(alias: str) -> None:
         )
 
 
-def _upgrade_source_schema(alias: str) -> list[str]:
+def _upgrade_source_schema(
+    alias: str,
+    *,
+    progress: _MigrationProgress | None = None,
+) -> list[str]:
     """Advance a disposable SQLite copy through every skipped app migration."""
 
     connection = connections[alias]
@@ -260,6 +560,17 @@ def _upgrade_source_schema(alias: str) -> list[str]:
             f"upgrade never does: {labels}"
         )
     applied = [f"{migration.app_label}.{migration.name}" for migration, _ in plan]
+    if progress is not None:
+        progress.stage(
+            "source-upgrade",
+            3,
+            "Preparing the SQLite snapshot",
+            detail=(
+                f"Applying {len(applied)} skipped schema migration(s) to the disposable copy"
+                if applied
+                else "The SQLite schema is already current"
+            ),
+        )
     if plan:
         executor.migrate(executor.loader.graph.leaf_nodes())
     verifier = MigrationExecutor(connection)
@@ -271,6 +582,11 @@ def _upgrade_source_schema(alias: str) -> list[str]:
             f"The disposable SQLite upgrade did not reach the current schema: {labels}"
         )
     with connection.cursor() as cursor:
+        if progress is not None:
+            progress.update(
+                detail="Checking the upgraded SQLite snapshot for corruption",
+                force=True,
+            )
         cursor.execute("PRAGMA integrity_check")
         integrity = cursor.fetchone()
     if integrity != ("ok",):
@@ -303,7 +619,15 @@ def _assert_target_pristine(alias: str) -> None:
         )
 
 
-def _copy_model(model: type, *, source: str, target: str) -> int:
+def _copy_model(
+    model: type,
+    *,
+    source: str,
+    target: str,
+    progress: _MigrationProgress | None = None,
+    progress_offset: int = 0,
+    progress_total: int | None = None,
+) -> int:
     fields = list(model._meta.concrete_fields)
     names = [field.attname for field in fields]
     batch: list[object] = []
@@ -335,10 +659,25 @@ def _copy_model(model: type, *, source: str, target: str) -> int:
                 model._base_manager.using(target).bulk_create(batch, batch_size=500)
                 copied += len(batch)
                 batch.clear()
+                if progress is not None:
+                    progress.update(
+                        completed=progress_offset + copied,
+                        total=progress_total,
+                        detail=f"Copying {model._meta.label_lower}",
+                        unit="records",
+                    )
         if batch:
             model._base_manager.using(target).bulk_create(batch, batch_size=500)
             copied += len(batch)
             batch.clear()
+        if progress is not None:
+            progress.update(
+                completed=progress_offset + copied,
+                total=progress_total,
+                detail=f"Copied {model._meta.label_lower}",
+                unit="records",
+                force=True,
+            )
     finally:
         for field, auto_now, auto_now_add in automatic_timestamps:
             field.auto_now = auto_now
@@ -377,45 +716,177 @@ def migrate_sqlite_to_postgres(
     target_alias: str = "default",
     source_alias: str = "sqlite_migration_source",
     automatic: bool = False,
+    progress_callback: MigrationProgressCallback | None = None,
 ) -> dict[str, object]:
     """Upgrade and copy a consistent SQLite snapshot into empty PostgreSQL."""
 
+    with _MigrationProgress(progress_callback) as progress:
+        report = _migrate_sqlite_to_postgres(
+            source,
+            backup_root=backup_root,
+            target_alias=target_alias,
+            source_alias=source_alias,
+            automatic=automatic,
+            progress=progress,
+        )
+        progress.stage(
+            "complete",
+            10,
+            "Database migration complete",
+            detail="The source SQLite database and verified snapshot were retained",
+        )
+        progress.update(completed=1, total=1, unit="step", force=True)
+        return report
+
+
+def _migrate_sqlite_to_postgres(
+    source: Path,
+    *,
+    backup_root: Path | None,
+    target_alias: str,
+    source_alias: str,
+    automatic: bool,
+    progress: _MigrationProgress,
+) -> dict[str, object]:
     target = connections[target_alias]
     if target.vendor != "postgresql":
         raise SQLiteMigrationError("The migration destination must be PostgreSQL.")
     _assert_target_pristine(target_alias)
-    backup = create_consistent_sqlite_backup(source, backup_root)
+    backup = create_consistent_sqlite_backup(source, backup_root, progress=progress)
+    try:
+        backup_manifest = json.loads((backup.parent / "manifest.json").read_text(encoding="utf-8"))
+        backup_sha256 = str(backup_manifest["backup_sha256"])
+    except (OSError, KeyError, json.JSONDecodeError) as exc:
+        raise SQLiteMigrationError("The verified SQLite backup manifest is unreadable.") from exc
+    if len(backup_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in backup_sha256
+    ):
+        raise SQLiteMigrationError("The verified SQLite backup manifest has an invalid checksum.")
     working = backup.with_name(f".upgrade-working-{os.getpid()}.sqlite3")
     if working.exists():
         raise SQLiteMigrationError(f"SQLite upgrade workspace already exists: {working}")
-    shutil.copy2(backup, working)
+    progress.stage(
+        "source-upgrade",
+        3,
+        "Preparing the SQLite snapshot",
+        detail="Creating a disposable working copy",
+        completed=0,
+        total=backup.stat().st_size,
+        unit="bytes",
+    )
+    _copy_file(
+        backup,
+        working,
+        progress=progress,
+        detail="Creating a disposable working copy",
+    )
     _configure_source(working, source_alias)
     source_connection = connections[source_alias]
     try:
-        source_schema_upgrades = _upgrade_source_schema(source_alias)
+        source_schema_upgrades = _upgrade_source_schema(source_alias, progress=progress)
         models = _models_in_dependency_order()
-        source_fingerprints = {
-            model._meta.label_lower: _model_fingerprint(model, alias=source_alias)
-            for model in models
-        }
+        progress.stage(
+            "source-inventory",
+            4,
+            "Inventorying the SQLite data",
+            completed=0,
+            total=len(models),
+            unit="tables",
+        )
+        source_counts: dict[str, int] = {}
+        for index, model in enumerate(models, start=1):
+            label = model._meta.label_lower
+            source_counts[label] = model._base_manager.using(source_alias).count()
+            progress.update(
+                completed=index,
+                total=len(models),
+                detail=f"Counted {label}",
+                unit="tables",
+                force=index == len(models),
+            )
+        total_rows = sum(source_counts.values())
+
+        progress.stage(
+            "source-fingerprint",
+            5,
+            "Reading and fingerprinting the SQLite data",
+            completed=0,
+            total=total_rows,
+            unit="records",
+        )
+        source_fingerprints: dict[str, tuple[int, str]] = {}
+        offset = 0
+        for model in models:
+            label = model._meta.label_lower
+            source_fingerprints[label] = _model_fingerprint(
+                model,
+                alias=source_alias,
+                progress=progress,
+                progress_offset=offset,
+                progress_total=total_rows,
+            )
+            offset += source_counts[label]
+
         copied: dict[str, int] = {}
         with transaction.atomic(using=target_alias):
+            progress.stage(
+                "copy",
+                6,
+                "Copying records into PostgreSQL",
+                completed=0,
+                total=total_rows,
+                unit="records",
+            )
             with target.constraint_checks_disabled():
                 for model in reversed(models):
                     model._base_manager.using(target_alias).all().delete()
+                offset = 0
                 for model in models:
-                    copied[model._meta.label_lower] = _copy_model(
-                        model, source=source_alias, target=target_alias
+                    label = model._meta.label_lower
+                    copied[label] = _copy_model(
+                        model,
+                        source=source_alias,
+                        target=target_alias,
+                        progress=progress,
+                        progress_offset=offset,
+                        progress_total=total_rows,
                     )
+                    offset += source_counts[label]
+            progress.stage(
+                "constraints",
+                7,
+                "Checking PostgreSQL relationships",
+                detail=(
+                    "This database operation does not expose intermediate counts; "
+                    "the liveness timer will continue updating"
+                ),
+            )
             target.check_constraints()
             sequence_sql = target.ops.sequence_reset_sql(no_style(), models)
             with target.cursor() as cursor:
                 for statement in sequence_sql:
                     cursor.execute(statement)
-            target_fingerprints = {
-                model._meta.label_lower: _model_fingerprint(model, alias=target_alias)
-                for model in models
-            }
+            progress.stage(
+                "target-fingerprint",
+                8,
+                "Validating the PostgreSQL copy",
+                detail="Comparing every stored field with the SQLite snapshot",
+                completed=0,
+                total=total_rows,
+                unit="records",
+            )
+            target_fingerprints: dict[str, tuple[int, str]] = {}
+            offset = 0
+            for model in models:
+                label = model._meta.label_lower
+                target_fingerprints[label] = _model_fingerprint(
+                    model,
+                    alias=target_alias,
+                    progress=progress,
+                    progress_offset=offset,
+                    progress_total=total_rows,
+                )
+                offset += source_counts[label]
             mismatches = {
                 label: {"source": source_fingerprints[label], "target": target_fingerprints[label]}
                 for label in source_fingerprints
@@ -426,6 +897,12 @@ def migrate_sqlite_to_postgres(
                     "Content validation failed after copy: "
                     + json.dumps(mismatches, sort_keys=True)
                 )
+            progress.stage(
+                "commit",
+                9,
+                "Committing the validated PostgreSQL database",
+                detail="All copied fields match the SQLite snapshot",
+            )
             deactivated_jobs = _deactivate_copied_jobs(target_alias)
             DatabaseImport = apps.get_model("assets", "DatabaseImport")
             try:
@@ -434,16 +911,17 @@ def migrate_sqlite_to_postgres(
                 portable_snapshot = str(backup.parent)
             import_record = DatabaseImport.objects.using(target_alias).create(
                 source_backend="sqlite",
-                source_sha256=_sha256(backup),
+                source_sha256=backup_sha256,
                 source_schema_migrations=source_schema_upgrades,
                 snapshot_path=portable_snapshot,
                 automatic=automatic,
                 deactivated_job_ids=deactivated_jobs,
             )
 
+        progress.update(detail="The PostgreSQL transaction committed successfully", force=True)
         report = {
             "backup": str(backup),
-            "backup_sha256": _sha256(backup),
+            "backup_sha256": backup_sha256,
             "completed_at": datetime.now(UTC).isoformat(),
             "copied_rows": copied,
             "deactivated_job_ids": deactivated_jobs,
@@ -552,6 +1030,7 @@ def migrate_legacy_sqlite_on_startup(
     source: Path = DB_PATH,
     *,
     target_alias: str = "default",
+    progress_callback: MigrationProgressCallback | None = None,
 ) -> dict[str, object] | None:
     """Perform or recover the one-time, unattended desktop database cutover."""
 
@@ -570,7 +1049,15 @@ def migrate_legacy_sqlite_on_startup(
         if not source.exists():
             return None
         snapshot_root = _resolve_snapshot_directory(completed.snapshot_path)
-        archived = _finish_automatic_cutover(source, snapshot_root)
+        with _MigrationProgress(progress_callback) as progress:
+            progress.stage(
+                "archive",
+                10,
+                "Completing the verified database upgrade",
+                detail="Archiving the retired SQLite files after the earlier PostgreSQL commit",
+            )
+            archived = _finish_automatic_cutover(source, snapshot_root)
+            progress.update(completed=1, total=1, unit="step", force=True)
         return {
             "automatic": True,
             "database_import_id": str(completed.pk),
@@ -583,12 +1070,22 @@ def migrate_legacy_sqlite_on_startup(
 
     _assert_target_pristine(target_alias)
     snapshot_root = _new_automatic_snapshot_root()
-    report = migrate_sqlite_to_postgres(
-        source,
-        backup_root=snapshot_root,
-        target_alias=target_alias,
-        automatic=True,
-    )
-    report["archived_files"] = _finish_automatic_cutover(source, snapshot_root)
-    report["snapshot"] = str(snapshot_root)
-    return report
+    with _MigrationProgress(progress_callback) as progress:
+        report = _migrate_sqlite_to_postgres(
+            source,
+            backup_root=snapshot_root,
+            target_alias=target_alias,
+            source_alias="sqlite_migration_source",
+            automatic=True,
+            progress=progress,
+        )
+        progress.stage(
+            "archive",
+            10,
+            "Preserving the verified recovery backup",
+            detail="Archiving the retired SQLite files only after the PostgreSQL commit",
+        )
+        report["archived_files"] = _finish_automatic_cutover(source, snapshot_root)
+        report["snapshot"] = str(snapshot_root)
+        progress.update(completed=1, total=1, unit="step", force=True)
+        return report

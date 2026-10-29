@@ -144,6 +144,14 @@ def test_done_manual_roi_is_exactly_preserved(segmentation):
         ]
     )
     assert after.equals(before)
+    assert (
+        not segmentation.segments.filter(
+            superseded_at=None,
+            label_state="CONFIRMED",
+        )
+        .exclude(status=segmentation.segments.model.STATUS_CONFIRMED)
+        .exists()
+    )
 
 
 def test_deletion_is_explicit_and_only_after_selection_succeeds(segmentation):

@@ -13,6 +13,7 @@ from quantem.segmentation.global_masks import save_global_mask
 from quantem.segmentation.models import AnalysisMaskObject, ImageSegmentation, SegmentObject
 from quantem.segmentation.type_service import (
     get_or_create_analysis_mask_type,
+    get_or_create_cells_type,
     get_or_create_mitochondria_type,
     get_or_create_tissue_type,
 )
@@ -124,6 +125,25 @@ class RasterExportTests(TestCase):
 
         self.assertEqual(set(np.unique(exported)), {0, 255})
         self.assertEqual(int(exported[8, 8]), 255)
+
+    def test_cells_export_directly_from_auto_saved_vectors(self):
+        segmentation = ImageSegmentation.objects.create(
+            asset=self.image.asset,
+            segmentation_type=get_or_create_cells_type(),
+            display_name="Cells",
+        )
+        AnalysisMaskObject.objects.create(
+            segmentation=segmentation,
+            name="Cell 1",
+            color="#38bdf8",
+            sort_order=1,
+            geometry=box(3, 3, 14, 14),
+        )
+
+        exported = segmentation_export(segmentation)
+
+        self.assertEqual(int(exported[8, 8]), 1)
+        self.assertEqual(int(exported[20, 20]), 0)
 
     def test_legacy_analysis_mask_without_objects_exports_as_object_one(self):
         segmentation = ImageSegmentation.objects.create(

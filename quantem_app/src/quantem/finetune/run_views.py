@@ -17,9 +17,9 @@ Three rules the whole surface turns on:
   — a hard 400,
   not a warning (owner R13). Mixing conditions inside one fitted model is the
   kind of mistake that is invisible in the output.
-* **Nothing is automatic.** A finished run changes nothing until the user asks
-  for it. Applying is its own request, over a subset of the scope the user
-  chooses.
+* **Application is explicit.** A finished run changes nothing unless the user
+  either selects "run when training finishes" up front or applies it later.
+  Both paths use the same validated image/dataset selection and queue shape.
 * **Overwriting cannot lose the old model.** The new weights are written beside
   the live ones and only moved over them once the run has finished; a failed
   overwrite says so.
@@ -88,6 +88,7 @@ __all__ = [
     "FineTuneRunProgressView",
     "FineTuneRunsView",
     "FineTuneScopeView",
+    "enqueue_finetune_apply",
 ]
 
 #: A completed round, or this share of the steps, before an ETA is offered. A
@@ -459,6 +460,25 @@ class FineTuneRunsView(APIView):
         if training_mode == TRAINING_MODE_HOLDOUT_1 and annotation_count < HOLDOUT_MIN_ANNOTATIONS:
             return _detail("Hold out one requires at least 2 annotations.")
 
+        raw_auto_apply = data.get("auto_apply", False)
+        if not isinstance(raw_auto_apply, bool):
+            return _detail("auto_apply must be true or false.")
+        auto_apply = raw_auto_apply
+        auto_apply_asset_ids = data.get("auto_apply_asset_ids", [])
+        auto_apply_dataset_ids = data.get("auto_apply_dataset_ids", [])
+        if auto_apply:
+            try:
+                # Validate now, while the dialog is still open, rather than
+                # training for minutes and only then discovering a stale or
+                # cross-experiment target selection.
+                _resolve_apply_selection(
+                    scope.experiment_id,
+                    auto_apply_asset_ids,
+                    auto_apply_dataset_ids,
+                )
+            except ValueError as exc:
+                return _detail(str(exc))
+
         overwrite_id = str(data.get("overwrite_adapter_id") or "").strip()
         existing = (
             Adapter.objects.filter(name=name, segmentation_type=segmentation_type).first()
@@ -665,6 +685,9 @@ class FineTuneRunsView(APIView):
                     "name": name,
                     "lr": params["lr"],
                     "seed": params["seed"],
+                    "auto_apply": auto_apply,
+                    "auto_apply_asset_ids": auto_apply_asset_ids if auto_apply else [],
+                    "auto_apply_dataset_ids": auto_apply_dataset_ids if auto_apply else [],
                 },
                 priority=defaults["priority"],
                 resource_class=defaults["resource_class"],
@@ -821,15 +844,171 @@ class FineTuneRunDetailView(APIView):
 # ---------------------------------------------------------------------------
 
 
+def _validated_apply_ids(values) -> list[str]:
+    if not isinstance(values, list):
+        raise ValueError("Images and datasets must be sent as lists.")
+    result = []
+    for value in values:
+        try:
+            parsed = str(uuid.UUID(str(value)))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValueError(
+                "Every selected image and dataset must have a valid identifier."
+            ) from exc
+        if parsed not in result:
+            result.append(parsed)
+    return result
+
+
+def _resolve_apply_selection(experiment_id, raw_asset_ids, raw_dataset_ids):
+    requested_asset_ids = _validated_apply_ids(raw_asset_ids)
+    requested_dataset_ids = _validated_apply_ids(raw_dataset_ids)
+    if not requested_asset_ids and not requested_dataset_ids:
+        raise ValueError("Choose at least one dataset or image to run this on.")
+
+    datasets = list(
+        Dataset.objects.filter(
+            id__in=requested_dataset_ids,
+            experiment_id=experiment_id,
+        )
+    )
+    if len({str(dataset.id) for dataset in datasets}) != len(set(requested_dataset_ids)):
+        raise ValueError("Every selected dataset must belong to this fine-tune's experiment.")
+    assets = Asset.objects.filter(lifecycle_status=Asset.LIFECYCLE_ACTIVE)
+    experiment_assets = (
+        assets.filter(experiment_id__isnull=True)
+        if experiment_id is None
+        else assets.filter(experiment_id=experiment_id)
+    )
+    selected_ids = {
+        str(value)
+        for value in experiment_assets.filter(datasets__in=datasets)
+        .values_list("id", flat=True)
+        .distinct()
+    }
+    if requested_asset_ids:
+        explicit_ids = {
+            str(value)
+            for value in experiment_assets.filter(id__in=requested_asset_ids).values_list(
+                "id", flat=True
+            )
+        }
+        if len(explicit_ids) != len(set(requested_asset_ids)):
+            raise ValueError("Every selected image must belong to this fine-tune's experiment.")
+        selected_ids.update(explicit_ids)
+    if not selected_ids:
+        raise ValueError("None of the selected datasets contains an active image.")
+    return requested_dataset_ids, selected_ids
+
+
+def _queue_apply_run(asset, segmentation, adapter, *, batch_id: str):
+    from quantem.jobs.constants import (  # noqa: PLC0415 -- local to this path
+        JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
+        QUEUE_P4_FULL,
+    )
+
+    return Job.enqueue(
+        job_type=JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
+        payload={
+            "asset_id": str(asset.id),
+            "scope": "full",
+            "legs": [
+                {
+                    "segmentation_id": str(segmentation.id),
+                    "segmentation_type": segmentation.segmentation_type.internal_name,
+                    "source_model": adapter.base_model,
+                    "adapter_id": str(adapter.id),
+                }
+            ],
+        },
+        priority="default",
+        resource_class="gpu",
+        queue_name=QUEUE_P4_FULL,
+        max_attempts=1,
+        tags=[
+            f"asset:{asset.id}",
+            f"segmentation:{segmentation.id}",
+            f"adapter:{adapter.id}",
+        ],
+        batch_id=batch_id,
+    )
+
+
+def enqueue_finetune_apply(adapter: Adapter, asset_ids, dataset_ids) -> dict:
+    """Validate targets and queue the same full-image runs for either UI path."""
+    if adapter.deleted_at or adapter.archived_at:
+        raise _ApplyConflict(
+            "This model is deleted or archived. Restore an archived model from Models first."
+        )
+    if adapter.status != "SUCCESS":
+        raise _ApplyConflict("This fine-tune has not finished yet, so there is nothing to run.")
+    if adapter.segmentation_type_id is None:
+        raise ValueError(
+            "This fine-tune predates named runs, so it can only be applied from the image it was made on."
+        )
+
+    requested_dataset_ids, selected_ids = _resolve_apply_selection(
+        adapter.experiment_id, asset_ids, dataset_ids
+    )
+    batch_id = f"finetune-apply:{adapter.id}:{uuid.uuid4().hex[:12]}"
+    queued = []
+    with transaction.atomic():
+        adapter = Adapter.objects.select_for_update().get(id=adapter.id)
+        if adapter.status != "SUCCESS" or adapter.deleted_at or adapter.archived_at:
+            raise _ApplyConflict("This fine-tune is no longer ready to run.")
+
+        targets = []
+        assets = (
+            Asset.objects.select_for_update()
+            .filter(id__in=selected_ids)
+            .order_by("display_name", "id")
+        )
+        for asset in assets:
+            # The asset lock also covers the not-yet-created segmentation case:
+            # PostgreSQL cannot row-lock a missing get_or_create result. This
+            # serializes two different fine-tunes targeting the same image,
+            # while the segmentation lock protects the established row.
+            segmentation, _created = ImageSegmentation.objects.select_for_update().get_or_create(
+                asset=asset, segmentation_type_id=adapter.segmentation_type_id
+            )
+            blocking = active_segmentation_job(
+                segmentation,
+                job_types=ACTIVE_SEGMENTATION_JOB_TYPES,
+            )
+            if blocking is not None:
+                raise _ApplyConflict(
+                    f"{asset.display_name} already has a segmentation task queued "
+                    f"or running ({blocking.id}). Wait for it or cancel it first."
+                )
+            targets.append((asset, segmentation))
+
+        adapter.applied_at = timezone.now()
+        adapter.save(update_fields=["applied_at", "updated_at"])
+        adapter.applied_assets.add(*selected_ids)
+
+        for asset, segmentation in targets:
+            job = FineTuneRunApplyView._queue_run(asset, segmentation, adapter, batch_id=batch_id)
+            queued.append(
+                {
+                    "asset_id": str(asset.id),
+                    "segmentation_id": str(segmentation.id),
+                    "job_id": str(job.id),
+                }
+            )
+    return {
+        "batch_id": batch_id,
+        "adapter_id": str(adapter.id),
+        "dataset_ids": requested_dataset_ids,
+        "queued": queued,
+    }
+
+
 class FineTuneRunApplyView(APIView):
     """``POST /api/finetune/runs/<adapter_id>/apply/``
 
-    Never automatic (owner R13). A finished fine-tune sits there until the user
-    says to run it, and then only over the images or datasets they pick from its
-    experiment. Applying stamps the fine-tune as the one to use for those
-    targets and queues one run per image; nothing already on screen is touched
-    until that run finishes, and what it does to annotated areas is the
-    preservation invariant's business.
+    Applying stamps the fine-tune as the one to use for explicitly selected
+    targets and queues one run per image. The same helper also serves the
+    opt-in apply-after-training path.
     """
 
     def get(self, request, adapter_id):
@@ -898,158 +1077,22 @@ class FineTuneRunApplyView(APIView):
 
     def post(self, request, adapter_id):
         adapter = get_object_or_404(Adapter, id=adapter_id)
-        if adapter.deleted_at or adapter.archived_at:
-            return _detail(
-                "This model is deleted or archived. Restore an archived model from Models first.",
-                status.HTTP_409_CONFLICT,
-            )
-        if adapter.status != "SUCCESS":
-            return _detail(
-                "This fine-tune has not finished yet, so there is nothing to run.",
-                status.HTTP_409_CONFLICT,
-            )
-        if adapter.segmentation_type_id is None:
-            return _detail(
-                "This fine-tune predates named runs, so it can only be applied "
-                "from the image it was made on."
-            )
-
         data = request.data if isinstance(request.data, dict) else {}
-        raw_asset_ids = data.get("asset_ids", [])
-        raw_dataset_ids = data.get("dataset_ids", [])
-        if not isinstance(raw_asset_ids, list) or not isinstance(raw_dataset_ids, list):
-            return _detail("Images and datasets must be sent as lists.")
-
-        def validated_ids(values) -> list[str] | None:
-            result = []
-            for value in values:
-                try:
-                    parsed = str(uuid.UUID(str(value)))
-                except (TypeError, ValueError, AttributeError):
-                    return None
-                if parsed not in result:
-                    result.append(parsed)
-            return result
-
-        requested_asset_ids = validated_ids(raw_asset_ids)
-        requested_dataset_ids = validated_ids(raw_dataset_ids)
-        if requested_asset_ids is None or requested_dataset_ids is None:
-            return _detail("Every selected image and dataset must have a valid identifier.")
-        if not requested_asset_ids and not requested_dataset_ids:
-            return _detail("Choose at least one dataset or image to run this on.")
-
-        datasets = list(
-            Dataset.objects.filter(
-                id__in=requested_dataset_ids,
-                experiment_id=adapter.experiment_id,
-            )
-        )
-        if len({str(dataset.id) for dataset in datasets}) != len(set(requested_dataset_ids)):
-            return _detail("Every selected dataset must belong to this fine-tune's experiment.")
-        assets = Asset.objects.filter(lifecycle_status=Asset.LIFECYCLE_ACTIVE)
-        if adapter.experiment_id is None:
-            experiment_assets = assets.filter(experiment_id__isnull=True)
-        else:
-            experiment_assets = assets.filter(experiment_id=adapter.experiment_id)
-        selected_ids = {
-            str(value)
-            for value in experiment_assets.filter(datasets__in=datasets)
-            .values_list("id", flat=True)
-            .distinct()
-        }
-        if requested_asset_ids:
-            explicit = experiment_assets.filter(id__in=requested_asset_ids)
-            explicit_ids = {str(value) for value in explicit.values_list("id", flat=True)}
-            if len(explicit_ids) != len(set(requested_asset_ids)):
-                return _detail("Every selected image must belong to this fine-tune's experiment.")
-            selected_ids.update(explicit_ids)
-
-        if not selected_ids:
-            return _detail("None of the selected datasets contains an active image.")
-
-        batch_id = f"finetune-apply:{adapter.id}:{uuid.uuid4().hex[:12]}"
-        queued = []
         try:
-            with transaction.atomic():
-                adapter = Adapter.objects.select_for_update().get(id=adapter.id)
-                if adapter.status != "SUCCESS" or adapter.deleted_at or adapter.archived_at:
-                    raise _ApplyConflict("This fine-tune is no longer ready to run.")
-
-                targets = []
-                for asset in Asset.objects.filter(id__in=selected_ids).order_by(
-                    "display_name", "id"
-                ):
-                    segmentation, _created = ImageSegmentation.objects.get_or_create(
-                        asset=asset, segmentation_type_id=adapter.segmentation_type_id
-                    )
-                    blocking = active_segmentation_job(
-                        segmentation,
-                        job_types=ACTIVE_SEGMENTATION_JOB_TYPES,
-                    )
-                    if blocking is not None:
-                        raise _ApplyConflict(
-                            f"{asset.display_name} already has a segmentation task queued "
-                            f"or running ({blocking.id}). Wait for it or cancel it first."
-                        )
-                    targets.append((asset, segmentation))
-
-                adapter.applied_at = timezone.now()
-                adapter.save(update_fields=["applied_at", "updated_at"])
-                adapter.applied_assets.add(*selected_ids)
-
-                for asset, segmentation in targets:
-                    job = self._queue_run(asset, segmentation, adapter, batch_id=batch_id)
-                    queued.append(
-                        {
-                            "asset_id": str(asset.id),
-                            "segmentation_id": str(segmentation.id),
-                            "job_id": str(job.id),
-                        }
-                    )
+            result = enqueue_finetune_apply(
+                adapter,
+                data.get("asset_ids", []),
+                data.get("dataset_ids", []),
+            )
+        except ValueError as exc:
+            return _detail(str(exc))
         except _ApplyConflict as exc:
             return _detail(str(exc), status.HTTP_409_CONFLICT)
-        return Response(
-            {
-                "batch_id": batch_id,
-                "adapter_id": str(adapter.id),
-                "dataset_ids": requested_dataset_ids,
-                "queued": queued,
-            },
-            status=status.HTTP_202_ACCEPTED,
-        )
+        return Response(result, status=status.HTTP_202_ACCEPTED)
 
-    @staticmethod
-    def _queue_run(asset, segmentation, adapter, *, batch_id: str):
-        from quantem.jobs.constants import (  # noqa: PLC0415 -- local to this path
-            JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
-            QUEUE_P4_FULL,
-        )
-
-        return Job.enqueue(
-            job_type=JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
-            payload={
-                "asset_id": str(asset.id),
-                "scope": "full",
-                "legs": [
-                    {
-                        "segmentation_id": str(segmentation.id),
-                        "segmentation_type": (segmentation.segmentation_type.internal_name),
-                        "source_model": adapter.base_model,
-                        "adapter_id": str(adapter.id),
-                    }
-                ],
-            },
-            priority="default",
-            resource_class="gpu",
-            queue_name=QUEUE_P4_FULL,
-            max_attempts=1,
-            tags=[
-                f"asset:{asset.id}",
-                f"segmentation:{segmentation.id}",
-                f"adapter:{adapter.id}",
-            ],
-            batch_id=batch_id,
-        )
+    # Retained as the transaction-test seam and as the one queue constructor
+    # shared by manual and automatic application.
+    _queue_run = staticmethod(_queue_apply_run)
 
 
 # ---------------------------------------------------------------------------
@@ -1085,6 +1128,7 @@ class FineTuneAdaptersView(APIView):
                     "id": str(adapter.id),
                     "name": adapter.name,
                     "base_model": adapter.base_model,
+                    "segmentation_type": str(adapter.segmentation_type_id),
                     "status": adapter.status,
                     "created_at": adapter.created_at,
                     "experiment": (

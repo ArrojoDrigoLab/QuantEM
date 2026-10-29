@@ -377,6 +377,10 @@ export function uploadAsset(
   }
   if (options.datasetId) {
     formData.append("dataset_id", options.datasetId);
+  } else if (options.datasetIds?.length) {
+    for (const datasetId of options.datasetIds) {
+      formData.append("dataset_ids", datasetId);
+    }
   } else if (options.datasetName) {
     formData.append("dataset_name", options.datasetName);
   }

@@ -10,6 +10,7 @@ describe("analysisMaskObjectOverlays", () => {
       name: "Object 1",
       color: "#f97316",
       sort_order: 1,
+      tags: [],
       geometry: {
         type: "MultiPolygon",
         coordinates: [

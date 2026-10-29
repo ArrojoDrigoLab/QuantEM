@@ -173,6 +173,7 @@ describe("JobQueueSidebar", () => {
 
     expect(await screen.findByText("Completed task")).toBeInTheDocument();
     expect(screen.getByText("Live queue status")).toBeInTheDocument();
+    expect(screen.queryByText("Refreshing...")).toBeNull();
     expect(screen.queryByText(/will not start/i)).toBeNull();
     expect(screen.queryByText(/scheduler/i)).toBeNull();
   });
@@ -325,11 +326,11 @@ describe("JobQueueSidebar", () => {
       const { dialog } = await openRemoveDialog(
         makeQueueJob({
           type: "train_organelle_adapter",
-          task_label: "Adapt model to your data",
+          task_label: "Fine-tuning · Fasted liver mitochondria",
         })
       );
 
-      expect(dialog).toHaveTextContent("Adapt wizard stops waiting on it");
+      expect(dialog).toHaveTextContent("fine-tuning dialog stops waiting on it");
       expect(dialog).toHaveTextContent("No weights were written");
     });
 

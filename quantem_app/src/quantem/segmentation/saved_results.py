@@ -35,6 +35,11 @@ def _replace_geometry(row, geometry, *, label_state):
         part.centroid = polygon.centroid
         part.bbox = polygon.envelope
         part.label_state = label_state
+        # ``status`` is the compatibility mirror still read by older clients
+        # and some exports. A clipped candidate promoted to confirmed must not
+        # retain its old numeric candidate state and render red after reload.
+        if label_state == "CONFIRMED":
+            part.status = SegmentObject.STATUS_CONFIRMED
         part.features = {}  # clipped measurements must be recomputed
         part.base_segment = None
         part.save()
@@ -60,7 +65,8 @@ def retain_completed_annotations(segmentation):
             # A completed area's objects and empty spaces are authoritative.
             if row.label_state in {"INFERRED", "CANDIDATE"}:
                 row.label_state = "CONFIRMED"
-                row.save(update_fields=["label_state"])
+                row.status = SegmentObject.STATUS_CONFIRMED
+                row.save(update_fields=["label_state", "status"])
         else:
             _replace_geometry(row, kept, label_state=row.label_state)
 
@@ -77,7 +83,8 @@ def accept_model_area(segmentation):
         allowed = row.geometry.difference(protected)
         if allowed.equals(row.geometry):
             row.label_state = "CONFIRMED"
-            row.save(update_fields=["label_state"])
+            row.status = SegmentObject.STATUS_CONFIRMED
+            row.save(update_fields=["label_state", "status"])
         else:
             _replace_geometry(row, allowed, label_state="CONFIRMED")
 

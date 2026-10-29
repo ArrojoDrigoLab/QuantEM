@@ -19,6 +19,26 @@ describe("ConfirmDialog", () => {
     const dialog = screen.getByRole("dialog", { name: "Delete job" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Confirm" })).toHaveClass(
+      "primary"
+    );
+  });
+
+  it("reserves the danger treatment for explicitly destructive confirmations", () => {
+    render(
+      <ConfirmDialog
+        isOpen
+        title="Delete cell?"
+        confirmText="Delete"
+        confirmTone="danger"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveClass(
+      "danger"
+    );
   });
 
   it("closes on Escape and restores focus", async () => {

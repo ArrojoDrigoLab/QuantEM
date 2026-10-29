@@ -72,6 +72,8 @@ export function ViewerScreen() {
     visibleSegmentations,
   } = useViewerAssetState(selectedAssetId);
 
+  const overlays = useOverlayConfig({ visibleSegmentations, imageReady });
+
   const handleSegmentationCreated = async (
     segmentation: ImageSegmentation,
     launch?: SegmentationLaunch
@@ -79,7 +81,6 @@ export function ViewerScreen() {
     const assetId = segmentation.asset ?? selectedAssetId;
     if (!assetId) return;
     setSelectedSegmentationId(segmentation.id);
-    await refetchSegmentations();
     const params = new URLSearchParams();
     if (launch?.sourceModel) {
       params.set("source_model", launch.sourceModel);
@@ -88,10 +89,28 @@ export function ViewerScreen() {
       params.set("run_model", "1");
     }
     const query = params.toString();
-    navigate(`${labelingPath(assetId, segmentation)}${query ? `?${query}` : ""}`);
-  };
+    const destination = `${labelingPath(assetId, segmentation)}${query ? `?${query}` : ""}`;
 
-  const overlays = useOverlayConfig({ visibleSegmentations, imageReady });
+    if (segmentation.segmentation_type.category === "area" && image) {
+      // The create response and the image already contain everything the
+      // analysis-mask editor needs to paint its first frame. Refresh the
+      // viewer list in parallel instead of showing a second full-screen load.
+      void refetchSegmentations();
+      navigate(destination, {
+        state: {
+          analysisMaskHandoff: {
+            image,
+            segmentation,
+            created: true,
+          },
+        },
+      });
+      return;
+    }
+
+    await refetchSegmentations();
+    navigate(destination);
+  };
 
   const handleEditSegmentation = (segmentationId: string) => {
     if (!selectedAssetId) return;

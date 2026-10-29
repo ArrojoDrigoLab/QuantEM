@@ -220,11 +220,24 @@ describe("SegmentationHeader", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps completed images editable and indicates whole coverage", () => {
-    renderHeader({currentSegmentation: makeSegmentation({status_stage: "COMPLETED", is_complete: true})});
+  it("keeps completed images editable without extra final-result copy", () => {
+    renderHeader({currentSegmentation: makeSegmentation({
+      status_stage: "COMPLETED",
+      is_complete: true,
+      final_result_provenance: {
+        model_identifier: "omniem:mito",
+        adapter_identifier: "33cd947d-4823-4faf-999f-85524f85441d",
+        quantem_version: "0.1.9",
+        finalized_at: "2026-10-28",
+        final_level: 0.6,
+        final_level_kind: "include_level",
+      },
+    })});
     expect(screen.getByRole("button", { name: "Whole image segmented" })).toBeDisabled();
     expect(screen.getByRole("combobox", { name: "Model" })).toBeEnabled();
     expect(screen.queryByText(/This segmentation is locked/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Final:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Whole-image coverage/)).not.toBeInTheDocument();
   });
 
   /**

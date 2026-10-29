@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExperimentPage } from "@/features/experiments/ExperimentPage";
 import {
   getExperiment,
+  getExperiments,
   getHomeEntryPage,
   getAssetSegmentations,
   updateAssetLibraryDetails,
@@ -15,7 +16,15 @@ import {
 import type { Dataset, Experiment } from "@/shared/types/common";
 import type { HomeEntry, HomeEntryPage } from "@/shared/types/images";
 import { getWorkspace } from "@/shared/api/workspace";
+import { getSystemStatus } from "@/shared/api/jobs";
 vi.mock("@/shared/api/workspace", () => ({ getWorkspace: vi.fn(), saveSample: vi.fn() }));
+
+vi.mock("@/shared/api/jobs", async () => {
+  const actual = await vi.importActual<typeof import("@/shared/api/jobs")>(
+    "@/shared/api/jobs"
+  );
+  return { ...actual, getSystemStatus: vi.fn() };
+});
 
 vi.mock("@/shared/api/assets", async () => {
   const actual = await vi.importActual<typeof import("@/shared/api/assets")>(
@@ -25,6 +34,7 @@ vi.mock("@/shared/api/assets", async () => {
     ...actual,
     deleteAsset: vi.fn(),
     getExperiment: vi.fn(),
+    getExperiments: vi.fn(),
     getHomeEntryPage: vi.fn(),
     getAssetSegmentations: vi.fn(),
     updateAssetLibraryDetails: vi.fn(),
@@ -111,7 +121,12 @@ describe("ExperimentPage", () => {
     sessionStorage.setItem("quantem.workspace.experiment-1.controls", JSON.stringify({ layout: "cards" }));
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     vi.mocked(getWorkspace).mockResolvedValue({ images: [] });
+    vi.mocked(getSystemStatus).mockResolvedValue({
+      cuda_available: false,
+      supported_upload_formats: [".tif", ".tiff", ".png"],
+    });
     vi.mocked(getExperiment).mockResolvedValue(EXPERIMENT);
+    vi.mocked(getExperiments).mockResolvedValue([EXPERIMENT]);
     vi.mocked(getHomeEntryPage).mockImplementation(async (params) =>
       params?.dataset === DATASET_A.id ? page([IMAGE]) : page([])
     );
@@ -141,6 +156,24 @@ describe("ExperimentPage", () => {
     expect(
       screen.getByRole("button", { name: "Options for Liver 01" })
     ).toBeInTheDocument();
+  });
+
+  it("opens a prominent right-aligned Add images dialog from the selection row", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const addImages = await screen.findByRole("button", { name: "Add images" });
+    expect(addImages).toHaveClass("ml-auto");
+    await user.click(addImages);
+
+    const dialog = await screen.findByRole("dialog", { name: "Add images" });
+    expect(dialog).toHaveTextContent("Add images to Liver study");
+    await user.upload(
+      within(dialog).getByLabelText("Image file"),
+      new File(["fake"], "new-image.png", { type: "image/png" })
+    );
+    expect(await within(dialog).findByLabelText("New dataset name")).toHaveValue("Dataset 1");
+    expect(within(dialog).getByRole("radio", { name: "Existing datasets" })).toBeEnabled();
   });
 
   it("edits image metadata and dataset membership atomically", async () => {

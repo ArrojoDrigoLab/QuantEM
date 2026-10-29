@@ -450,6 +450,10 @@ export interface FineTuneRunPayload {
   base_model: string;
   asset_ids: string[];
   dataset_ids: string[];
+  /** Explicit opt-in to queue selected inference targets after training succeeds. */
+  auto_apply?: boolean;
+  auto_apply_asset_ids?: string[];
+  auto_apply_dataset_ids?: string[];
   mode: FineTuneMode;
   cv_benchmark: boolean;
   /** Labeling-view origin, when the dialog was opened beside one segmentation. */
@@ -560,6 +564,8 @@ export interface FineTuneAdapterSummary {
   id: string;
   name: string;
   base_model: string;
+  /** Organelle type id. Present on current servers; optional for older ones. */
+  segmentation_type?: string | null;
   status: AdapterStatus;
   created_at: string;
   experiment: FineTuneExperimentRef | string | null;
@@ -574,7 +580,7 @@ export interface FineTuneApplyQueued {
   job_id: string;
 }
 
-/** `POST /api/finetune/runs/<id>/apply/` — never automatic; the user clicks. */
+/** `POST /api/finetune/runs/<id>/apply/` — a user-selected application batch. */
 export interface FineTuneApplyResponse {
   batch_id: string;
   adapter_id: string;

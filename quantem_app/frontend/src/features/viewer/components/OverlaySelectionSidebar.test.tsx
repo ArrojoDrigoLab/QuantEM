@@ -159,6 +159,26 @@ describe("OverlaySelectionSidebar", () => {
     expect(screen.getByText("Whole-cell measurement region (Area)")).toBeInTheDocument();
   });
 
+  it("uses the named semantic Sample Area object as the existing segmentation label", () => {
+    const sampleArea = makeSegmentation("COMPLETED", {
+      display_name: "Pericentral region",
+      segmentation_type: {
+        ...makeSegmentation("COMPLETED").segmentation_type,
+        internal_name: "quantem_internal_tissue",
+        short_name: "Sample Area",
+        long_name: "Sample Area",
+        category: "area",
+        representation: "semantic",
+        topology_policy: "overlapping",
+        kind: "builtin",
+      },
+    });
+    renderSidebar(sampleArea);
+
+    expect(screen.getByText("Pericentral region (Area)")).toBeInTheDocument();
+    expect(screen.queryByText("Sample Area (Area)")).not.toBeInTheDocument();
+  });
+
   it("labels reusable masks outside the built-in organelles as custom", () => {
     renderSidebar(
       makeSegmentation("COMPLETED", {

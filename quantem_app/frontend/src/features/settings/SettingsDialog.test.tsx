@@ -67,6 +67,7 @@ describe("SettingsDialog application upgrades", () => {
             isOpen
             status={{
               app_version: "0.1.2",
+              storage_directory: "/Users/researcher/Library/Application Support/QuantEM",
               cuda_available: false,
               supported_upload_formats: [".tif"],
             }}
@@ -125,6 +126,7 @@ describe("SettingsDialog application upgrades", () => {
             isOpen
             status={{
               app_version: "0.1.2",
+              storage_directory: "/Users/researcher/Library/Application Support/QuantEM",
               cuda_available: true,
               supported_upload_formats: [".tif"],
             }}
@@ -137,7 +139,19 @@ describe("SettingsDialog application upgrades", () => {
     expect(screen.getByText("CUDA-enabled")).toBeInTheDocument();
   });
 
-  it("loads and saves the database-upgrade backup policy", async () => {
+  it("shows the resolved storage directory and keeps database settings below models", async () => {
+    renderSettings();
+
+    expect(
+      screen.getByText("/Users/researcher/Library/Application Support/QuantEM")
+    ).toBeInTheDocument();
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    expect(headings.indexOf(screen.getByRole("heading", { name: "Models" }))).toBeLessThan(
+      headings.indexOf(screen.getByRole("heading", { name: "Database upgrade backups" }))
+    );
+  });
+
+  it("automatically saves the database-upgrade backup policy with stable per-field feedback", async () => {
     systemSettings.update.mockResolvedValue({
       pre_migration_backup_retention_count: 2,
       pre_migration_backup_retention_days: 45,
@@ -155,14 +169,93 @@ describe("SettingsDialog application upgrades", () => {
     await user.type(count, "2");
     await user.clear(days);
     await user.type(days, "45");
-    await user.click(screen.getByRole("button", { name: "Save backup settings" }));
+
+    expect(screen.queryByRole("button", { name: "Save backup settings" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Saving maximum backups" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "Saving backup retention days" })
+    ).toBeInTheDocument();
 
     await waitFor(() =>
       expect(systemSettings.update).toHaveBeenCalledWith({
         pre_migration_backup_retention_count: 2,
         pre_migration_backup_retention_days: 45,
-      })
+      }),
+      { timeout: 2500 }
     );
-    expect(await screen.findByText("Saved. 1 older backup was removed.")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("status", { name: "maximum backups saved" }, { timeout: 2500 })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "backup retention days saved" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 older backup was removed.")).toBeInTheDocument();
+  });
+
+  it("clears stale validation feedback when an edit is reverted to the saved value", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    const count = await screen.findByRole("spinbutton", { name: "Maximum backups" });
+    await user.clear(count);
+    expect(
+      screen.getByRole("status", { name: "maximum backups could not be saved" })
+    ).toBeInTheDocument();
+
+    await user.type(count, "1");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("status", { name: "maximum backups could not be saved" })
+      ).not.toBeInTheDocument()
+    );
+    expect(
+      screen.queryByRole("status", { name: "Saving maximum backups" })
+    ).not.toBeInTheDocument();
+    expect(systemSettings.update).not.toHaveBeenCalled();
+  });
+
+  it("persists a revert made while the previous autosave is still in flight", async () => {
+    let finishFirstSave!: (value: {
+      pre_migration_backup_retention_count: number;
+      pre_migration_backup_retention_days: number;
+    }) => void;
+    const firstSave = new Promise<{
+      pre_migration_backup_retention_count: number;
+      pre_migration_backup_retention_days: number;
+    }>((resolve) => {
+      finishFirstSave = resolve;
+    });
+    systemSettings.update
+      .mockImplementationOnce(() => firstSave)
+      .mockResolvedValueOnce({
+        pre_migration_backup_retention_count: 1,
+        pre_migration_backup_retention_days: 30,
+      });
+
+    const user = userEvent.setup();
+    renderSettings();
+    const count = await screen.findByRole("spinbutton", { name: "Maximum backups" });
+
+    await user.clear(count);
+    await user.type(count, "2");
+    await waitFor(() => expect(systemSettings.update).toHaveBeenCalledTimes(1));
+
+    await user.clear(count);
+    await user.type(count, "1");
+    finishFirstSave({
+      pre_migration_backup_retention_count: 2,
+      pre_migration_backup_retention_days: 30,
+    });
+
+    await waitFor(
+      () =>
+        expect(systemSettings.update).toHaveBeenLastCalledWith({
+          pre_migration_backup_retention_count: 1,
+          pre_migration_backup_retention_days: 30,
+        }),
+      { timeout: 3000 }
+    );
+    expect(systemSettings.update).toHaveBeenCalledTimes(2);
+    expect(count).toHaveValue(1);
   });
 });

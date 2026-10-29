@@ -171,12 +171,15 @@ export function previewFineTuneScope(
   });
 }
 
-/** Existing fine-tunes for this organelle, for the overwrite dropdown. */
+/** Existing fine-tunes, optionally narrowed to one organelle. */
 export function listFineTuneAdapters(
-  segmentationTypeId: string
+  segmentationTypeId?: string
 ): Promise<FineTuneAdapterSummary[]> {
+  const query = segmentationTypeId
+    ? `?segmentation_type=${encodeURIComponent(segmentationTypeId)}`
+    : "";
   return apiRequest<FineTuneAdapterSummary[]>(
-    `/api/finetune/adapters/?segmentation_type=${encodeURIComponent(segmentationTypeId)}`
+    `/api/finetune/adapters/${query}`
   );
 }
 
@@ -210,8 +213,8 @@ export function getFineTuneRun(adapterId: string): Promise<FineTuneRunDetail> {
 /**
  * Run the finished model on selected images or Datasets in its Experiment.
  *
- * Never called on success. The dialog offers it; nothing is queued until the
- * user picks images and clicks (owner R13).
+ * The Apply tab calls this for a finished run. An explicit apply-after-training
+ * choice travels with the training request and is queued by the worker instead.
  */
 export function applyFineTuneRun(
   adapterId: string,

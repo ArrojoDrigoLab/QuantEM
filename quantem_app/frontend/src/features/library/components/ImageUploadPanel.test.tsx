@@ -3,12 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageUploadPanel } from "@/features/library/components/ImageUploadPanel";
 import {
+  getExperiments,
   startUploadedAssetPipelines,
   uploadAsset,
 } from "@/shared/api/assets";
 import { getSystemStatus } from "@/shared/api/jobs";
 import type { AssetDetail } from "@/shared/types/images";
 import type { SystemStatus } from "@/shared/types/jobs";
+import type { Experiment } from "@/shared/types/common";
 
 vi.mock("@/shared/api/assets", async () => {
   const actual = await vi.importActual<typeof import("@/shared/api/assets")>(
@@ -16,6 +18,7 @@ vi.mock("@/shared/api/assets", async () => {
   );
   return {
     ...actual,
+    getExperiments: vi.fn(),
     uploadAsset: vi.fn(),
     startUploadedAssetPipelines: vi.fn(),
   };
@@ -59,6 +62,36 @@ function systemStatus(): SystemStatus {
   };
 }
 
+const EXISTING_EXPERIMENT: Experiment = {
+  id: "experiment-1",
+  name: "Fasted cohort",
+  notes: "",
+  asset_count: 2,
+  ungrouped_asset_count: 0,
+  created_at: null,
+  updated_at: null,
+  datasets: [
+    {
+      id: "dataset-a",
+      experiment: "experiment-1",
+      name: "Baseline",
+      notes: "",
+      asset_count: 1,
+      created_at: null,
+      updated_at: null,
+    },
+    {
+      id: "dataset-b",
+      experiment: "experiment-1",
+      name: "Stimulated",
+      notes: "",
+      asset_count: 1,
+      created_at: null,
+      updated_at: null,
+    },
+  ],
+};
+
 async function openPanelWithServerFormats() {
   const input = await screen.findByLabelText("Image file");
   await waitFor(() => expect(input).toHaveAttribute("accept", ".tif,.tiff,.png"));
@@ -73,6 +106,7 @@ describe("ImageUploadPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getSystemStatus).mockResolvedValue(systemStatus());
+    vi.mocked(getExperiments).mockResolvedValue([EXISTING_EXPERIMENT]);
     vi.mocked(uploadAsset).mockResolvedValue(makeAsset());
     vi.mocked(startUploadedAssetPipelines).mockResolvedValue({ job_ids: [] });
   });
@@ -146,6 +180,55 @@ describe("ImageUploadPanel", () => {
     expect(vi.mocked(uploadAsset).mock.invocationCallOrder[1]).toBeLessThan(
       vi.mocked(startUploadedAssetPipelines).mock.invocationCallOrder[0]
     );
+  });
+
+  it("keeps one default dataset when a new experiment is chosen for a batch", async () => {
+    const user = userEvent.setup();
+    render(<ImageUploadPanel />);
+
+    await user.upload(await openPanelWithServerFormats(), [
+      pngFile("first.png"),
+      pngFile("second.png"),
+    ]);
+    const experimentPicker = screen.getByLabelText("Experiment");
+    await user.selectOptions(experimentPicker, "");
+    await user.selectOptions(
+      experimentPicker,
+      screen.getByRole("option", { name: "New experiment…" })
+    );
+    await user.type(screen.getByLabelText("New experiment…"), "New batch experiment");
+    expect(screen.getByLabelText("New dataset…")).toHaveValue("Dataset 1");
+    submitUploadForm();
+
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(2));
+    for (const [, options] of vi.mocked(uploadAsset).mock.calls) {
+      expect(options).toMatchObject({
+        experimentName: "New batch experiment",
+        datasetName: "Dataset 1",
+      });
+    }
+  });
+
+  it("adds an experiment-page batch to multiple existing datasets", async () => {
+    const user = userEvent.setup();
+    render(<ImageUploadPanel fixedExperiment={EXISTING_EXPERIMENT} />);
+
+    await user.upload(await openPanelWithServerFormats(), [
+      pngFile("first.png"),
+      pngFile("second.png"),
+    ]);
+    await user.click(screen.getByRole("radio", { name: "Existing datasets" }));
+    await user.click(screen.getByRole("checkbox", { name: "Baseline" }));
+    await user.click(screen.getByRole("checkbox", { name: "Stimulated" }));
+    submitUploadForm();
+
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(2));
+    for (const [, options] of vi.mocked(uploadAsset).mock.calls) {
+      expect(options).toMatchObject({
+        experimentId: EXISTING_EXPERIMENT.id,
+        datasetIds: ["dataset-a", "dataset-b"],
+      });
+    }
   });
 
   it("can retry the idempotent processing start without re-uploading images", async () => {

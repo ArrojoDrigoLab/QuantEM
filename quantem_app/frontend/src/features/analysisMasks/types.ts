@@ -1,5 +1,15 @@
 export type AnalysisMaskOperation = "include" | "exclude";
 
+export interface CellTag {
+  name: string;
+  value: string;
+}
+
+export interface CellTagSuggestion {
+  name: string;
+  values: string[];
+}
+
 export type AnalysisMaskGeometry =
   | {
       type: "Polygon";
@@ -16,6 +26,7 @@ export interface AnalysisMaskObject {
   name: string;
   color: string;
   sort_order: number;
+  tags: CellTag[];
   geometry: AnalysisMaskGeometry | null;
   created_at: string;
   updated_at: string;
@@ -24,6 +35,7 @@ export interface AnalysisMaskObject {
 export interface AnalysisMaskObjectListResponse {
   objects: AnalysisMaskObject[];
   foreground_pixels: number;
+  tag_suggestions?: CellTagSuggestion[];
 }
 
 export interface AnalysisMaskObjectSaveResponse

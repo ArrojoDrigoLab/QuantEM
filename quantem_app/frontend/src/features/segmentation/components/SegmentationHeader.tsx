@@ -65,6 +65,10 @@ interface SegmentationHeaderProps {
   /** Download state for the two released choices in the model picker. */
   modelCatalogue?: ModelCatalogue | null;
   modelRunControl?: ReactNode;
+  /** Compare-runs or another result-level action occupying the completion slot. */
+  resultControl?: ReactNode;
+  /** Manual completion is offered only after at least one ROI is marked done. */
+  showManualCompletion?: boolean;
   /**
    * Delete every reviewed object on this segmentation and queue a fresh run.
    *
@@ -100,6 +104,8 @@ export function SegmentationHeader({
   hasQueuedOrRunningOrganelleTask = false,
   modelCatalogue = null,
   modelRunControl,
+  resultControl,
+  showManualCompletion = true,
   onClearMislabeledObjects,
 }: SegmentationHeaderProps) {
   const segmentationId = currentSegmentation?.id ?? null;
@@ -265,12 +271,10 @@ export function SegmentationHeader({
           objectsPixelSize={objectsPixelSize}
           currentSegmentation={currentSegmentation}
           isBusy={isBusy}
-          isComplete={isComplete}
           onOpenClearRerun={onClearMislabeledObjects ? clearRerun.open : undefined}
         />
         <HeaderNotices
           currentSegmentation={currentSegmentation}
-          isComplete={isComplete}
         />
         <HeaderRouteLinks
           image={image}
@@ -279,10 +283,13 @@ export function SegmentationHeader({
           activeBaseModel={selectedPackId}
           onFineTuneImageCompleted={onFineTuneImageCompleted}
         />
-        <button className="segmentation-complete-button" disabled={!currentSegmentation || isComplete}
-          onClick={() => completion.open()}>
-          {isComplete ? "Whole image segmented" : "Confirm whole-image manual segmentation…"}
-        </button>
+        {resultControl}
+        {showManualCompletion ? (
+          <button className="segmentation-complete-button" disabled={!currentSegmentation || isComplete}
+            onClick={() => completion.open()}>
+            {isComplete ? "Whole image segmented" : "Confirm whole-image manual segmentation…"}
+          </button>
+        ) : null}
       </div>
 
       <ClearAndRerunConfirmDialog

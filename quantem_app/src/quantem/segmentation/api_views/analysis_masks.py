@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
 
+from quantem.analysis.superseded import mark_superseded
 from quantem.segmentation.api_views.segments.shared import (
     outline_geometry,
     parse_outline_pieces,
@@ -26,7 +27,12 @@ from quantem.segmentation.area_instances import (
 from quantem.segmentation.geometry.polygons import normalize_polygonal_geometry
 from quantem.segmentation.geometry_serialization import geometry_payload
 from quantem.segmentation.global_masks import save_global_mask_from_geometries
-from quantem.segmentation.models import AnalysisMaskObject, ImageSegmentation
+from quantem.segmentation.models import (
+    AnalysisMaskObject,
+    AnalysisMaskObjectAnnotation,
+    GlobalMask,
+    ImageSegmentation,
+)
 from quantem.segmentation.overlay_ngff.dirty import full_image_dirty_bbox
 from quantem.segmentation.overlay_ngff.mutations import (
     register_overlay_mutation_all_bundles,
@@ -35,6 +41,100 @@ from quantem.segmentation.services.confirm_batch.geometry import (
     safe_difference,
     safe_union,
 )
+
+CELL_INTERNAL_NAME = "quantem_internal_cells"
+MAX_CELL_TAGS = 25
+MAX_TAG_NAME_LENGTH = 64
+MAX_TAG_VALUE_LENGTH = 200
+
+
+def _stored_tags(raw_tags: object) -> list[dict[str, str]]:
+    """Return the key/value tag shape while accepting legacy string tags."""
+    if not isinstance(raw_tags, list):
+        return []
+    tags: list[dict[str, str]] = []
+    for raw_tag in raw_tags:
+        if isinstance(raw_tag, str):
+            name = raw_tag.strip()
+            value = ""
+        elif isinstance(raw_tag, dict):
+            name = str(raw_tag.get("name") or "").strip()
+            value = str(raw_tag.get("value") or "").strip()
+        else:
+            continue
+        if name:
+            tags.append({"name": name, "value": value})
+    return tags
+
+
+def _object_tags(obj: AnalysisMaskObject) -> list[dict[str, str]]:
+    try:
+        return _stored_tags(obj.annotation.tags)
+    except AnalysisMaskObjectAnnotation.DoesNotExist:
+        return []
+
+
+def _cell_tag_suggestions() -> list[dict[str, object]]:
+    canonical_names: dict[str, str] = {}
+    canonical_values: dict[str, dict[str, str]] = {}
+    annotations = (
+        AnalysisMaskObjectAnnotation.objects.filter(
+            object__segmentation__segmentation_type__internal_name=CELL_INTERNAL_NAME
+        )
+        .order_by("created_at", "id")
+        .values_list("tags", flat=True)
+    )
+    for raw_tags in annotations.iterator():
+        for tag in _stored_tags(raw_tags):
+            name_key = tag["name"].casefold()
+            canonical_names.setdefault(name_key, tag["name"])
+            values = canonical_values.setdefault(name_key, {})
+            if tag["value"]:
+                values.setdefault(tag["value"].casefold(), tag["value"])
+    return [
+        {
+            "name": name,
+            "values": list(canonical_values.get(name_key, {}).values()),
+        }
+        for name_key, name in canonical_names.items()
+    ]
+
+
+def _validated_cell_tags(raw_tags: object) -> list[dict[str, str]]:
+    if not isinstance(raw_tags, list):
+        raise ValueError("tags must be a list.")
+    if len(raw_tags) > MAX_CELL_TAGS:
+        raise ValueError(f"A cell can have at most {MAX_CELL_TAGS} tags.")
+
+    suggestions = _cell_tag_suggestions()
+    canonical_names = {str(row["name"]).casefold(): str(row["name"]) for row in suggestions}
+    canonical_values = {
+        str(row["name"]).casefold(): {str(value).casefold(): str(value) for value in row["values"]}
+        for row in suggestions
+    }
+    tags: list[dict[str, str]] = []
+    used_names: set[str] = set()
+    for index, raw_tag in enumerate(raw_tags):
+        if not isinstance(raw_tag, dict):
+            raise ValueError(f"tags[{index}] must contain a name and value.")
+        name = str(raw_tag.get("name") or "").strip()
+        value = str(raw_tag.get("value") or "").strip()
+        if not name and not value:
+            continue
+        if not name:
+            raise ValueError(f"tags[{index}] needs a tag name.")
+        if len(name) > MAX_TAG_NAME_LENGTH:
+            raise ValueError(f"Tag names must be {MAX_TAG_NAME_LENGTH} characters or fewer.")
+        if len(value) > MAX_TAG_VALUE_LENGTH:
+            raise ValueError(f"Tag values must be {MAX_TAG_VALUE_LENGTH} characters or fewer.")
+        name_key = name.casefold()
+        if name_key in used_names:
+            raise ValueError("A cell cannot contain the same tag name twice.")
+        used_names.add(name_key)
+        canonical_name = canonical_names.get(name_key, name)
+        canonical_value = canonical_values.get(name_key, {}).get(value.casefold(), value)
+        tags.append({"name": canonical_name, "value": canonical_value})
+    return tags
 
 
 def _analysis_segmentation(seg_id) -> ImageSegmentation:
@@ -54,10 +154,27 @@ def _object_payload(obj: AnalysisMaskObject) -> dict:
         "name": obj.name,
         "color": obj.color,
         "sort_order": int(obj.sort_order),
+        "tags": _object_tags(obj),
         "geometry": geometry_payload(obj.geometry),
         "created_at": obj.created_at,
         "updated_at": obj.updated_at,
     }
+
+
+def _materialize_legacy_objects_if_needed(segmentation: ImageSegmentation) -> None:
+    """Run the expensive raster-to-vector bridge only for actual legacy data.
+
+    A newly created Cells layer has neither a global raster nor superseded
+    source rasters. Taking a transaction lock and entering the legacy loader
+    on every initial GET and every polygon POST made that ordinary empty state
+    pay migration overhead before the user could draw anything.
+    """
+    has_legacy_raster = (
+        GlobalMask.objects.filter(segmentation_id=segmentation.id).exists()
+        or GlobalMask.objects.filter(segmentation__superseded_by_id=segmentation.id).exists()
+    )
+    if has_legacy_raster:
+        materialize_legacy_area_instances(segmentation)
 
 
 def _next_color(segmentation: ImageSegmentation) -> str:
@@ -166,12 +283,17 @@ class AnalysisMaskObjectListCreateView(APIView):
             segmentation = _analysis_segmentation(seg_id)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        materialize_legacy_area_instances(segmentation)
-        objects = AnalysisMaskObject.objects.filter(segmentation=segmentation)
+        _materialize_legacy_objects_if_needed(segmentation)
+        objects = AnalysisMaskObject.objects.select_related("annotation").filter(
+            segmentation=segmentation
+        )
         return Response(
             {
                 "objects": [_object_payload(obj) for obj in objects],
                 "foreground_pixels": _foreground_pixels(segmentation),
+                "tag_suggestions": _cell_tag_suggestions()
+                if segmentation.segmentation_type.internal_name == CELL_INTERNAL_NAME
+                else [],
             },
             status=status.HTTP_200_OK,
         )
@@ -205,7 +327,14 @@ class AnalysisMaskObjectListCreateView(APIView):
             )
 
         with transaction.atomic():
-            materialize_legacy_area_instances(segmentation)
+            # New Cells do not enter the legacy materializer anymore, so take
+            # the parent lock explicitly to serialize Cell names/sort orders.
+            segmentation = (
+                ImageSegmentation.objects.select_for_update()
+                .select_related("asset", "segmentation_type")
+                .get(pk=segmentation.pk)
+            )
+            _materialize_legacy_objects_if_needed(segmentation)
             if object_id:
                 obj = get_object_or_404(
                     AnalysisMaskObject.objects.select_for_update(),
@@ -260,10 +389,15 @@ class AnalysisMaskObjectListCreateView(APIView):
                 update_fields.append("final_result_provenance")
             if update_fields:
                 segmentation.save(update_fields=update_fields)
-        # WKB is the editing representation. Do not rewrite a full-image PNG
-        # or rebuild its pyramid for every brush stroke: that was the long
-        # pause after R. Object Save (and the page-level Save Analysis Masks)
-        # materializes the union once through the save endpoint below.
+            # Vector rows are now the durable Cell/Sample Area source. The old
+            # raster save used to invalidate dependent analyses as a side
+            # effect; keep that integrity guarantee when autosaving vectors.
+            mark_superseded(segmentation)
+        # WKB is the durable editing representation. Do not rewrite a
+        # full-image PNG or rebuild its pyramid for every brush stroke: that
+        # was the long pause after R. Compatibility consumers can materialize
+        # the union through the endpoint below; Cells do not need a second
+        # manual save after every already-persisted vector edit.
         return Response(
             {
                 "object": _object_payload(obj),
@@ -275,7 +409,7 @@ class AnalysisMaskObjectListCreateView(APIView):
 
 
 class AnalysisMaskObjectDetailView(APIView):
-    """Rename or delete one analysis-mask object."""
+    """Update metadata on or delete one analysis-mask object."""
 
     def _get(self, seg_id, object_id):
         segmentation = _analysis_segmentation(seg_id)
@@ -288,13 +422,11 @@ class AnalysisMaskObjectDetailView(APIView):
 
     def patch(self, request, seg_id, object_id):
         try:
-            _segmentation, obj = self._get(seg_id, object_id)
+            segmentation, obj = self._get(seg_id, object_id)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        name = str(request.data.get("name") or "").strip()
-        if not name and (
-            obj.segmentation.segmentation_type.internal_name == "quantem_internal_cells"
-        ):
+        name = str(request.data.get("name") or "").strip() if "name" in request.data else obj.name
+        if not name and (segmentation.segmentation_type.internal_name == CELL_INTERNAL_NAME):
             return Response(
                 {"error": "Cell name cannot be empty."}, status=status.HTTP_400_BAD_REQUEST
             )
@@ -303,11 +435,29 @@ class AnalysisMaskObjectDetailView(APIView):
                 {"error": "Object name must be 100 characters or fewer."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        obj.name = name
-        obj.save(update_fields=["name", "updated_at"])
-        from quantem.analysis.superseded import mark_superseded
+        tags = None
+        if "tags" in request.data:
+            if segmentation.segmentation_type.internal_name != CELL_INTERNAL_NAME:
+                return Response(
+                    {"error": "Tags can be added only to Cells."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                tags = _validated_cell_tags(request.data.get("tags"))
+            except ValueError as exc:
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        mark_superseded(obj.segmentation)
+        with transaction.atomic():
+            obj = AnalysisMaskObject.objects.select_for_update().get(pk=obj.pk)
+            obj.name = name
+            obj.save(update_fields=["name", "updated_at"])
+            if tags is not None:
+                annotation, _created = AnalysisMaskObjectAnnotation.objects.update_or_create(
+                    object=obj,
+                    defaults={"tags": tags},
+                )
+                obj.annotation = annotation
+            mark_superseded(segmentation)
         return Response(_object_payload(obj), status=status.HTTP_200_OK)
 
     def delete(self, request, seg_id, object_id):
@@ -317,7 +467,9 @@ class AnalysisMaskObjectDetailView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         deleted_id = str(obj.id)
-        obj.delete()
+        with transaction.atomic():
+            obj.delete()
+            mark_superseded(segmentation)
         return Response(
             {
                 "deleted_id": deleted_id,
@@ -338,7 +490,7 @@ class AnalysisMaskObjectSaveView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
-            materialize_legacy_area_instances(segmentation)
+            _materialize_legacy_objects_if_needed(segmentation)
             record = _rebuild(segmentation)
             if segmentation.status_stage != "CANDIDATES_READY":
                 segmentation.status_stage = "CANDIDATES_READY"
@@ -348,7 +500,9 @@ class AnalysisMaskObjectSaveView(APIView):
             {
                 "objects": [
                     _object_payload(obj)
-                    for obj in AnalysisMaskObject.objects.filter(segmentation=segmentation)
+                    for obj in AnalysisMaskObject.objects.select_related("annotation").filter(
+                        segmentation=segmentation
+                    )
                 ],
                 "foreground_pixels": int(record.foreground_pixels),
                 "overlay": overlay,

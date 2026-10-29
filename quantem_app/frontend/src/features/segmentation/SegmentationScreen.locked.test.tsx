@@ -58,7 +58,8 @@ describe("locked segmentation screen", () => {
 
   it("opens completed images with editing and model controls available", async () => {
     renderScreen();
-    expect(await screen.findByRole("button", {name: "Whole image segmented"})).toBeDisabled();
+    await screen.findByText("Labeling View");
+    expect(screen.queryByRole("button", {name: "Whole image segmented"})).not.toBeInTheDocument();
     expect(screen.queryByRole("button", {name: "Unlock segmentation"})).not.toBeInTheDocument();
     expect(screen.getByRole("button", {name: "Add New"})).toBeEnabled();
     expect(screen.getByRole("button", {name: "Remove objects"})).toBeEnabled();
@@ -68,7 +69,8 @@ describe("locked segmentation screen", () => {
     const saved = overlayManifestState.manifest;
     overlayManifestState.manifest = null;
     const {rerender} = renderScreen();
-    await screen.findByRole("button", {name: "Whole image segmented"});
+    await screen.findByText("Labeling View");
+    expect(screen.queryByRole("button", {name: "Whole image segmented"})).not.toBeInTheDocument();
     overlayManifestState.manifest = saved;
     rerender(<TestScreen />);
     await waitFor(() => expect(viewerProps().overlays?.idMapOverlays?.length).toBeGreaterThan(0));

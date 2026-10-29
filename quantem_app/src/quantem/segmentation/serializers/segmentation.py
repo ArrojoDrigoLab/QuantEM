@@ -213,6 +213,7 @@ class SegmentationTypeSerializer(serializers.ModelSerializer):
 
 class ImageSegmentationSerializer(serializers.ModelSerializer):
     segmentation_type = SegmentationTypeSerializer(read_only=True)
+    display_name = serializers.SerializerMethodField()
     segment_counts = serializers.SerializerMethodField()
     source_models = serializers.SerializerMethodField()
     segment_counts_by_source_model = serializers.SerializerMethodField()
@@ -285,6 +286,24 @@ class ImageSegmentationSerializer(serializers.ModelSerializer):
         for row in qs:
             counts[row["label_state"]] = row["count"]
         return counts
+
+    def get_display_name(self, obj) -> str:
+        """Use the sole named semantic-area object as that layer's label."""
+        configured_name = str(obj.display_name or "").strip()
+        if configured_name:
+            return configured_name
+        definition = obj.segmentation_type
+        if not (
+            definition.category == definition.CATEGORY_AREA
+            and definition.representation == definition.REPRESENTATION_SEMANTIC
+        ):
+            return ""
+        objects = getattr(obj, "semantic_display_objects", None)
+        if objects is None:
+            objects = list(obj.analysis_mask_objects.only("id", "segmentation_id", "name")[:2])
+        if len(objects) != 1:
+            return ""
+        return str(objects[0].name or "").strip()
 
     def _source_counts(self, obj) -> dict[str, dict[str, int]]:
         counts: dict[str, dict[str, int]] = {}

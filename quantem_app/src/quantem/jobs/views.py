@@ -15,6 +15,7 @@ from quantem.jobs.constants import (
     JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
     JOB_TYPE_RUN_SEGMENTATION_FULL,
     JOB_TYPE_RUN_SEGMENTATION_ROI,
+    JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
     QUEUE_DISPLAY_NAMES,
     QUEUE_PRIORITY_ORDER,
 )
@@ -45,6 +46,9 @@ TERMINAL_JOBS_LIMIT = 100
 
 
 def _build_task_label(job: Job) -> str:
+    if job.type == JOB_TYPE_TRAIN_ORGANELLE_ADAPTER:
+        model_name = str((job.payload_json or {}).get("name") or "").strip()
+        return f"Fine-tuning · {model_name}" if model_name else "Fine-tuning"
     if job.type == JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY:
         source_model = str((job.payload_json or {}).get("source_model") or "").strip()
         if not source_model:

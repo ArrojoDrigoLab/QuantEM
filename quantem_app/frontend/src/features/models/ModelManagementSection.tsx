@@ -193,6 +193,7 @@ export function ModelManagementSection({ compact = false, refreshKey = "" }: { c
             : undefined
         }
         confirmText="Remove"
+        confirmTone="danger"
         cancelText="Cancel"
         onConfirm={() => void remove()}
         onCancel={() => setRemoveTarget(null)}

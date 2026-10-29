@@ -110,6 +110,16 @@ def test_intel_macos_dmg_avoids_interactive_finder_automation() -> None:
     assert "osascript" not in dmg_script
 
 
+def test_desktop_exports_are_explicitly_allowed_by_the_tauri_acl() -> None:
+    tauri_root = REPO_ROOT / "quantem_app/desktop/src-tauri"
+    capability = json.loads((tauri_root / "capabilities/default.json").read_text(encoding="utf-8"))
+    permissions = set(capability["permissions"])
+    assert {"allow-save-text-file", "allow-save-url-file"} <= permissions
+
+    build_script = (tauri_root / "build.rs").read_text(encoding="utf-8")
+    assert '.commands(&["save_text_file", "save_url_file"])' in build_script
+
+
 def test_release_artifacts_are_short_lived_and_deleted_after_publication() -> None:
     release_workflow = (REPO_ROOT / ".github/workflows/quantem-app-desktop-release.yml").read_text(
         encoding="utf-8"

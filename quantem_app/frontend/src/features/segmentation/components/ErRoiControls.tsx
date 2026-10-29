@@ -228,6 +228,7 @@ export function ErRoiControls({
             : "Delete ROI"
         }
         cancelText="Cancel"
+        confirmTone="danger"
         onConfirm={() => {
           if (pendingDeleteRoi) {
             onDeleteRoi(pendingDeleteRoi.id);

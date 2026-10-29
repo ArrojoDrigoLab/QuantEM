@@ -19,6 +19,7 @@ import { ExportDialog } from "@/features/export/ExportDialog";
 import { ImageCard } from "@/features/library/components/ImageCard";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { ExperimentWorkbench } from "./ExperimentWorkbench";
+import { ExperimentAddImagesDialog } from "./ExperimentAddImagesDialog";
 import { readWorkspaceMemory, rememberWorkspace } from "./workspaceMemory";
 
 const PREVIEW_LIMIT = 5;
@@ -430,6 +431,7 @@ export function ExperimentPage() {
   const [savingImage, setSavingImage] = useState(false);
   const [imageEditError, setImageEditError] = useState<string | null>(null);
   const [pageActionError, setPageActionError] = useState<string | null>(null);
+  const [addingImages, setAddingImages] = useState(false);
 
   useEffect(() => {
     if (data) setExperiment(data);
@@ -485,7 +487,12 @@ export function ExperimentPage() {
           </p>
         ) : null}
 
-        <ExperimentWorkbench key={experiment.id} experiment={experiment} refreshKey={refreshKey}>
+        <ExperimentWorkbench
+          key={experiment.id}
+          experiment={experiment}
+          refreshKey={refreshKey}
+          onAddImages={() => setAddingImages(true)}
+        >
         {experiment.datasets.map((dataset) => (
           <DatasetSection
             key={dataset.id}
@@ -527,6 +534,12 @@ export function ExperimentPage() {
         />
 
         </ExperimentWorkbench>
+        <ExperimentAddImagesDialog
+          open={addingImages}
+          experiment={experiment}
+          onClose={() => setAddingImages(false)}
+          onImagesAdded={refreshGroups}
+        />
         <ImageEditDialog
           image={editingImage}
           experiment={experiment}
@@ -577,6 +590,7 @@ export function ExperimentPage() {
               : undefined
           }
           confirmText="Delete"
+          confirmTone="danger"
           cancelText="Cancel"
           onConfirm={() => {
             const image = deleteImage;

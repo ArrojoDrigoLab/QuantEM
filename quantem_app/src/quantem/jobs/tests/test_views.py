@@ -9,9 +9,11 @@ from rest_framework.test import APIClient
 from quantem.jobs.constants import (
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
     JOB_TYPE_RUN_ANALYSIS,
+    JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
     JOB_TYPE_UPLOAD_IMAGE_PIPELINE,
     QUEUE_P1_INTERACTIVE,
     QUEUE_P2_UPLOAD,
+    QUEUE_P4_FULL,
 )
 from quantem.jobs.models import Job
 
@@ -98,6 +100,21 @@ class JobQueueStatusViewTests(TestCase):
         )
         self.assertEqual(payload["queues"][0]["pending"][0]["task_category"], "analysis")
         self.assertEqual(payload["queues"][0]["pending"][0]["task_label"], "Run analysis")
+
+    def test_queue_status_names_fine_tuning_and_its_custom_model(self):
+        Job.objects.create(
+            type=JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
+            status="PENDING",
+            payload_json={"name": "Fasted liver mitochondria"},
+            queue_name=QUEUE_P4_FULL,
+        )
+
+        payload = self.client.get("/api/jobs/queue-status/").json()
+
+        self.assertEqual(
+            payload["queues"][0]["pending"][0]["task_label"],
+            "Fine-tuning · Fasted liver mitochondria",
+        )
 
 
 class JobWorkerRestartEndpointTests(TestCase):

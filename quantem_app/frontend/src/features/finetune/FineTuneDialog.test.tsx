@@ -7,12 +7,13 @@
  *    preselected;
  * 4. the bar states steps, rounds and an ETA — and "estimating" where the
  *    server has no honest estimate yet;
- * 5. success **offers** to run the new model and queues nothing until asked.
+ * 5. application can be selected up front or chosen after training succeeds.
  */
 
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { FineTuneDialog } from "@/features/finetune/FineTuneDialog";
 import { server } from "@/test/msw/server";
@@ -71,6 +72,7 @@ const DEFAULT_ADAPTERS: FineTuneAdapterSummary[] = [
     id: "ad-old",
     name: "First attempt",
     base_model: "quantem:mito",
+    segmentation_type: "type-mito",
     status: "SUCCESS",
     created_at: "2026-01-01T00:00:00Z",
     experiment: { id: "exp-fasted", name: "Fasted cohort" },
@@ -195,6 +197,12 @@ function stubApi({
     http.get(`${API}/api/finetune/adapters/`, () =>
       HttpResponse.json(adapters)
     ),
+    http.get(`${API}/api/experiments/:id/model-runs/`, () =>
+      HttpResponse.json([])
+    ),
+    http.get(`${API}/api/finetune/evaluations/`, () =>
+      HttpResponse.json([])
+    ),
     http.post(`${API}/api/finetune/preview/`, async ({ request }) => {
       onPreview?.((await request.json()) as FineTuneScopeSelectionPayload);
       return HttpResponse.json(preview(previewBody));
@@ -309,12 +317,14 @@ function openDialog(
   props: Partial<React.ComponentProps<typeof FineTuneDialog>> = {}
 ) {
   return render(
-    <FineTuneDialog
-      open
-      onClose={onClose}
-      segmentationType={MITO}
-      {...props}
-    />
+    <MemoryRouter>
+      <FineTuneDialog
+        open
+        onClose={onClose}
+        segmentationType={MITO}
+        {...props}
+      />
+    </MemoryRouter>
   );
 }
 
@@ -445,7 +455,8 @@ describe("FineTuneDialog", () => {
     });
     openDialog();
 
-    const picker = await screen.findByLabelText("Starting from");
+    const picker = screen.getByLabelText("Starting from");
+    await within(picker).findByRole("option", { name: /QuantEM/ });
     expect(within(picker).getAllByRole("option")).toHaveLength(1);
     expect(within(picker).getByRole("option", { name: /QuantEM/ })).toBeInTheDocument();
     expect(within(picker).queryByRole("option", { name: /OmniEM/ })).toBeNull();
@@ -607,6 +618,127 @@ describe("FineTuneDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("stays open on backdrop clicks and Escape, and closes only from an explicit control", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    stubApi();
+    openDialog(onClose);
+
+    const dialog = await screen.findByTestId("finetune-dialog");
+    await user.click(dialog.parentElement as HTMLElement);
+    await user.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: "Close the fine-tune dialog" })
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reload the experiment tree when a caller recreates the same selection array", async () => {
+    let scopeRequests = 0;
+    stubApi();
+    server.use(
+      http.get(`${API}/api/finetune/scope/`, () => {
+        scopeRequests += 1;
+        return HttpResponse.json(SCOPE);
+      })
+    );
+    const view = render(
+      <FineTuneDialog
+        open
+        onClose={() => {}}
+        segmentationType={MITO}
+        initialAssetIds={["img-1"]}
+      />
+    );
+    await screen.findByTestId("scope-tree");
+    expect(scopeRequests).toBe(1);
+
+    view.rerender(
+      <FineTuneDialog
+        open
+        onClose={() => {}}
+        segmentationType={MITO}
+        initialAssetIds={["img-1"]}
+      />
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    expect(scopeRequests).toBe(1);
+    expect(screen.queryByText("Reading the library…")).not.toBeInTheDocument();
+  });
+
+  it("keeps every queued and running fine-tune visible", async () => {
+    stubApi({
+      adapters: [
+        DEFAULT_ADAPTERS[0]!,
+        {
+          ...DEFAULT_ADAPTERS[0]!,
+          id: "ad-queued",
+          name: "Queued liver model",
+          status: "PENDING",
+        },
+        {
+          ...DEFAULT_ADAPTERS[0]!,
+          id: "ad-running",
+          name: "Running kidney model",
+          status: "RUNNING",
+        },
+      ],
+    });
+    openDialog();
+
+    const active = await screen.findByTestId("finetune-active-runs");
+    expect(active).toHaveTextContent("Queued liver model");
+    expect(active).toHaveTextContent("Running kidney model");
+    expect(active).not.toHaveTextContent("First attempt");
+    expect(screen.getByText("Start a new fine-tune")).toBeInTheDocument();
+  });
+
+  it("keeps a new run above the form while switching tabs", async () => {
+    const user = userEvent.setup();
+    stubApi();
+    openDialog();
+    await selectTheDataset(user);
+    await user.type(screen.getByLabelText("Name"), "Fasted liver mitochondria");
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+
+    const progress = await screen.findByTestId("finetune-progress");
+    await waitFor(() => expect(progress).toHaveTextContent("round 2 of 5"));
+    await user.click(screen.getByRole("tab", { name: "Evaluate" }));
+    expect(screen.getByTestId("finetune-progress")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Train" }));
+    expect(screen.getByTestId("finetune-progress")).toBeInTheDocument();
+    expect(screen.getByText("Start a new fine-tune")).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toBeInTheDocument();
+  });
+
+  it("can queue selected images and datasets automatically after training", async () => {
+    const user = userEvent.setup();
+    let started: FineTuneRunPayload | null = null;
+    stubApi({ onStart: (payload) => { started = payload; } });
+    openDialog();
+    await selectTheDataset(user);
+    await user.type(screen.getByLabelText("Name"), "Auto-applied mitochondria");
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /Run this model automatically when training finishes/,
+      })
+    );
+    expect(screen.getByText("10 images selected to run after training")).toBeInTheDocument();
+    expect(screen.getAllByTestId("scope-tree")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Fine-tune" }));
+
+    await waitFor(() => expect(started).not.toBeNull());
+    expect(started).toMatchObject({
+      auto_apply: true,
+      auto_apply_asset_ids: [],
+      auto_apply_dataset_ids: ["ds-liver"],
+    });
+  });
+
   it("shows steps, rounds and an ETA once the run is under way", async () => {
     const user = userEvent.setup();
     stubApi();
@@ -738,6 +870,29 @@ describe("FineTuneDialog", () => {
     );
   });
 
+  it("selects a saved fine-tune when it finishes loading after Apply is opened", async () => {
+    const user = userEvent.setup();
+    stubApi();
+    server.use(
+      http.get(`${API}/api/finetune/adapters/`, async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        return HttpResponse.json(DEFAULT_ADAPTERS);
+      })
+    );
+    openDialog();
+
+    await user.click(screen.getByRole("tab", { name: "Apply" }));
+    expect(screen.getByRole("combobox", { name: "Fine-tuned model" })).toHaveValue("");
+
+    expect(await screen.findByTestId("finetune-success")).toHaveTextContent(
+      "First attempt"
+    );
+    expect(screen.getByRole("combobox", { name: "Fine-tuned model" })).toHaveValue(
+      "ad-old"
+    );
+    expect(screen.getByTestId("finetune-apply-mode")).toHaveClass("pb-4");
+  });
+
   it("moves a completed run to Apply and keeps per-ROI CV results there", async () => {
     const user = userEvent.setup();
     stubApi({
@@ -837,7 +992,7 @@ describe("FineTuneDialog", () => {
     const failed = await screen.findByTestId("finetune-failed");
     expect(failed).toHaveTextContent("ran out of memory");
 
-    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalled();
   });
 

@@ -54,8 +54,9 @@ function StructureLinks({ image }: { image: WorkspaceImage }) {
   })}</div>;
 }
 
-export function ExperimentWorkbench({ experiment, children, refreshKey }: {
+export function ExperimentWorkbench({ experiment, children, refreshKey, onAddImages }: {
   experiment: Experiment; children: ReactNode; refreshKey: number;
+  onAddImages?: () => void;
 }) {
   const key = `${experiment.id}.controls`;
   const [controls, setControls] = useState<Controls>(() => ({ ...DEFAULTS, ...readMemory<Partial<Controls>>(key, {}) }));
@@ -131,6 +132,12 @@ export function ExperimentWorkbench({ experiment, children, refreshKey }: {
         <Button disabled={!selectedIds.length} onClick={() => setApplying(!applying)}>Apply models…</Button>
         <Button disabled={!selectedIds.length} onClick={() => setFineTuning(true)}>Evaluate / Fine-tune…</Button>
         <Button disabled={!selectedIds.length} onClick={() => { chooseTab("analysis"); setNewAnalysis(true); }}>Measure selected…</Button>
+        <Button className="ml-auto shadow-md" variant="primary" onClick={onAddImages}>
+          <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M10 4v12M4 10h12" />
+          </svg>
+          Add images
+        </Button>
       </div>
       {applying && <BulkModelPanel experimentId={experiment.id} selectedIds={selectedIds} onChanged={historyChanged} />}
       <FineTuneDialog initialMode="evaluate" open={fineTuning} onClose={() => setFineTuning(false)} initialAssetIds={selectedIds} initialExperimentId={experiment.id} />

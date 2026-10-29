@@ -15,7 +15,12 @@ from quantem.assets.task_utils import load_image_array
 from quantem.seg_core.rasterize import paint_rings
 from quantem.segmentation.geometry import extract_polygons
 from quantem.segmentation.global_masks import load_global_mask
-from quantem.segmentation.models import AnalysisMaskObject, ImageSegmentation, SegmentObject
+from quantem.segmentation.models import (
+    AnalysisMaskObject,
+    GlobalMask,
+    ImageSegmentation,
+    SegmentObject,
+)
 from quantem.segmentation.type_definitions import ANALYSIS_MASK
 
 LABEL_COUNT = 255
@@ -106,7 +111,9 @@ def _analysis_mask_export(segmentation: ImageSegmentation) -> np.ndarray:
 
     # Masks created before named objects existed still have useful pixels. They
     # have no separable object records, so represent the aggregate as object 1.
-    return load_global_mask(segmentation).astype(np.uint8)
+    if GlobalMask.objects.filter(segmentation=segmentation).exists():
+        return load_global_mask(segmentation).astype(np.uint8)
+    return np.zeros((height, width), dtype=np.uint8)
 
 
 def _object_segmentation_export(segmentation: ImageSegmentation) -> np.ndarray:
@@ -129,7 +136,13 @@ def _object_segmentation_export(segmentation: ImageSegmentation) -> np.ndarray:
 
 def segmentation_export(segmentation: ImageSegmentation) -> np.ndarray:
     """Export the current pixels of any supported segmentation as uint8."""
-    if segmentation.segmentation_type.internal_name == ANALYSIS_MASK.internal_name:
+    definition = segmentation.segmentation_type
+    has_area_objects = AnalysisMaskObject.objects.filter(segmentation=segmentation).exists()
+    if definition.category == definition.CATEGORY_AREA and (
+        has_area_objects
+        or definition.representation == definition.REPRESENTATION_INSTANCES
+        or definition.internal_name == ANALYSIS_MASK.internal_name
+    ):
         return _analysis_mask_export(segmentation)
     if (
         segmentation.segmentation_type.measurement_mode

@@ -10,7 +10,7 @@ from quantem.assets.models import Asset, Rendition
 from quantem.jobs.constants import JOB_TYPE_UPLOAD_IMAGE_PIPELINE
 from quantem.jobs.models import Job
 from quantem.library.models import Dataset, Experiment
-from quantem.testing import test_tiff_bytes
+from quantem.testing import test_tiff_bytes as _test_tiff_bytes
 
 
 def _asset(name: str = "Scan") -> Asset:
@@ -399,7 +399,7 @@ class ImportAssignmentTests(TestCase):
         payload = {
             "file": SimpleUploadedFile(
                 "quantem_fixture.tif",
-                test_tiff_bytes(seed=seed),
+                _test_tiff_bytes(seed=seed),
                 content_type="image/tiff",
             ),
             "display_name": "Scan 1",
@@ -446,6 +446,20 @@ class ImportAssignmentTests(TestCase):
         self.assertEqual(response.data["experiment_id"], str(experiment.id))
         self.assertEqual(response.data["dataset_names"], ["Dataset 1"])
 
+    def test_an_import_can_join_multiple_existing_datasets(self):
+        experiment = Experiment.objects.create(name="Fasted cohort")
+        liver = Dataset.objects.create(experiment=experiment, name="Liver")
+        kidney = Dataset.objects.create(experiment=experiment, name="Kidney")
+
+        response = self._upload(
+            experiment_id=str(experiment.id),
+            dataset_ids=[str(liver.id), str(kidney.id)],
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["experiment_id"], str(experiment.id))
+        self.assertEqual(response.data["dataset_names"], ["Kidney", "Liver"])
+
     def test_an_omitted_dataset_uses_the_next_free_default_name(self):
         experiment = Experiment.objects.create(name="Fasted cohort")
         Dataset.objects.create(experiment=experiment, name="Dataset 1")
@@ -482,7 +496,7 @@ class DeferredUploadProcessingTests(TestCase):
             {
                 "file": SimpleUploadedFile(
                     f"plate_{seed}.tif",
-                    test_tiff_bytes(seed=seed),
+                    _test_tiff_bytes(seed=seed),
                     content_type="image/tiff",
                 ),
                 "display_name": f"Plate {seed}",

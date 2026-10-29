@@ -48,10 +48,20 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "QuantEM"
+MIGRATION_PROGRESS_PREFIX = "QUANTEM_MIGRATION_PROGRESS "
 
 #: Names the user data directory. ``_prepare_env`` publishes the resolved value
 #: here before Django is configured; :mod:`quantem.core.config` reads it back.
 DATA_DIR_ENV_VAR = "QUANTEM_DATA_DIR"
+
+
+def _emit_migration_progress(event: dict[str, object]) -> None:
+    """Stream one machine-readable startup event to the desktop shell."""
+
+    print(
+        MIGRATION_PROGRESS_PREFIX + json.dumps(event, separators=(",", ":"), sort_keys=True),
+        flush=True,
+    )
 
 
 def default_data_dir() -> Path:
@@ -463,7 +473,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
                     "Detected legacy SQLite database at %s; starting automatic cutover.",
                     DB_PATH,
                 )
-            cutover = migrate_legacy_sqlite_on_startup()
+            cutover = migrate_legacy_sqlite_on_startup(progress_callback=_emit_migration_progress)
             if cutover is not None:
                 logging.getLogger("quantem.serve").info(
                     "Automatic SQLite-to-PostgreSQL cutover completed: %s",

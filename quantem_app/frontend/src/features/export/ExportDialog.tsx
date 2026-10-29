@@ -10,7 +10,16 @@ import { Button } from "@/shared/ui/design";
 import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { saveUrlFile } from "@/utils/downloadText";
 
-const ANALYSIS_MASK_INTERNAL_NAME = "quantem_internal_analysis_mask";
+const LEGACY_ANALYSIS_MASK_INTERNAL_NAME = "quantem_internal_analysis_mask";
+
+function isAreaSegmentation(
+  segmentation: Awaited<ReturnType<typeof getAssetSegmentations>>[number]
+) {
+  return (
+    segmentation.segmentation_type.category === "area" ||
+    segmentation.segmentation_type.internal_name === LEGACY_ANALYSIS_MASK_INTERNAL_NAME
+  );
+}
 
 export function ExportDialog({
   asset,
@@ -49,11 +58,8 @@ export function ExportDialog({
     };
   }, [onClose]);
 
-  const hasAnalysisMasks = Boolean(
-    segmentations?.some(
-      (segmentation) =>
-        segmentation.segmentation_type.internal_name === ANALYSIS_MASK_INTERNAL_NAME
-    )
+  const hasAreaObjects = Boolean(
+    segmentations?.some(isAreaSegmentation)
   );
 
   const exportFilename = () => {
@@ -134,9 +140,7 @@ export function ExportDialog({
 
           {loading ? <p className="px-2 text-sm text-slate-500">Loading segmentations…</p> : null}
           {segmentations?.map((segmentation) => {
-            const isAnalysisMask =
-              segmentation.segmentation_type.internal_name ===
-              ANALYSIS_MASK_INTERNAL_NAME;
+            const isArea = isAreaSegmentation(segmentation);
             const checked =
               selection.source === "segmentation" &&
               selection.segmentationId === segmentation.id;
@@ -162,8 +166,8 @@ export function ExportDialog({
                     {segmentationDisplayName(segmentation)}
                   </span>
                   <span className="block text-xs text-slate-500">
-                    {isAnalysisMask
-                      ? "Analysis Mask objects as discrete labels"
+                    {isArea
+                      ? "Area objects as discrete labels"
                       : segmentation.segmentation_type.measurement_mode === "objects"
                         ? "Objects as discrete labels"
                         : "Binary mask"}
@@ -191,7 +195,7 @@ export function ExportDialog({
           <div className="mt-2">This exports display rasters, not the original acquisition or measurement tables.
           Background is 0. Object labels cycle from 1 through 255 and are not unique instance IDs.
           Use Analysis to export measurements and object IDs.
-          {hasAnalysisMasks ? (
+          {hasAreaObjects ? (
             <span className="mt-1 block">
               Where Analysis Mask objects overlap, the object later in the list replaces
               the earlier object in the exported pixels.

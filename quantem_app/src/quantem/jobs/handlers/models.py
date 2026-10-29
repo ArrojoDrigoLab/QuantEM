@@ -68,11 +68,40 @@ def handle_train_organelle_adapter(
     from quantem.finetune.adapter_job import train_organelle_adapter_job
 
     reporter.update(progress=1.0, message="adapting model to your data")
-    return train_organelle_adapter_job(
+    result = train_organelle_adapter_job(
         payload=payload,
         reporter=reporter,
         cancel=cancel,
     )
+    if payload.get("auto_apply") and payload.get("adapter_id"):
+        try:
+            from quantem.finetune.models import Adapter  # noqa: PLC0415
+            from quantem.finetune.run_views import enqueue_finetune_apply  # noqa: PLC0415
+
+            adapter = Adapter.objects.get(pk=payload["adapter_id"])
+            applied = enqueue_finetune_apply(
+                adapter,
+                payload.get("auto_apply_asset_ids", []),
+                payload.get("auto_apply_dataset_ids", []),
+            )
+            result["auto_apply"] = applied
+            count = len(applied["queued"])
+            reporter.update(
+                progress=100.0,
+                message=f"Fine-tune complete; queued on {count} image{'s' if count != 1 else ''}",
+            )
+        except Exception as exc:  # Training remains a valid saved model.
+            logger.exception("fine-tune completed but automatic application failed")
+            result["auto_apply_error"] = str(exc)
+            reporter.log(
+                "warning",
+                f"Fine-tuning finished, but the selected image runs could not be queued: {exc}",
+            )
+            reporter.update(
+                progress=100.0,
+                message="Fine-tune complete; selected image runs need attention",
+            )
+    return result
 
 
 @job_handler(JOB_TYPE_INSTALL_MODEL_PACK)

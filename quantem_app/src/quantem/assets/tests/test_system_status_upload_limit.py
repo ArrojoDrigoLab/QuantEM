@@ -27,6 +27,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from quantem import __version__
+from quantem.core.config import STORAGE_DIR
 
 
 class SystemStatusUploadLimitTests(TestCase):
@@ -79,3 +80,6 @@ class SystemStatusUploadLimitTests(TestCase):
 
     def test_the_installed_application_version_is_published(self):
         self.assertEqual(self._status()["app_version"], __version__)
+
+    def test_the_resolved_storage_directory_is_published(self):
+        self.assertEqual(self._status()["storage_directory"], str(STORAGE_DIR))

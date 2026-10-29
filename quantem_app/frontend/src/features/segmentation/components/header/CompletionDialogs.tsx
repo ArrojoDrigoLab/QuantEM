@@ -89,6 +89,7 @@ export function ClearAndRerunConfirmDialog({
         </>
       }
       detailsTone="warning"
+      confirmTone="danger"
       confirmText={
         state.clearing
           ? "Working…"

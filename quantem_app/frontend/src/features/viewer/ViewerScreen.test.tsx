@@ -125,6 +125,8 @@ function segmentation(
     image?: string;
     statusError?: string | null;
     segmentCounts?: Record<string, number>;
+    category?: "organelle" | "area";
+    internalName?: string;
   } = {}
 ) {
   return {
@@ -132,9 +134,10 @@ function segmentation(
     image: overrides.image ?? "img-1",
     segmentation_type: {
       id: "type-1",
-      internal_name: "quantem_internal_mito",
+      internal_name: overrides.internalName ?? "quantem_internal_mito",
       short_name: "Mito",
       long_name: overrides.longName ?? "Lipid Droplets",
+      category: overrides.category ?? "organelle",
       default_color: null,
       tags: [],
       created_at: "2026-01-01T00:00:00Z",
@@ -392,6 +395,41 @@ describe("ViewerScreen", () => {
 
     expect(useSelectionStore.getState().selectedSegmentationId).toBe("seg-new");
     expect(vi.mocked(getAssetSegmentations).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("opens a newly created Cells editor immediately with the viewer data handoff", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getAssetSegmentations).mockResolvedValue([]);
+    const created = segmentation("CANDIDATES_READY", {
+      id: "cells-new",
+      longName: "Cells",
+      internalName: "quantem_internal_cells",
+      category: "area",
+    });
+    vi.mocked(createAssetSegmentation).mockResolvedValue(created);
+
+    render(
+      <MemoryRouter>
+        <ViewerScreen />
+      </MemoryRouter>
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Cells" }));
+    await user.click(await screen.findByRole("button", { name: "Add Cells" }));
+
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith(
+        "/assets/img-1/analysis-mask/cells-new",
+        expect.objectContaining({
+          state: expect.objectContaining({
+            analysisMaskHandoff: expect.objectContaining({
+              segmentation: created,
+              created: true,
+            }),
+          }),
+        })
+      )
+    );
   });
 
   it("polls image status until preprocessing reaches a terminal stage", async () => {

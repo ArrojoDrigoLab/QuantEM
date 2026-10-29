@@ -122,6 +122,10 @@ import { useImportScale } from "@/features/library/components/import/useImportSc
 import { ImportDropZone } from "@/features/library/components/import/ImportDropZone";
 import { ImportQueue } from "@/features/library/components/import/ImportQueue";
 import { ImportDetailsFields } from "@/features/library/components/import/ImportDetailsFields";
+import {
+  FixedExperimentGroupingFields,
+  type FixedDatasetMode,
+} from "@/features/library/components/import/FixedExperimentGroupingFields";
 import { useExperiments } from "@/features/library/components/grouping/useExperiments";
 import {
   chosenId,
@@ -129,6 +133,7 @@ import {
   isChosen,
   type GroupingChoice,
 } from "@/features/library/components/grouping/groupingChoices";
+import type { Experiment } from "@/shared/types/common";
 import type { AssetDetail, UploadImageOptions } from "@/shared/types/images";
 
 function defaultExperimentName(date = new Date()): string {
@@ -146,6 +151,15 @@ function newExperimentChoice(): GroupingChoice {
 
 function newDatasetChoice(): GroupingChoice {
   return { kind: "new", name: "Dataset 1" };
+}
+
+function nextDefaultDatasetName(experiment: Experiment): string {
+  const names = new Set(experiment.datasets.map((dataset) => dataset.name.toLowerCase()));
+  for (let number = 1; number < 100_000; number += 1) {
+    const candidate = `Dataset ${number}`;
+    if (!names.has(candidate.toLowerCase())) return candidate;
+  }
+  return "New dataset";
 }
 
 export interface ImageUploadPanelHandle {
@@ -189,13 +203,23 @@ interface ImageUploadPanelProps {
   pageDragActive?: boolean;
   /** Use the short drop target once the home page already has experiments. */
   compact?: boolean;
+  /** Keep every imported image inside this experiment and offer its datasets. */
+  fixedExperiment?: Experiment;
+  /** Lets a containing dialog prevent unmounting a batch between upload and job enqueue. */
+  onImportingChange?: (importing: boolean) => void;
 }
 
 export const ImageUploadPanel = forwardRef<
   ImageUploadPanelHandle,
   ImageUploadPanelProps
 >(function ImageUploadPanel(
-  { onUploaded, pageDragActive = false, compact = false },
+  {
+    onUploaded,
+    pageDragActive = false,
+    compact = false,
+    fixedExperiment,
+    onImportingChange,
+  },
   ref
 ) {
   const {
@@ -238,9 +262,19 @@ export const ImageUploadPanel = forwardRef<
    * different experiment or dataset before it is submitted.
    */
   const [experimentChoice, setExperimentChoice] =
-    useState<GroupingChoice>(newExperimentChoice);
+    useState<GroupingChoice>(() =>
+      fixedExperiment
+        ? { kind: "existing", id: fixedExperiment.id }
+        : newExperimentChoice()
+    );
   const [datasetChoice, setDatasetChoice] =
     useState<GroupingChoice>(newDatasetChoice);
+  const [fixedDatasetMode, setFixedDatasetMode] =
+    useState<FixedDatasetMode>("new");
+  const [fixedDatasetName, setFixedDatasetName] = useState(() =>
+    fixedExperiment ? nextDefaultDatasetName(fixedExperiment) : "Dataset 1"
+  );
+  const [fixedDatasetIds, setFixedDatasetIds] = useState<string[]>([]);
   const [dropActive, setDropActive] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -273,6 +307,14 @@ export const ImageUploadPanel = forwardRef<
   // An empty list is the ordinary starting state and renders as "No
   // experiment" plus "New experiment…", which is all a first import needs.
   const { experiments, reload: reloadExperiments } = useExperiments();
+  const currentFixedExperiment = fixedExperiment
+    ? experiments.find((experiment) => experiment.id === fixedExperiment.id) ??
+      fixedExperiment
+    : undefined;
+
+  useEffect(() => {
+    onImportingChange?.(importing);
+  }, [importing, onImportingChange]);
 
   const acceptedExtensions = useMemo(() => {
     const fromServer = (systemStatus?.supported_upload_formats ?? [])
@@ -450,8 +492,10 @@ export const ImageUploadPanel = forwardRef<
     setReplaceDeclaredPixelSizes(false);
     setPixelSizeError(null);
     setRejections([]);
-    setExperimentChoice(newExperimentChoice());
-    setDatasetChoice(newDatasetChoice());
+    if (!fixedExperiment) {
+      setExperimentChoice(newExperimentChoice());
+      setDatasetChoice(newDatasetChoice());
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -519,12 +563,44 @@ export const ImageUploadPanel = forwardRef<
     );
     if (queue.length === 0) return;
 
+    if (fixedExperiment && fixedDatasetMode === "new" && !fixedDatasetName.trim()) {
+      setRejections(["Name the new dataset before importing these images."]);
+      return;
+    }
+    if (
+      fixedExperiment &&
+      fixedDatasetMode === "existing" &&
+      fixedDatasetIds.length === 0
+    ) {
+      setRejections(["Choose at least one existing dataset for these images."]);
+      return;
+    }
+
     const notes = notesText.trim();
 
     await runImport({
       queue,
       buildOptions: (entry, queueLength): UploadImageOptions => {
         const applied = appliedPixelSize(entry);
+        const grouping: Pick<
+          UploadImageOptions,
+          "experimentId" | "experimentName" | "datasetId" | "datasetIds" | "datasetName"
+        > = fixedExperiment
+          ? {
+              experimentId: fixedExperiment.id,
+              datasetIds:
+                fixedDatasetMode === "existing" ? fixedDatasetIds : undefined,
+              datasetName:
+                fixedDatasetMode === "new"
+                  ? fixedDatasetName.trim()
+                  : undefined,
+            }
+          : {
+              experimentId: chosenId(experimentChoice) || undefined,
+              experimentName: chosenName(experimentChoice) || undefined,
+              datasetId: chosenId(datasetChoice) || undefined,
+              datasetName: chosenName(datasetChoice) || undefined,
+            };
         return {
           // Derived from the filename, exactly as the single-file form does it,
           // so a batch does not land forty cards reading "Grid2_Cell04.tif".
@@ -543,10 +619,7 @@ export const ImageUploadPanel = forwardRef<
           // sent on every file in the queue and the server resolves it to the
           // same row each time, so forty images land in one experiment rather
           // than in forty identically named ones.
-          experimentId: chosenId(experimentChoice) || undefined,
-          experimentName: chosenName(experimentChoice) || undefined,
-          datasetId: chosenId(datasetChoice) || undefined,
-          datasetName: chosenName(datasetChoice) || undefined,
+          ...grouping,
         };
       },
       onSettled: (failedKeys) => {
@@ -564,7 +637,11 @@ export const ImageUploadPanel = forwardRef<
         // Re-reading the catalogue is what lets the next import pick it from
         // the list instead of typing the same name again and relying on the
         // server to match it.
-        if (isChosen(experimentChoice) || isChosen(datasetChoice)) {
+        if (
+          fixedExperiment ||
+          isChosen(experimentChoice) ||
+          isChosen(datasetChoice)
+        ) {
           void reloadExperiments();
         }
         if (failedKeys.size === 0) {
@@ -573,8 +650,10 @@ export const ImageUploadPanel = forwardRef<
           setPixelSizeText("");
           setNotesText("");
           setReplaceDeclaredPixelSizes(false);
-          setExperimentChoice(newExperimentChoice());
-          setDatasetChoice(newDatasetChoice());
+          if (!fixedExperiment) {
+            setExperimentChoice(newExperimentChoice());
+            setDatasetChoice(newDatasetChoice());
+          }
           if (fileInputRef.current) fileInputRef.current.value = "";
         }
       },
@@ -618,7 +697,7 @@ export const ImageUploadPanel = forwardRef<
       data-testid="import-panel"
     >
       <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Import an image
+        {fixedExperiment ? "Choose images" : "Import an image"}
       </h2>
 
       {/* The input is the mechanism for both paths and is never hidden from
@@ -711,6 +790,19 @@ export const ImageUploadPanel = forwardRef<
             datasetChoice={datasetChoice}
             onExperimentChoiceChange={setExperimentChoice}
             onDatasetChoiceChange={setDatasetChoice}
+            groupingFields={
+              currentFixedExperiment ? (
+                <FixedExperimentGroupingFields
+                  experiment={currentFixedExperiment}
+                  mode={fixedDatasetMode}
+                  newDatasetName={fixedDatasetName}
+                  selectedDatasetIds={fixedDatasetIds}
+                  onModeChange={setFixedDatasetMode}
+                  onNewDatasetNameChange={setFixedDatasetName}
+                  onSelectedDatasetIdsChange={setFixedDatasetIds}
+                />
+              ) : undefined
+            }
           />
 
           <div className="flex items-center gap-2">

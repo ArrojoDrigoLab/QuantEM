@@ -57,6 +57,8 @@ use tauri_plugin_dialog::DialogExt;
 /// How long the first launch may take before we give up. Cold start pays for
 /// the frozen torch import plus the initial database migration.
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
+const MIGRATION_PROGRESS_PREFIX: &str = "QUANTEM_MIGRATION_PROGRESS ";
+const MIGRATION_STALL_WARNING: Duration = Duration::from_secs(5 * 60);
 
 // ---------------------------------------------------------------------------
 // Windows job object: kill the whole sidecar tree when the shell dies.
@@ -317,6 +319,27 @@ fn set_status(app: &tauri::AppHandle, text: &str) {
     );
 }
 
+fn migration_progress_script(line: &str) -> Option<String> {
+    let payload = line.strip_prefix(MIGRATION_PROGRESS_PREFIX)?;
+    let parsed: serde_json::Value = serde_json::from_str(payload).ok()?;
+    if !parsed.is_object() {
+        return None;
+    }
+    Some(format!(
+        "window.__quantemMigrationProgress && window.__quantemMigrationProgress({payload})"
+    ))
+}
+
+fn set_migration_warning(app: &tauri::AppHandle, text: &str) {
+    eval_on_main(
+        app,
+        format!(
+            "window.__quantemMigrationWarning && window.__quantemMigrationWarning({})",
+            serde_json_escape(text)
+        ),
+    );
+}
+
 fn fail(app: &tauri::AppHandle, text: &str) {
     log_line(&format!("[shell] FATAL: {text}"));
     eval_on_main(
@@ -466,7 +489,7 @@ fn stream_to_file_atomically(destination: &Path, source: &mut impl Read) -> Resu
     Ok(())
 }
 
-fn validated_export_url(value: &str) -> Result<reqwest::Url, String> {
+fn validated_export_url(value: &str, expected_port: u16) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(value).map_err(|_| "the export URL is invalid".to_owned())?;
     if url.scheme() != "http" {
         return Err("desktop exports must use the local HTTP server".to_owned());
@@ -479,6 +502,9 @@ fn validated_export_url(value: &str) -> Result<reqwest::Url, String> {
         Some("127.0.0.1" | "localhost" | "::1" | "[::1]")
     ) {
         return Err("desktop exports are restricted to the QuantEM loopback server".to_owned());
+    }
+    if url.port_or_known_default() != Some(expected_port) {
+        return Err("desktop exports must come from this QuantEM server".to_owned());
     }
 
     let segments: Vec<&str> = url.path().trim_matches('/').split('/').collect();
@@ -549,7 +575,12 @@ async fn save_text_file(window: WebviewWindow, request: SaveTextRequest) -> Resu
 
 #[tauri::command]
 async fn save_url_file(window: WebviewWindow, request: SaveUrlRequest) -> Result<bool, String> {
-    let url = validated_export_url(&request.url)?;
+    let expected_port = window
+        .url()
+        .map_err(|error| format!("could not read the QuantEM server URL: {error}"))?
+        .port_or_known_default()
+        .ok_or_else(|| "the QuantEM server URL has no port".to_owned())?;
+    let url = validated_export_url(&request.url, expected_port)?;
     let Some(destination) =
         choose_save_destination(&window, &request.suggested_name, &request.mime_type)?
     else {
@@ -709,14 +740,11 @@ fn main() {
                 .expect("storage checked above")
                 .join("quantem.sqlite3")
                 .is_file();
-            let startup_timeout = if legacy_sqlite {
-                // A large existing library may need to traverse several
-                // historical SQLite migrations, fingerprint every field, and
-                // copy it transactionally before the web server may open.
-                Duration::from_secs(2 * 60 * 60)
-            } else {
-                STARTUP_TIMEOUT
-            };
+            // A migration has no absolute deadline: large libraries may need
+            // hours, and replacing a useful progress display with a fatal page
+            // does not make the transactional cutover finish sooner.  The
+            // sidecar emits measured progress and liveness events instead.
+            let migration_last_event = Arc::new(Mutex::new(Instant::now()));
             if legacy_sqlite {
                 set_status(
                     &handle,
@@ -789,10 +817,20 @@ fn main() {
                 ("stderr", child.stderr.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>)),
             ] {
                 if let Some(stream) = stream {
+                    let progress_handle = handle.clone();
+                    let last_migration_event = migration_last_event.clone();
                     std::thread::spawn(move || {
                         let reader = BufReader::new(stream);
                         for line in reader.lines().map_while(Result::ok) {
                             log_line(&format!("[server {name}] {line}"));
+                            if name == "stdout" {
+                                if let Some(script) = migration_progress_script(&line) {
+                                    if let Ok(mut last) = last_migration_event.lock() {
+                                        *last = Instant::now();
+                                    }
+                                    eval_on_main(&progress_handle, script);
+                                }
+                            }
                         }
                     });
                 }
@@ -812,9 +850,11 @@ fn main() {
             // Wait for the port on a worker thread, then swap the page over.
             let h = handle.clone();
             let sc = sidecar_for_setup.clone();
+            let last_migration_event = migration_last_event.clone();
             std::thread::spawn(move || {
                 let started = Instant::now();
                 let url = format!("http://127.0.0.1:{port}/");
+                let mut migration_warning_visible = false;
                 loop {
                     if port_open(port) {
                         log_line(&format!("[shell] server is up at {url}"));
@@ -839,28 +879,33 @@ fn main() {
                             }
                         }
                     }
-                    if started.elapsed() > startup_timeout {
+                    if !legacy_sqlite && started.elapsed() > STARTUP_TIMEOUT {
                         fail(
                             &h,
-                            if legacy_sqlite {
-                                "the automatic SQLite-to-PostgreSQL upgrade did not finish within two hours.\n\
-                                 The SQLite database and its recovery snapshot were retained.\n\
-                                 See logs\\quantem-desktop.log in the QuantEM data directory."
-                            } else {
-                                "the QuantEM server did not start within five minutes.\n\
-                                 See logs\\quantem-desktop.log in the QuantEM data directory."
-                            },
+                            "the QuantEM server did not start within five minutes.\n\
+                             See logs\\quantem-desktop.log in the QuantEM data directory.",
                         );
                         return;
                     }
-                    if started.elapsed() > Duration::from_secs(20) {
+                    if legacy_sqlite {
+                        let event_age = last_migration_event
+                            .lock()
+                            .map(|last| last.elapsed())
+                            .unwrap_or_default();
+                        if event_age > MIGRATION_STALL_WARNING && !migration_warning_visible {
+                            set_migration_warning(
+                                &h,
+                                "QuantEM has not received a migration liveness update for five minutes. It is still waiting and has not abandoned the upgrade or its recovery backup.",
+                            );
+                            migration_warning_visible = true;
+                        } else if event_age <= MIGRATION_STALL_WARNING && migration_warning_visible {
+                            set_migration_warning(&h, "");
+                            migration_warning_visible = false;
+                        }
+                    } else if started.elapsed() > Duration::from_secs(20) {
                         set_status(
                             &h,
-                            if legacy_sqlite {
-                                "Upgrading the existing database to PostgreSQL… This can take several minutes for a large library."
-                            } else {
-                                "Still starting… the first launch migrates the database."
-                            },
+                            "Still starting… the first launch migrates the database.",
                         );
                     }
                     std::thread::sleep(Duration::from_millis(300));
@@ -886,15 +931,18 @@ mod tests {
     #[test]
     fn export_urls_are_limited_to_supported_loopback_endpoints() {
         assert!(validated_export_url(
-            "http://127.0.0.1:8722/api/assets/asset-1/export-png/?source=original"
+            "http://127.0.0.1:8722/api/assets/asset-1/export-png/?source=original",
+            8722,
         )
         .is_ok());
         assert!(validated_export_url(
-            "http://localhost:45174/api/analysis/run-1/export/objects.csv"
+            "http://localhost:45174/api/analysis/run-1/export/objects.csv",
+            45174,
         )
         .is_ok());
         assert!(validated_export_url(
-            "http://127.0.0.1:8722/api/analysis/run-1/export/image_summary.csv"
+            "http://127.0.0.1:8722/api/analysis/run-1/export/image_summary.csv",
+            8722,
         )
         .is_ok());
 
@@ -905,8 +953,13 @@ mod tests {
             "http://127.0.0.1:8722/api/analysis/run-1/export/unknown.zip",
             "http://user@127.0.0.1:8722/api/analysis/run-1/export/objects.csv",
         ] {
-            assert!(validated_export_url(invalid).is_err(), "accepted {invalid}");
+            assert!(validated_export_url(invalid, 8722).is_err(), "accepted {invalid}");
         }
+        assert!(validated_export_url(
+            "http://127.0.0.1:8723/api/analysis/run-1/export/objects.csv",
+            8722,
+        )
+        .is_err());
     }
 
     #[test]
@@ -951,9 +1004,10 @@ mod tests {
 
         let directory = tempfile::tempdir().expect("test directory");
         let destination = directory.path().join("objects.csv");
-        let url = validated_export_url(&format!(
-            "http://127.0.0.1:{port}/api/analysis/run-1/export/objects.csv"
-        ))
+        let url = validated_export_url(
+            &format!("http://127.0.0.1:{port}/api/analysis/run-1/export/objects.csv"),
+            port,
+        )
         .expect("valid export URL");
         download_export(&destination, url).expect("streamed export");
         server.join().expect("server thread");
@@ -971,5 +1025,20 @@ mod tests {
             safe_suggested_name(r"C:\\exports\\composition.csv"),
             "composition.csv"
         );
+    }
+
+    #[test]
+    fn migration_progress_accepts_only_prefixed_json_objects() {
+        let line = concat!(
+            "QUANTEM_MIGRATION_PROGRESS ",
+            r#"{"phase":"copy","stage":6,"stage_count":10,"percent":42.5}"#
+        );
+        let script = migration_progress_script(line).expect("valid progress event");
+        assert!(script.contains("window.__quantemMigrationProgress"));
+        assert!(script.contains(r#""phase":"copy""#));
+
+        assert!(migration_progress_script("ordinary server output").is_none());
+        assert!(migration_progress_script("QUANTEM_MIGRATION_PROGRESS []").is_none());
+        assert!(migration_progress_script("QUANTEM_MIGRATION_PROGRESS not-json").is_none());
     }
 }
