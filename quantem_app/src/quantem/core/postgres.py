@@ -343,6 +343,16 @@ def _free_loopback_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _postgres_runtime_options() -> tuple[str, ...]:
+    from quantem.core.app_settings import load_app_settings
+
+    cache_mb = load_app_settings().database_cache_mb
+    if cache_mb is None:
+        # In particular, upgrades retain pre-existing postgresql.auto.conf values.
+        return POSTGRES_RUNTIME_OPTIONS
+    return (*POSTGRES_RUNTIME_OPTIONS, f"shared_buffers={cache_mb}MB")
+
+
 def _postgres_server_arguments(port: int) -> list[str]:
     """Return postgres arguments shared by new and upgraded clusters.
 
@@ -359,7 +369,7 @@ def _postgres_server_arguments(port: int) -> list[str]:
         "-h",
         "127.0.0.1",
     ]
-    for option in POSTGRES_RUNTIME_OPTIONS:
+    for option in _postgres_runtime_options():
         arguments.extend(("-c", option))
     return arguments
 
@@ -368,7 +378,7 @@ def _postgres_server_options(port: int) -> str:
     """Return the pg_ctl ``-o`` form of the managed server arguments."""
 
     options = [f"-p {port}", "-h 127.0.0.1"]
-    options.extend(f"-c {option}" for option in POSTGRES_RUNTIME_OPTIONS)
+    options.extend(f"-c {option}" for option in _postgres_runtime_options())
     return " ".join(options)
 
 

@@ -41,6 +41,7 @@
 ; counted once), so the number the user sees is the number that downloads.
 
 !include "nsDialogs.nsh"
+!include "${__FILEDIR__}\database-cache.nsh"
 !include "${__FILEDIR__}\payload-manifest.nsh"
 
 ; ---- Storage-model copy (uat13, round 14) ----------------------------------
@@ -862,6 +863,7 @@ FunctionEnd
   Delete "$INSTDIR\.quantem-runtime-id"
   Rename "$INSTDIR\.quantem-runtime-id.tmp" "$INSTDIR\.quantem-runtime-id"
   Call QuantemWritePendingInstalls
+  Call QuantemWriteDatabaseCache
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL

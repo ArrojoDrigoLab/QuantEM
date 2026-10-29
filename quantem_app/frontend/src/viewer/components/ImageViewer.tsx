@@ -19,6 +19,7 @@ import { useViewerDrawBrushState } from "@/viewer/components/internal/useViewerD
 import { useViewerPointerInteractions } from "@/viewer/components/internal/useViewerPointerInteractions";
 import { useViewerRasterOverlayLoader } from "@/viewer/components/internal/useViewerRasterOverlayLoader";
 import { useViewerIdMapLoaders } from "@/viewer/components/internal/useViewerIdMapLoader";
+import { useOverlayDisplaySnapshots } from "./internal/useOverlayDisplaySnapshots";
 import { useViewerViewportState } from "@/viewer/components/internal/useViewerViewportState";
 import { sceneToOverlayList } from "@/viewer/overlays/scene";
 import "./ImageViewer.css";
@@ -71,6 +72,7 @@ export function ImageViewer({
     setTileErrors((prev) => prev[url] ? prev : { ...prev, [url]: error.message });
   }, []);
   useEffect(() => { setTileErrors({}); }, [image.ngffUrl]);
+  const displaySnapshots = useOverlayDisplaySnapshots(image.ngffUrl, idMapOverlays, idMapDataById, tileErrors);
   const resolvedImageWidth = image.width ?? inferredSize?.width ?? 1;
   const resolvedImageHeight = image.height ?? inferredSize?.height ?? 1;
   const viewportState = useViewerViewportState({
@@ -172,8 +174,8 @@ export function ImageViewer({
         loaderData,
         displayedOverlayNgffLayers,
         overlayLoaderDataByUrl,
-        idMapOverlays,
-        idMapDataById,
+        idMapOverlays: displaySnapshots.specs,
+        idMapDataById: displaySnapshots.data,
         bitmapOverlays,
         zIndex: clampedZIndex,
         onIdMapTileError: handleIdMapTileError,
@@ -182,8 +184,8 @@ export function ImageViewer({
       bitmapOverlays,
       clampedZIndex,
       displayedOverlayNgffLayers,
-      idMapOverlays,
-      idMapDataById,
+      displaySnapshots.specs,
+      displaySnapshots.data,
       loaderData,
       overlayLoaderDataByUrl,
       handleIdMapTileError,
@@ -193,17 +195,18 @@ export function ImageViewer({
   const displayedKey = useRef("");
   useEffect(() => { displayedKey.current = ""; }, [image.ngffUrl]);
   const acknowledgeOverlayDraw = useCallback(() => {
+    displaySnapshots.acceptLoaded(deckLayers);
     const spec = idMapOverlays.find((item) => item.revisionRole === "confirmed") ??
       (idMapOverlays.length === 1 && !idMapOverlays[0].revisionRole ? idMapOverlays[0] : undefined);
     if (!spec || spec.revision == null) return;
-    const loaded = idMapDataById[spec.id];
-    const layer = deckLayers.find((item) => item.id === `idmap-overlay-${spec.id}`);
-    if (loaded?.ngffUrl !== spec.ngffUrl || !layer?.isLoaded || tileErrors[spec.ngffUrl] || spec.loadError) return;
+    const displayed = displaySnapshots.visible.find((entry) => entry.spec.id === spec.id);
+    const layer = deckLayers.find((item) => item.id === `idmap-overlay-${displayed?.renderId}`);
+    if (displayed?.spec !== spec || !layer?.isLoaded || tileErrors[spec.ngffUrl] || spec.loadError || spec.pending) return;
     const key = `${spec.ngffUrl}:${spec.lutRevision}`;
     if (displayedKey.current === key) return;
     displayedKey.current = key;
     overlays?.onRasterRevisionDisplayed?.(spec.revision, spec.lutRevision);
-  }, [deckLayers, idMapDataById, idMapOverlays, overlays, tileErrors]);
+  }, [deckLayers, displaySnapshots, idMapOverlays, overlays, tileErrors]);
 
   const showControls = viewport?.showControls ?? true;
   const containerClass = `image-viewer ${className || ""} ${brushMode ? "brush-active" : ""}`.trim();

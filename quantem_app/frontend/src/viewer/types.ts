@@ -57,6 +57,8 @@ export interface ViewerNgffOverlayLayerSpec {
  * appends `/labels` and `/border`); the LUT is supplied separately as a texture.
  */
 export interface ViewerIdMapOverlaySpec {
+  /** Replacement palette/picking are not ready; retain the prior display. */
+  pending?: boolean;
   loadError?: string;
   id: string;
   /** Bundle root zarr URL (already carries the `?rev=<bundle_version>` cache key). */

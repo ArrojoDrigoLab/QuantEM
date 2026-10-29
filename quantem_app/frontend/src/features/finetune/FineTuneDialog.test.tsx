@@ -31,6 +31,7 @@ import type {
 import type { SegmentationType } from "@/shared/types/images";
 
 const API = "http://127.0.0.1:8000";
+const ASYNC_UI_TIMEOUT_MS = 5000;
 
 const MITO: SegmentationType = {
   id: "type-mito",
@@ -790,12 +791,19 @@ describe("FineTuneDialog", () => {
     expect(images.getAllByRole("checkbox")).toHaveLength(10);
     // "Some or all": untick one and the button says so.
     await user.click(images.getByRole("checkbox", { name: "liver_03.tif" }));
-    const run = screen.getByRole("button", { name: "Run on 2 images" });
+    const run = await screen.findByRole(
+      "button",
+      { name: "Run on 2 images" },
+      { timeout: ASYNC_UI_TIMEOUT_MS }
+    );
     expect(applied).not.toHaveBeenCalled();
 
     await user.click(run);
 
-    await waitFor(() => expect(applied).toHaveBeenCalledWith(["img-1", "img-2"]));
+    await waitFor(
+      () => expect(applied).toHaveBeenCalledWith(["img-1", "img-2"]),
+      { timeout: ASYNC_UI_TIMEOUT_MS }
+    );
     expect(await screen.findByTestId("finetune-applied")).toHaveTextContent(
       "Queued on 2 images"
     );
@@ -828,14 +836,20 @@ describe("FineTuneDialog", () => {
     const datasets = within(await screen.findByTestId("finetune-apply-datasets"));
     await user.click(datasets.getByRole("checkbox", { name: /Liver 24h/ }));
     await user.click(
-      screen.getByRole("button", { name: "Run 3 selected images + 1 Dataset" })
+      await screen.findByRole(
+        "button",
+        { name: "Run 3 selected images + 1 Dataset" },
+        { timeout: ASYNC_UI_TIMEOUT_MS }
+      )
     );
 
-    await waitFor(() =>
-      expect(applied).toHaveBeenCalledWith(
-        ["img-1", "img-2", "img-3"],
-        ["ds-liver"]
-      )
+    await waitFor(
+      () =>
+        expect(applied).toHaveBeenCalledWith(
+          ["img-1", "img-2", "img-3"],
+          ["ds-liver"]
+        ),
+      { timeout: ASYNC_UI_TIMEOUT_MS }
     );
   });
 

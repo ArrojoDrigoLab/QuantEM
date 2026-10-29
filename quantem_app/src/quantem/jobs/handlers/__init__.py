@@ -16,6 +16,7 @@ test_handler_registry_complete.py`` is the guard.
 
 from quantem.jobs.handlers.analysis import handle_run_analysis
 from quantem.jobs.handlers.common import _as_bool, _asset_for_payload
+from quantem.jobs.handlers.comparison import handle_build_result_comparison
 from quantem.jobs.handlers.evaluation import handle_evaluate_model
 from quantem.jobs.handlers.models import (
     _model_display_name,
@@ -43,6 +44,7 @@ from quantem.jobs.handlers.upload import (
 )
 
 __all__ = [
+    "handle_build_result_comparison",
     "handle_evaluate_model",
     "VOLUME_SEGMENTATION_SKIP_MESSAGE",
     "VOLUME_SEGMENTATION_SKIP_REASON",

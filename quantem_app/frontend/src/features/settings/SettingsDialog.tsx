@@ -4,13 +4,18 @@ import type { SystemStatus } from "@/shared/types/jobs";
 import { Button } from "@/shared/ui/design";
 import { ModelManagementSection } from "@/features/models/ModelManagementSection";
 import { useDesktopUpdate } from "@/features/update/desktopUpdateHooks";
+import { DatabaseCacheSettings } from "./DatabaseCacheSettings";
+import {
+  SettingSaveIndicator,
+  type SettingSaveState,
+} from "./SettingSaveIndicator";
 import {
   getSystemSettings,
   updateSystemSettings,
+  type SystemSettings,
 } from "@/shared/api/systemSettings";
 
 type BackupField = "count" | "days";
-type BackupSaveState = "idle" | "saving" | "saved" | "error";
 
 const BACKUP_AUTOSAVE_DELAY_MS = 400;
 const BACKUP_SAVING_INDICATOR_MS = 1000;
@@ -20,47 +25,13 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 function withBackupSaveState(
-  current: Record<BackupField, BackupSaveState>,
+  current: Record<BackupField, SettingSaveState>,
   fields: BackupField[],
-  state: BackupSaveState
-): Record<BackupField, BackupSaveState> {
+  state: SettingSaveState
+): Record<BackupField, SettingSaveState> {
   const next = { ...current };
   for (const field of fields) next[field] = state;
   return next;
-}
-
-function BackupSaveIndicator({
-  state,
-  label,
-}: {
-  state: BackupSaveState;
-  label: string;
-}) {
-  if (state === "idle") return <span className="block h-5 w-5" aria-hidden="true" />;
-  if (state === "saving") {
-    return (
-      <span className="flex h-5 w-5 items-center justify-center text-cyan-700" role="status" aria-label={`Saving ${label}`}>
-        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-          <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="3" />
-        </svg>
-      </span>
-    );
-  }
-  if (state === "saved") {
-    return (
-      <span className="flex h-5 w-5 items-center justify-center text-emerald-600" role="status" aria-label={`${label} saved`}>
-        <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
-        </svg>
-      </span>
-    );
-  }
-  return (
-    <span className="flex h-5 w-5 items-center justify-center font-bold text-red-600" role="status" aria-label={`${label} could not be saved`}>
-      !
-    </span>
-  );
 }
 
 interface SettingsDialogProps {
@@ -82,6 +53,7 @@ export function SettingsDialog({
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const desktopUpdate = useDesktopUpdate();
+  const [cacheSettings, setCacheSettings] = useState<SystemSettings | null>(null);
   const [backupCount, setBackupCount] = useState("1");
   const [backupDays, setBackupDays] = useState("30");
   const [backupSettingsLoading, setBackupSettingsLoading] = useState(false);
@@ -92,11 +64,15 @@ export function SettingsDialog({
     days: number;
   } | null>(null);
   const [backupSaveState, setBackupSaveState] = useState<
-    Record<BackupField, BackupSaveState>
+    Record<BackupField, SettingSaveState>
   >({ count: "idle", days: "idle" });
   const backupSaveGeneration = useRef(0);
   const backupSaveChain = useRef<Promise<void>>(Promise.resolve());
   const lastScheduledBackupSettings = useRef<{
+    count: number;
+    days: number;
+  } | null>(null);
+  const persistedBackupSettings = useRef<{
     count: number;
     days: number;
   } | null>(null);
@@ -107,30 +83,32 @@ export function SettingsDialog({
   useEffect(() => {
     if (!isOpen) return undefined;
     let active = true;
+    setCacheSettings(null);
     setBackupSettingsLoading(true);
     setBackupSettingsError(null);
     setBackupSettingsSaved(null);
     setSavedBackupSettings(null);
     lastScheduledBackupSettings.current = null;
+    persistedBackupSettings.current = null;
     setBackupSaveState({ count: "idle", days: "idle" });
     void getSystemSettings()
       .then((loaded) => {
         if (!active) return;
+        setCacheSettings(loaded);
         setBackupCount(String(loaded.pre_migration_backup_retention_count));
         setBackupDays(String(loaded.pre_migration_backup_retention_days));
-        setSavedBackupSettings({
-          count: loaded.pre_migration_backup_retention_count,
-          days: loaded.pre_migration_backup_retention_days,
-        });
-        lastScheduledBackupSettings.current = {
+        const loadedBackupSettings = {
           count: loaded.pre_migration_backup_retention_count,
           days: loaded.pre_migration_backup_retention_days,
         };
+        persistedBackupSettings.current = loadedBackupSettings;
+        setSavedBackupSettings(loadedBackupSettings);
+        lastScheduledBackupSettings.current = loadedBackupSettings;
       })
       .catch((error: unknown) => {
         if (!active) return;
         setBackupSettingsError(
-          error instanceof Error ? error.message : "Backup settings could not be loaded."
+          error instanceof Error ? error.message : "Settings could not be loaded."
         );
       })
       .finally(() => {
@@ -241,12 +219,12 @@ export function SettingsDialog({
               count: updated.pre_migration_backup_retention_count,
               days: updated.pre_migration_backup_retention_days,
             };
-            // Record every completed write even when a newer edit is queued.
-            // The later request remains authoritative for the inputs, but its
-            // comparison baseline must reflect what the server now contains.
-            setSavedBackupSettings(saved);
+            // Track every server write without rerendering a stale generation:
+            // a rerender would clean up and cancel the newer debounce timer.
+            persistedBackupSettings.current = saved;
             if (generation !== backupSaveGeneration.current) return;
             lastScheduledBackupSettings.current = saved;
+            setSavedBackupSettings(saved);
             setBackupCount(String(saved.count));
             setBackupDays(String(saved.days));
             setBackupSaveState((current) =>
@@ -260,7 +238,8 @@ export function SettingsDialog({
             );
           } catch (error) {
             if (generation !== backupSaveGeneration.current) return;
-            lastScheduledBackupSettings.current = savedBackupSettings;
+            lastScheduledBackupSettings.current =
+              persistedBackupSettings.current ?? savedBackupSettings;
             setBackupSettingsError(
               error instanceof Error
                 ? error.message
@@ -280,7 +259,8 @@ export function SettingsDialog({
         lastScheduledBackupSettings.current?.count === values.count &&
         lastScheduledBackupSettings.current?.days === values.days
       ) {
-        lastScheduledBackupSettings.current = savedBackupSettings;
+        lastScheduledBackupSettings.current =
+          persistedBackupSettings.current ?? savedBackupSettings;
       }
     };
   }, [
@@ -465,6 +445,8 @@ export function SettingsDialog({
           <ModelManagementSection compact />
         </div>
 
+        {cacheSettings?.database_cache ? <DatabaseCacheSettings settings={cacheSettings} /> : null}
+
         <div className="mt-6 border-t border-slate-200 pt-5">
           <h2 className="m-0 text-lg font-semibold text-slate-950">
             Database upgrade backups
@@ -489,7 +471,7 @@ export function SettingsDialog({
                   disabled={backupSettingsLoading}
                   onChange={(event) => setBackupCount(event.target.value)}
                 />
-                <BackupSaveIndicator
+                <SettingSaveIndicator
                   state={backupSaveState.count}
                   label="maximum backups"
                 />
@@ -508,7 +490,7 @@ export function SettingsDialog({
                   disabled={backupSettingsLoading}
                   onChange={(event) => setBackupDays(event.target.value)}
                 />
-                <BackupSaveIndicator
+                <SettingSaveIndicator
                   state={backupSaveState.days}
                   label="backup retention days"
                 />
@@ -516,8 +498,8 @@ export function SettingsDialog({
             </label>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Defaults: one backup, removed after 30 days. Cleanup runs on app startup,
-            after a migration backup, and when this policy is saved.
+            Defaults: one backup, removed after 30 days. Cleanup runs in the
+            background after startup and whenever this policy is saved.
           </p>
           {!backupSettingsValid && !backupSettingsLoading ? (
             <p className="mt-2 text-sm text-red-700">

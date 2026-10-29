@@ -18,7 +18,7 @@ vi.mock("@/features/segmentation/screen/hooks/overlay/useOverlayLut", () => ({
     maxLabel: 1,
     lutRevision: 7,
   }),
-  useOverlayPickMap: () => new Map([[1, "object-1"]]),
+  useOverlayPickMap: ({ enabled }: { enabled: boolean }) => enabled ? new Map([[1, "object-1"]]) : null,
 }));
 
 function manifest(): SegmentationOverlayManifest {
@@ -41,6 +41,18 @@ function manifest(): SegmentationOverlayManifest {
 }
 
 describe("useOverlayLayerControls", () => {
+  it("renders binary masks without fetching or waiting for an object picking map", () => {
+    // The overlay kind is sufficient even if an older server omitted the
+    // redundant `pickable: false` capability flag.
+    const binary = { ...manifest(), overlay_kind: "binary_mask" as const };
+    const { result } = renderHook(() => useOverlayLayerControls({
+      segmentationId: "seg-1", modelManifest: binary, confirmedManifest: binary,
+    }));
+    for (const overlay of [...result.current.leftIdMapOverlays, ...result.current.rightIdMapOverlays]) {
+      expect(overlay.pending).toBe(false);
+      expect(overlay.pickMap).toBeUndefined();
+    }
+  });
   it("does not present aggregate fallback candidates as a selected model", () => {
     const { result } = renderHook(() => useOverlayLayerControls({
       segmentationId: "seg-1",

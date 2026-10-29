@@ -38,6 +38,7 @@ def test_settings_round_trip_atomically():
         "pre_migration_backup_retention_count": 4,
         "pre_migration_backup_retention_days": 90,
         "schema_version": 1,
+        "database_cache_mb": None,
     }
 
 

@@ -61,6 +61,129 @@ class OverlaySnapshotTests(TestCase):
             str(get_overlay_active_bundle_path(state) / "labels" / "0"), mode="r"
         )
 
+    def test_partial_reclaims_dead_rows_without_recycling_labels(self):
+        first = self.object()
+        first_id = first.id
+        old = rebuild_overlay_full(self.seg, desired_revision=1)
+        first.delete()
+        empty = apply_partial_overlay_update(
+            self.seg, dirty_bbox=DirtyBBox(0, 0, 100, 100), desired_revision=2
+        )
+        self.assertFalse(SegmentationOverlayLabel.objects.filter(overlay_state=empty).exists())
+        _, snapshot = read_snapshot(str(self.seg.id), None, self.token(old))
+        self.assertEqual(snapshot["labels"][0][1], str(first_id))
+        second = self.object()
+        new = apply_partial_overlay_update(
+            self.seg, dirty_bbox=DirtyBBox(0, 0, 100, 100), desired_revision=3
+        )
+        row = SegmentationOverlayLabel.objects.get(overlay_state=new)
+        self.assertEqual(row.object_uuid, second.id)
+        self.assertGreater(row.label, 1)
+
+    def test_sparse_tiles_use_the_requested_snapshot_dimensions(self):
+        self.object()
+        state = rebuild_overlay_full(self.seg, desired_revision=1)
+        url = f"/segmentation-overlays/{self.seg.id}.zarr/labels/0/3.4?rev={self.token(state)}"
+        before = self.client.get(url)
+        self.assertEqual(before.status_code, 200)
+        type(self.seg.asset).objects.filter(pk=self.seg.asset_id).update(
+            logical_width=16, logical_height=16
+        )
+        after = self.client.get(url)
+        self.assertEqual(after.status_code, 200)
+        self.assertEqual(after.content, before.content)
+        # A missing array is damage, not an empty sparse tile.
+        (get_overlay_active_bundle_path(state) / "labels" / "0" / ".zarray").unlink()
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_publication_reclaims_old_snapshots_only_after_commit(self):
+        self.object()
+        with patch("quantem.segmentation.overlay_ngff.mutations.prune_snapshots") as prune:
+            with self.captureOnCommitCallbacks(execute=True):
+                rebuild_overlay_full(self.seg, desired_revision=1)
+                prune.assert_not_called()
+            prune.assert_called_once()
+
+    def test_manifest_reuses_validation_but_detects_missing_store(self):
+        from quantem.segmentation.overlay_ngff import manifest, store
+        from quantem.segmentation.overlay_ngff.cache import store_validation_cache
+
+        self.object()
+        state = rebuild_overlay_full(self.seg, desired_revision=1)
+        store_validation_cache.clear()
+        with patch.object(
+            store, "_is_valid_label_store", wraps=store._is_valid_label_store
+        ) as validate:
+            ensure_overlay_manifest(self.seg)
+            ensure_overlay_manifest(self.seg)
+            self.assertEqual(validate.call_count, 1)
+        (get_overlay_active_bundle_path(state) / ".zgroup").unlink()
+        self.assertFalse(
+            manifest._validated_store(get_overlay_active_bundle_path(state), width=1025, height=769)
+        )
+
+    def test_validation_checks_all_zoom_levels_and_malformed_metadata(self):
+        from quantem.segmentation.overlay_ngff.store import _is_valid_label_store
+
+        self.object()
+        state = rebuild_overlay_full(self.seg, desired_revision=1)
+        root = get_overlay_active_bundle_path(state)
+        descriptor = root / "labels" / "1" / ".zarray"
+        original = descriptor.read_bytes()
+        descriptor.unlink()
+        self.assertFalse(_is_valid_label_store(root, width=1025, height=769))
+        descriptor.write_bytes(original)
+        (root / ".zattrs").write_text("[]", encoding="utf-8")
+        self.assertFalse(_is_valid_label_store(root, width=1025, height=769))
+
+    def test_palette_cache_shares_scans_and_invalidates_after_state_change(self):
+        from quantem.segmentation.overlay_ngff import labels_lut
+        from quantem.segmentation.overlay_ngff.cache import palette_cache
+
+        palette_cache.clear()
+        obj = self.object()
+        state = rebuild_overlay_full(self.seg, desired_revision=1)
+        url = f"/api/segmentations/{self.seg.id}/overlay-lut/?rev={self.token(state)}"
+        with patch.object(
+            labels_lut,
+            "candidate_ids_inside_completed_rois",
+            wraps=labels_lut.candidate_ids_inside_completed_rois,
+        ) as scan:
+            with self.captureOnCommitCallbacks(execute=True):
+                first = self.client.get(url)
+            self.assertEqual(first.status_code, 200)
+            self.client.get(url + "&format=json")
+            self.client.get(url + "&hide=candidate")
+            self.assertEqual(scan.call_count, 1)
+            obj.label_state = "CONFIRMED"
+            obj.save(update_fields=["label_state"])
+            register_label_state_mutation(self.seg, [obj])
+            updated = self.client.get(url)
+            self.assertEqual(scan.call_count, 2)
+            self.assertNotEqual(first.content, updated.content)
+
+    def test_palette_read_retries_if_visibility_changes_mid_scan(self):
+        from quantem.segmentation.api_views import overlay
+        from quantem.segmentation.overlay_ngff import register_state_mutation
+        from quantem.segmentation.overlay_ngff.cache import palette_cache
+
+        palette_cache.clear()
+        self.object()
+        state = rebuild_overlay_full(self.seg, desired_revision=1)
+        real_build = overlay.build_label_lut_json
+
+        def concurrent_change(*args, **kwargs):
+            value = real_build(*args, **kwargs)
+            register_state_mutation(self.seg)
+            return value
+
+        with patch.object(overlay, "build_label_lut_json", side_effect=concurrent_change):
+            response = self.client.get(
+                f"/api/segmentations/{self.seg.id}/overlay-lut/?rev={self.token(state)}"
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(len(palette_cache.entries), 0)
+
     def test_partial_preserves_old_pixels_and_matching_identity_map(self):
         first = self.object()
         old = rebuild_overlay_full(self.seg, desired_revision=1)

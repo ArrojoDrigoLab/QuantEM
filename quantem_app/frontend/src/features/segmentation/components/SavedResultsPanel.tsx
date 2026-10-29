@@ -8,6 +8,7 @@ import { extractApiErrorMessage } from "@/utils/apiErrors";
 import { createViewportActionResolver } from "@/utils/viewportActions";
 import { ImageViewer } from "@/viewer/components/ImageViewer";
 import { useViewportSyncGroup } from "@/viewer/viewportSync/useViewportSyncGroup";
+import { useSavedResultOverlay } from "./useSavedResultOverlay";
 import "./SavedResultsPanel.css";
 
 export type SavedResult = {
@@ -31,7 +32,7 @@ interface SavedResultsPanelProps {
   onQueued: () => void;
 }
 
-/** A two-viewer, full-resolution comparison for retained model runs. */
+/** Linked viewers with fast probability previews and tiled postprocessed results. */
 export function SavedResultsPanel({
   segmentationId,
   image,
@@ -45,6 +46,7 @@ export function SavedResultsPanel({
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
   const [opacity, setOpacity] = useState(0.3);
+  const [detailed, setDetailed] = useState(false);
   const [confirm, setConfirm] = useState<SavedResult | null>(null);
   const [deletions, setDeletions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -52,6 +54,8 @@ export function SavedResultsPanel({
   const [actionError, setActionError] = useState("");
   const [queued, setQueued] = useState("");
   const canonicalIdRef = useRef("");
+  const leftDetail = useSavedResultOverlay(segmentationId, left, open && detailed, revision, opacity);
+  const rightDetail = useSavedResultOverlay(segmentationId, right, open && detailed, revision, opacity);
   const viewportResolver = useMemo(
     () => createViewportActionResolver(image.width, image.height),
     [image.height, image.width]
@@ -181,6 +185,7 @@ export function SavedResultsPanel({
     viewerId: string
   ) => {
     const result = results.find((row) => row.id === id);
+    const detail = viewerId === "saved-left" ? leftDetail : rightDetail;
     return (
       <section className="saved-results-pane" role="group" aria-label={`${label} view`}>
         <div className="saved-results-pane-toolbar">
@@ -216,6 +221,14 @@ export function SavedResultsPanel({
             </Button>
           ) : null}
         </div>
+        {detailed && detail.status?.status !== "READY" && (
+          <div role={detail.status?.status === "FAILED" ? "alert" : "status"}>
+            {detail.status?.status === "FAILED" ? <>
+              {detail.status.message || "The detailed comparison could not be built."}
+              <Button onClick={detail.retry}>Retry detailed comparison</Button>
+            </> : "Building detailed comparison…"}
+          </div>
+        )}
         <div className="saved-results-viewer">
           <ImageViewer
             image={{
@@ -232,7 +245,7 @@ export function SavedResultsPanel({
               onChange: (next) => publishFromViewer(viewerId, next),
             }}
             overlays={
-              result
+              detailed ? { idMapOverlays: detail.overlays } : result
                 ? {
                     bitmapOverlays: [
                       {
@@ -260,8 +273,18 @@ export function SavedResultsPanel({
         <div>
           <h3>Compare runs</h3>
           <p>The confirmed run is shown first. Choose a different retained run on either side.</p>
-          <p>Overlays are reduced-resolution thresholded predictions. Confirming a run applies object filtering and preserves your completed annotations.</p>
+          <p>{detailed
+            ? "Detailed results show postprocessed objects at native resolution, including your current completed annotations. The confirmed run includes current corrections."
+            : "Quick previews are reduced-resolution thresholded predictions. Choose Detailed result to inspect filtered objects and completed annotations."}</p>
         </div>
+        <label>
+          Overlay detail
+          <select aria-label="Overlay detail" value={detailed ? "detailed" : "preview"}
+            onChange={(event) => setDetailed(event.target.value === "detailed")}>
+            <option value="preview">Quick preview</option>
+            <option value="detailed">Detailed result</option>
+          </select>
+        </label>
         <label className="saved-results-opacity">
           Opacity
           <input

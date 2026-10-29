@@ -81,7 +81,7 @@ from .paths import (
     get_overlay_version_dir,
     normalize_overlay_source_model,
 )
-from .snapshots import clone_store, detach_chunk, prune_snapshots, write_snapshot
+from .snapshots import clone_store, detach_chunk, prune_snapshots, read_snapshot, write_snapshot
 from .store import (
     _create_empty_label_store,
     _is_valid_label_store,
@@ -862,14 +862,26 @@ def _serialized_build(function):
 
 
 def _publish_snapshot(
-    segmentation, state, stage_root, *, version, revision, assignments, new_assignments=None
+    segmentation,
+    state,
+    stage_root,
+    *,
+    version,
+    revision,
+    assignments,
+    new_assignments=None,
+    max_label=None,
 ):
     """Publish pixels and their label map as one database-visible generation."""
     # Another serialized writer may have completed while this job waited for
     # the file lock. Never publish a token older than the starting snapshot.
     revision = max(int(revision), int(state.applied_revision))
     write_snapshot(
-        stage_root, bundle_version=version, applied_revision=revision, assignments=assignments
+        stage_root,
+        bundle_version=version,
+        applied_revision=revision,
+        assignments=assignments,
+        max_label=max_label,
     )
     version_dir = get_overlay_version_dir(
         str(segmentation.id), version, state.candidate_source_model
@@ -912,8 +924,14 @@ def _publish_snapshot(
             lut_revision=F("lut_revision") + 1
         )
         state.refresh_from_db(fields=["lut_revision"])
-    prune_snapshots(str(segmentation.id), state.candidate_source_model, version)
-    _write_debug_manifest(segmentation, state)
+
+    # A synchronous edit can publish several generations inside one outer
+    # transaction. Its old database-visible snapshot must survive a rollback.
+    def after_commit():
+        prune_snapshots(str(segmentation.id), state.candidate_source_model, version)
+        _write_debug_manifest(segmentation, state)
+
+    transaction.on_commit(after_commit, robust=True)
     return state
 
 
@@ -1063,8 +1081,19 @@ def apply_partial_overlay_update(
     clone_store(get_overlay_active_bundle_path(state), stage_root)
     arrays = _open_label_arrays(state, store_root=stage_root)
     queryset = labels_lut.bundle_queryset(segmentation, normalized_source_model)
-    label_map = labels_lut.existing_label_map(state)
-    next_label = max(label_map.values(), default=0) + 1
+    label_map = labels_lut.existing_label_map(state, current_only=True)
+    _, previous_snapshot = read_snapshot(
+        str(segmentation.id),
+        normalized_source_model,
+        f"{state.bundle_version}-{state.applied_revision}",
+        include_labels=False,
+    )
+    # Never recycle a deleted label into unchanged pixels. The small snapshot
+    # watermark survives row reclamation; full builds can safely renumber.
+    high_watermark = previous_snapshot.get("max_label")
+    if high_watermark is None:  # Earlier format-7 snapshots.
+        high_watermark = max(labels_lut.existing_label_map(state).values(), default=0)
+    next_label = int(high_watermark) + 1
     first_new_label = next_label
     parent_levels = []
     coords = chunk_coords
@@ -1138,6 +1167,7 @@ def apply_partial_overlay_update(
         version=version,
         revision=int(desired_revision),
         assignments=[(label, object_id) for object_id, label in label_map.items()],
+        max_label=next_label - 1,
         new_assignments=[
             (label, object_id) for object_id, label in label_map.items() if label >= first_new_label
         ],
@@ -1337,8 +1367,10 @@ def _register_overlay_mutation_one(
 ) -> dict[str, Any]:
     normalized_source_model = normalize_overlay_source_model(source_model)
     state = get_or_create_overlay_state(segmentation, normalized_source_model)
-    SegmentationOverlayState.objects.filter(pk=state.pk).update(lut_revision=F("lut_revision"))
-    state.refresh_from_db()
+    # Serialize revision allocation explicitly. A no-op UPDATE also acquires a
+    # PostgreSQL row lock, but obscures the concurrency contract and generates
+    # needless WAL for every edit.
+    state = SegmentationOverlayState.objects.select_for_update().get(pk=state.pk)
     desired_revision = int(state.desired_revision) + 1
     rebuild_mode = overlay_rebuild_policy(
         segmentation,

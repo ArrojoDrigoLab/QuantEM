@@ -26,6 +26,7 @@ SHIPPED_JOB_TYPES = frozenset(
         # probability map without running the model.
         "reextract_at_include_level",
         "rebuild_segmentation_overlay",
+        "build_result_comparison",
         "refresh_segment_features",
         "train_organelle_adapter",
         "evaluate_model",

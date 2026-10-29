@@ -25,6 +25,7 @@ JOB_TYPE_UPLOAD_IMAGE_PIPELINE = "upload_image_pipeline"
 JOB_TYPE_RUN_SEGMENTATION_ROI = "run_segmentation_roi_task"
 JOB_TYPE_RUN_SEGMENTATION_FULL = "run_segmentation_full_task"
 JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY = "rebuild_segmentation_overlay"
+JOB_TYPE_BUILD_RESULT_COMPARISON = "build_result_comparison"
 JOB_TYPE_REFRESH_SEGMENT_FEATURES = "refresh_segment_features"
 JOB_TYPE_TRAIN_ORGANELLE_ADAPTER = "train_organelle_adapter"
 JOB_TYPE_RUN_ANALYSIS = "run_analysis"
@@ -61,6 +62,7 @@ ALLOWED_JOB_TYPES = frozenset(
         JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE,
         JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL,
         JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
+        JOB_TYPE_BUILD_RESULT_COMPARISON,
         JOB_TYPE_REFRESH_SEGMENT_FEATURES,
         JOB_TYPE_TRAIN_ORGANELLE_ADAPTER,
         JOB_TYPE_RUN_ANALYSIS,
@@ -137,6 +139,7 @@ JOB_TYPE_LABELS = {
     JOB_TYPE_RUN_SEGMENTATION_FOR_IMAGE: "Segment this image",
     JOB_TYPE_REEXTRACT_AT_INCLUDE_LEVEL: "Redo objects at a new include level",
     JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY: "Update segmentation display",
+    JOB_TYPE_BUILD_RESULT_COMPARISON: "Build detailed result comparison",
     JOB_TYPE_REFRESH_SEGMENT_FEATURES: "Measure object details",
     JOB_TYPE_TRAIN_ORGANELLE_ADAPTER: "Fine-tuning",
     JOB_TYPE_RUN_ANALYSIS: "Run analysis",
@@ -144,6 +147,11 @@ JOB_TYPE_LABELS = {
 }
 
 JOB_DEFAULTS = {
+    JOB_TYPE_BUILD_RESULT_COMPARISON: {
+        "priority": "default",
+        "resource_class": "cpu",
+        "queue_name": QUEUE_P4_FULL,
+    },
     JOB_TYPE_EVALUATE_MODEL: {
         "priority": "default",
         "resource_class": "gpu",
@@ -255,6 +263,7 @@ JOB_DEFAULTS = {
 #: start while interactive heavy work is running".
 HEAVY_BACKGROUND_JOB_TYPES = frozenset(
     {
+        JOB_TYPE_BUILD_RESULT_COMPARISON,
         JOB_TYPE_REBUILD_SEGMENTATION_OVERLAY,
         JOB_TYPE_REFRESH_SEGMENT_FEATURES,
     }

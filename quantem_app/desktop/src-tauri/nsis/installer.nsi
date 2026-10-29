@@ -412,6 +412,9 @@ FunctionEnd
   Page custom PageQuantemRuntime PageLeaveQuantemRuntime
 !endif
 !ifmacrodef QUANTEM_MODEL_PAGE_FUNCTIONS
+  ; Database RAM is selected once during a fresh install; upgrades inherit it.
+  !insertmacro QUANTEM_DATABASE_CACHE_PAGE_FUNCTIONS
+  Page custom PageQuantemDatabaseCache PageLeaveQuantemDatabaseCache
   !insertmacro QUANTEM_MODEL_PAGE_FUNCTIONS
   Page custom PageQuantemModels PageLeaveQuantemModels
 !endif

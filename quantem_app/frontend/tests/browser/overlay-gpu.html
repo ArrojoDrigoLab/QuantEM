@@ -54,8 +54,15 @@ async function run() {
     results.push(['tiled local green',await frame(new IdMapLabelLayer({...tiled,lut:new Uint8Array([0,0,0,0,0,255,0,255])}))]);
     results.push(['tiled highlight',await frame(new IdMapLabelLayer({...tiled,highlightedSegmentId:'object-1',highlightRevision:1}))]);
     results.push(['tiled opacity',await frame(new IdMapLabelLayer({...tiled,fillOpacity:0.5}))]);
+    results.push(['tiled transparent',await frame(new IdMapLabelLayer({...tiled,fillOpacity:0,borderOpacity:0}))]);
+    results.push(['transparent picking',deck.pickObject({x:64,y:64})?.object ?? null]);
     results.push(['tiled hidden',await frame(new IdMapLabelLayer({...tiled,lut:new Uint8Array(8)}))]);
     results.push(['hidden picking',deck.pickObject({x:64,y:64})?.object ?? null]);
+    // Force the supported CPU fallback without allocating an enormous palette.
+    results.push(['CPU fallback red',await frame(new IdMapLabelLayer({...tiled,maxLabel:0xffffffff}))]);
+    results.push(['CPU fallback picking',deck.pickObject({x:64,y:64})?.object ?? null]);
+    results.push(['CPU fallback transparent',await frame(new IdMapLabelLayer({...tiled,maxLabel:0xffffffff,fillOpacity:0,borderOpacity:0}))]);
+    results.push(['CPU transparent picking',deck.pickObject({x:64,y:64})?.object ?? null]);
     results.push(['tile reads before/after display changes',[callsAfterLoad,tileCalls]]);
     await frame(new IdMapLabelLayer(tiled));
     const uploadsBefore = textureUploads;
@@ -64,14 +71,19 @@ async function run() {
     const expected = {'label 1 red':[255,0,0,255], 'highlight cyan':[0,255,255,255], 'label 256 green':[0,255,0,255],
       'high label invisible':[0,0,0,0], 'threshold above':[0,0,0,0], 'tiled red':[255,0,0,255],
       'tiled local green':[0,255,0,255], 'tiled highlight':[0,255,255,255], 'tiled hidden':[0,0,0,0],
+      'tiled transparent':[0,0,0,0], 'CPU fallback red':[255,0,0,255], 'CPU fallback transparent':[0,0,0,0],
       '50 opacity updates: extra tile reads / texture uploads':[0,0]};
     for (const [name,value] of results) {
       if (expected[name] && JSON.stringify(value) !== JSON.stringify(expected[name])) throw new Error(name+': '+JSON.stringify(value));
     }
     if (results.find(([name]) => name==='picking')[1]?.uuid !== 'object-1') throw new Error('Visible object was not picked');
     if (results.find(([name]) => name==='hidden picking')[1] !== null) throw new Error('Hidden object was picked');
+    if (results.find(([name]) => name==='CPU fallback picking')[1]?.uuid !== 'object-1') throw new Error('CPU fallback object was not picked');
+    for (const name of ['transparent picking','CPU transparent picking']) {
+      if (results.find(([entry]) => entry===name)[1] !== null) throw new Error(name+' intercepted a click');
+    }
     device.createTexture = createTexture;
     output.textContent = JSON.stringify({status:"PASS", renderer:device.info, results}, null, 2);
-  } catch(error) { output.textContent = 'ERROR: ' + error.stack; }
+  } catch(error) { output.textContent = JSON.stringify({status:'FAIL',error:String(error.stack),results}, null, 2); }
 }
 </script></body></html>

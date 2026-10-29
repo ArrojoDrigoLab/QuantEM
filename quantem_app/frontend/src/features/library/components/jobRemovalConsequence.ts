@@ -48,6 +48,8 @@ const CONSEQUENCE_BY_JOB_TYPE: Record<string, string> = {
   // from data that is already saved.
   rebuild_segmentation_overlay:
     "Nothing is lost: this only rebuilds the overlay picture from objects already saved. The overlay stays as it is until something else refreshes it.",
+  build_result_comparison:
+    "Saved results and annotations are unchanged. Open the detailed comparison again to rebuild its display.",
   refresh_segment_features:
     "Nothing is lost: this only recomputes measurements from outlines already saved. Those measurements stay as they are until something else refreshes them.",
 };

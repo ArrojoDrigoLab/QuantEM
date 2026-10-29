@@ -1,0 +1,99 @@
+<!doctype html><html><head><title>Overlay handoff regression</title></head><body>
+<canvas id="canvas" width="128" height="128"></canvas><div id="react"></div><pre id="result">Running handoff checks...</pre>
+<script type="module">
+import React, {useEffect, useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {Deck, OrthographicView} from '@deck.gl/core';
+import {useOverlayDisplaySnapshots} from '/src/viewer/components/internal/useOverlayDisplaySnapshots.ts';
+import {combineOverlaySources} from '/src/viewer/components/internal/useViewerIdMapLoader.ts';
+import {buildViewerDeckLayers} from '/src/viewer/components/internal/buildViewerDeckLayers.ts';
+
+const output = document.getElementById('result');
+const observations = [];
+let device, change, snapshot, frame = 0, pixel = [], fatal;
+const deck = new Deck({canvas:'canvas', width:128, height:128, useDevicePixels:false,
+  views:new OrthographicView({id:'handoff'}), initialViewState:{target:[128,128,0],zoom:-1},
+  controller:false, layers:[], onDeviceInitialized(value) {device=value; start();},
+  onError(error) {fatal=error; output.textContent='FAIL: '+error.stack;}
+});
+function spec(revision, color) {
+  return {id:'confirmed',ngffUrl:`/fake-overlay?rev=${revision}-${revision}`,revision,
+    lut:new Uint8Array([0,0,0,0,...color,255]),maxLabel:1,lutRevision:revision,
+    fillOpacity:1,borderOpacity:1,showBorders:true,pickMap:new Map([[1,`object-${revision}`]])};
+}
+function data(value, gate=Promise.resolve()) {
+  const labels={shape:[256,256],labels:['y','x'],dtype:'Uint32',tileSize:256,
+    async getTile() {await gate; return {width:256,height:256,data:new Uint32Array(65536).fill(1)};}};
+  const border={...labels,dtype:'Uint8',async getTile() {await gate; return {width:256,height:256,data:new Uint8Array(65536)};}};
+  return {[value.id]:{ngffUrl:value.ngffUrl,revision:value.revision,
+    labelsData:combineOverlaySources([labels],[border]),borderData:[border]}};
+}
+const first=spec(1,[255,0,0]), second=spec(2,[0,255,0]);
+const initial={desired:[first],data:data(first),errors:{}};
+function Harness() {
+  const [state,setState]=useState(initial);
+  const handoff=useOverlayDisplaySnapshots('image',state.desired,state.data,state.errors);
+  useEffect(() => {change=setState;});
+  useEffect(() => {
+    const layers=buildViewerDeckLayers({loaderData:null,displayedOverlayNgffLayers:[],overlayLoaderDataByUrl:{},
+      idMapOverlays:handoff.specs,idMapDataById:handoff.data});
+    snapshot=handoff;
+    deck.setProps({layers,onAfterRender() {
+      const bytes=new Uint8Array(4);
+      device.gl.readPixels(64,64,1,1,device.gl.RGBA,device.gl.UNSIGNED_BYTE,bytes);
+      pixel=[...bytes]; frame++;
+      handoff.acceptLoaded(layers);
+    }});
+  },[handoff]);
+  return null;
+}
+async function until(condition) {
+  const deadline=performance.now()+15000;
+  while (!condition()) {
+    if (fatal) throw fatal;
+    if (performance.now()>deadline) throw new Error('Timed out: '+JSON.stringify({pixel,frame}));
+    deck.redraw(true);
+    await new Promise(resolve=>setTimeout(resolve,40));
+  }
+}
+function check(name, expected, uuid) {
+  const picked=deck.pickObject({x:64,y:64})?.object?.uuid ?? null;
+  observations.push({name,pixel:[...pixel],picked});
+  if (JSON.stringify(pixel)!==JSON.stringify(expected) || picked!==uuid) throw new Error(name+' failed');
+}
+async function start() {
+  const root=createRoot(document.getElementById('react'));
+  try {
+    root.render(React.createElement(Harness));
+    await until(()=>pixel[0]===255 && snapshot?.visible[0]?.spec===first && change);
+    // Allow the completed initial draw to become the retained display.
+    let before=frame; await until(()=>frame>before+2);
+    check('initial',[255,0,0,255],'object-1');
+    change({desired:[{...second,pending:true}],data:{},errors:{}});
+    before=frame; await until(()=>frame>before+2);
+    check('palette and metadata pending',[255,0,0,255],'object-1');
+    change({desired:[{...second,pending:true,fillOpacity:0,borderOpacity:0}],data:{},errors:{}});
+    before=frame; await until(()=>frame>before+2);
+    check('opacity disabled while pending',[0,0,0,0],null);
+    change({desired:[{...second,pending:true}],data:{},errors:{}});
+    before=frame; await until(()=>frame>before+2);
+    check('opacity restored while pending',[255,0,0,255],'object-1');
+    let release;
+    const gate=new Promise(resolve=>release=resolve);
+    change({desired:[second],data:data(second,gate),errors:{}});
+    before=frame; await until(()=>frame>before+3);
+    check('replacement tiles delayed',[255,0,0,255],'object-1');
+    release();
+    await until(()=>pixel[1]===255 && snapshot?.visible[0]?.spec===second);
+    check('replacement displayed',[0,255,0,255],'object-2');
+    const third=spec(3,[0,0,255]);
+    change({desired:[third],data:data(third),errors:{[third.ngffUrl]:'Tile failed'}});
+    before=frame; await until(()=>frame>before+2);
+    check('failed replacement',[0,255,0,255],'object-2');
+    change({desired:[],data:{},errors:{}});
+    before=frame; await until(()=>frame>before+2);
+    check('disabled overlay',[0,0,0,0],null);
+    output.textContent=JSON.stringify({status:'PASS',observations},null,2);
+  } catch(error) {output.textContent=JSON.stringify({status:'FAIL',error:String(error.stack),observations},null,2);}
+}
+</script></body></html>

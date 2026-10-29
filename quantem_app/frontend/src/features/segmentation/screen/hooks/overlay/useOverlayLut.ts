@@ -46,7 +46,9 @@ export function useOverlayLut(args: {
     retryOverlayRequest(() => getSegmentationOverlayLut(segmentationId, sourceModel, hiddenStates, rasterRevision), controller.signal)
       .then((result) => {
         if (cancelled) return;
-        if (rasterRevision && result.bundleVersion !== Number(rasterRevision.split("-")[0])) return;
+        if (rasterRevision && result.bundleVersion !== Number(rasterRevision.split("-")[0])) {
+          throw new Error("The overlay palette does not match the requested pixels.");
+        }
         setLut({ key, value: {
           rgba: result.rgba,
           maxLabel: result.maxLabel,
@@ -83,10 +85,10 @@ export function useOverlayPickMap(args: {
   sourceModel?: string | null;
   rasterRevision: string | null;
   enabled?: boolean;
-}): Map<number, string> | null {
+}): (Map<number, string> & { loadError?: string }) | null {
   const { segmentationId, sourceModel = null, rasterRevision, enabled = true } = args;
   const key = `${segmentationId}|${sourceModel ?? ""}|${rasterRevision}`;
-  const [pickMap, setPickMap] = useState<{ key: string; value: Map<number, string> } | null>(null);
+  const [pickMap, setPickMap] = useState<{ key: string; value: Map<number, string> & { loadError?: string } } | null>(null);
 
   useEffect(() => {
     if (!enabled || !segmentationId || !rasterRevision) {
@@ -98,13 +100,17 @@ export function useOverlayPickMap(args: {
     retryOverlayRequest(() => getSegmentationOverlayLutJson(segmentationId, sourceModel, rasterRevision), controller.signal)
       .then((json) => {
         if (cancelled) return;
-        if (json.bundle_version !== Number(rasterRevision.split("-")[0])) return;
+        if (json.bundle_version !== Number(rasterRevision.split("-")[0])) {
+          throw new Error("The overlay object map does not match the requested pixels.");
+        }
         const map = new Map<number, string>();
         for (const entry of json.objects) map.set(entry.label, entry.uuid);
         setPickMap({ key, value: map });
       })
-      .catch(() => {
-        if (!cancelled) setPickMap(null);
+      .catch((error) => {
+        if (!cancelled) setPickMap({ key, value: Object.assign(new Map<number, string>(), {
+          loadError: error instanceof Error ? error.message : String(error),
+        }) });
       });
     return () => {
       cancelled = true;

@@ -106,6 +106,16 @@ download whenever their runtime files match the new release. The release
 always exposes one `QuantEM_<version>_x64-setup.exe` to users; runtime ZIP parts
 are implementation assets consumed only when required.
 
+Fresh Windows installations also show a **Database memory** page. It suggests
+1/32 of detected RAM, rounded down to 64 MiB and bounded to 128–4096 MiB;
+users can enter another size. The selection is stored in `data/settings.json`.
+Silent fresh installs use the suggestion. Upgrades and reinstalls with existing
+settings or a database leave the current cache untouched. An existing PostgreSQL
+cache configured outside Settings is inherited until the user explicitly changes
+it. **Settings → Database memory** shows the active size and allows changes for
+the next normal restart; saving never restarts the database or interrupts jobs.
+Manual choices are limited to one quarter of detected RAM, at most 64 GiB.
+
 The Tauri updater downloads the complete installer through QuantEM's top update
 bar, so routine-update progress covers the whole application payload. Windows
 then applies it in `quiet` mode. After the user chooses **Update**, QuantEM waits

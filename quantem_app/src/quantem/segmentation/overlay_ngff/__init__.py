@@ -41,7 +41,7 @@ from .paths import (
     get_overlay_version_dir,
     normalize_overlay_source_model,
 )
-from .store import encode_zero_chunk, get_overlay_chunk_shape, parse_overlay_chunk_path
+from .store import encode_zero_chunk, parse_overlay_chunk_path
 
 __all__ = [
     "DirtyBBox",
@@ -58,7 +58,6 @@ __all__ = [
     "full_image_dirty_bbox",
     "get_or_create_overlay_state",
     "get_overlay_active_bundle_path",
-    "get_overlay_chunk_shape",
     "get_overlay_debug_manifest_path",
     "get_overlay_root",
     "get_overlay_stage_bundle_path",

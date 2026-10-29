@@ -76,7 +76,6 @@ export function makeLeftPanelProps(
       },
       viewport: null,
       onViewportChange: noop,
-      overlayNgffLayers: [],
       transientFitBounds: null,
       transientFitBoundsKey: null,
     },

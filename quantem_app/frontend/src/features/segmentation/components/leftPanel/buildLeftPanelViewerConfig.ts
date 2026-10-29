@@ -78,7 +78,6 @@ export function buildLeftPanelViewerConfig({
     overlays: {
       persistent: overlayScene.persistent,
       transient: overlayScene.transient,
-      rasterLayers: viewer.overlayNgffLayers ?? [],
       idMapOverlays: viewer.idMapOverlays ?? [],
       onRasterRevisionDisplayed: viewer.onOverlayRevisionDisplayed,
     },

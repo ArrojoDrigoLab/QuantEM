@@ -17,7 +17,6 @@ import type {
   SegmentOverlay,
   ViewerFitBounds,
   ViewerIdMapOverlaySpec,
-  ViewerNgffOverlayLayerSpec,
   ViewportState,
 } from "@/viewer/types";
 import type { LeftPanelLayerStyles } from "@/features/segmentation/overlays/segments";
@@ -32,7 +31,6 @@ export interface LeftPanelViewerState {
   layerStyles: LeftPanelLayerStyles;
   viewport: ViewportState | null;
   onViewportChange: (viewport: ViewportState) => void;
-  overlayNgffLayers?: ViewerNgffOverlayLayerSpec[];
   /** State-specific ID-map overlays (labels + border + render-time LUT). */
   idMapOverlays?: ViewerIdMapOverlaySpec[];
   onOverlayRevisionDisplayed?: (revision: number | null) => void;

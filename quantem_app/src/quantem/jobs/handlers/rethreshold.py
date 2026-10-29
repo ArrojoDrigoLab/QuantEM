@@ -106,7 +106,6 @@ def handle_reextract_at_include_level(
     # launch load them merely to register this handler.
     import numpy as np
     from django.db import transaction
-    from skimage.morphology import closing, disk
 
     from quantem.assets.models import ImageROI
     from quantem.seg_core.db.extraction import extract_and_save_segments, resolve_min_area
@@ -251,18 +250,12 @@ def handle_reextract_at_include_level(
     cancel.check_cancelled()
     if segmentation.segmentation_type.measurement_mode == "global":
         reporter.update(progress=40.0, message="building the binary foreground mask")
-        foreground = getattr(segmenter, "_foreground_mask", None)
-        mask = (
-            np.asarray(foreground(result.prob), dtype=bool)
-            if callable(foreground)
-            else np.asarray(result.prob, dtype=np.float32) >= include_level
+        from quantem.segmentation.global_masks import (
+            postprocess_global_prediction,
+            preserve_completed_global_mask,
         )
-        close_radius = int(getattr(getattr(segmenter, "_organelle", None), "close_radius", 0) or 0)
-        if close_radius > 0 and mask.any():
-            # Global results retain real luminal/background holes. Closing is
-            # the published consolidation step; binary_fill_holes is the
-            # object-only step and must never run here.
-            mask = closing(mask, disk(close_radius))
+
+        mask, close_radius = postprocess_global_prediction(segmenter, result.prob, include_level)
 
         if roi is not None:
             full_mask = load_global_mask(segmentation)
@@ -271,16 +264,7 @@ def handle_reextract_at_include_level(
             full_mask[y0:y1, x0:x1] = mask
             mask = full_mask
         else:
-            from quantem.segmentation.coverage import completed_geometry
-            from quantem.segmentation.global_masks import _rasterize_geometries
-
-            protected = completed_geometry(segmentation)
-            if not protected.is_empty:
-                old_mask = load_global_mask(segmentation)
-                completed = _rasterize_geometries(
-                    [protected], height=mask.shape[0], width=mask.shape[1]
-                )
-                mask[completed] = old_mask[completed]
+            mask = preserve_completed_global_mask(segmentation, mask)
 
         metadata = {
             **stored_metadata,

@@ -302,9 +302,18 @@ describe("ImageViewer", () => {
       nextRevision.resolve(makeVivResult());
       await nextRevision.promise;
     });
-    await waitFor(() => expect(getLayerIds()).toContain("idmap-overlay-review-id-map"));
+    const warmingLayerId = await waitFor(() => {
+      const id = getLayerIds().find((candidate) =>
+        candidate.startsWith("idmap-overlay-review-id-map@")
+      );
+      expect(id).toBeDefined();
+      return id!;
+    });
     expect(onRevisionDisplayed).not.toHaveBeenCalledWith(6, 6);
-    getLayerById("idmap-overlay-review-id-map").isLoaded = true;
+    getLayerById(warmingLayerId).isLoaded = true;
+    act(() => deckPropsSpy.mock.calls.at(-1)?.[0].onAfterRender?.());
+    await waitFor(() => expect(getLayerIds()).not.toContain("idmap-overlay-review-id-map"));
+    getLayerById(warmingLayerId).isLoaded = true;
     act(() => deckPropsSpy.mock.calls.at(-1)?.[0].onAfterRender?.());
     expect(onRevisionDisplayed).toHaveBeenCalledWith(6, 6);
   });

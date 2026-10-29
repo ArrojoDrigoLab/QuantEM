@@ -214,7 +214,6 @@ export function useSegmentationScreenViewModels({
           layerStyles: overlayLayers.leftPanelLayerStyles,
           viewport: route.viewport,
           onViewportChange: handleLeftViewportChange,
-          overlayNgffLayers: [],
           idMapOverlays:
             route.isLocked
               ? ui.showConfirmedPanel
@@ -366,7 +365,6 @@ export function useSegmentationScreenViewModels({
           onShowBordersChange: overlayLayers.setShowRightConfirmedBorders,
         },
       },
-      overlayNgffLayers: [],
       idMapOverlays:
         reviewMode.workflowMode === "review" ? overlayLayers.rightIdMapOverlays : [],
       onOverlayRevisionDisplayed: overlayManifest.handleRightOverlayRevisionDisplayed,

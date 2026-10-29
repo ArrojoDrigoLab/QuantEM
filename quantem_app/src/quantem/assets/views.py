@@ -457,7 +457,16 @@ class SystemSettingsView(APIView):
     """Read and update settings that must survive database schema changes."""
 
     def get(self, request):
-        return Response(load_app_settings().as_dict())
+        return Response(self._payload(load_app_settings()))
+
+    @staticmethod
+    def _payload(app_settings):
+        from quantem.core.database_cache import database_cache_status
+
+        return {
+            **app_settings.as_dict(),
+            "database_cache": database_cache_status(app_settings.database_cache_mb),
+        }
 
     def put(self, request):
         return self._update(request)
@@ -495,7 +504,7 @@ class SystemSettingsView(APIView):
         )
         return Response(
             {
-                **updated.as_dict(),
+                **SystemSettingsView._payload(updated),
                 "removed_pre_migration_backups": len(removed),
             }
         )

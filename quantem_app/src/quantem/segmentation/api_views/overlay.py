@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -15,20 +14,19 @@ from rest_framework.views import APIView
 from quantem.core.local_storage import ensure_cached_storage_path, storage_relpath_for_path
 from quantem.segmentation.models import ImageSegmentation
 from quantem.segmentation.overlay_ngff import (
-    build_label_lut_binary,
     build_label_lut_json,
     encode_zero_chunk,
     ensure_overlay_manifest,
     full_image_dirty_bbox,
     get_or_create_overlay_state,
     get_overlay_active_bundle_path,
-    get_overlay_chunk_shape,
     parse_overlay_chunk_path,
     queue_full_overlay_rebuild,
     register_overlay_mutation,
 )
 from quantem.segmentation.overlay_ngff.paths import OverlayStoreError
 from quantem.segmentation.overlay_ngff.snapshots import read_snapshot
+from quantem.segmentation.overlay_ngff.store import stored_chunk_shape
 from quantem.segmentation.serializers import SegmentationOverlayRebuildSerializer
 from quantem.segmentation.source_models import normalize_source_model
 
@@ -84,7 +82,6 @@ class SegmentationOverlayLutView(APIView):
     map used for picking and client-side toggles.
     """
 
-    @transaction.atomic
     def get(self, request, seg_id):
         segmentation = get_object_or_404(
             ImageSegmentation.objects.select_related("asset", "segmentation_type"),
@@ -92,19 +89,78 @@ class SegmentationOverlayLutView(APIView):
         )
         source_model = normalize_source_model(request.query_params.get("source_model"))
         state = get_or_create_overlay_state(segmentation, source_model)
-        state = type(state).objects.select_for_update().get(pk=state.pk)
+        from quantem.segmentation.overlay_ngff.cache import palette_cache
+
         assignments = None
-        if revision := request.query_params.get("rev"):
+        snapshot_root = None
+        revision = request.query_params.get("rev")
+        snapshot_revision = revision
+        if snapshot_revision is None and state.bundle_version > 0:
+            # The published store is immutable, so its label map is a cheaper
+            # consistency boundary than holding a database row lock while an
+            # O(N) palette is built.  A writer publishes the files before it
+            # commits this state row; therefore any visible state revision has
+            # a matching snapshot.
+            snapshot_revision = f"{state.bundle_version}-{state.applied_revision}"
+        if snapshot_revision:
             try:
-                _, snapshot = read_snapshot(str(segmentation.id), source_model, revision)
+                snapshot_root, snapshot = read_snapshot(
+                    str(segmentation.id),
+                    source_model,
+                    snapshot_revision,
+                    include_labels=False,
+                )
             except OverlayStoreError as exc:
-                return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-            assignments = snapshot["labels"]
-            state.bundle_version = snapshot["bundle_version"]
-        if request.query_params.get("format") == "json":
-            response = Response(
-                build_label_lut_json(state, assignments=assignments), status=status.HTTP_200_OK
+                if revision:
+                    return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+                # A legacy store can predate snapshots. Keep it readable until
+                # its next rebuild, using the database mapping as before.
+                snapshot_root = None
+            else:
+                state.bundle_version = snapshot["bundle_version"]
+        # Include the database identity, palette revision and publication time.
+        cache_key = (
+            state._state.db,
+            str(state.pk),
+            str(snapshot_root),
+            revision,
+            state.bundle_version,
+            state.lut_revision,
+            state.updated_at,
+            segmentation.segmentation_type.default_color,
+        )
+        lut_json = palette_cache.get(cache_key)
+        if lut_json is None:
+            if snapshot_root is not None:
+                try:
+                    _, snapshot = read_snapshot(
+                        str(segmentation.id), source_model, snapshot_revision
+                    )
+                except OverlayStoreError as exc:
+                    return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+                assignments = snapshot["labels"]
+            lut_json = build_label_lut_json(state, assignments=assignments)
+            # Do not hold a write lock across an O(N) read. A concurrent state
+            # edit invalidates this attempt rather than caching mixed visibility
+            # under the revision read before it started.
+            unchanged = (
+                type(state)
+                .objects.filter(
+                    pk=state.pk, lut_revision=state.lut_revision, updated_at=state.updated_at
+                )
+                .exists()
             )
+            if not unchanged:
+                return Response(
+                    {"detail": "Overlay visibility changed; retry this palette."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            # Conservative accounting includes Python object overhead, not just
+            # compact JSON bytes. Large palettes bypass the cache altogether.
+            size = 1024 + len(lut_json["objects"]) * 768
+            palette_cache.put(cache_key, lut_json, size)
+        if request.query_params.get("format") == "json":
+            response = Response(lut_json, status=status.HTTP_200_OK)
             response["Cache-Control"] = "no-store"
             return response
         hidden_states = frozenset(
@@ -112,9 +168,14 @@ class SegmentationOverlayLutView(APIView):
             for token in (request.query_params.get("hide") or "").split(",")
             if token.strip()
         )
-        payload, max_label = build_label_lut_binary(
-            state, hidden_states=hidden_states, assignments=assignments
-        )
+        from quantem.segmentation.overlay_ngff.labels_lut import binary_from_json
+
+        binary_key = (*cache_key, tuple(sorted(hidden_states)))
+        binary = palette_cache.get(binary_key)
+        if binary is None:
+            binary = binary_from_json(lut_json, hidden_states=hidden_states)
+            palette_cache.put(binary_key, binary, len(binary[0]))
+        payload, max_label = binary
         response = HttpResponse(payload, content_type="application/octet-stream")
         response["X-Overlay-Lut-Revision"] = str(state.lut_revision)
         response["X-Overlay-Bundle-Version"] = str(state.bundle_version)
@@ -204,11 +265,7 @@ def segmentation_overlay_ngff_file(request, seg_id, ngff_path):
         if chunk_request is None:
             raise Http404(f"Overlay NGFF file not found: {relative_path}")
         array_key, level, chunk_coords = chunk_request
-        chunk_shape = get_overlay_chunk_shape(
-            segmentation,
-            level=level,
-            chunk_coords=chunk_coords,
-        )
+        chunk_shape = stored_chunk_shape(store_root, array_key, level, chunk_coords)
         if chunk_shape is None:
             raise Http404(f"Overlay NGFF file not found: {relative_path}")
         response = HttpResponse(

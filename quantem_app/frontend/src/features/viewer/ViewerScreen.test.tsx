@@ -772,7 +772,9 @@ describe("ViewerScreen", () => {
 
       await screen.findByTestId("image-viewer");
       // No click, no navigation, no Mark Image Done: the canvas has the layer.
-      await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(1));
+      await waitFor(() =>
+        expect(lutAlpha(lastIdMapOverlays()[0]?.lut ?? new Uint8Array(), 1)).toBe(255)
+      );
       const overlay = lastIdMapOverlays()[0];
       expect(overlay.id).toBe("seg-1");
       expect(lutAlpha(overlay.lut, 1)).toBe(255);
@@ -912,7 +914,9 @@ describe("ViewerScreen", () => {
       );
 
       await screen.findByTestId("image-viewer");
-      await waitFor(() => expect(lastIdMapOverlays()).toHaveLength(1));
+      await waitFor(() =>
+        expect(lutAlpha(lastIdMapOverlays()[0]?.lut ?? new Uint8Array(), 1)).toBe(255)
+      );
       const { lut } = lastIdMapOverlays()[0];
       expect(lutAlpha(lut, 1)).toBe(255);
       expect(lutAlpha(lut, 2)).toBe(255);

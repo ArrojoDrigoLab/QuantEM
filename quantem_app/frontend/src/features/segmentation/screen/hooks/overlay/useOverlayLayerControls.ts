@@ -37,6 +37,7 @@ const DEFAULT_RIGHT_PANEL_CONFIRMED_STYLE: ConfirmedLayerStyle = {
 const CANDIDATE_LAYER_HIDDEN_STATES = ["confirmed", "excluded"];
 const CONFIRMED_LAYER_HIDDEN_STATES = ["candidate", "excluded"];
 const NO_HIDDEN_SEGMENTS = new Set<string>();
+const WAITING_LUT: OverlayLutState = { rgba: new Uint8Array(4), maxLabel: 0, lutRevision: -1 };
 
 /** A full or partial build publishes a new immutable version-revision token.
  * Palette-only edits retain this URL and all decoded raster tiles. */
@@ -107,6 +108,10 @@ export function useOverlayLayerControls({
     hiddenStates: CONFIRMED_LAYER_HIDDEN_STATES,
   });
 
+  const candidatePickable =
+    modelManifest?.overlay_kind !== "binary_mask" && modelManifest?.pickable !== false;
+  const confirmedPickable =
+    confirmedManifest?.overlay_kind !== "binary_mask" && confirmedManifest?.pickable !== false;
   const candidatePickMap = useOverlayPickMap({
     segmentationId,
     sourceModel: modelManifest?.source_model ?? null,
@@ -114,7 +119,7 @@ export function useOverlayLayerControls({
       modelManifest != null
         ? `${modelManifest.bundle_version}-${modelManifest.applied_revision}`
         : null,
-    enabled: !!modelManifest?.ngff_url && !modelManifest.is_fallback,
+    enabled: !!modelManifest?.ngff_url && !modelManifest.is_fallback && candidatePickable,
   });
   const confirmedPickMap = useOverlayPickMap({
     segmentationId,
@@ -123,7 +128,7 @@ export function useOverlayLayerControls({
       confirmedManifest != null
         ? `${confirmedManifest.bundle_version}-${confirmedManifest.applied_revision}`
         : null,
-    enabled: !!confirmedManifest?.ngff_url,
+    enabled: !!confirmedManifest?.ngff_url && confirmedPickable,
   });
   const visibleCandidateLut = useMemo(
     () => hideSegmentsInLut(candidateLut, candidatePickMap, hiddenSegmentIds),
@@ -153,44 +158,50 @@ export function useOverlayLayerControls({
 
   const leftIdMapOverlays = useMemo<ViewerIdMapOverlaySpec[]>(() => {
     const overlays: ViewerIdMapOverlaySpec[] = [];
-    if (candidateNgffUrl && visibleCandidateLut) {
+    if (candidateNgffUrl) {
+      const palette = visibleCandidateLut ?? WAITING_LUT;
       overlays.push({
         id: "label-left-candidates-idmap",
         ngffUrl: candidateNgffUrl,
         revision: modelManifest?.applied_revision,
         revisionRole: "model",
-        lut: visibleCandidateLut.rgba,
-        maxLabel: visibleCandidateLut.maxLabel,
-        lutRevision: visibleCandidateLut.lutRevision,
-        loadError: visibleCandidateLut.loadError,
+        lut: palette.rgba,
+        maxLabel: palette.maxLabel,
+        lutRevision: palette.lutRevision,
+        loadError: palette.loadError ?? candidatePickMap?.loadError,
+        pending: !visibleCandidateLut || (candidatePickable && (!candidatePickMap || !!candidatePickMap.loadError)),
         visualRevision: hiddenSegmentVisualRevision,
         fillOpacity: leftPanelLayerStyles.candidateFillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,
         showBorders: showCandidateBorders,
-        pickMap: candidatePickMap ?? undefined,
+        pickMap: candidatePickable ? candidatePickMap ?? undefined : undefined,
       });
     }
-    if (confirmedNgffUrl && visibleConfirmedLut) {
+    if (confirmedNgffUrl) {
+      const palette = visibleConfirmedLut ?? WAITING_LUT;
       overlays.push({
         id: "label-left-confirmed-idmap",
         ngffUrl: confirmedNgffUrl,
         revision: confirmedManifest?.applied_revision,
         revisionRole: "confirmed",
-        lut: visibleConfirmedLut.rgba,
-        maxLabel: visibleConfirmedLut.maxLabel,
-        lutRevision: visibleConfirmedLut.lutRevision,
-        loadError: visibleConfirmedLut.loadError,
+        lut: palette.rgba,
+        maxLabel: palette.maxLabel,
+        lutRevision: palette.lutRevision,
+        loadError: palette.loadError ?? confirmedPickMap?.loadError,
+        pending: !visibleConfirmedLut || (confirmedPickable && (!confirmedPickMap || !!confirmedPickMap.loadError)),
         visualRevision: hiddenSegmentVisualRevision,
         fillOpacity: leftPanelLayerStyles.confirmedFillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,
         showBorders: showConfirmedBorders,
-        pickMap: confirmedPickMap ?? undefined,
+        pickMap: confirmedPickable ? confirmedPickMap ?? undefined : undefined,
       });
     }
     return overlays;
   }, [
     candidateNgffUrl,
     confirmedNgffUrl,
+    candidatePickable,
+    confirmedPickable,
     modelManifest?.applied_revision,
     confirmedManifest?.applied_revision,
     visibleCandidateLut,
@@ -205,26 +216,29 @@ export function useOverlayLayerControls({
   ]);
 
   const rightIdMapOverlays = useMemo<ViewerIdMapOverlaySpec[]>(() => {
-    if (!confirmedNgffUrl || !visibleConfirmedLut) return [];
+    if (!confirmedNgffUrl) return [];
+    const palette = visibleConfirmedLut ?? WAITING_LUT;
     return [
       {
         id: "label-right-confirmed-idmap",
         ngffUrl: confirmedNgffUrl,
         revision: confirmedManifest?.applied_revision,
         revisionRole: "confirmed",
-        lut: visibleConfirmedLut.rgba,
-        maxLabel: visibleConfirmedLut.maxLabel,
-        lutRevision: visibleConfirmedLut.lutRevision,
-        loadError: visibleConfirmedLut.loadError,
+        lut: palette.rgba,
+        maxLabel: palette.maxLabel,
+        lutRevision: palette.lutRevision,
+        loadError: palette.loadError ?? confirmedPickMap?.loadError,
+        pending: !visibleConfirmedLut || (confirmedPickable && (!confirmedPickMap || !!confirmedPickMap.loadError)),
         visualRevision: hiddenSegmentVisualRevision,
         fillOpacity: rightPanelConfirmedStyle.fillOpacity,
         borderOpacity: RASTER_BORDER_OPACITY,
         showBorders: showRightConfirmedBorders,
-        pickMap: confirmedPickMap ?? undefined,
+        pickMap: confirmedPickable ? confirmedPickMap ?? undefined : undefined,
       },
     ];
   }, [
     confirmedNgffUrl,
+    confirmedPickable,
     confirmedManifest?.applied_revision,
     visibleConfirmedLut,
     hiddenSegmentVisualRevision,

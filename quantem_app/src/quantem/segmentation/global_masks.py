@@ -23,6 +23,41 @@ def is_global_segmentation(segmentation: ImageSegmentation) -> bool:
     return segmentation.segmentation_type.measurement_mode == "global"
 
 
+def postprocess_global_prediction(
+    segmenter, probability: np.ndarray, threshold: float
+) -> tuple[np.ndarray, int]:
+    """The binary foreground used by confirmation and saved-result comparisons.
+
+    Closing consolidates foreground, but global masks retain real background
+    holes. Object-only hole filling must never be applied here.
+    """
+    from skimage.morphology import closing, disk
+
+    foreground = getattr(segmenter, "_foreground_mask", None)
+    mask = np.asarray(
+        foreground(probability)
+        if callable(foreground)
+        else np.asarray(probability, dtype=np.float32) >= threshold,
+        dtype=bool,
+    )
+    radius = max(0, int(getattr(getattr(segmenter, "_organelle", None), "close_radius", 0) or 0))
+    if radius and mask.any():
+        mask = closing(mask, disk(radius))
+    return mask, radius
+
+
+def preserve_completed_global_mask(segmentation: ImageSegmentation, mask: np.ndarray) -> np.ndarray:
+    """Restore authoritative completed pixels into a proposed full-image mask."""
+    from quantem.segmentation.coverage import completed_geometry
+
+    protected = completed_geometry(segmentation)
+    if not protected.is_empty:
+        completed = _rasterize_geometries([protected], height=mask.shape[0], width=mask.shape[1])
+        old_mask = load_global_mask(segmentation)
+        mask[completed] = old_mask[completed]
+    return mask
+
+
 def _dimensions(segmentation: ImageSegmentation) -> tuple[int, int]:
     asset = segmentation.asset
     width = int(getattr(asset, "logical_width", 0) or 0)

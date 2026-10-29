@@ -38,6 +38,7 @@ export const DEFAULT_COLORS = [
   "#14b8a6",
   "#6366f1",
 ];
+const WAITING_PALETTE = { rgba: new Uint8Array(4), maxLabel: 0 };
 
 const tintedPalettes = new WeakMap<OverlayLutJson, Map<string, ReturnType<typeof buildTintedLut>>>();
 function tintedPalette(json: OverlayLutJson, color: string) {
@@ -215,13 +216,14 @@ export function useOverlayConfig({
     return enabledOverlayList.flatMap((overlay) => {
       const manifest = overlayManifests[overlay.segmentation.id];
       const json = overlayLutJsonById[overlay.segmentation.id];
-      if (!manifest?.ngff_url || !json || json.bundle_version !== manifest.bundle_version) return [];
+      if (!manifest?.ngff_url) return [];
+      const pending = !json || json.bundle_version !== manifest.bundle_version;
       // Everything except `excluded`: an object the model guessed is drawn
       // like one the user kept, because until somebody looks at it that is
       // exactly what it is. The old {confirmed, refined, labeled} filter gave
       // every candidate alpha 0, so a run that found 511 objects rendered as
       // an empty overlay.
-      const { rgba, maxLabel } = tintedPalette(json, overlay.color);
+      const { rgba, maxLabel } = pending ? WAITING_PALETTE : tintedPalette(json, overlay.color);
       return [
         {
           id: overlay.segmentation.id,
@@ -233,8 +235,9 @@ export function useOverlayConfig({
           revision: manifest.applied_revision,
           lut: rgba,
           maxLabel,
-          lutRevision: manifest.lut_revision,
-          loadError: json.loadError,
+          lutRevision: json?.lut_revision ?? -1,
+          loadError: json?.loadError,
+          pending,
           fillOpacity: overlay.opacity,
           borderOpacity: 0.95,
           showBorders: true,

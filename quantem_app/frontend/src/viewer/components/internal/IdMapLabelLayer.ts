@@ -17,6 +17,22 @@ import { PaletteBitmapLayer, NEAREST_SAMPLER } from "./PaletteBitmapLayer";
  */
 const BORDER_DARKEN = 0.5;
 
+/** Match GPU visibility when the palette is too large for a texture. */
+class ColorizedBitmapLayer extends BitmapLayer {
+  static layerName = "ColorizedBitmapLayer";
+
+  getShaders() {
+    const shaders = super.getShaders();
+    return {
+      ...shaders,
+      inject: {
+        ...shaders.inject,
+        "fs:DECKGL_FILTER_COLOR": "if (color.a <= 0.0) discard;",
+      },
+    };
+  }
+}
+
 // Stable references for the props viv forwards to its inner TileLayer. viv puts
 // `selections` (and `loader`) in `updateTriggers.getTileData`, which deck
 // compares by reference -- a fresh array literal each render would invalidate
@@ -219,11 +235,14 @@ export class IdMapLabelLayer extends CompositeLayer<IdMapLabelLayerProps> {
         idLabels: tile.data[0], idTileWidth: tile.width,
       });
     }
-    return new BitmapLayer(props, {
-      id: `${this.props.id}-bitmap-${index.x}-${index.y}-${index.z}`,
+    return new ColorizedBitmapLayer(props, {
+      // Deck matches layers by ID even when their class changes. Give the
+      // fallback its own ID so a switch cannot reuse the palette shader state.
+      id: `${this.props.id}-bitmap-cpu-${index.x}-${index.y}-${index.z}`,
       image: this._colorize(tile),
       bounds,
       pickable,
+      textureParameters: NEAREST_SAMPLER,
       // Retain the raw label tile + width so getPickingInfo can resolve the
       // clicked pixel back to a dense label (the image itself is colorized RGBA).
       ...(pickable ? { idLabels: tile.data[0], idTileWidth: tile.width } : {}),

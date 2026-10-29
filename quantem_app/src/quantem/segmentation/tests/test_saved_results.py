@@ -213,6 +213,33 @@ def test_old_files_are_deleted_only_after_replacement_commits(
     assert second.probability_map_id is None
 
 
+def test_deleting_one_result_reclaims_only_its_cache_when_source_map_is_shared(
+    segmentation, django_capture_on_commit_callbacks
+):
+    first = run(segmentation)
+    replay(segmentation, threshold=0.7)
+    second = segmentation.saved_results.get(is_canonical=True)
+    assert second.probability_map_id == first.probability_map_id
+
+    from quantem.segmentation.prob_maps.preview import result_preview_cache_path
+
+    source = resolve_probability_map_path(second.probability_map)
+    cache = result_preview_cache_path(source)
+    detailed = cache / str(second.id) / ("a" * 32)
+    detailed.mkdir(parents=True)
+    (detailed / "ready.json").write_text("{}", encoding="utf-8")
+    preview = cache / f"{second.id}.derived.png"
+    preview.write_bytes(b"derived")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        replay(segmentation, first, delete_ids=[str(second.id)])
+
+    assert source.exists()
+    assert first.probability_map_id is not None
+    assert not (cache / str(second.id)).exists()
+    assert not preview.exists()
+
+
 def test_late_failure_rolls_back_confirmation_and_cancels_file_deletion(
     segmentation, django_capture_on_commit_callbacks
 ):

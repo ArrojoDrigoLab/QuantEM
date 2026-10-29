@@ -24,6 +24,7 @@ from numcodecs import Blosc
 
 from quantem.segmentation.models import ImageSegmentation, SegmentationOverlayState
 
+from .cache import store_validation_cache
 from .constants import (
     BORDER_ARRAY_KEY,
     BORDER_STORE_DTYPE,
@@ -67,29 +68,6 @@ def parse_overlay_chunk_path(relative_path: str) -> tuple[str, int, tuple[int, i
     return array_key, int(level_token), (chunk_y, chunk_x)
 
 
-def get_overlay_chunk_shape(
-    segmentation: ImageSegmentation,
-    *,
-    level: int,
-    chunk_coords: tuple[int, int],
-) -> tuple[int, int] | None:
-    """Return the encoded chunk shape, including padding on partial edge chunks."""
-    width, height = segmentation_dimensions(segmentation)
-    level_shapes = _level_shapes(width, height)
-    if level < 0 or level >= len(level_shapes):
-        return None
-    chunk_y, chunk_x = chunk_coords
-    level_height, level_width = level_shapes[level]
-    y_min = chunk_y * OVERLAY_CHUNK_SIZE
-    x_min = chunk_x * OVERLAY_CHUNK_SIZE
-    if min(chunk_coords) < 0 or y_min >= level_height or x_min >= level_width:
-        return None
-    return (
-        min(OVERLAY_CHUNK_SIZE, level_height),
-        min(OVERLAY_CHUNK_SIZE, level_width),
-    )
-
-
 def encode_zero_chunk(array_key: str, chunk_shape: tuple[int, int]) -> bytes:
     """Encode an all-background chunk for a missing (sparse) chunk request.
 
@@ -100,6 +78,36 @@ def encode_zero_chunk(array_key: str, chunk_shape: tuple[int, int]) -> bytes:
     if dtype is None:
         raise OverlayStoreError(f"Unknown overlay array: {array_key!r}")
     return bytes(_COMPRESSOR.encode(np.zeros(chunk_shape, dtype=dtype)))
+
+
+def stored_chunk_shape(
+    store_root: Path, array_key: str, level: int, chunk_coords: tuple[int, int]
+) -> tuple[int, int] | None:
+    """Resolve sparse tiles against the requested store, never today's asset.
+
+    Zarr pads edge chunks to the encoded chunk dimensions. Reading the tiny
+    array descriptor also prevents a missing level from becoming a fake empty
+    image. This works for historical stores without a snapshot sidecar.
+    """
+    if array_key not in OVERLAY_ARRAY_KEYS or level < 0 or min(chunk_coords) < 0:
+        return None
+    try:
+        metadata = json.loads(
+            (store_root / array_key / str(level) / ".zarray").read_text(encoding="utf-8")
+        )
+        shape, chunks = metadata["shape"], metadata["chunks"]
+        if len(shape) != 2 or len(chunks) != 2:
+            return None
+        if any(not isinstance(n, int) or n <= 0 for n in (*shape, *chunks)):
+            return None
+        if any(
+            index * chunk >= extent
+            for index, chunk, extent in zip(chunk_coords, chunks, shape, strict=True)
+        ):
+            return None
+        return tuple(chunks)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def _write_group_metadata(store_root: Path) -> None:
@@ -223,26 +231,55 @@ def _is_valid_label_store(
     width: int,
     height: int,
 ) -> bool:
-    attrs_path = store_root / ".zattrs"
-    zgroup_path = store_root / ".zgroup"
-    if not attrs_path.exists() or not zgroup_path.exists():
-        return False
     try:
-        attrs = json.loads(attrs_path.read_text(encoding="utf-8"))
-    except Exception:
+        attrs = json.loads((store_root / ".zattrs").read_text(encoding="utf-8"))
+        group = json.loads((store_root / ".zgroup").read_text(encoding="utf-8"))
+        if group["zarr_format"] != 2 or attrs["overlay_format_version"] != OVERLAY_FORMAT_VERSION:
+            return False
+        shapes = _level_shapes(width, height)
+        for array_key in OVERLAY_ARRAY_KEYS:
+            group_attrs = json.loads(
+                (store_root / array_key / ".zattrs").read_text(encoding="utf-8")
+            )
+            datasets = group_attrs["multiscales"][0]["datasets"]
+            if [dataset["path"] for dataset in datasets] != [
+                str(level) for level in range(len(shapes))
+            ]:
+                return False
+            for level, shape in enumerate(shapes):
+                metadata = json.loads(
+                    (store_root / array_key / str(level) / ".zarray").read_text(encoding="utf-8")
+                )
+                if (
+                    tuple(metadata["shape"]) != shape
+                    or tuple(metadata["chunks"]) != tuple(min(OVERLAY_CHUNK_SIZE, n) for n in shape)
+                    or np.dtype(metadata["dtype"]) != np.dtype(_ARRAY_DTYPES[array_key])
+                    or metadata.get("compressor") != _COMPRESSOR.get_config()
+                ):
+                    return False
+        return True
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
         return False
-    if int(attrs.get("overlay_format_version", 0)) != OVERLAY_FORMAT_VERSION:
+
+
+def is_valid_label_store_cached(path: Path, *, width: int, height: int) -> bool:
+    # Version directories are immutable. Check their identity cheaply on each
+    # poll; periodically validate all array metadata to detect disk damage.
+    try:
+        identity = tuple(
+            (stat.st_mtime_ns, stat.st_size)
+            for stat in ((path / ".zgroup").stat(), (path / ".zattrs").stat())
+        )
+    except OSError:
         return False
-    for array_key in OVERLAY_ARRAY_KEYS:
-        try:
-            first_array = zarr.open_array(str(store_root / array_key / "0"), mode="r")
-        except Exception:
-            return False
-        if tuple(first_array.shape) != (height, width):
-            return False
-        if np.dtype(first_array.dtype) != np.dtype(_ARRAY_DTYPES[array_key]):
-            return False
-    return True
+    key = (str(path), width, height, identity)
+    cached = store_validation_cache.get(key)
+    if cached is not None:
+        return cached
+    valid = _is_valid_label_store(path, width=width, height=height)
+    if valid:
+        store_validation_cache.put(key, valid)
+    return valid
 
 
 def _open_label_arrays(

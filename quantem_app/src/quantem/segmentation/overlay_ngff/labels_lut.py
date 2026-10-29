@@ -135,13 +135,15 @@ def replace_bundle_labels(
     )
 
 
-def existing_label_map(state: SegmentationOverlayState) -> dict[Any, int]:
-    return {
-        row.object_uuid: row.label
-        for row in SegmentationOverlayLabel.objects.filter(overlay_state=state).only(
-            "object_uuid", "label"
+def existing_label_map(state: SegmentationOverlayState, *, current_only=False) -> dict[Any, int]:
+    rows = SegmentationOverlayLabel.objects.filter(overlay_state=state)
+    if current_only:
+        rows = rows.filter(
+            object_uuid__in=bundle_queryset(
+                state.segmentation, state.candidate_source_model
+            ).values("id")
         )
-    }
+    return {row.object_uuid: row.label for row in rows.only("object_uuid", "label")}
 
 
 # ---------------------------------------------------------------------------
@@ -163,13 +165,22 @@ def _resolve_live_objects(
             )
         )
     )
-    object_ids = [row.object_uuid for row in rows]
+    object_ids = tuple({row.object_uuid for row in rows})
     objects: dict[Any, SegmentObject] = {}
     if object_ids:
-        for obj in SegmentObject.objects.filter(id__in=object_ids, superseded_at__isnull=True).only(
-            "id", "label_state", "refined", "status", "source_model"
-        ):
-            objects[obj.id] = obj
+        # Bound SQL parameters without scanning every object in a large
+        # segmentation when this bundle contains only a small subset.
+        for start in range(0, len(object_ids), 1000):
+            for obj in (
+                SegmentObject.objects.filter(
+                    id__in=object_ids[start : start + 1000],
+                    segmentation_id=state.segmentation_id,
+                    superseded_at__isnull=True,
+                )
+                .only("id", "label_state", "refined", "status", "source_model")
+                .iterator(chunk_size=1000)
+            ):
+                objects[obj.id] = obj
     return rows, objects
 
 
@@ -183,7 +194,8 @@ def candidate_ids_inside_completed_rois(state: SegmentationOverlayState) -> set[
     sits, rather than hiding candidates that merely graze the ROI border.
 
     Only ever *hides*; the raster and label->object mapping are untouched, so this
-    re-evaluates for free whenever ROIs change (a LUT revision, not a rebuild).
+    re-evaluates on a new LUT revision instead of rebuilding pixels. HTTP
+    palette caching shares this calculation across viewers and response formats.
 
     The GeoDjango ``Union`` aggregate + ``centroid__intersects`` lookup is done in
     Python here: a shapely union of the fetched ROI polygons, then a centroid
@@ -234,32 +246,9 @@ def build_label_lut_binary(
     default per-state visibility) -- used to serve a confirmed-only LUT to the
     right (review) panel without a second on-disk artifact.
     """
-    if state.segmentation.segmentation_type.measurement_mode == "global":
-        color = str(state.segmentation.segmentation_type.default_color or "33CC66").lstrip("#")
-        try:
-            red, green, blue = _hex_to_rgb(color)
-        except (ValueError, IndexError):
-            red, green, blue = _hex_to_rgb(COLOR_CONFIRMED)
-        visible = STATE_CONFIRMED not in hidden_states
-        buffer = np.zeros((2, 4), dtype=np.uint8)
-        buffer[1] = (red, green, blue, 255 if visible else 0)
-        return buffer.tobytes(), 1
-
-    rows, objects = _resolve_live_objects(state, assignments)
-    suppressed = candidate_ids_inside_completed_rois(state)
-    max_label = max((row.label for row in rows), default=0)
-    buffer = np.zeros((max_label + 1, 4), dtype=np.uint8)
-    for row in rows:
-        obj = objects.get(row.object_uuid)
-        if obj is None:
-            continue
-        _, state_key, color_hex = resolve_object_style(obj)
-        red, green, blue = _hex_to_rgb(color_hex)
-        visible = STATE_DEFAULT_VISIBLE.get(state_key, True) and state_key not in hidden_states
-        if row.object_uuid in suppressed:
-            visible = False
-        buffer[row.label] = (red, green, blue, 255 if visible else 0)
-    return buffer.tobytes(), int(max_label)
+    return binary_from_json(
+        build_label_lut_json(state, assignments=assignments), hidden_states=hidden_states
+    )
 
 
 def build_label_lut_json(state: SegmentationOverlayState, *, assignments=None) -> dict[str, Any]:
@@ -300,3 +289,24 @@ def build_label_lut_json(state: SegmentationOverlayState, *, assignments=None) -
         "max_label": max((row.label for row in rows), default=0),
         "objects": entries,
     }
+
+
+def binary_from_json(payload, *, hidden_states=frozenset()):
+    """Derive the binary palette from the same cached visibility/picking rows."""
+    maximum = int(payload["max_label"])
+    buffer = np.zeros((maximum + 1, 4), dtype=np.uint8)
+    if payload.get("overlay_kind") == "binary_mask":
+        try:
+            color = _hex_to_rgb(payload["color"].lstrip("#"))
+        except (ValueError, IndexError):
+            color = _hex_to_rgb(COLOR_CONFIRMED)
+        buffer[1] = (*color, 0 if STATE_CONFIRMED in hidden_states else 255)
+    else:
+        for row in payload["objects"]:
+            visible = (
+                STATE_DEFAULT_VISIBLE.get(row["state"], True)
+                and row["state"] not in hidden_states
+                and not row.get("hidden_by_completed_roi", False)
+            )
+            buffer[row["label"]] = (*_hex_to_rgb(row["color"].lstrip("#")), 255 if visible else 0)
+    return buffer.tobytes(), maximum

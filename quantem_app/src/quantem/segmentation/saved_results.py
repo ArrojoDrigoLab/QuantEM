@@ -1,11 +1,14 @@
 """Retained predictions and the result currently used for measurement."""
 
+import logging
+import shutil
 from copy import copy, deepcopy
 
 from django.db import transaction
 from django.utils import timezone
 
 from quantem import __version__
+from quantem.core.local_storage import StorageError
 from quantem.segmentation.coverage import completed_geometry
 from quantem.segmentation.geometry import extract_polygons
 from quantem.segmentation.models import (
@@ -14,6 +17,8 @@ from quantem.segmentation.models import (
     SegmentObject,
     SegmentObjectAnnotation,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _replace_geometry(row, geometry, *, label_state):
@@ -133,12 +138,16 @@ def publish_result(
         )
     selected.is_canonical = True
     selected.save(update_fields=["is_canonical", "updated_at"])
-    segmentation.saved_results.filter(id__in=delete_ids).exclude(pk=selected.pk).update(
+    deleted_results = segmentation.saved_results.filter(id__in=delete_ids).exclude(pk=selected.pk)
+    deleted_result_ids = tuple(deleted_results.values_list("pk", flat=True))
+    deleted_results.update(
         deleted_at=timezone.now(),
         is_canonical=False,
     )
-    if delete_ids:
-        transaction.on_commit(lambda: prune_deleted_maps(segmentation))
+    if deleted_result_ids:
+        transaction.on_commit(
+            lambda: cleanup_deleted_results(segmentation, result_ids=deleted_result_ids)
+        )
     segmentation.include_level = threshold
     segmentation.status_stage = "CANDIDATES_READY"
     segmentation.status_progress = 100
@@ -165,6 +174,29 @@ def publish_result(
         ]
     )
     return selected
+
+
+def cleanup_deleted_results(segmentation, *, result_ids):
+    """Reclaim derived comparison data, then any now-unreferenced source maps."""
+    from quantem.segmentation.prob_maps.io import resolve_probability_map_path
+    from quantem.segmentation.prob_maps.preview import result_preview_cache_path
+
+    results = segmentation.saved_results.filter(pk__in=result_ids).select_related("probability_map")
+    for result in results:
+        if result.probability_map is None:
+            continue
+        try:
+            cache = result_preview_cache_path(resolve_probability_map_path(result.probability_map))
+            shutil.rmtree(cache / str(result.pk), ignore_errors=True)
+            for preview in cache.glob(f"{result.pk}.*.png"):
+                preview.unlink(missing_ok=True)
+        except (OSError, StorageError, ValueError):
+            logger.warning(
+                "Could not remove derived caches for saved result %s.",
+                result.pk,
+                exc_info=True,
+            )
+    prune_deleted_maps(segmentation)
 
 
 def prune_deleted_maps(segmentation):

@@ -672,12 +672,12 @@ def cap(limit_bytes):
 
 
 def legacy_rasterize_level0(arrays, payloads, *, use_pool, on_progress=None, cancel_check=None):
-    """The pre-S2 body again, in the capped child. Kept in step with the
-    in-process control above on purpose: the two arms of this file must not
-    drift apart, or "unbounded" would mean two different things depending on
-    which test you read. ``on_progress``/``cancel_check`` are honoured for the
-    same reason they are there -- the only difference from the shipped
-    rasteriser must be the submission discipline.
+    """Exercise the worst-case backlog permitted by unbounded submission.
+
+    Materialize all results before writing, modeling a stalled storage consumer.
+    Depending on disk/worker timing to create that backlog made the negative
+    control sometimes pass under the cap. The separate byte-identity test keeps
+    the original iterator unchanged and compares actual stored output.
     """
     from concurrent.futures import ProcessPoolExecutor
 
@@ -688,7 +688,7 @@ def legacy_rasterize_level0(arrays, payloads, *, use_pool, on_progress=None, can
         initializer=django_pool_initializer,
     ) as executor:
         completed = 0
-        for result in executor.map(render_module.rasterize_tile_worker, payloads):
+        for result in list(executor.map(render_module.rasterize_tile_worker, payloads)):
             if cancel_check is not None:
                 cancel_check()
             mutations._write_tile_result(arrays, result)
@@ -783,6 +783,9 @@ def test_the_parent_survives_a_cap_the_unbounded_backlog_does_not(tmp_path):
     of 400 MB above the child's own measured steady state sits between those
     with margin both ways, and measuring the baseline rather than assuming it
     keeps this from becoming a test of how heavy Django is this week.
+
+    The unbounded control explicitly retains its worst-case result backlog,
+    independent of storage/worker timing on the test machine.
 
     Three arms, because "the unbounded one failed" is only evidence if it would
     have passed with room: windowed at 400 MB must succeed, unbounded at 400 MB

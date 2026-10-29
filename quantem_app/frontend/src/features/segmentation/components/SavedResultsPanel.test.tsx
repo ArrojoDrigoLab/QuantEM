@@ -16,13 +16,14 @@ vi.mock("@/viewer/viewportSync/useViewportSyncGroup", () => ({
   useViewportSyncGroup: () => ({ viewport: null, publishFromViewer: vi.fn() }),
 }));
 vi.mock("@/viewer/components/ImageViewer", () => ({
-  ImageViewer: ({ overlays }: { overlays?: { bitmapOverlays?: { image: string; opacity: number }[] } }) => {
+  ImageViewer: ({ overlays }: { overlays?: { bitmapOverlays?: { image: string; opacity: number }[]; idMapOverlays?: { ngffUrl: string; fillOpacity: number }[] } }) => {
     const overlay = overlays?.bitmapOverlays?.[0];
+    const detailed = overlays?.idMapOverlays?.[0];
     return (
       <div
         data-testid="comparison-viewer"
-        data-overlay={overlay?.image ?? ""}
-        data-opacity={overlay?.opacity ?? ""}
+        data-overlay={detailed?.ngffUrl ?? overlay?.image ?? ""}
+        data-opacity={detailed?.fillOpacity ?? overlay?.opacity ?? ""}
       />
     );
   },
@@ -136,4 +137,25 @@ it("queues a noncanonical choice only after the confirmation dialog", async () =
       body: JSON.stringify({ result_id: "old", delete_result_ids: ["new"] }),
     })
   );
+});
+
+it("requests native detail explicitly, preserves it across opacity edits, and offers retry", async () => {
+  let failed = true;
+  vi.mocked(apiRequest).mockImplementation(async (url) => url.endsWith("/overlay/")
+    ? url.includes("/old/") && failed
+      ? { status: "FAILED", message: "Unavailable model settings" }
+      : { status: "READY", ngff_url: `${url}tiles` }
+    : { results });
+  renderPanel();
+  await waitFor(() => expect(screen.getAllByTestId("comparison-viewer")[0]).toHaveAttribute("data-overlay", "/new.png"));
+  expect(vi.mocked(apiRequest).mock.calls.some(([url]) => url.endsWith("/overlay/"))).toBe(false);
+  fireEvent.change(screen.getByLabelText("Overlay detail"), { target: { value: "detailed" } });
+  await screen.findByText("Unavailable model settings");
+  failed = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry detailed comparison" }));
+  await waitFor(() => expect(screen.getAllByTestId("comparison-viewer")[1]).toHaveAttribute("data-overlay", "/api/segmentations/seg/results/old/overlay/tiles"));
+  const calls = vi.mocked(apiRequest).mock.calls.length;
+  fireEvent.change(screen.getByLabelText("Model result opacity"), { target: { value: "0.65" } });
+  await waitFor(() => expect(screen.getAllByTestId("comparison-viewer")[1]).toHaveAttribute("data-opacity", "0.65"));
+  expect(vi.mocked(apiRequest).mock.calls).toHaveLength(calls);
 });

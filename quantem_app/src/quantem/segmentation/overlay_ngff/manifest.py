@@ -19,7 +19,8 @@ from .paths import (
     get_overlay_debug_manifest_path,
     normalize_overlay_source_model,
 )
-from .store import _is_valid_label_store, _level_shapes
+from .store import _level_shapes
+from .store import is_valid_label_store_cached as _validated_store
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +240,7 @@ def build_overlay_manifest(
         else ""
     )
     width, height = segmentation_dimensions(segmentation)
-    if state.bundle_version > 0 and _is_valid_label_store(
+    if state.bundle_version > 0 and _validated_store(
         get_overlay_active_bundle_path(state),
         width=width,
         height=height,
@@ -289,7 +290,7 @@ def ensure_overlay_manifest(
 
     state = get_or_create_overlay_state(segmentation, source_model)
     width, height = segmentation_dimensions(segmentation)
-    current_valid = state.bundle_version > 0 and _is_valid_label_store(
+    current_valid = state.bundle_version > 0 and _validated_store(
         get_overlay_active_bundle_path(state),
         width=width,
         height=height,
@@ -425,7 +426,7 @@ def ensure_overlay_manifest(
     # over for subsequent requests once it is ready.
     if normalize_overlay_source_model(source_model):
         aggregate_state = get_or_create_overlay_state(segmentation, None)
-        if aggregate_state.bundle_version > 0 and _is_valid_label_store(
+        if aggregate_state.bundle_version > 0 and _validated_store(
             get_overlay_active_bundle_path(aggregate_state),
             width=width,
             height=height,

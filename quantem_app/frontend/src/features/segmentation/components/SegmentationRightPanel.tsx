@@ -14,7 +14,6 @@ import type {
   ViewportState,
   SegmentOverlay,
   ViewerIdMapOverlaySpec,
-  ViewerNgffOverlayLayerSpec,
 } from "@/viewer/types";
 import type { AssetDetail } from "@/shared/types/images";
 import type { SegmentObject, SegmentationRoi } from "@/shared/types/segmentation";
@@ -49,7 +48,6 @@ interface SegmentationRightPanelProps {
   canApplyRemoveArea: boolean;
   onApplyRemoveArea: () => void;
   removingArea: boolean;
-  overlayNgffLayers?: ViewerNgffOverlayLayerSpec[];
   /** State-specific ID-map overlays (labels + border + render-time LUT). */
   idMapOverlays?: ViewerIdMapOverlaySpec[];
   layerControls: PaneOverlayLayerControls;
@@ -78,7 +76,6 @@ export function SegmentationRightPanel({
   canApplyRemoveArea,
   onApplyRemoveArea,
   removingArea,
-  overlayNgffLayers = [],
   idMapOverlays = [],
   layerControls,
   onOverlayRevisionDisplayed,
@@ -256,7 +253,6 @@ export function SegmentationRightPanel({
           overlays={{
             persistent: overlayScene.persistent,
             transient: overlayScene.transient,
-            rasterLayers: overlayNgffLayers,
             idMapOverlays: displayedIdMapOverlays,
             onRasterRevisionDisplayed: onOverlayRevisionDisplayed,
           }}

@@ -8,7 +8,7 @@ export const NEAREST_SAMPLER = { minFilter: "nearest", magFilter: "nearest", add
 const idmap = {
   name: "idmap",
   fs: `precision highp int;
-uniform sampler2D labelPixels;
+uniform sampler2D bitmapTexture;
 uniform sampler2D labelPalette;
 uniform sampler2D labelBorder;
 uniform idmapUniforms {
@@ -46,13 +46,20 @@ export class PaletteBitmapLayer extends BitmapLayer<PaletteProps> {
     const shaders = super.getShaders();
     return {
       ...shaders,
+      // Hook functions precede the layer's source. Declare its existing sampler
+      // in our module so it is in scope without binding a second texture.
+      fs: shaders.fs.replace("uniform sampler2D bitmapTexture;", ""),
       modules: [...shaders.modules, idmap],
       inject: {
         ...shaders.inject,
         "fs:DECKGL_FILTER_COLOR": `
-  ivec2 size = textureSize(labelPixels, 0);
+  ivec2 size = textureSize(bitmapTexture, 0);
   ivec2 pixel = clamp(ivec2(geometry.uv * vec2(size)), ivec2(0), size - 1);
-  uvec4 bytes = uvec4(round(texelFetch(labelPixels, pixel, 0) * 255.0));
+  // Reuse BitmapLayer's texture binding instead of binding the public image
+  // prop a second time; that prop may be CPU texture data rather than a GPU
+  // Texture. Sampling directly also avoids BitmapLayer's tint/opacity pass,
+  // which would corrupt the four packed label bytes.
+  uvec4 bytes = uvec4(round(texelFetch(bitmapTexture, pixel, 0) * 255.0));
   uint label = bytes.r | (bytes.g << 8u) | (bytes.b << 16u) | (bytes.a << 24u);
   if (label == 0u || label > idmap.maxLabel) discard;
   uint paletteWidth = uint(textureSize(labelPalette, 0).x);
@@ -67,6 +74,9 @@ export class PaletteBitmapLayer extends BitmapLayer<PaletteProps> {
     color = vec4(tint.rgb, idmap.fillOpacity * tint.a);
   }
   color.a *= layer.opacity;
+  // Deck's picking pass replaces alpha with an object identifier. Discard
+  // invisible fragments first so they cannot intercept objects beneath them.
+  if (color.a <= 0.0) discard;
 `,
       },
     };
@@ -87,7 +97,6 @@ export class PaletteBitmapLayer extends BitmapLayer<PaletteProps> {
     if (!this.state.borderTexture) return;
     this.state.model?.shaderInputs.setProps({ idmap: {
       labelPalette: this.props.palette, labelBorder: this.state.borderTexture,
-      labelPixels: this.props.image,
       maxLabel: this.props.maxLabel, highlightedLabel: this.props.highlightedLabel,
       fillOpacity: this.props.fillOpacity, borderOpacity: this.props.borderOpacity,
       showBorders: this.props.showBorders ? 1 : 0,
